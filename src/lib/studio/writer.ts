@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { CallSheet, Character, ProduceInput, Shot, ShotSize } from "./types";
 
 function hasCjk(s: string) {
@@ -159,4 +160,47 @@ export function draftCallSheet(input: ProduceInput): CallSheet {
     shots,
     voiceover: voiceover || line,
   };
+}
+
+/** Load a plugged callsheet JSON. It drives every later stage (marks, cameras,
+ *  prose, QC people counts), so the shape is gated hard before use. */
+export function loadCallSheet(jsonPath: string): CallSheet {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+  } catch (err) {
+    throw new Error(`callsheet ${jsonPath} unreadable: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const sheet = raw as Partial<CallSheet>;
+  const topFields = [
+    "title", "logline", "language", "location", "timeOfDay", "weather", "mood",
+    "durationSec", "aspect", "characters", "styleBible", "shots", "voiceover",
+  ] as const;
+  const missing = topFields.filter((k) => sheet[k] === undefined || sheet[k] === null);
+  if (missing.length) {
+    throw new Error(`callsheet ${jsonPath} missing fields: ${missing.join(", ")}`);
+  }
+  if (!sheet.characters!.length) throw new Error(`callsheet ${jsonPath} has no characters`);
+  for (const c of sheet.characters!) {
+    const need = (["id", "name", "role", "wardrobe", "palette", "voice"] as const).filter(
+      (k) => c[k] === undefined || c[k] === null,
+    );
+    if (need.length) throw new Error(`callsheet ${jsonPath} character ${c.id ?? "?"} missing: ${need.join(", ")}`);
+  }
+  if (!sheet.shots!.length) throw new Error(`callsheet ${jsonPath} has no shots`);
+  for (const s of sheet.shots!) {
+    const need = (
+      ["id", "index", "heading", "size", "location", "action", "dialogue", "durationSec", "camera", "marks", "stillPrompt", "motionPrompt"] as const
+    ).filter((k) => s[k] === undefined || s[k] === null);
+    if (need.length) throw new Error(`callsheet ${jsonPath} shot ${s.id ?? "?"} missing: ${need.join(", ")}`);
+    if (!/^SH\d{2,}$/.test(s.id)) {
+      throw new Error(`callsheet ${jsonPath} shot id '${s.id}' must match SHxx — the wav plug keys off \${id}.wav`);
+    }
+    for (const m of s.marks!) {
+      if (!sheet.characters!.some((c) => c.id === m.characterId)) {
+        throw new Error(`callsheet ${jsonPath} shot ${s.id} mark references unknown character ${m.characterId}`);
+      }
+    }
+  }
+  return sheet as CallSheet;
 }

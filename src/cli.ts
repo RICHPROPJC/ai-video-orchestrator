@@ -32,6 +32,7 @@ Flags
   --wav-dir <dir>       必需：每鏡 SHxx.wav（可加 spine.wav 全片聲軌）
   --portraits <dir>     角色肖像 A.png/B.png（首次出場 /edit 參考圖）
   --blockout-dir <dir>  預渲染 blockout SHxx.mp4（864x480 24fps，frames=wav snap）
+  --callsheet <json>    載入現成 callsheet，跳過編劇 draft（結構唔齊即刻 fail）
   --gap <sec>           鏡與鏡之間靜音（默許 0）
   --dry-run             行到 prompt/receipt 為止，唔 POST 任何機
 
@@ -55,6 +56,7 @@ async function makeJob(brief: string) {
     blockoutDir: arg("--blockout-dir"),
     gapSec: Number(arg("--gap", "0")),
     dryRun: process.argv.includes("--dry-run"),
+    callSheetPath: arg("--callsheet"),
   };
   const job: JobRecord = {
     id,

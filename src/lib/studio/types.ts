@@ -41,6 +41,8 @@ export type ProduceInput = {
   blockoutDir?: string;
   gapSec?: number;
   dryRun?: boolean;
+  /** load this callsheet JSON instead of drafting one from the brief */
+  callSheetPath?: string;
 };
 
 export type JobEvent = {

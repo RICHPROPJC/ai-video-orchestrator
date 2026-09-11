@@ -14,7 +14,7 @@ import { open, packetLine, seal } from "./dispatch";
 import { buildNarrativePlan, planMarkdown } from "./narrative";
 import { indexPlanTexts, recall, upsertDoc, vaultStats } from "./vault";
 import { relInJob } from "./isolate";
-import { draftCallSheet } from "./writer";
+import { draftCallSheet, loadCallSheet } from "./writer";
 import { ensureDir, jobDir, jobFile } from "./paths";
 import { snapDurationToFrames, wavSeconds } from "./frame-grid";
 import { buildCutPlan, type CutPlan } from "./cut-plan";
@@ -97,7 +97,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
   try {
     await think("producer");
     await speak("producer", "收 brief。開呢份 slate 嘅信封。舊 project 唔入袋。");
-    const sheet = draftCallSheet(input);
+    const sheet = input.callSheetPath ? loadCallSheet(input.callSheetPath) : draftCallSheet(input);
     fs.writeFileSync(jobFile(jobId, "callsheet.json"), JSON.stringify(sheet, null, 2));
     job = patch(job, {
       callSheet: sheet,
@@ -107,7 +107,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     });
     await speak(
       "producer",
-      `${sheet.title} · ${sheet.durationSec}s · ${sheet.shots.length} shots · ${sheet.location}`,
+      `${input.callSheetPath ? "callsheet plug 載入：" : ""}${sheet.title} · ${sheet.durationSec}s · ${sheet.shots.length} shots · ${sheet.location}`,
     );
 
     await think("writer");
