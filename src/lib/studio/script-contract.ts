@@ -13,9 +13,17 @@ const BEATS_PER_SCENE_MAX = 12;
  *  counts are a knob with this default rather than a constant in the schema. */
 export type ScriptRanges = { scenes: [number, number]; totalBeats: [number, number] };
 export const FEATURE_RANGES: ScriptRanges = { scenes: [6, 14], totalBeats: [60, 110] };
-const SCENE_TARGET_MIN = 20;
+const SCENE_TARGET_MIN = 24;
 const SCENE_TARGET_MAX = 120;
 const TARGET_TOLERANCE = 0.1;
+
+/** A beat becomes at least one shot and no shot is shorter than the frame grid
+ *  allows, so a scene's second budget is a hard ceiling on how many beats fit. */
+export const SECONDS_PER_BEAT_FLOOR = 5.5;
+
+export function maxBeatsIn(sceneTargetSec: number): number {
+  return Math.floor(sceneTargetSec / SECONDS_PER_BEAT_FLOOR);
+}
 
 /** The wav is the clock; this is the estimate the seats budget against. */
 export const SECONDS_PER_CHAR = 0.23;
@@ -28,6 +36,12 @@ export function dialogueSeconds(line: string): number {
 }
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/, "must be a #rrggbb colour");
+
+/** Models in JSON mode write `null` for a key they mean to leave out; that is
+ *  the same thing here, and retrying three times over it teaches nobody. */
+export function omittable<T extends z.ZodTypeAny>(inner: T) {
+  return z.preprocess((v) => (v === null || v === "" ? undefined : v), inner.optional());
+}
 
 /** heightM is the blockout mannequin's scale, not a person's height: blender
  *  puts hands at 0.85·h, and above the lens that ray has no floor to reach. */
@@ -135,9 +149,9 @@ export function outlineSchema(ctx: { targetSec: number; castRoster: string[]; ra
 const beatShape = z.object({
   id: z.string().regex(BEAT_ID_RE, "beat id must be SCxx.Byy"),
   action: z.string().min(1).max(ACTION_MAX_CHARS),
-  dialogue: z.string().max(DIALOGUE_MAX_CHARS).optional(),
-  speaker: z.string().min(1).max(12).optional(),
-  emotion: z.string().min(1).max(20).optional(),
+  dialogue: omittable(z.string().max(DIALOGUE_MAX_CHARS)),
+  speaker: omittable(z.string().min(1).max(12)),
+  emotion: omittable(z.string().min(1).max(20)),
 });
 
 const sceneBeatsShape = z.object({
@@ -149,11 +163,19 @@ const sceneBeatsShape = z.object({
 export type SceneBeats = z.infer<typeof sceneBeatsShape>;
 export type Beat = z.infer<typeof beatShape>;
 
-export function sceneBeatsSchema(ctx: { sceneId: string; speakingNames: string[] }) {
+export function sceneBeatsSchema(ctx: { sceneId: string; speakingNames: string[]; targetSec: number }) {
   const speaking = new Set(ctx.speakingNames);
+  const beatCeiling = maxBeatsIn(ctx.targetSec);
   return sceneBeatsShape.superRefine((scene, report) => {
     if (scene.sceneId !== ctx.sceneId) {
       report.addIssue({ code: "custom", path: ["sceneId"], message: `this envelope is scene ${ctx.sceneId}, not ${scene.sceneId}` });
+    }
+    if (scene.beats.length > beatCeiling) {
+      report.addIssue({
+        code: "custom",
+        path: ["beats"],
+        message: `${ctx.targetSec}s of screen time holds at most ${beatCeiling} beats, not ${scene.beats.length}: merge the small ones`,
+      });
     }
     const dup = duplicates(scene.beats.map((b) => b.id));
     if (dup.length) report.addIssue({ code: "custom", path: ["beats"], message: `duplicate beat ids: ${dup.join(", ")}` });

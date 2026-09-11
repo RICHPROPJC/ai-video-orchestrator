@@ -205,7 +205,7 @@ test("the outline schema holds the roster, the scene clock and the scene count",
 });
 
 test("the beats schema binds speakers to speaking cast and ids to their scene", () => {
-  const schema = sceneBeatsSchema({ sceneId: "SC01", speakingNames: ROSTER });
+  const schema = sceneBeatsSchema({ sceneId: "SC01", speakingNames: ROSTER, targetSec: TARGET / SCENES });
   const script = scriptOf(SCENES, BEATS, TARGET);
   assert.equal(schema.safeParse(script.scenes[0]).success, true);
 
@@ -229,6 +229,7 @@ test("the boards schema covers every beat, quotes the line verbatim and seats th
     sceneId: "SC01",
     beats: script.scenes[0]!.beats,
     characters: script.outline.characters.map((c) => ({ id: c.id, name: c.name })),
+    budgetSec: BEATS * SHOT_SEC,
   });
   assert.equal(schema.safeParse(boards[0]).success, true);
 
@@ -251,6 +252,7 @@ test("the boards schema covers every beat, quotes the line verbatim and seats th
     sceneId: "SC01",
     beats: script.scenes[0]!.beats,
     characters: script.outline.characters.map((c) => ({ id: c.id, name: c.name })),
+    budgetSec: BEATS * SHOT_SEC,
   });
   assert.match(JSON.stringify(tight.safeParse(rushed).error!.issues), /need ≥ 14\.4s/);
 });
@@ -262,6 +264,7 @@ test("a prop can only be held by someone in the shot", () => {
     sceneId: "SC01",
     beats: script.scenes[0]!.beats,
     characters: script.outline.characters.map((c) => ({ id: c.id, name: c.name })),
+    budgetSec: BEATS * SHOT_SEC,
   });
   const held = structuredClone(boards[0]!);
   held.shots[0]!.props = [{ name: "prop-one", heldBy: "C", shape: ["long"], forbid: [] }];

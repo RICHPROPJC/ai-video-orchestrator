@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BEAT_ID_RE, CHARACTER_ID_RE, SCENE_ID_RE, dialogueSeconds, type Beat } from "./script-contract";
+import { BEAT_ID_RE, CHARACTER_ID_RE, SCENE_ID_RE, dialogueSeconds, omittable, type Beat } from "./script-contract";
 
 /** One shot is one H3 submit: the frame grid (17k+5, k 7–21) cannot render
  *  anything shorter or longer, so boards may not ask for it. */
@@ -8,6 +8,10 @@ export const SHOT_SEC_MAX = 15;
 const SHOT_ACTION_MAX = 60;
 const CAST_PER_SHOT_MAX = 3;
 
+/** Each scene is held to its own share of the slate's clock; the shares are
+ *  normalised before they get here, so holding every scene holds the film. */
+export const SCENE_BUDGET_TOLERANCE = 0.09;
+
 const castSchema = z.object({
   characterId: z.string().regex(CHARACTER_ID_RE),
   slot: z.enum(["L", "C", "R"]),
@@ -15,14 +19,14 @@ const castSchema = z.object({
   facing: z.union([z.literal(1), z.literal(-1)]),
   gait: z.enum(["plant", "walk", "reach", "turn"]),
   stance: z.enum(["stand", "lean", "crouch"]),
-  stanceEnd: z.enum(["stand", "lean", "crouch"]).optional(),
-  travelTo: z.enum(["L", "C", "R"]).optional(),
+  stanceEnd: omittable(z.enum(["stand", "lean", "crouch"])),
+  travelTo: omittable(z.enum(["L", "C", "R"])),
 });
 
 const propSchema = z.object({
   name: z.string().min(1).max(20),
-  heldBy: z.string().regex(CHARACTER_ID_RE).optional(),
-  shape: z.array(z.string().min(1).max(8)).min(1).max(5),
+  heldBy: omittable(z.string().regex(CHARACTER_ID_RE)),
+  shape: z.array(z.string().min(1).max(12)).min(1).max(5),
   forbid: z.array(z.string().min(1).max(12)).max(8),
 });
 
@@ -33,10 +37,10 @@ const boardShotShape = z.object({
   side: z.enum(["frontal", "leftQuarter", "rightQuarter"]),
   durationSec: z.number().min(SHOT_SEC_MIN).max(SHOT_SEC_MAX),
   action: z.string().min(1).max(SHOT_ACTION_MAX),
-  dialogue: z.string(),
-  speaker: z.string().min(1).max(12).optional(),
+  dialogue: z.string().nullish().transform((v) => v ?? ""),
+  speaker: omittable(z.string().min(1).max(12)),
   cast: z.array(castSchema).min(1).max(CAST_PER_SHOT_MAX),
-  props: z.array(propSchema).max(3).optional(),
+  props: omittable(z.array(propSchema).max(3)),
 });
 
 const boardsSceneShape = z.object({
@@ -52,6 +56,7 @@ export function boardsSceneSchema(ctx: {
   sceneId: string;
   beats: Beat[];
   characters: { id: string; name: string }[];
+  budgetSec: number;
 }) {
   const byBeat = new Map(ctx.beats.map((b) => [b.id, b]));
   const cast = new Set(ctx.characters.map((c) => c.id));
@@ -109,6 +114,16 @@ export function boardsSceneSchema(ctx: {
           report.addIssue({ code: "custom", path: at("props", j, "heldBy"), message: `${prop.heldBy} is not cast in this shot, so cannot hold ${prop.name}` });
         }
       }
+    }
+    const runtime = scene.shots.reduce((a, s) => a + s.durationSec, 0);
+    const lo = ctx.budgetSec * (1 - SCENE_BUDGET_TOLERANCE);
+    const hi = ctx.budgetSec * (1 + SCENE_BUDGET_TOLERANCE);
+    if (runtime < lo || runtime > hi) {
+      report.addIssue({
+        code: "custom",
+        path: ["shots"],
+        message: `this scene must run ${lo.toFixed(1)}–${hi.toFixed(1)}s (budget ${ctx.budgetSec.toFixed(1)}s); your shots add up to ${runtime.toFixed(1)}s`,
+      });
     }
     for (const beat of ctx.beats) {
       if (!scene.shots.some((s) => s.beatId === beat.id)) {
