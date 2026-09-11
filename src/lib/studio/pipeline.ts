@@ -296,13 +296,12 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     await think("stills");
     const stillWork = open(toStills, { slate: jobId, to: "stills" });
     await speak("stills", packetLine(toStills));
-    await speak("stills", `U1.5 /edit ${cfg.stills.url} · ${cfg.stills.width}×${cfg.stills.height} · base=blockout/前一張，refs 只限首次出場。`);
+    await speak("stills", `U1.5 /edit ${cfg.stills.url} · ${cfg.stills.width}×${cfg.stills.height} · Image-1＝自己 f0，Image-2＋＝肖像（首次）或上一鏡定格。`);
     let prevKeyframe: string | null = null;
     for (const { shot, first, prompt, require } of stillPlans) {
       const out = path.join(stillDir, `${shot.id}.png`);
       const recordJson = path.join(stillDir, `${shot.id}.u15_edit.json`);
-      const base = first ? path.join(blockoutDir, `${shot.id}.f0.png`) : prevKeyframe;
-      if (!base) throw new Error(`${shot.id}: no base for /edit (first=${first}, no previous keyframe)`);
+      const base = path.join(blockoutDir, `${shot.id}.f0.png`);
       const refIds = [...new Set(shot.marks.map((m) => m.characterId))];
       const refFiles = first
         ? refIds.map((id) => {
@@ -312,7 +311,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
             }
             return p;
           })
-        : [];
+        : [prevKeyframe!];
+      if (refFiles.some((r) => !r)) throw new Error(`${shot.id}: no ref for /edit (first=${first}, no previous keyframe)`);
       const images = [base, ...refFiles];
       const health = await checkHealth(cfg.stills.url, images.length);
       const nodePaths: string[] = [];

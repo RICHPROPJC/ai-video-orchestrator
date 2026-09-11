@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { AddressInfo } from "node:net";
 import { assertPng, buildEditPayload, checkHealth, snap32, MAX_IMAGES } from "./u15-edit";
+import { keyframeEditPrompt } from "./keyframe-prompt";
+import type { CallSheet, Shot } from "./types";
 
 const base = { prompt: "把灰色人偶換成角色", width: 2050, height: 1152 };
 
@@ -88,4 +90,77 @@ test("checkHealth: non-200 throws U1.5 node down", async () => {
   }, async (url) => {
     await assert.rejects(() => checkHealth(url, 1), /U1\.5 node down.*503/);
   });
+});
+
+function promptSheet(): CallSheet {
+  const mark = (characterId: string, x: number) => ({
+    characterId,
+    start: { x, y: 50 },
+    end: { x, y: 50 },
+    facing: 1,
+    handL: { x: x + 4, y: 45 },
+    handR: { x: x + 6, y: 45 },
+    footL: { x: x - 2, y: 80 },
+    footR: { x: x + 2, y: 80 },
+    gait: "plant" as const,
+  });
+  return {
+    title: "t",
+    logline: "l",
+    language: "zh-Hant",
+    location: "茶餐廳門口",
+    timeOfDay: "night",
+    weather: "rain",
+    mood: "m",
+    durationSec: 4,
+    aspect: "16:9",
+    characters: [
+      { id: "A", name: "阿月", role: "保險調查員", wardrobe: "深藍乾濕褸", palette: ["#111", "#222", "#333"], voice: { pitchHz: 200, gender: "f" } },
+      { id: "B", name: "阿衡", role: "舊同事", wardrobe: "白襯衫", palette: ["#111", "#222", "#333"], voice: { pitchHz: 180, gender: "m" } },
+    ],
+    styleBible: { grade: "g", refs: [], stillModel: "u15", motionModel: "h3" },
+    shots: [],
+    voiceover: "",
+  } satisfies CallSheet;
+}
+
+function promptShot(withProp: boolean): Shot {
+  return {
+    id: "SH02",
+    index: 1,
+    heading: "2",
+    size: "medium",
+    location: "茶餐廳門口",
+    action: "a",
+    dialogue: "",
+    durationSec: 4,
+    camera: { pos: { x: 0, y: -5, z: 1.7 }, lookAt: { x: 0, y: 0, z: 1.2 }, lensMm: 35 },
+    marks: [
+      { characterId: "B", start: { x: 70, y: 50 }, end: { x: 70, y: 50 }, facing: 1, handL: { x: 66, y: 45 }, handR: { x: 74, y: 45 }, footL: { x: 68, y: 80 }, footR: { x: 72, y: 80 }, gait: "plant" },
+      { characterId: "A", start: { x: 30, y: 50 }, end: { x: 30, y: 50 }, facing: 1, handL: { x: 34, y: 45 }, handR: { x: 36, y: 45 }, footL: { x: 28, y: 80 }, footR: { x: 32, y: 80 }, gait: "plant" },
+    ],
+    ...(withProp ? { props: [{ name: "曲轅犁", heldBy: "A", shape: ["弯", "木", "插入"], forbid: ["锹", "铲", "锄"] }] } : {}),
+    stillPrompt: "",
+    motionPrompt: "",
+  } satisfies Shot;
+}
+
+test("first-appearance prompt names Image-1 (own f0) and Image-2.. (portraits)", () => {
+  const text = keyframeEditPrompt(promptSheet(), promptShot(true), { first: true });
+  assert.ok(text.includes("Image-1"), "names Image-1");
+  assert.ok(text.includes("Image-2…Image-N 係上述角色嘅正面肖像"), "portrait refs line");
+  assert.ok(text.includes("左起第1個人偶＝阿月"), "marks sorted by start.x — A (x30) is first");
+  assert.ok(text.includes("左起第2個人偶＝阿衡"), "B (x70) is second");
+  assert.ok(text.includes("深藍乾濕褸"), "wardrobe from sheet");
+  assert.ok(text.includes("曲轅犁"), "prop name from sheet");
+  assert.ok(text.includes("唔係锹、铲、锄"), "forbid list from sheet");
+});
+
+test("later-shot prompt names Image-1 (own f0) and Image-2 (previous keyframe)", () => {
+  const text = keyframeEditPrompt(promptSheet(), promptShot(false), { first: false });
+  assert.ok(text.includes("Image-1"), "names Image-1");
+  assert.ok(text.includes("Image-2 係上一鏡嘅定格"), "prev-keyframe ref line");
+  assert.ok(text.includes("唯獨姿勢跟 Image-1"), "posture follows the own f0");
+  assert.ok(!text.includes("曲轅犁"), "no prop line without props");
+  assert.ok(!text.includes("保持每個人偶嘅位置、姿勢、構圖同鏡頭完全不變"), "no single-image no-op phrasing");
 });
