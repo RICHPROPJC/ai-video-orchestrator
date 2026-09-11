@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { jobDir } from "@/lib/studio/paths";
+import { resolveInJob } from "@/lib/studio/isolate";
 
 export const runtime = "nodejs";
 
@@ -23,9 +23,12 @@ export async function GET(
   if (rel.includes("..")) return new Response("bad path", { status: 400 });
   const [id, ...rest] = parts;
   if (!id || !rest.length) return new Response("not found", { status: 404 });
-  const abs = path.join(jobDir(id), ...rest);
-  const root = jobDir(id);
-  if (!abs.startsWith(root)) return new Response("bad path", { status: 400 });
+  let abs: string;
+  try {
+    abs = resolveInJob(id, rest.join("/"));
+  } catch {
+    return new Response("bad path", { status: 400 });
+  }
   if (!fs.existsSync(abs) || fs.statSync(abs).isDirectory()) {
     return new Response("not found", { status: 404 });
   }

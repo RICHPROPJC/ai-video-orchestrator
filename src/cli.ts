@@ -23,7 +23,8 @@ Commands
   models                     睇而家用緊邊個 checkpoint
   models set <dot.path> <v>  換模型，例：stills.checkpoint foo.safetensors
   status [slate]
-  floor
+  floor                      十二人：名 / 工 / 諗法
+  recall <slate> "<q>"       只喺呢份 vault rerank（text|image|video|audio）
   serve                      Web GUI :43127
 
 Flags
@@ -90,7 +91,24 @@ async function main() {
   const cmd = process.argv[2];
   if (!cmd || cmd === "help" || cmd === "-h") return help();
   if (cmd === "floor") {
-    for (const d of describeFloor()) console.log(`${d.id.padEnd(10)} ${d.label}  ${d.en}  — ${d.desk}`);
+    console.log("Dispatch 去專職檯 · packet 只裝呢份 slate · 故事＝分鏡＝剪接\n");
+    for (const d of describeFloor()) {
+      console.log(`${d.id.padEnd(10)} ${d.name}／${d.job}  (${d.en})`);
+      console.log(`${"".padEnd(10)} 想：${d.thinking}\n`);
+    }
+    return;
+  }
+  if (cmd === "recall") {
+    const slate = process.argv[3];
+    const q = process.argv[4] || "";
+    if (!slate || !q) {
+      console.error('recall <slate> "<query>" [--modality text|image|video|audio]');
+      process.exitCode = 1;
+      return;
+    }
+    const { recall } = await import("./lib/studio/vault");
+    const modality = arg("--modality") as "text" | "image" | "video" | "audio" | undefined;
+    console.log(JSON.stringify(recall(slate, q, { modality, k: 8 }), null, 2));
     return;
   }
   if (cmd === "serve") {

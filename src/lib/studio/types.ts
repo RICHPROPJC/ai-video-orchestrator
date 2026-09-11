@@ -8,6 +8,7 @@ export type JobStatus =
 export type AgentId =
   | "producer"
   | "writer"
+  | "boards"
   | "art"
   | "layout"
   | "stills"
@@ -159,6 +160,9 @@ export type JobRecord = {
   progress: number;
   currentAgent?: AgentId;
   callSheet?: CallSheet;
+  continuity?: import("./continuity").Continuity;
+  narrativePlan?: import("./narrative").NarrativePlan;
+  vault?: { docs: number; isolated: true; modalities: Record<string, number> };
   providers?: ProviderTrace;
   soundQc?: SoundQc;
   pictureQcStills?: PictureQc;
@@ -172,6 +176,9 @@ export type JobRecord = {
     blockingPreview?: string;
     pictureLock?: string;
     callSheet?: string;
+    continuity?: string;
+    narrativePlan?: string;
+    vault?: string;
     qcReport?: string;
   };
   error?: string;
@@ -181,15 +188,16 @@ export const AGENT_META: Record<
   AgentId,
   { label: string; en: string; desk: string }
 > = {
-  producer: { label: "製片", en: "Producer", desk: "Call sheet / 閘口" },
-  writer: { label: "編劇", en: "Writer", desk: "劇本 / 分鏡" },
+  producer: { label: "製片", en: "Producer", desk: "一份 continuity" },
+  writer: { label: "編劇", en: "Writer", desk: "故事 / 對白" },
+  boards: { label: "分鏡", en: "Boards", desk: "同一 SH id" },
   art: { label: "美術", en: "Art", desk: "Style bible" },
-  layout: { label: "走位", en: "Layout", desk: "Blender 場地 / 手腳 IK" },
+  layout: { label: "走位", en: "Layout", desk: "Blender 手腳 IK" },
   stills: { label: "生圖", en: "Stills", desk: "SenseNova U1.5" },
   pictureQc: { label: "畫檢", en: "Picture QC", desk: "SenseNova MARS-8B" },
   motion: { label: "生片", en: "Motion", desk: "MiniMax H3" },
   voice: { label: "聲線", en: "Voice", desk: "TTS + clone" },
   soundQc: { label: "聲檢", en: "Sound QC", desk: "SenseVoice" },
-  editor: { label: "剪接", en: "Editor", desk: "聲畫合成" },
+  editor: { label: "剪接", en: "Editor", desk: "照分鏡次序" },
   delivery: { label: "交片", en: "Delivery", desk: "Picture lock" },
 };

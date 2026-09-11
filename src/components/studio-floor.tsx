@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AGENT_META, type AgentId, type JobEvent, type JobRecord } from "@/lib/studio/types";
+import { type JobEvent, type JobRecord } from "@/lib/studio/types";
+import { CREW, FLOOR, whoLine } from "@/lib/studio/crew";
 import type { DoctorReport } from "@/lib/studio/doctor";
 import { Clapperboard, Film, Lock, Upload } from "lucide-react";
 
@@ -48,6 +49,8 @@ export function StudioFloor({
   const [job, setJob] = useState<JobRecord | null>(initialJob);
   const [events, setEvents] = useState<JobEvent[]>(initialEvents);
   const [rack, setRack] = useState<DoctorReport | null>(null);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<{ id: string; modality: string; score: number; text: string; shotId?: string }[] | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -91,7 +94,6 @@ export function StudioFloor({
   }, [events.length]);
 
   const running = job?.status === "running" || job?.status === "queued";
-  const desks = useMemo(() => Object.entries(AGENT_META) as [AgentId, (typeof AGENT_META)[AgentId]][], []);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -126,7 +128,7 @@ export function StudioFloor({
             <CardHeader className="border-b">
               <CardTitle>開新 slate</CardTitle>
               <p className="text-muted-foreground text-xs leading-relaxed">
-                Brief 入去，十一張檯會自己分場、走位、生圖、生片、配音同雙重 QC。未過閘唔 stamp picture lock。
+                Brief 入去，何晴可以 dispatch 去阿圖（分鏡專職）。信封只裝呢份 slate，vault / embed / rerank 唔撈舊 project。故事＝分鏡＝剪接。
               </p>
             </CardHeader>
             <CardContent>
@@ -284,8 +286,8 @@ export function StudioFloor({
               <p>搜完之後係<b className="text-foreground">組合已有最好嘅件</b>，唔係再發明一個生圖引擎。</p>
               <ul className="space-y-1.5">
                 <li><b className="text-foreground">ComfyUI</b> 官方 /prompt · 你而家嘅 U1.5 + H3 圖</li>
+                <li><b className="text-foreground">ViMax</b> dispatch 去分鏡專職 + narrative plan；RAG 只喺呢份 slate</li>
                 <li><b className="text-foreground">Montaj</b> CLI = TUI = Web 同一套 command</li>
-                <li><b className="text-foreground">OpenDirector</b> 多 agent 導演檯</li>
                 <li><b className="text-foreground">MoneyPrinterTurbo</b> checkpoint / 分段閘口</li>
                 <li><b className="text-foreground">MARS-8B + SenseVoice</b> 你指定嘅聲畫 QC</li>
                 <li><b className="text-foreground">Blender IK</b> 走位、手手腳腳</li>
@@ -302,8 +304,9 @@ export function StudioFloor({
                   <Film className="size-4 text-primary" />
                   {job?.slate ?? "未開 slate"}
                 </CardTitle>
-                <p className="text-muted-foreground mt-1 text-xs">
+              <p className="text-muted-foreground mt-1 text-xs">
                   {job?.callSheet?.title ?? "等 brief"} · {job?.status ?? "idle"}
+                  {job?.continuity?.cut?.length ? ` · ${job.continuity.cut.join("→")}` : ""}
                 </p>
               </div>
               {job?.status === "locked" ? (
@@ -317,7 +320,8 @@ export function StudioFloor({
             <CardContent className="space-y-4">
               <Progress value={job?.progress ?? 0} />
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-                {desks.map(([id, meta]) => {
+                {FLOOR.map((id) => {
+                  const who = CREW[id];
                   const active = job?.currentAgent === id;
                   const logs = events.filter((e) => e.agent === id);
                   const passed = logs.some((e) => e.level === "pass");
@@ -325,6 +329,7 @@ export function StudioFloor({
                   return (
                     <div
                       key={id}
+                      title={who.thinking}
                       className={`rounded-lg border px-3 py-2 ${
                         active
                           ? "border-primary bg-primary/10"
@@ -335,9 +340,11 @@ export function StudioFloor({
                               : "border-border"
                       }`}
                     >
-                      <p className="text-[10px] tracking-widest text-muted-foreground">{meta.en}</p>
-                      <p className="text-sm font-medium">{meta.label}</p>
-                      <p className="text-[11px] text-muted-foreground">{meta.desk}</p>
+                      <p className="text-[10px] tracking-widest text-muted-foreground">{who.en}</p>
+                      <p className="text-sm font-medium">
+                        {who.name}／{who.job}
+                      </p>
+                      <p className="line-clamp-2 text-[11px] text-muted-foreground">{who.thinking}</p>
                     </div>
                   );
                 })}
@@ -349,14 +356,21 @@ export function StudioFloor({
             <Tabs defaultValue="board">
               <TabsList>
                 <TabsTrigger value="board">分鏡</TabsTrigger>
+                <TabsTrigger value="plan">計劃</TabsTrigger>
                 <TabsTrigger value="block">走位</TabsTrigger>
                 <TabsTrigger value="qc">QC</TabsTrigger>
                 <TabsTrigger value="lock">成片</TabsTrigger>
               </TabsList>
               <TabsContent value="board">
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-3">
+                  {job?.continuity ? (
+                    <p className="text-xs text-muted-foreground">
+                      Cut = boards：{job.continuity.cut.join(" → ")} · 同一 SH id，唔另開場。
+                    </p>
+                  ) : null}
+                  <div className="grid gap-3 sm:grid-cols-2">
                   {(job?.outputs.stills ?? []).length === 0 ? (
-                    <Empty label="未有 stills。開工之後 U1.5 / studio painter 會出 lock frame。" />
+                    <Empty label="未有 stills。阿圖鎖分鏡之後阿靜先出圖。" />
                   ) : (
                     job?.outputs.stills.map((rel) => (
                       <figure key={rel} className="overflow-hidden rounded-lg border bg-black">
@@ -366,6 +380,61 @@ export function StudioFloor({
                       </figure>
                     ))
                   )}
+                  </div>
+                </div>
+              </TabsContent>
+              <TabsContent value="plan">
+                <div className="space-y-3 text-sm">
+                  <p className="text-xs text-muted-foreground">
+                    ViMax 式 DAG。JSON 存在 <code>data/jobs/{job?.slate ?? "SLATE"}/</code>。Embed / rerank 只讀呢份 vault.json。
+                  </p>
+                  {job?.narrativePlan ? (
+                    <p className="font-mono text-xs leading-relaxed">
+                      {job.narrativePlan.dag.join(" → ")}
+                    </p>
+                  ) : (
+                    <Empty label="未有 narrative plan。阿圖收 packet 之後會寫。" />
+                  )}
+                  {job?.vault ? (
+                    <p className="text-xs text-muted-foreground">
+                      Vault {job.vault.docs} docs · isolated ·{" "}
+                      {Object.entries(job.vault.modalities)
+                        .map(([k, v]) => `${k}:${v}`)
+                        .join(" · ")}
+                    </p>
+                  ) : null}
+                  {job?.id ? (
+                    <form
+                      className="flex flex-wrap gap-2"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!job.id || !query.trim()) return;
+                        void fetch(`/api/jobs/${job.id}/recall?q=${encodeURIComponent(query)}`)
+                          .then((r) => r.json())
+                          .then((d: { hits?: typeof hits }) => setHits(d.hits ?? []));
+                      }}
+                    >
+                      <Input
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="喺呢份 slate rerank…"
+                        className="max-w-xs"
+                      />
+                      <button type="submit" className={cn(buttonVariants({ size: "sm" }))} disabled={running && !job.vault}>
+                        Recall
+                      </button>
+                    </form>
+                  ) : null}
+                  {hits ? (
+                    <ul className="space-y-1 font-mono text-[11px]">
+                      {hits.length === 0 ? <li className="text-muted-foreground">呢份 vault 冇 hit。</li> : null}
+                      {hits.map((h) => (
+                        <li key={h.id}>
+                          {h.score.toFixed(2)} · {h.modality} · {h.shotId ?? "—"} · {h.text}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </div>
               </TabsContent>
               <TabsContent value="block">
@@ -429,6 +498,21 @@ export function StudioFloor({
                           Call sheet
                         </a>
                       ) : null}
+                      {job.outputs.continuity ? (
+                        <a className="text-primary underline" href={media(job.id, job.outputs.continuity)}>
+                          Continuity
+                        </a>
+                      ) : null}
+                      {job.outputs.narrativePlan ? (
+                        <a className="text-primary underline" href={media(job.id, job.outputs.narrativePlan)}>
+                          Narrative plan
+                        </a>
+                      ) : null}
+                      {job.outputs.vault ? (
+                        <a className="text-primary underline" href={media(job.id, job.outputs.vault)}>
+                          Vault JSON
+                        </a>
+                      ) : null}
                       {job.outputs.blenderScript ? (
                         <a className="text-primary underline" href={media(job.id, job.outputs.blenderScript)}>
                           blocking.py
@@ -454,7 +538,7 @@ export function StudioFloor({
                     ) : (
                       events.map((e, i) => (
                         <p key={`${e.ts}-${i}`}>
-                          <span className="text-primary">{e.agent}</span>{" "}
+                          <span className="text-primary">{e.agent === "system" ? "system" : whoLine(e.agent)}</span>{" "}
                           <span className={e.level === "fail" ? "text-destructive" : e.level === "pass" ? "text-emerald-400" : "text-muted-foreground"}>
                             {e.level}
                           </span>{" "}

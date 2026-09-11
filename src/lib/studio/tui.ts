@@ -1,4 +1,5 @@
-import { AGENT_META, type AgentId, type JobEvent, type JobRecord } from "./types";
+import type { JobEvent, JobRecord } from "./types";
+import { CREW, FLOOR, whoLine } from "./crew";
 import { readEvents, readJob, subscribe } from "./store";
 
 const ESC = "\x1b";
@@ -13,26 +14,29 @@ const red = `${ESC}[31m`;
 const cyan = `${ESC}[36m`;
 
 function paint(job: JobRecord | null, events: JobEvent[], extra: string) {
-  const desks = Object.entries(AGENT_META) as [AgentId, (typeof AGENT_META)[AgentId]][];
   const lines: string[] = [];
-  lines.push(`${amber}SLATECREW TUI${reset}  ${dim}q 離開 · 同 Web / CLI 一條流水線${reset}`);
+  lines.push(`${amber}SLATECREW TUI${reset}  ${dim}q 離開 · floor handoff · 故事＝分鏡＝剪接${reset}`);
   lines.push(extra);
   lines.push("");
-  const row = desks
-    .map(([id, meta]) => {
-      const active = job?.currentAgent === id;
-      const logs = events.filter((e) => e.agent === id);
-      const pass = logs.some((e) => e.level === "pass");
-      const fail = logs.some((e) => e.level === "fail");
-      const color = fail ? red : pass ? green : active ? cyan : dim;
-      return `${color}${meta.label.padEnd(4)}${reset}`;
-    })
-    .join(" ");
+  const row = FLOOR.map((id) => {
+    const who = CREW[id];
+    const active = job?.currentAgent === id;
+    const logs = events.filter((e) => e.agent === id);
+    const pass = logs.some((e) => e.level === "pass");
+    const fail = logs.some((e) => e.level === "fail");
+    const color = fail ? red : pass ? green : active ? cyan : dim;
+    return `${color}${who.name}${reset}`;
+  }).join(`${dim}→${reset}`);
   lines.push(row);
+  const now = job?.currentAgent ? CREW[job.currentAgent] : null;
+  if (now) {
+    lines.push(`${cyan}${now.name}／${now.job}${reset}  ${dim}想：${now.thinking}${reset}`);
+  }
   const pct = job?.progress ?? 0;
   const bar = "█".repeat(Math.round(pct / 5)).padEnd(20, "░");
   lines.push("");
-  lines.push(`${amber}${job?.slate ?? "———"}${reset}  ${bar} ${pct}%  ${job?.status ?? "idle"}`);
+  const cut = job?.continuity?.cut.join("→") ?? "";
+  lines.push(`${amber}${job?.slate ?? "———"}${reset}  ${bar} ${pct}%  ${job?.status ?? "idle"}${cut ? `  ${dim}${cut}${reset}` : ""}`);
   if (job?.providers) {
     lines.push(`${dim}${job.providers.stills} · ${job.providers.motion}${reset}`);
   }
@@ -40,7 +44,8 @@ function paint(job: JobRecord | null, events: JobEvent[], extra: string) {
   lines.push(`${dim}場地對講${reset}`);
   for (const e of events.slice(-10)) {
     const c = e.level === "pass" ? green : e.level === "fail" ? red : dim;
-    lines.push(` ${c}${e.agent.padEnd(9)}${reset} ${e.message.slice(0, 88)}`);
+    const name = e.agent === "system" ? "system" : whoLine(e.agent);
+    lines.push(` ${c}${name.padEnd(8)}${reset} ${e.message.slice(0, 84)}`);
   }
   process.stdout.write(clear + hide + lines.join("\n") + "\n");
 }
