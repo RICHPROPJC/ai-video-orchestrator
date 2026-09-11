@@ -71,6 +71,18 @@ export function extractJsonObject(raw: string): string {
   return text.slice(open, close + 1);
 }
 
+function isJunkSeatReply(content: string): boolean {
+  if (content.length >= 120) return false;
+  try {
+    const o = JSON.parse(extractJsonObject(content)) as Record<string, unknown>;
+    const keys = Object.keys(o);
+    if (!keys.length || (keys.length === 1 && keys[0] === "")) return true;
+    return !("sceneId" in o || "thinking" in o || "beats" in o || "shots" in o || "title" in o);
+  } catch {
+    return content.trim().length < 40;
+  }
+}
+
 function issueLines(error: unknown): string[] {
   const issues = (error as { issues?: { path?: (string | number)[]; message?: string }[] }).issues;
   if (!issues?.length) return [error instanceof Error ? error.message : String(error)];
@@ -157,6 +169,11 @@ export async function chatJson<T>(opts: {
     const message = json.choices?.[0]?.message;
     const content = message?.content ?? "";
     const reasoning = message?.reasoning_content ?? "";
+
+    if (!opts.fetchImpl && attempt < maxAttempts && isJunkSeatReply(content)) {
+      await new Promise((r) => setTimeout(r, 5000));
+      continue;
+    }
 
     let value: T | undefined;
     let errors: string[] = [];

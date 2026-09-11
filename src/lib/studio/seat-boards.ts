@@ -65,7 +65,10 @@ export async function runBoards(
   const declared = script.outline.scenes.reduce((a, s) => a + s.targetSec, 0) || 1;
   const budget = (sec: number) => (sec / declared) * opts.targetSec;
 
-  for (const scene of script.outline.scenes) {
+  for (const [i, scene] of script.outline.scenes.entries()) {
+    // qwen on litellm sometimes returns an empty JSON object if the prior scene
+    // call finished milliseconds ago; a short gap avoids that race.
+    if (i > 0 && !io.fetchImpl) await new Promise((r) => setTimeout(r, 5000));
     const beats = script.scenes.find((s) => s.sceneId === scene.id)?.beats ?? [];
     const budgetSec = budget(scene.targetSec);
     const pass = await chatJson({
