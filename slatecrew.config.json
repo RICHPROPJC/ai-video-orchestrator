@@ -1,0 +1,26 @@
+{
+  "comfyUrl": "http://127.0.0.1:8188",
+  "stills": {
+    "workflow": "workflows/u15-t2i.api.json",
+    "checkpoint": "SenseNova-U1.5-8B-MoT.safetensors"
+  },
+  "motion": {
+    "workflow": "workflows/h3-i2v.api.json",
+    "checkpoint": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+    "textEncoder": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+    "videoVae": "minimax_h3_video_vae_fp16.safetensors",
+    "audioVae": "minimax_h3_audio_vae_fp32.safetensors"
+  },
+  "tts": {
+    "endpoint": "",
+    "model": "Fun-CosyVoice3-0.5B"
+  },
+  "pictureQc": {
+    "endpoint": "",
+    "model": "sensenova/SenseNova-MARS-8B"
+  },
+  "soundQc": {
+    "endpoint": "",
+    "model": "FunAudioLLM/SenseVoiceSmall"
+  }
+}

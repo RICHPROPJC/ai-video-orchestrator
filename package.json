@@ -8,7 +8,9 @@
     "start": "next start -H 0.0.0.0 -p 43127",
     "lint": "eslint",
     "slatecrew": "tsx src/cli.ts",
-    "produce": "tsx src/cli.ts produce"
+    "produce": "tsx src/cli.ts produce",
+    "tui": "tsx src/cli.ts tui",
+    "doctor": "tsx src/cli.ts doctor"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

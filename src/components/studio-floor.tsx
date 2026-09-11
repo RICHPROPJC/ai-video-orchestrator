@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AGENT_META, type AgentId, type JobEvent, type JobRecord } from "@/lib/studio/types";
+import type { DoctorReport } from "@/lib/studio/doctor";
 import { Clapperboard, Film, Lock, Upload } from "lucide-react";
 
 const EXAMPLES = [
@@ -46,7 +47,15 @@ export function StudioFloor({
   const [language, setLanguage] = useState(initialJob?.input.language ?? "auto");
   const [job, setJob] = useState<JobRecord | null>(initialJob);
   const [events, setEvents] = useState<JobEvent[]>(initialEvents);
+  const [rack, setRack] = useState<DoctorReport | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void fetch("/api/rack")
+      .then((r) => r.json())
+      .then((d: DoctorReport) => setRack(d))
+      .catch(() => setRack(null));
+  }, []);
 
   useEffect(() => {
     if (!job?.id) return;
@@ -215,21 +224,72 @@ export function StudioFloor({
 
           <Card>
             <CardHeader className="border-b">
+              <CardTitle>Rack · 默許 Comfy :8188</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-xs">
+              <p>
+                Comfy{" "}
+                <b className={rack?.comfy.up ? "text-emerald-400" : "text-destructive"}>
+                  {rack?.comfy.up ? "UP" : "DOWN"}
+                </b>{" "}
+                {rack?.comfy.url ?? "http://127.0.0.1:8188"}
+                {rack?.comfy.error ? ` · ${rack.comfy.error}` : ""}
+              </p>
+              <p className="text-muted-foreground">
+                ffmpeg {rack?.ffmpeg ? "UP" : "?"} · blender {rack?.blender ? "UP" : "script-only"} · TUI{" "}
+                <code>npm run slatecrew -- tui &quot;brief&quot;</code>
+              </p>
+              <form
+                key={rack?.config.stills.checkpoint ?? "rack"}
+                className="space-y-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const form = e.currentTarget;
+                  const stills = String(new FormData(form).get("stills") ?? "");
+                  const motion = String(new FormData(form).get("motion") ?? "");
+                  void fetch("/api/rack", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      stills: { checkpoint: stills },
+                      motion: { checkpoint: motion },
+                    }),
+                  }).then(() => fetch("/api/rack").then((r) => r.json()).then(setRack));
+                }}
+              >
+                <label className="block text-muted-foreground">
+                  U1.5 checkpoint
+                  <Input name="stills" defaultValue={rack?.config.stills.checkpoint} className="mt-1" />
+                </label>
+                <label className="block text-muted-foreground">
+                  H3 checkpoint
+                  <Input name="motion" defaultValue={rack?.config.motion.checkpoint} className="mt-1" />
+                </label>
+                <button type="submit" className={cn(buttonVariants({ size: "sm" }))}>
+                  換模型
+                </button>
+              </form>
+              <p className="text-muted-foreground leading-relaxed">
+                唔使新 API。開你平時嗰個 Comfy，workflow 用官方 U1.5 / MiniMax H3 template，Export API 覆蓋
+                <code> workflows/*.api.json</code>。Comfy 熄咗就 studio fallback，QC 閘照行。
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="border-b">
               <CardTitle>點解係呢套 stack</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-xs leading-relaxed text-muted-foreground">
-              <p>開源交片向影片 agent，我哋對齊你而家跑緊嘅模型，而唔係泛用短視頻流水線。</p>
+              <p>搜完之後係<b className="text-foreground">組合已有最好嘅件</b>，唔係再發明一個生圖引擎。</p>
               <ul className="space-y-1.5">
-                <li><b className="text-foreground">U1.5</b> SenseNova-U1.5-8B-MoT 生圖 / 4K 編輯</li>
-                <li><b className="text-foreground">H3</b> MiniMax H3 全模態生片（FL2VA / Ref2VA）</li>
-                <li><b className="text-foreground">MARS-8B</b> SenseNova-MARS 畫檢（手腳、身份、構圖）</li>
-                <li><b className="text-foreground">SenseVoice</b> ASR + 情緒 + 聲事件 QC</li>
-                <li><b className="text-foreground">CosyVoice 3</b> TTS + 聲線 clone</li>
-                <li><b className="text-foreground">Blender</b> 場地 mark + 手腳 IK，Eevee 快出</li>
+                <li><b className="text-foreground">ComfyUI</b> 官方 /prompt · 你而家嘅 U1.5 + H3 圖</li>
+                <li><b className="text-foreground">Montaj</b> CLI = TUI = Web 同一套 command</li>
+                <li><b className="text-foreground">OpenDirector</b> 多 agent 導演檯</li>
+                <li><b className="text-foreground">MoneyPrinterTurbo</b> checkpoint / 分段閘口</li>
+                <li><b className="text-foreground">MARS-8B + SenseVoice</b> 你指定嘅聲畫 QC</li>
+                <li><b className="text-foreground">Blender IK</b> 走位、手手腳腳</li>
               </ul>
-              <p>
-                OpenDirector / MoneyPrinterTurbo / Montaj 係好參考，但冇呢條 QC 閘同 Blender 走位。呢度 studio fallback 永遠可跑；接上 endpoint 就燒真模型。
-              </p>
             </CardContent>
           </Card>
         </section>

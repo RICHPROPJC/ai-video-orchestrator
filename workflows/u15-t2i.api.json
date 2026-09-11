@@ -1,0 +1,29 @@
+{
+  "1": {
+    "class_type": "SenseNova U1 Local Loader",
+    "inputs": {
+      "model_path": "__CKPT__",
+      "device": "cuda",
+      "gguf_checkpoint": "none"
+    }
+  },
+  "2": {
+    "class_type": "SenseNova U1 Local Text to Image",
+    "inputs": {
+      "model": ["1", 0],
+      "prompt": "__PROMPT__",
+      "width": "__WIDTH__",
+      "height": "__HEIGHT__",
+      "num_steps": 50,
+      "cfg_scale": 4,
+      "seed": 11
+    }
+  },
+  "3": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "slatecrew_u15",
+      "images": ["2", 0]
+    }
+  }
+}

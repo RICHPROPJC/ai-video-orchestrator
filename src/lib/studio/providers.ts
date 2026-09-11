@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { peakAndSilence, readWavMono } from "./audio";
+import { loadConfig } from "./config";
+import { comfyMotion, comfyStill, probeComfy } from "./comfy";
 import type { CallSheet, PictureQc, Shot, SoundQc } from "./types";
 
 function env(name: string) {
@@ -8,14 +10,52 @@ function env(name: string) {
 }
 
 export function providerConfig() {
+  const file = loadConfig();
   return {
     u15: env("U15_ENDPOINT") || env("SENSENOVA_U15_URL"),
     h3: env("H3_ENDPOINT") || env("MINIMAX_H3_URL"),
-    mars: env("MARS_ENDPOINT") || env("SENSENOVA_MARS_URL"),
-    senseVoice: env("SENSEVOICE_ENDPOINT"),
-    tts: env("TTS_ENDPOINT") || env("COSYVOICE_URL"),
+    mars: env("MARS_ENDPOINT") || env("SENSENOVA_MARS_URL") || file.pictureQc.endpoint,
+    senseVoice: env("SENSEVOICE_ENDPOINT") || file.soundQc.endpoint,
+    tts: env("TTS_ENDPOINT") || env("COSYVOICE_URL") || file.tts.endpoint,
     apiKey: env("STUDIO_API_KEY") || env("OPENAI_API_KEY"),
+    comfyUrl: file.comfyUrl,
   };
+}
+
+export async function generateStill(opts: {
+  prompt: string;
+  width: number;
+  height: number;
+  outFile: string;
+}) {
+  const comfy = await probeComfy();
+  if (comfy.up) {
+    try {
+      return await comfyStill(opts);
+    } catch {
+      /* fallback HTTP / studio */
+    }
+  }
+  return generateStillHttp(opts);
+}
+
+export async function generateMotion(opts: {
+  prompt: string;
+  stillFile: string;
+  outFile: string;
+  seconds: number;
+  width: number;
+  height: number;
+}) {
+  const comfy = await probeComfy();
+  if (comfy.up) {
+    try {
+      return await comfyMotion(opts);
+    } catch {
+      /* fallback HTTP / studio */
+    }
+  }
+  return generateVideoHttp(opts);
 }
 
 async function postJson(url: string, body: unknown, apiKey?: string) {

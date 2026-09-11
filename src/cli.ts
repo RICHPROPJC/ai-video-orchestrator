@@ -1,8 +1,10 @@
 #!/usr/bin/env tsx
 import path from "node:path";
-import { runPipeline } from "./lib/studio/pipeline";
+import { runPipeline, describeFloor } from "./lib/studio/pipeline";
 import { newSlateId, writeJob, readJob, listJobs, readEvents } from "./lib/studio/store";
-import { describeFloor } from "./lib/studio/pipeline";
+import { loadConfig, setConfigPath } from "./lib/studio/config";
+import { doctor, formatDoctor } from "./lib/studio/doctor";
+import { runTui } from "./lib/studio/tui";
 import type { JobRecord, ProduceInput } from "./lib/studio/types";
 
 function arg(name: string, fallback?: string) {
@@ -12,27 +14,29 @@ function arg(name: string, fallback?: string) {
 }
 
 function help() {
-  console.log(`SlateCrew 開麥拉組 — 交付級影片 agent team CLI
+  console.log(`SlateCrew — TUI + CLI + Web，默許 ComfyUI :8188
 
 Commands
-  produce "<brief>"     Run the floor and lock a picture
-  status [slate]        Show job or latest
-  floor                 Print desks
-  serve                 Hint for the web GUI
+  tui "<brief>"              全螢幕 TUI 開工（Montaj 式 CLIP）
+  produce "<brief>"          行 log 開工
+  doctor                     探 Comfy / ffmpeg / Blender / 模型
+  models                     睇而家用緊邊個 checkpoint
+  models set <dot.path> <v>  換模型，例：stills.checkpoint foo.safetensors
+  status [slate]
+  floor
+  serve                      Web GUI :43127
 
 Flags
-  --duration 12
-  --aspect 16:9|9:16|1:1
-  --clone path/to/ref.wav
-  --lang auto|yue|zh-Hant|en
+  --duration 12  --aspect 16:9|9:16|1:1  --clone ref.wav  --lang yue
 
-Env
-  U15_ENDPOINT H3_ENDPOINT MARS_ENDPOINT SENSEVOICE_ENDPOINT TTS_ENDPOINT
-  STUDIO_API_KEY BLENDER_BIN
+Default rack（唔使新 endpoint）
+  Comfy  http://127.0.0.1:8188
+  U1.5   workflows/u15-t2i.api.json
+  H3     workflows/h3-i2v.api.json  (MiniMaxH3ImageToVideo + first_frame)
 `);
 }
 
-async function produce(brief: string) {
+async function makeJob(brief: string) {
   const id = newSlateId();
   const input: ProduceInput = {
     brief,
@@ -53,14 +57,27 @@ async function produce(brief: string) {
     outputs: { stills: [], shots: [] },
   };
   writeJob(job);
-  console.log(`\n  SLATE  ${id}`);
-  console.log(`  BRIEF  ${brief}\n`);
-  const { subscribe } = await import("./lib/studio/store");
-  subscribe(id, (e) => {
-    const tag = e.level === "pass" ? "PASS" : e.level === "fail" ? "FAIL" : e.level.toUpperCase();
-    console.log(`  [${tag.padEnd(5)}] ${e.agent.padEnd(10)} ${e.message}`);
-  });
-  await runPipeline(id, input);
+  return { id, input };
+}
+
+async function produce(brief: string, tui: boolean) {
+  const { id, input } = await makeJob(brief);
+  const rack = loadConfig();
+  if (!tui || !process.stdout.isTTY) {
+    console.log(`\n  SLATE  ${id}`);
+    console.log(`  COMFY  ${rack.comfyUrl}`);
+    console.log(`  BRIEF  ${brief}\n`);
+    const { subscribe } = await import("./lib/studio/store");
+    subscribe(id, (e) => {
+      const tag = e.level === "pass" ? "PASS" : e.level === "fail" ? "FAIL" : e.level.toUpperCase();
+      console.log(`  [${tag.padEnd(5)}] ${e.agent.padEnd(10)} ${e.message}`);
+    });
+    await runPipeline(id, input);
+  } else {
+    const running = runPipeline(id, input);
+    await runTui(id, `Comfy ${rack.comfyUrl}  stills ${rack.stills.checkpoint}`);
+    await running;
+  }
   const done = readJob(id);
   console.log(`\n  STATUS ${done?.status}  ${done?.progress}%`);
   if (done?.outputs.pictureLock) {
@@ -73,13 +90,31 @@ async function main() {
   const cmd = process.argv[2];
   if (!cmd || cmd === "help" || cmd === "-h") return help();
   if (cmd === "floor") {
-    for (const d of describeFloor()) {
-      console.log(`${d.id.padEnd(10)} ${d.label}  ${d.en}  — ${d.desk}`);
-    }
+    for (const d of describeFloor()) console.log(`${d.id.padEnd(10)} ${d.label}  ${d.en}  — ${d.desk}`);
     return;
   }
   if (cmd === "serve") {
     console.log("npm run dev   →  http://127.0.0.1:43127");
+    return;
+  }
+  if (cmd === "doctor") {
+    console.log(formatDoctor(await doctor()));
+    return;
+  }
+  if (cmd === "models") {
+    const sub = process.argv[3];
+    if (sub === "set") {
+      const key = process.argv[4];
+      const value = process.argv.slice(5).join(" ");
+      if (!key || !value) {
+        console.error("models set <dot.path> <value>");
+        process.exitCode = 1;
+        return;
+      }
+      console.log(JSON.stringify(setConfigPath(key, value), null, 2));
+      return;
+    }
+    console.log(JSON.stringify(loadConfig(), null, 2));
     return;
   }
   if (cmd === "status") {
@@ -97,8 +132,17 @@ async function main() {
       return;
     }
     console.log(JSON.stringify(job, null, 2));
-    console.log("\n--- log ---");
     for (const e of readEvents(id)) console.log(e.ts, e.agent, e.message);
+    return;
+  }
+  if (cmd === "tui") {
+    const brief = process.argv[3] || "";
+    if (!brief) {
+      console.error("tui needs a brief");
+      process.exitCode = 1;
+      return;
+    }
+    await produce(brief, true);
     return;
   }
   if (cmd === "produce") {
@@ -108,7 +152,7 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    await produce(brief);
+    await produce(brief, process.argv.includes("--tui"));
     return;
   }
   help();

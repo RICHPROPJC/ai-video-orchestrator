@@ -13,8 +13,8 @@ import {
 import { emit, readJob, writeJob } from "./store";
 import { renderBlockingSvg, renderShotSvg, sceneSize } from "./painter";
 import {
-  generateStillHttp,
-  generateVideoHttp,
+  generateMotion,
+  generateStill,
   localPictureQc,
   localSoundQc,
   marsHttp,
@@ -23,6 +23,8 @@ import {
   senseVoiceHttp,
   ttsHttp,
 } from "./providers";
+import { probeComfy } from "./comfy";
+import { loadConfig } from "./config";
 import type { AgentId, CallSheet, JobRecord, ProduceInput, ProviderTrace } from "./types";
 import { AGENT_META } from "./types";
 import { draftCallSheet } from "./writer";
@@ -76,9 +78,11 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
   if (!initial) throw new Error("missing job");
   let job: JobRecord = initial;
   const cfg = providerConfig();
+  const rack = loadConfig();
+  const comfy = await probeComfy();
   const trace: ProviderTrace = {
-    stills: cfg.u15 ? "SenseNova U1.5 HTTP" : "studio painter (U1.5 schema)",
-    motion: cfg.h3 ? "MiniMax H3 HTTP" : "studio IK motion (H3 schema)",
+    stills: comfy.up ? `ComfyUI ${rack.stills.checkpoint}` : cfg.u15 ? "SenseNova U1.5 HTTP" : "studio painter (Comfy 未開)",
+    motion: comfy.up ? `ComfyUI ${rack.motion.checkpoint}` : cfg.h3 ? "MiniMax H3 HTTP" : "studio IK motion (Comfy 未開)",
     tts: cfg.tts ? "CosyVoice HTTP" : "studio clone synth",
     senseVoice: cfg.senseVoice ? "SenseVoice HTTP" : "SenseVoice schema (local)",
     mars: cfg.mars ? "SenseNova-MARS-8B HTTP" : "MARS-8B schema (local)",
@@ -132,15 +136,23 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     ensureDir(stillDir);
     const stills: string[] = [];
     const size = sceneSize(sheet.aspect);
-    await speak("stills", "U1.5 生圖。未接 endpoint 就用 studio painter 按同一 prompt 同 blocking 出 lock still。");
+    await speak(
+      "stills",
+      comfy.up
+        ? `默許 Comfy ${comfy.url} · U1.5 workflow ${rack.stills.workflow}`
+        : `Comfy ${comfy.url} 未開（${comfy.error ?? "down"}）。Studio painter 頂住，你平時開 Comfy 就自動切真 U1.5。`,
+    );
     for (const shot of sheet.shots) {
       const out = path.join(stillDir, `${shot.id}.png`);
-      const remote = await generateStillHttp({
+      const remote = await generateStill({
         prompt: shot.stillPrompt,
         width: size.width,
         height: size.height,
         outFile: out,
-      }).catch(() => null);
+      }).catch((err) => {
+        emit(jobId, { agent: "stills", level: "warn", message: `Comfy/U1.5 miss: ${err instanceof Error ? err.message : err}` });
+        return null;
+      });
       if (!remote) {
         await raster(renderShotSvg(sheet, shot, 0.15, 1), out);
         trace.stills = "studio painter (U1.5 schema)";
@@ -184,16 +196,26 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const motionDir = path.join(jobDir(jobId), "motion");
     ensureDir(motionDir);
     const shotVideos: string[] = [];
-    await speak("motion", "H3 生片。用 U1.5 still 做 first frame / semantic bridge，動作跟 Blender mark。");
+    await speak(
+      "motion",
+      comfy.up
+        ? `H3 走 Comfy MiniMaxH3ImageToVideo，U1.5 still 做 first_frame。`
+        : "H3 Comfy 未開，用 blocking IK 出 motion 頂住。",
+    );
     for (const shot of sheet.shots) {
       const mp4 = path.join(motionDir, `${shot.id}.mp4`);
       const still = path.join(stillDir, `${shot.id}.png`);
-      const remote = await generateVideoHttp({
+      const remote = await generateMotion({
         prompt: shot.motionPrompt,
         stillFile: still,
         outFile: mp4,
         seconds: shot.durationSec,
-      }).catch(() => null);
+        width: size.width,
+        height: size.height,
+      }).catch((err) => {
+        emit(jobId, { agent: "motion", level: "warn", message: `Comfy/H3 miss: ${err instanceof Error ? err.message : err}` });
+        return null;
+      });
       if (!remote) {
         const framesDir = path.join(motionDir, shot.id);
         ensureDir(framesDir);

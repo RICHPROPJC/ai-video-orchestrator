@@ -1,0 +1,55 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "__CKPT__",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "__TEXT_ENCODER__",
+      "type": "stable_diffusion"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "__VIDEO_VAE__"
+    }
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__IMAGE__"
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["2", 0],
+      "text": "__PROMPT__"
+    }
+  },
+  "6": {
+    "class_type": "MiniMaxH3ImageToVideo",
+    "inputs": {
+      "model": ["1", 0],
+      "positive": ["5", 0],
+      "vae": ["3", 0],
+      "first_frame": ["4", 0],
+      "width": "__WIDTH__",
+      "height": "__HEIGHT__",
+      "duration": "__DURATION__",
+      "prompt": "__PROMPT__"
+    }
+  },
+  "7": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "filename_prefix": "slatecrew_h3",
+      "video": ["6", 0]
+    }
+  }
+}
