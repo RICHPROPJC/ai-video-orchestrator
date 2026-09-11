@@ -20,7 +20,7 @@ import { snapDurationToFrames, wavSeconds } from "./frame-grid";
 import { buildCutPlan, type CutPlan } from "./cut-plan";
 import { checkGate } from "./concat-gate";
 import { writeAnchors } from "./dhash-anchors";
-import { blockoutFromPlug, extractFrame0, renderBlockout } from "./blockout";
+import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "./blockout";
 import { keyframeEditPrompt, keyframeRequire } from "./keyframe-prompt";
 import { buildProse, validateProse, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
@@ -202,6 +202,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     for (const shot of continuity.boards) {
       const outMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
       const wav = wavByShot.get(shot.id)!;
+      const frames = snapDurationToFrames(await wavSeconds(wav));
       if (input.blockoutDir) {
         const plugged = await blockoutFromPlug(input.blockoutDir, shot.id, wav);
         fs.copyFileSync(plugged, outMp4);
@@ -210,15 +211,17 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         const done = await renderBlockout({
           sheet: timed,
           shot,
-          frames: snapDurationToFrames(await wavSeconds(wav)),
+          frames,
           outMp4,
         });
         trace.blender = `blender-workbench ${done.frames}f`;
       }
-      await extractFrame0(outMp4, path.join(blockoutDir, `${shot.id}.f0.png`));
+      const f0png = path.join(blockoutDir, `${shot.id}.f0.png`);
+      await extractFrame0(outMp4, f0png, stillFrameFor(shot, frames));
+      await assertFiguresVisible(f0png, shot);
       await writeAnchors(outMp4, path.join(blockoutDir, `${shot.id}.anchors.json`));
       blockouts.push(outMp4);
-      await speak("layout", `${shot.id} blockout ${snapDurationToFrames(await wavSeconds(wav))}f（wav 時鐘）`);
+      await speak("layout", `${shot.id} blockout ${frames}f（wav 時鐘）`);
     }
     job = patch(job, {
       providers: trace,
