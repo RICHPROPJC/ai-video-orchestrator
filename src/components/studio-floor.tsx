@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import {
   Select,
@@ -354,16 +353,31 @@ export function StudioFloor({
           </Card>
 
           <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
-            <Tabs value={tab} onValueChange={(value) => setTab(String(value))}>
-              <TabsList className="flex h-auto min-h-8 w-full flex-wrap justify-start gap-1">
-                <TabsTrigger value="board">分鏡</TabsTrigger>
-                <TabsTrigger value="plan">計劃</TabsTrigger>
-                <TabsTrigger value="block">走位</TabsTrigger>
-                <TabsTrigger value="qc">QC</TabsTrigger>
-                <TabsTrigger value="lock">成片</TabsTrigger>
-              </TabsList>
-              <TabsContent value="board" className="mt-3 min-h-48">
-                <div className="space-y-3">
+            <div>
+              <div className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
+                {(
+                  [
+                    ["board", "分鏡"],
+                    ["plan", "計劃"],
+                    ["block", "走位"],
+                    ["qc", "QC"],
+                    ["lock", "成片"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setTab(id)}
+                    className={cn(
+                      buttonVariants({ variant: tab === id ? "default" : "ghost", size: "sm" }),
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {tab === "board" ? (
+                <div className="mt-3 min-h-48 space-y-3">
                   {job?.continuity ? (
                     <p className="text-xs text-muted-foreground">
                       Cut = boards：{job.continuity.cut.join(" → ")} · 同一 SH id，唔另開場。
@@ -383,9 +397,9 @@ export function StudioFloor({
                   )}
                   </div>
                 </div>
-              </TabsContent>
-              <TabsContent value="plan" className="mt-3 min-h-48">
-                <div className="space-y-3 text-sm">
+              ) : null}
+              {tab === "plan" ? (
+                <div className="mt-3 min-h-48 space-y-3 text-sm">
                   <p className="text-xs text-muted-foreground">
                     ViMax 式 DAG。JSON 存在 <code>data/jobs/{job?.slate ?? "SLATE"}/</code>。Embed / rerank 只讀呢份 vault.json。
                   </p>
@@ -437,8 +451,9 @@ export function StudioFloor({
                     </ul>
                   ) : null}
                 </div>
-              </TabsContent>
-              <TabsContent value="block" className="mt-3 min-h-48">
+              ) : null}
+              {tab === "block" ? (
+                <div className="mt-3 min-h-48">
                 {job?.outputs.blockingPreview ? (
                   <div className="space-y-3">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -454,9 +469,10 @@ export function StudioFloor({
                 ) : (
                   <Empty label="Layout agent 未出 mark。" />
                 )}
-              </TabsContent>
-              <TabsContent value="qc" className="mt-3 min-h-48">
-                <div className="grid gap-3 md:grid-cols-2">
+                </div>
+              ) : null}
+              {tab === "qc" ? (
+                <div className="mt-3 min-h-48 grid gap-3 md:grid-cols-2">
                   <QcCard title="SenseVoice 聲檢" data={job?.soundQc} />
                   <QcCard title="MARS-8B 畫檢（stills）" data={job?.pictureQcStills} />
                   <QcCard title="MARS-8B 畫檢（video）" data={job?.pictureQcVideo} />
@@ -475,8 +491,9 @@ export function StudioFloor({
                     </CardContent>
                   </Card>
                 </div>
-              </TabsContent>
-              <TabsContent value="lock" className="mt-3 min-h-48">
+              ) : null}
+              {tab === "lock" ? (
+                <div className="mt-3 min-h-48">
                 {job?.outputs.pictureLock ? (
                   <div className="space-y-3">
                     <video
@@ -524,8 +541,9 @@ export function StudioFloor({
                 ) : (
                   <Empty label="未有 picture lock。" />
                 )}
-              </TabsContent>
-            </Tabs>
+                </div>
+              ) : null}
+            </div>
 
             <Card className="min-h-72">
               <CardHeader className="border-b">
