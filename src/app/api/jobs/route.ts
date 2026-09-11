@@ -33,6 +33,7 @@ export async function POST(req: Request) {
       aspect: (String(form.get("aspect") ?? "16:9") as ProduceInput["aspect"]) || "16:9",
       language: (String(form.get("language") ?? "auto") as ProduceInput["language"]) || "auto",
       voiceClonePath,
+      wavDir: String(form.get("wavDir") ?? ""),
     };
   } else {
     input = (await req.json()) as ProduceInput;
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
     input,
     progress: 0,
     retries: { stills: 0, voice: 0, motion: 0 },
-    outputs: { stills: [], shots: [] },
+    outputs: { stills: [], shots: [], blockout: [], receipts: [] },
   };
   writeJob(job);
   void runPipeline(id, input);

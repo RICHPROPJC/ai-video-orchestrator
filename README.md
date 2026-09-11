@@ -1,6 +1,6 @@
 # SlateCrew / 開麥拉組
 
-同一條交片流水線，三個皮：**TUI · CLI · Web GUI**。生圖生片**默許你已經喺跑嘅 ComfyUI**（`http://127.0.0.1:8188`）。
+同一條交片流水線，三個皮：**TUI · CLI · Web GUI**。生圖行 **U1.5 `/edit` node0 `:8097`**、生片行 **H3 R2V node1 `:8188`**；聲軌係 **`--wav-dir` wav plug**（每鏡 `SHxx.wav`，可加 `spine.wav`）。
 
 ## 點解係 dispatch + 分鏡專職（跟 ViMax，但唔食舊 project）
 

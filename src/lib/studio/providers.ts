@@ -2,58 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { peakAndSilence, readWavMono } from "./audio";
 import { loadConfig } from "./config";
-import { comfyStill, probeComfy } from "./comfy";
-import type { CallSheet, PictureQc, Shot, SoundQc } from "./types";
+import type { CallSheet, PictureQc, SoundQc } from "./types";
 
-function env(name: string) {
-  return process.env[name]?.trim() || "";
-}
-
-export function providerConfig() {
-  const file = loadConfig();
-  return {
-    u15: env("U15_ENDPOINT") || env("SENSENOVA_U15_URL"),
-    h3: env("H3_ENDPOINT") || env("MINIMAX_H3_URL"),
-    mars: env("MARS_ENDPOINT") || env("SENSENOVA_MARS_URL") || file.pictureQc.endpoint,
-    senseVoice: env("SENSEVOICE_ENDPOINT") || file.soundQc.endpoint,
-    tts: env("TTS_ENDPOINT") || env("COSYVOICE_URL") || file.tts.endpoint,
-    apiKey: env("STUDIO_API_KEY") || env("OPENAI_API_KEY"),
-  };
-}
-
-export async function generateStill(opts: {
-  prompt: string;
-  width: number;
-  height: number;
-  outFile: string;
-}) {
-  const comfyUrl = loadConfig().stills.comfyUrl;
-  if (comfyUrl) {
-    const comfy = await probeComfy(comfyUrl);
-    if (comfy.up) {
-      try {
-        return await comfyStill(comfyUrl, opts);
-      } catch {
-        /* fallback HTTP / studio */
-      }
-    }
-  }
-  return generateStillHttp(opts);
-}
-
-export async function generateMotion(opts: {
-  prompt: string;
-  stillFile: string;
-  outFile: string;
-  seconds: number;
-  width: number;
-  height: number;
-}) {
-  return generateVideoHttp(opts);
-}
-
-async function postJson(url: string, body: unknown, apiKey?: string) {
-  const res = await fetch(url, {
+function postJson(url: string, body: unknown, apiKey?: string) {
+  return fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -62,81 +14,29 @@ async function postJson(url: string, body: unknown, apiKey?: string) {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(120_000),
   });
-  if (!res.ok) throw new Error(`${url} ${res.status}`);
-  return res;
 }
 
-export async function generateStillHttp(opts: {
-  prompt: string;
-  width: number;
-  height: number;
-  outFile: string;
-}) {
-  const cfg = providerConfig();
-  if (!cfg.u15) return null;
-  const res = await postJson(cfg.u15, {
-    model: "sensenova/SenseNova-U1.5-8B-MoT",
-    prompt: opts.prompt,
-    width: opts.width,
-    height: opts.height,
-  }, cfg.apiKey);
-  const ctype = res.headers.get("content-type") ?? "";
-  if (ctype.includes("json")) {
-    const json = (await res.json()) as { image_base64?: string; url?: string };
-    if (json.image_base64) {
-      fs.writeFileSync(opts.outFile, Buffer.from(json.image_base64, "base64"));
-      return "u15-http";
-    }
-    if (json.url) {
-      const img = await fetch(json.url);
-      fs.writeFileSync(opts.outFile, Buffer.from(await img.arrayBuffer()));
-      return "u15-http";
-    }
-  } else {
-    fs.writeFileSync(opts.outFile, Buffer.from(await res.arrayBuffer()));
-    return "u15-http";
-  }
-  return null;
-}
-
-export async function generateVideoHttp(opts: {
-  prompt: string;
-  stillFile: string;
-  outFile: string;
-  seconds: number;
-}) {
-  const cfg = providerConfig();
-  if (!cfg.h3) return null;
-  const still = fs.readFileSync(opts.stillFile).toString("base64");
-  const res = await postJson(cfg.h3, {
-    model: "MiniMax-H3",
-    prompt: opts.prompt,
-    first_frame_b64: still,
-    duration: opts.seconds,
-    semantic_bridge: "u1.5",
-  }, cfg.apiKey);
-  const buf = Buffer.from(await res.arrayBuffer());
-  fs.writeFileSync(opts.outFile, buf);
-  return "h3-http";
+function apiKey() {
+  return process.env.STUDIO_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim() || undefined;
 }
 
 export async function ttsHttp(opts: { text: string; reference?: string; outFile: string }) {
-  const cfg = providerConfig();
-  if (!cfg.tts) return null;
-  const res = await postJson(cfg.tts, {
-    model: "Fun-CosyVoice3-0.5B",
+  const cfg = loadConfig();
+  if (!cfg.tts.endpoint) return null;
+  const res = await postJson(cfg.tts.endpoint, {
+    model: cfg.tts.model,
     text: opts.text,
     reference: opts.reference,
-  }, cfg.apiKey);
+  }, apiKey());
   fs.writeFileSync(opts.outFile, Buffer.from(await res.arrayBuffer()));
   return "cosyvoice-http";
 }
 
 export async function senseVoiceHttp(audioFile: string): Promise<Partial<SoundQc> | null> {
-  const cfg = providerConfig();
-  if (!cfg.senseVoice) return null;
+  const cfg = loadConfig();
+  if (!cfg.soundQc.endpoint) return null;
   const b64 = fs.readFileSync(audioFile).toString("base64");
-  const res = await postJson(cfg.senseVoice, { audio_b64: b64, language: "auto" }, cfg.apiKey);
+  const res = await postJson(cfg.soundQc.endpoint, { audio_b64: b64, language: "auto" }, apiKey());
   const json = (await res.json()) as {
     text?: string;
     emotion?: string;
@@ -150,26 +50,6 @@ export async function senseVoiceHttp(audioFile: string): Promise<Partial<SoundQc
     events: json.event ? [json.event] : ["Speech"],
     language: json.language ?? "zh",
   };
-}
-
-export async function marsHttp(opts: {
-  file: string;
-  question: string;
-}): Promise<{ notes: string; score: number } | null> {
-  const cfg = providerConfig();
-  if (!cfg.mars) return null;
-  const b64 = fs.readFileSync(opts.file).toString("base64");
-  const res = await postJson(
-    cfg.mars,
-    {
-      model: "sensenova/SenseNova-MARS-8B",
-      image_b64: b64,
-      question: opts.question,
-    },
-    cfg.apiKey,
-  );
-  const json = (await res.json()) as { text?: string; score?: number };
-  return { notes: json.text ?? "", score: json.score ?? 0.8 };
 }
 
 function tokenSet(s: string) {
@@ -209,7 +89,7 @@ export function localSoundQc(opts: {
   return {
     provider: "sensevoice-local-schema",
     transcript,
-    language: /[\u3400-\u9fff]/.test(opts.expectedText) ? "yue/zh" : "en",
+    language: /[㐀-鿿]/.test(opts.expectedText) ? "yue/zh" : "en",
     emotion: opts.expectedEmotion,
     events: ["Speech"],
     wer: w,
@@ -222,6 +102,8 @@ export function localSoundQc(opts: {
   };
 }
 
+/** plan-geometry pre-check only — the delivery gate for stills is the blind
+ *  MARS photo QC (photo-qc.ts), never this heuristic alone */
 export function localPictureQc(opts: {
   stills: string[];
   sheet: CallSheet;
@@ -285,11 +167,7 @@ export function localPictureQc(opts: {
     artifacts,
     pass: overall >= 0.72 && !issues.some((i) => i.severity === "block"),
     notes:
-      "MARS-8B schema: crop hands/feet, check identity across shots, composition vs camera marks, artifact/empty-frame scan. Plug SenseNova-MARS-8B endpoint to replace local heuristics.",
+      "plan-geometry pre-check (marks/crop/feet). The delivery gate is blind MARS photo QC per still.",
     issues,
   };
-}
-
-export function marsQuestion(shot: Shot) {
-  return `Inspect this ${shot.size} frame. Score identity, composition, extra/missing fingers, planted feet, rain continuity, and compression artifacts. Return issues if the shot cannot be delivered. Action: ${shot.action}`;
 }

@@ -3,7 +3,8 @@ export type JobStatus =
   | "running"
   | "blocked"
   | "locked"
-  | "failed";
+  | "failed"
+  | "dry-run";
 
 export type AgentId =
   | "producer"
@@ -35,6 +36,11 @@ export type ProduceInput = {
   aspect?: "16:9" | "9:16" | "1:1";
   language?: "auto" | "zh-Hant" | "zh-Hans" | "yue" | "en";
   voiceClonePath?: string;
+  wavDir: string;
+  portraitsDir?: string;
+  blockoutDir?: string;
+  gapSec?: number;
+  dryRun?: boolean;
 };
 
 export type JobEvent = {
@@ -171,6 +177,8 @@ export type JobRecord = {
   outputs: {
     stills: string[];
     shots: string[];
+    blockout: string[];
+    receipts: string[];
     voice?: string;
     blenderScript?: string;
     blockingPreview?: string;
@@ -180,6 +188,8 @@ export type JobRecord = {
     narrativePlan?: string;
     vault?: string;
     qcReport?: string;
+    cutPlan?: string;
+    concatGate?: string;
   };
   error?: string;
 };

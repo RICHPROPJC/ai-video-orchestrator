@@ -29,6 +29,11 @@ Commands
 
 Flags
   --duration 12  --aspect 16:9|9:16|1:1  --clone ref.wav  --lang yue
+  --wav-dir <dir>       必需：每鏡 SHxx.wav（可加 spine.wav 全片聲軌）
+  --portraits <dir>     角色肖像 A.png/B.png（首次出場 /edit 參考圖）
+  --blockout-dir <dir>  預渲染 blockout SHxx.mp4（864x480 24fps，frames=wav snap）
+  --gap <sec>           鏡與鏡之間靜音（默許 0）
+  --dry-run             行到 prompt/receipt 為止，唔 POST 任何機
 
 Rack（two-host truth）
   U1.5 /edit  <stills.url>        node0 :8097
@@ -45,6 +50,11 @@ async function makeJob(brief: string) {
     aspect: (arg("--aspect", "16:9") as ProduceInput["aspect"]) || "16:9",
     language: (arg("--language", arg("--lang", "auto")) as ProduceInput["language"]) || "auto",
     voiceClonePath: arg("--clone"),
+    wavDir: arg("--wav-dir") ?? "",
+    portraitsDir: arg("--portraits"),
+    blockoutDir: arg("--blockout-dir"),
+    gapSec: Number(arg("--gap", "0")),
+    dryRun: process.argv.includes("--dry-run"),
   };
   const job: JobRecord = {
     id,
@@ -55,13 +65,17 @@ async function makeJob(brief: string) {
     input,
     progress: 0,
     retries: { stills: 0, voice: 0, motion: 0 },
-    outputs: { stills: [], shots: [] },
+    outputs: { stills: [], shots: [], blockout: [], receipts: [] },
   };
   writeJob(job);
   return { id, input };
 }
 
 async function produce(brief: string, tui: boolean) {
+  if (!arg("--wav-dir")) {
+    console.error('produce/tui 需要 --wav-dir <dir>（每鏡 SHxx.wav，可加 spine.wav）');
+    process.exit(1);
+  }
   const { id, input } = await makeJob(brief);
   const rack = loadConfig();
   if (!tui || !process.stdout.isTTY) {

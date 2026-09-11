@@ -24,15 +24,11 @@ export type H3SubmitReceipt = {
 };
 
 function writeReceipt(file: string, record: H3SubmitReceipt): string {
-  // a real-render receipt is never clobbered by a dry-run one
+  // a real-render receipt is never clobbered by a dry-run one: only a file
+  // that says "dry_run": true (a previous dry receipt) may be overwritten
   let out = file;
-  if (fs.existsSync(file)) {
-    try {
-      const prev = JSON.parse(fs.readFileSync(file, "utf8")) as { dry_run?: boolean };
-      if (prev.dry_run === false) out = file.replace(/\.json$/, "_dryrun.json");
-    } catch {
-      out = file.replace(/\.json$/, "_dryrun.json"); // unreadable receipt: do not overwrite it either
-    }
+  if (fs.existsSync(file) && !/"dry_run":\s*true/.test(fs.readFileSync(file, "utf8"))) {
+    out = file.replace(/\.json$/, "_dryrun.json");
   }
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(record, null, 2));
