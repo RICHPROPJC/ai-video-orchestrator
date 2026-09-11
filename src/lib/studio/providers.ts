@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { peakAndSilence, readWavMono } from "./audio";
 import { loadConfig } from "./config";
-import { comfyMotion, comfyStill, probeComfy } from "./comfy";
+import { comfyStill, probeComfy } from "./comfy";
 import type { CallSheet, PictureQc, Shot, SoundQc } from "./types";
 
 function env(name: string) {
@@ -49,15 +49,6 @@ export async function generateMotion(opts: {
   width: number;
   height: number;
 }) {
-  const comfyUrl = loadConfig().motion.comfyUrl;
-  const comfy = await probeComfy(comfyUrl);
-  if (comfy.up) {
-    try {
-      return await comfyMotion(comfyUrl, opts);
-    } catch {
-      /* fallback HTTP / studio */
-    }
-  }
   return generateVideoHttp(opts);
 }
 

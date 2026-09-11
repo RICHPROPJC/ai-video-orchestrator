@@ -12,7 +12,6 @@ export type SlateConfig = {
   };
   motion: {
     comfyUrl: string;
-    workflow: string;
     checkpoint: string;
     fl2va: string;
     turboLora: string;
@@ -41,7 +40,6 @@ const DEFAULTS: SlateConfig = {
   },
   motion: {
     comfyUrl: "http://100.127.176.64:8188",
-    workflow: "workflows/h3-i2v.api.json",
     checkpoint: "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
     fl2va: "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
     turboLora: "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
