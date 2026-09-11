@@ -1,6 +1,6 @@
 import type { CallSheet } from "./types";
 
-export function blenderBlockingScript(sheet: CallSheet) {
+function sceneJson(sheet: CallSheet) {
   const chars = JSON.stringify(
     sheet.characters.map((c) => ({ id: c.id, name: c.name, color: c.palette[0] })),
     null,
@@ -17,16 +17,13 @@ export function blenderBlockingScript(sheet: CallSheet) {
     null,
     2,
   );
-  return `# SlateCrew layout agent — Blender 4.x
-# Fast blocking: scene marks, camera, humanoid IK (hands + feet).
-# blender -b -P blocking.py
-import json, math
+  return { chars, shots };
+}
+
+// rig/marks python — shared verbatim by the blocking preview and the blockout render
+const PY_HELPERS = `import json, math, sys
 import bpy
 from mathutils import Vector
-
-CHARS = json.loads(${JSON.stringify(chars)})
-SHOTS = json.loads(${JSON.stringify(shots)})
-TITLE = ${JSON.stringify(sheet.title)}
 
 def clear():
     bpy.ops.object.select_all(action='SELECT')
@@ -101,7 +98,7 @@ def key_empty(obj, frame, loc):
     obj.location = loc
     obj.keyframe_insert("location", frame=frame)
 
-def build_shot(shot, frame0):
+def build_shot(shot, frame0, frames=None):
     cam_data = bpy.data.cameras.new(shot["id"] + "_cam")
     cam_data.lens = shot["camera"]["lensMm"]
     cam = bpy.data.objects.new(shot["id"] + "_Camera", cam_data)
@@ -112,7 +109,7 @@ def build_shot(shot, frame0):
     direction = Vector((look["x"]-p["x"], look["y"]-p["y"], look["z"]-p["z"]))
     cam.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
     fps = 24
-    frames = int(shot["duration"] * fps)
+    frames = int(frames if frames is not None else shot["duration"] * fps)
     for mark in shot["marks"]:
         ch = next((c for c in CHARS if c["id"] == mark["characterId"]), {"name": mark["characterId"], "color": "#e2b15c"})
         add_mark(f"{shot['id']}_{ch['name']}_start", mark["start"]["x"], mark["start"]["y"], ch["color"])
@@ -145,6 +142,17 @@ def build_shot(shot, frame0):
                         1.12 + (0.15 if gait == "reach" else 0.0)
                     )))
     return frame0 + frames
+`;
+
+export function blenderBlockingScript(sheet: CallSheet) {
+  const { chars, shots } = sceneJson(sheet);
+  return `# SlateCrew layout agent — Blender 4.x
+# Fast blocking: scene marks, camera, humanoid IK (hands + feet).
+# blender -b -P blocking.py
+${PY_HELPERS}
+CHARS = json.loads(${JSON.stringify(chars)})
+SHOTS = json.loads(${JSON.stringify(shots)})
+TITLE = ${JSON.stringify(sheet.title)}
 
 def main():
     clear()
@@ -163,6 +171,58 @@ def main():
     scene.render.resolution_x = 1280
     scene.render.resolution_y = 720
     print("SlateCrew blocking ready:", TITLE, "frames", f)
+
+main()
+`;
+}
+
+/** per-shot grey WORKBENCH blockout: own camera active, frames set by the wav
+ *  snap, PNG sequence for ffmpeg. argv after `--`: --frames --out --width --height --fps */
+export function blenderBlockoutScript(sheet: CallSheet, shotId: string) {
+  const { chars, shots } = sceneJson(sheet);
+  return `# SlateCrew blockout render — grey WORKBENCH, one shot, one camera.
+# blender -b --threads 8 -P blockout.py -- --frames 48 --out DIR --width 864 --height 480 --fps 24
+${PY_HELPERS}
+CHARS = json.loads(${JSON.stringify(chars)})
+SHOTS = json.loads(${JSON.stringify(shots)})
+SHOT_ID = ${JSON.stringify(shotId)}
+
+def main():
+    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    def arg(name, default):
+        return argv[argv.index(name) + 1] if name in argv else default
+    frames = int(arg("--frames", "48"))
+    out_dir = arg("--out", "/tmp/slatecrew_blockout")
+    width = int(arg("--width", "864"))
+    height = int(arg("--height", "480"))
+    fps = int(arg("--fps", "24"))
+
+    shot = next((s for s in SHOTS if s["id"] == SHOT_ID), None)
+    if shot is None:
+        raise SystemExit("no such shot: " + SHOT_ID)
+
+    clear()
+    make_ground()
+    bpy.ops.object.light_add(type='AREA', location=(2, -2, 4))
+    bpy.context.active_object.data.energy = 250
+    bpy.context.active_object.data.size = 3
+
+    build_shot(shot, 1, frames)
+    bpy.context.scene.camera = bpy.data.objects[shot["id"] + "_Camera"]
+
+    scene = bpy.context.scene
+    scene.frame_start = 1
+    scene.frame_end = frames
+    scene.render.engine = "BLENDER_WORKBENCH"
+    scene.display.shading.light = "STUDIO"
+    scene.display.shading.color_type = "MATERIAL"
+    scene.render.fps = fps
+    scene.render.resolution_x = width
+    scene.render.resolution_y = height
+    scene.render.image_settings.file_format = "PNG"
+    scene.render.filepath = out_dir + "/frame_"
+    bpy.ops.render.render(animation=True)
+    print("SlateCrew blockout rendered:", SHOT_ID, frames, "frames ->", out_dir)
 
 main()
 `;
