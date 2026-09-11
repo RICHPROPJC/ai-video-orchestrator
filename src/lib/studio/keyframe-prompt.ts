@@ -20,8 +20,9 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
   });
   const prop = shot.props?.[0];
   if (prop) {
+    // "one blade, one tool" — U1.5's default farm tool is a multi-tine rake
     lines.push(
-      `人偶手中／兩人之間嘅長條係${prop.name}：木製長犁樑弧形斜落，前端鐵犁鏵插入壟土；唔係${prop.forbid.join("、")}。`,
+      `人偶手中／兩人之間嘅長條係${prop.name}：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具，背景冇任何其他工具；唔係${prop.forbid.join("、")}。`,
     );
   }
   lines.push(
