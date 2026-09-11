@@ -13,28 +13,29 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const contentType = req.headers.get("content-type") ?? "";
-  let input: ProduceInput;
-  let cloneTemp: string | undefined;
   const id = newSlateId();
+  let input: ProduceInput;
+  let wantsRedirect = false;
 
-  if (contentType.includes("multipart/form-data")) {
+  if (contentType.includes("multipart/form-data") || contentType.includes("application/x-www-form-urlencoded")) {
     const form = await req.formData();
+    wantsRedirect = String(form.get("_redirect") ?? "") === "1";
     const file = form.get("clone");
+    let voiceClonePath: string | undefined;
     if (file instanceof File && file.size > 0) {
       const buf = Buffer.from(await file.arrayBuffer());
-      cloneTemp = jobFile(id, "audio", "clone-ref.wav");
-      fs.writeFileSync(cloneTemp, buf);
+      voiceClonePath = jobFile(id, "audio", "clone-ref.wav");
+      fs.writeFileSync(voiceClonePath, buf);
     }
     input = {
       brief: String(form.get("brief") ?? ""),
       durationSec: Number(form.get("durationSec") ?? 12) || 12,
       aspect: (String(form.get("aspect") ?? "16:9") as ProduceInput["aspect"]) || "16:9",
       language: (String(form.get("language") ?? "auto") as ProduceInput["language"]) || "auto",
-      voiceClonePath: cloneTemp,
+      voiceClonePath,
     };
   } else {
-    const body = (await req.json()) as ProduceInput;
-    input = body;
+    input = (await req.json()) as ProduceInput;
   }
 
   if (!input.brief?.trim()) {
@@ -54,5 +55,11 @@ export async function POST(req: Request) {
   };
   writeJob(job);
   void runPipeline(id, input);
+
+  if (wantsRedirect) {
+    const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "127.0.0.1:43127";
+    const proto = req.headers.get("x-forwarded-proto") || "http";
+    return NextResponse.redirect(`${proto}://${host}/?slate=${id}`, 303);
+  }
   return NextResponse.json(job);
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readJob } from "@/lib/studio/store";
+import { readEvents, readJob } from "@/lib/studio/store";
 
 export const runtime = "nodejs";
 
@@ -10,5 +10,5 @@ export async function GET(
   const { id } = await ctx.params;
   const job = readJob(id);
   if (!job) return NextResponse.json({ error: "not found" }, { status: 404 });
-  return NextResponse.json(job);
+  return NextResponse.json({ ...job, events: readEvents(id) });
 }

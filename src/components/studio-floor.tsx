@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,57 +31,55 @@ function media(id: string, rel?: string) {
   return `/api/media/${id}/${rel}`;
 }
 
-export function StudioFloor() {
-  const [brief, setBrief] = useState(EXAMPLES[0] ?? "");
-  const [duration, setDuration] = useState("12");
-  const [aspect, setAspect] = useState("16:9");
-  const [language, setLanguage] = useState("auto");
-  const [clone, setClone] = useState<File | null>(null);
-  const [job, setJob] = useState<JobRecord | null>(null);
-  const [events, setEvents] = useState<JobEvent[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function StudioFloor({
+  initialJob,
+  initialEvents,
+  recents,
+}: {
+  initialJob: JobRecord | null;
+  initialEvents: JobEvent[];
+  recents: JobRecord[];
+}) {
+  const [brief, setBrief] = useState(initialJob?.input.brief || EXAMPLES[0] || "");
+  const [duration, setDuration] = useState(String(initialJob?.input.durationSec ?? 12));
+  const [aspect, setAspect] = useState(initialJob?.input.aspect ?? "16:9");
+  const [language, setLanguage] = useState(initialJob?.input.language ?? "auto");
+  const [job, setJob] = useState<JobRecord | null>(initialJob);
+  const [events, setEvents] = useState<JobEvent[]>(initialEvents);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!job?.id) return;
-    setEvents([]);
+    let stop = false;
     const src = new EventSource(`/api/jobs/${job.id}/events`);
     src.addEventListener("log", (e) => {
       const ev = JSON.parse((e as MessageEvent).data) as JobEvent;
-      setEvents((prev) => [...prev, ev]);
+      setEvents((prev) => (prev.some((p) => p.ts === ev.ts && p.message === ev.message) ? prev : [...prev, ev]));
     });
     src.addEventListener("job", (e) => {
       setJob(JSON.parse((e as MessageEvent).data) as JobRecord);
     });
-    src.onerror = () => src.close();
-    return () => src.close();
+    const poll = window.setInterval(async () => {
+      if (stop) return;
+      const res = await fetch(`/api/jobs/${job.id}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as JobRecord & { events?: JobEvent[] };
+      setJob(data);
+      if (data.events?.length) setEvents(data.events);
+      if (data.status === "locked" || data.status === "failed" || data.status === "blocked") {
+        window.clearInterval(poll);
+      }
+    }, 1000);
+    return () => {
+      stop = true;
+      src.close();
+      window.clearInterval(poll);
+    };
   }, [job?.id]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [events.length]);
-
-  async function produce() {
-    setBusy(true);
-    setError(null);
-    setEvents([]);
-    const form = new FormData();
-    form.set("brief", brief);
-    form.set("durationSec", duration);
-    form.set("aspect", aspect);
-    form.set("language", language);
-    if (clone) form.set("clone", clone);
-    const res = await fetch("/api/jobs", { method: "POST", body: form });
-    const data = (await res.json()) as JobRecord & { error?: string };
-    if (!res.ok) {
-      setError(data.error ?? "開 job 失敗");
-      setBusy(false);
-      return;
-    }
-    setJob(data);
-    setBusy(false);
-  }
 
   const running = job?.status === "running" || job?.status === "queued";
   const desks = useMemo(() => Object.entries(AGENT_META) as [AgentId, (typeof AGENT_META)[AgentId]][], []);
@@ -121,71 +120,96 @@ export function StudioFloor() {
                 Brief 入去，十一張檯會自己分場、走位、生圖、生片、配音同雙重 QC。未過閘唔 stamp picture lock。
               </p>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <Textarea
-                value={brief}
-                onChange={(e) => setBrief(e.target.value)}
-                className="min-h-36 text-[15px] leading-relaxed"
-              />
-              <div className="flex flex-wrap gap-2">
-                {EXAMPLES.map((ex) => (
-                  <Button key={ex} variant="outline" size="xs" onClick={() => setBrief(ex)}>
-                    {ex.slice(0, 10)}…
-                  </Button>
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-2">
+            <CardContent>
+              <form action="/api/jobs" method="post" encType="multipart/form-data" className="space-y-3">
+                <input type="hidden" name="_redirect" value="1" />
+                <input type="hidden" name="aspect" value={aspect} />
+                <input type="hidden" name="language" value={language} />
+                <input type="hidden" name="durationSec" value={duration} />
+                <Textarea
+                  name="brief"
+                  required
+                  value={brief}
+                  onChange={(e) => setBrief(e.target.value)}
+                  className="min-h-36 text-[15px] leading-relaxed"
+                />
+                <div className="flex flex-wrap gap-2">
+                  {EXAMPLES.map((ex) => (
+                    <button
+                      key={ex}
+                      type="button"
+                      className={cn(buttonVariants({ variant: "outline", size: "xs" }))}
+                      onClick={() => setBrief(ex)}
+                    >
+                      {ex.slice(0, 10)}…
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="space-y-1 text-xs text-muted-foreground">
+                    秒數
+                    <Input name="durationSec" value={duration} onChange={(e) => setDuration(e.target.value)} />
+                  </label>
+                  <label className="space-y-1 text-xs text-muted-foreground">
+                    畫面
+                    <Select value={aspect} onValueChange={(v) => v && setAspect(v)}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="16:9">16:9 橫</SelectItem>
+                        <SelectItem value="9:16">9:16 直</SelectItem>
+                        <SelectItem value="1:1">1:1</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </label>
+                </div>
                 <label className="space-y-1 text-xs text-muted-foreground">
-                  秒數
-                  <Input value={duration} onChange={(e) => setDuration(e.target.value)} />
-                </label>
-                <label className="space-y-1 text-xs text-muted-foreground">
-                  畫面
-                  <Select value={aspect} onValueChange={(v) => v && setAspect(v)}>
+                  語言
+                  <Select value={language} onValueChange={(v) => v && setLanguage(v)}>
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="16:9">16:9 橫</SelectItem>
-                      <SelectItem value="9:16">9:16 直</SelectItem>
-                      <SelectItem value="1:1">1:1</SelectItem>
+                      <SelectItem value="auto">自動</SelectItem>
+                      <SelectItem value="yue">粵語</SelectItem>
+                      <SelectItem value="zh-Hant">繁中</SelectItem>
+                      <SelectItem value="en">English</SelectItem>
                     </SelectContent>
                   </Select>
                 </label>
-              </div>
-              <label className="space-y-1 text-xs text-muted-foreground">
-                語言
-                <Select value={language} onValueChange={(v) => v && setLanguage(v)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">自動</SelectItem>
-                    <SelectItem value="yue">粵語</SelectItem>
-                    <SelectItem value="zh-Hant">繁中</SelectItem>
-                    <SelectItem value="en">English</SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-dashed border-border px-3 py-2 text-xs">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <Upload className="size-3.5" />
-                  {clone ? clone.name : "可選：上載 clone 聲帶 WAV"}
-                </span>
-                <input
-                  type="file"
-                  accept="audio/wav,audio/*"
-                  className="hidden"
-                  onChange={(e) => setClone(e.target.files?.[0] ?? null)}
-                />
-              </label>
-              {error ? <p className="text-destructive text-sm">{error}</p> : null}
-              <Button className="w-full" size="lg" onClick={() => void produce()} disabled={busy || running}>
-                {running ? "場地開工緊…" : "開工交片"}
-              </Button>
-              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                CLI 同等：<code className="text-primary">npm run slatecrew -- produce &quot;brief&quot;</code>
-              </p>
+                <label className="flex cursor-pointer items-center justify-between rounded-lg border border-dashed border-border px-3 py-2 text-xs">
+                  <span className="flex items-center gap-2 text-muted-foreground">
+                    <Upload className="size-3.5" />
+                    可選：上載 clone 聲帶 WAV
+                  </span>
+                  <input type="file" name="clone" accept="audio/wav,audio/*" />
+                </label>
+                <button
+                  type="submit"
+                  className={cn(buttonVariants({ size: "lg" }), "w-full")}
+                >
+                  開工交片
+                </button>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  CLI 同等：<code className="text-primary">npm run slatecrew -- produce &quot;brief&quot;</code>
+                </p>
+              </form>
+              {recents.length > 0 ? (
+                <div className="mt-4 space-y-1 border-t pt-3">
+                  <p className="text-[11px] tracking-wider text-muted-foreground">近期 slate</p>
+                  {recents.map((item) => (
+                    <a
+                      key={item.id}
+                      href={`/?slate=${item.id}`}
+                      className="flex items-center justify-between rounded-md px-2 py-1 text-xs hover:bg-muted"
+                    >
+                      <span className="font-mono text-primary">{item.slate}</span>
+                      <span className="text-muted-foreground">{item.status}</span>
+                    </a>
+                  ))}
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
