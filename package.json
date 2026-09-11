@@ -10,7 +10,9 @@
     "slatecrew": "tsx src/cli.ts",
     "produce": "tsx src/cli.ts produce",
     "tui": "tsx src/cli.ts tui",
-    "doctor": "tsx src/cli.ts doctor"
+    "doctor": "tsx src/cli.ts doctor",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/lib/studio/*.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
