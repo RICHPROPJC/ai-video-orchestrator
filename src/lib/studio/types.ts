@@ -60,6 +60,18 @@ export type Character = {
   wardrobe: string;
   palette: [string, string, string];
   voice: { pitchHz: number; gender: "f" | "m" | "n" };
+  /** blockout mannequin height in metres — data decides, src has no per-name constants */
+  heightM?: number;
+};
+
+export type Stance = "stand" | "lean" | "crouch";
+
+export type ShotProp = {
+  name: string;
+  /** characterId of the mark whose hands hold it */
+  heldBy?: string;
+  shape: string[];
+  forbid: string[];
 };
 
 export type Shot = {
@@ -87,7 +99,10 @@ export type Shot = {
     footL: Vec2;
     footR: Vec2;
     gait: "plant" | "walk" | "reach" | "turn";
+    stance?: Stance;
+    stanceEnd?: Stance;
   }[];
+  props?: ShotProp[];
   stillPrompt: string;
   motionPrompt: string;
 };

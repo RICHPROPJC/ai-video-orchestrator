@@ -181,11 +181,15 @@ export function loadCallSheet(jsonPath: string): CallSheet {
     throw new Error(`callsheet ${jsonPath} missing fields: ${missing.join(", ")}`);
   }
   if (!sheet.characters!.length) throw new Error(`callsheet ${jsonPath} has no characters`);
+  const STANCES = ["stand", "lean", "crouch"] as const;
   for (const c of sheet.characters!) {
     const need = (["id", "name", "role", "wardrobe", "palette", "voice"] as const).filter(
       (k) => c[k] === undefined || c[k] === null,
     );
     if (need.length) throw new Error(`callsheet ${jsonPath} character ${c.id ?? "?"} missing: ${need.join(", ")}`);
+    if (c.heightM !== undefined && (typeof c.heightM !== "number" || c.heightM < 0.5 || c.heightM > 2.5)) {
+      throw new Error(`callsheet ${jsonPath} character ${c.id} heightM must be 0.5–2.5 m, got ${String(c.heightM)}`);
+    }
   }
   if (!sheet.shots!.length) throw new Error(`callsheet ${jsonPath} has no shots`);
   for (const s of sheet.shots!) {
@@ -199,6 +203,21 @@ export function loadCallSheet(jsonPath: string): CallSheet {
     for (const m of s.marks!) {
       if (!sheet.characters!.some((c) => c.id === m.characterId)) {
         throw new Error(`callsheet ${jsonPath} shot ${s.id} mark references unknown character ${m.characterId}`);
+      }
+      for (const key of ["stance", "stanceEnd"] as const) {
+        const v = m[key];
+        if (v !== undefined && !STANCES.includes(v)) {
+          throw new Error(`callsheet ${jsonPath} shot ${s.id} mark ${m.characterId} ${key} '${String(v)}' is not ${STANCES.join("|")}`);
+        }
+      }
+    }
+    for (const p of s.props ?? []) {
+      const need = (["name", "shape", "forbid"] as const).filter(
+        (k) => p[k] === undefined || p[k] === null,
+      );
+      if (need.length) throw new Error(`callsheet ${jsonPath} shot ${s.id ?? "?"} prop missing: ${need.join(", ")}`);
+      if (p.heldBy !== undefined && !s.marks!.some((m) => m.characterId === p.heldBy)) {
+        throw new Error(`callsheet ${jsonPath} shot ${s.id} prop heldBy '${p.heldBy}' is not a character in this shot's marks`);
       }
     }
   }
