@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { type JobEvent, type JobRecord } from "@/lib/studio/types";
 import { CREW, FLOOR, whoLine } from "@/lib/studio/crew";
+import type { FloorTab } from "@/lib/studio/floor-tab";
 import type { DoctorReport } from "@/lib/studio/doctor";
 import { Clapperboard, Film, Lock, Upload } from "lucide-react";
 
@@ -36,10 +37,12 @@ export function StudioFloor({
   initialJob,
   initialEvents,
   recents,
+  initialTab,
 }: {
   initialJob: JobRecord | null;
   initialEvents: JobEvent[];
   recents: JobRecord[];
+  initialTab: FloorTab;
 }) {
   const [brief, setBrief] = useState(initialJob?.input.brief || EXAMPLES[0] || "");
   const [duration, setDuration] = useState(String(initialJob?.input.durationSec ?? 12));
@@ -50,7 +53,7 @@ export function StudioFloor({
   const [rack, setRack] = useState<DoctorReport | null>(null);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<{ id: string; modality: string; score: number; text: string; shotId?: string }[] | null>(null);
-  const [tab, setTab] = useState("board");
+  const tab = initialTab;
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -363,18 +366,23 @@ export function StudioFloor({
                     ["qc", "QC"],
                     ["lock", "成片"],
                   ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setTab(id)}
-                    className={cn(
-                      buttonVariants({ variant: tab === id ? "default" : "ghost", size: "sm" }),
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
+                ).map(([id, label]) => {
+                  const q = new URLSearchParams();
+                  if (job?.id) q.set("slate", job.id);
+                  if (id !== "board") q.set("tab", id);
+                  const href = `/?${q.toString()}`;
+                  return (
+                    <a
+                      key={id}
+                      href={href}
+                      className={cn(
+                        buttonVariants({ variant: tab === id ? "default" : "ghost", size: "sm" }),
+                      )}
+                    >
+                      {label}
+                    </a>
+                  );
+                })}
               </div>
               {tab === "board" ? (
                 <div className="mt-3 min-h-48 space-y-3">
@@ -400,6 +408,7 @@ export function StudioFloor({
               ) : null}
               {tab === "plan" ? (
                 <div className="mt-3 min-h-48 space-y-3 text-sm">
+                  <p className="text-sm font-medium">計劃 · narrative plan</p>
                   <p className="text-xs text-muted-foreground">
                     ViMax 式 DAG。JSON 存在 <code>data/jobs/{job?.slate ?? "SLATE"}/</code>。Embed / rerank 只讀呢份 vault.json。
                   </p>
@@ -496,6 +505,7 @@ export function StudioFloor({
                 <div className="mt-3 min-h-48">
                 {job?.outputs.pictureLock ? (
                   <div className="space-y-3">
+                    <p className="text-sm font-medium">成片 · picture lock</p>
                     <video
                       key={job.outputs.pictureLock}
                       className="w-full rounded-lg border bg-black"
