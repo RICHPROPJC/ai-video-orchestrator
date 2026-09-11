@@ -84,7 +84,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
   let job: JobRecord = initial;
   const cfg = providerConfig();
   const rack = loadConfig();
-  const comfy = await probeComfy();
+  const comfy = await probeComfy(rack.motion.comfyUrl);
   const trace: ProviderTrace = {
     stills: comfy.up ? `ComfyUI ${rack.stills.checkpoint}` : cfg.u15 ? "SenseNova U1.5 HTTP" : "studio painter (Comfy 未開)",
     motion: comfy.up ? `ComfyUI ${rack.motion.checkpoint}` : cfg.h3 ? "MiniMax H3 HTTP" : "studio IK motion (Comfy 未開)",

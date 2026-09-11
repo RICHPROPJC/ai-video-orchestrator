@@ -20,6 +20,7 @@ export async function PUT(req: Request) {
     tts: { ...cur.tts, ...body.tts },
     pictureQc: { ...cur.pictureQc, ...body.pictureQc },
     soundQc: { ...cur.soundQc, ...body.soundQc },
+    ssh: { ...cur.ssh, ...body.ssh },
   };
   saveConfig(next);
   return NextResponse.json(next);

@@ -229,16 +229,24 @@ export function StudioFloor({
 
           <Card>
             <CardHeader className="border-b">
-              <CardTitle>Rack · 默許 Comfy :8188</CardTitle>
+              <CardTitle>Rack · 兩部機真源</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-xs">
               <p>
-                Comfy{" "}
-                <b className={rack?.comfy.up ? "text-emerald-400" : "text-destructive"}>
-                  {rack?.comfy.up ? "UP" : "DOWN"}
+                U1.5 /edit{" "}
+                <b className={rack?.stills.up ? "text-emerald-400" : "text-destructive"}>
+                  {rack?.stills.up ? "UP" : "DOWN"}
                 </b>{" "}
-                {rack?.comfy.url ?? "http://127.0.0.1:8188"}
-                {rack?.comfy.error ? ` · ${rack.comfy.error}` : ""}
+                {rack?.stills.url ?? "—"}
+                {rack?.stills.error ? ` · ${rack.stills.error}` : ""}
+              </p>
+              <p>
+                H3 R2V{" "}
+                <b className={rack?.motion.up ? "text-emerald-400" : "text-destructive"}>
+                  {rack?.motion.up ? "UP" : "DOWN"}
+                </b>{" "}
+                {rack?.motion.url ?? "—"}
+                {rack?.motion.error ? ` · ${rack.motion.error}` : ""}
               </p>
               <p className="text-muted-foreground">
                 ffmpeg {rack?.ffmpeg ? "UP" : "?"} · blender {rack?.blender ? "UP" : "script-only"} · TUI{" "}

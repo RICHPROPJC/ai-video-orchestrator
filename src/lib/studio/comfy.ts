@@ -18,12 +18,12 @@ export type ComfyStatus = {
   nodes: string[];
 };
 
-function base() {
-  return loadConfig().comfyUrl.replace(/\/$/, "");
+function base(url: string) {
+  return url.replace(/\/$/, "");
 }
 
-export async function probeComfy(): Promise<ComfyStatus> {
-  const url = base();
+export async function probeComfy(server: string): Promise<ComfyStatus> {
+  const url = base(server);
   try {
     const stats = await fetch(`${url}/system_stats`, { signal: AbortSignal.timeout(2500) });
     if (!stats.ok) throw new Error(`HTTP ${stats.status}`);
@@ -52,8 +52,8 @@ export async function probeComfy(): Promise<ComfyStatus> {
   }
 }
 
-async function queuePrompt(graph: ComfyGraph) {
-  const res = await fetch(`${base()}/prompt`, {
+async function queuePrompt(server: string, graph: ComfyGraph) {
+  const res = await fetch(`${base(server)}/prompt`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt: graph, client_id: "slatecrew" }),
@@ -69,10 +69,10 @@ async function queuePrompt(graph: ComfyGraph) {
   return json.prompt_id;
 }
 
-async function waitHistory(promptId: string, timeoutMs = 8 * 60_000) {
+async function waitHistory(server: string, promptId: string, timeoutMs = 8 * 60_000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const res = await fetch(`${base()}/history/${promptId}`);
+    const res = await fetch(`${base(server)}/history/${promptId}`);
     const json = (await res.json()) as Record<string, { outputs?: Record<string, unknown>; status?: { status_str?: string } }>;
     const item = json[promptId];
     if (item?.outputs && Object.keys(item.outputs).length) return item.outputs;
@@ -82,18 +82,18 @@ async function waitHistory(promptId: string, timeoutMs = 8 * 60_000) {
   throw new Error("Comfy timed out");
 }
 
-async function downloadView(file: { filename: string; subfolder?: string; type?: string }, dest: string) {
+async function downloadView(server: string, file: { filename: string; subfolder?: string; type?: string }, dest: string) {
   const params = new URLSearchParams({
     filename: file.filename,
     subfolder: file.subfolder ?? "",
     type: file.type ?? "output",
   });
-  const res = await fetch(`${base()}/view?${params}`);
+  const res = await fetch(`${base(server)}/view?${params}`);
   if (!res.ok) throw new Error(`view ${res.status}`);
   fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
 }
 
-export async function uploadComfyImage(filePath: string) {
+export async function uploadComfyImage(server: string, filePath: string) {
   const buf = fs.readFileSync(filePath);
   const form = new FormData();
   form.set(
@@ -101,7 +101,7 @@ export async function uploadComfyImage(filePath: string) {
     new File([new Uint8Array(buf)], path.basename(filePath), { type: "image/png" }),
   );
   form.set("overwrite", "true");
-  const res = await fetch(`${base()}/upload/image`, { method: "POST", body: form });
+  const res = await fetch(`${base(server)}/upload/image`, { method: "POST", body: form });
   if (!res.ok) throw new Error(`upload ${res.status}`);
   const json = (await res.json()) as { name: string; subfolder?: string; type?: string };
   return json.name;
@@ -150,7 +150,7 @@ function pickOutputs(outputs: Record<string, unknown>) {
   return { images, videos };
 }
 
-export async function comfyStill(opts: {
+export async function comfyStill(server: string, opts: {
   prompt: string;
   width: number;
   height: number;
@@ -163,15 +163,15 @@ export async function comfyStill(opts: {
     __WIDTH__: opts.width,
     __HEIGHT__: opts.height,
   });
-  const id = await queuePrompt(graph);
-  const outputs = await waitHistory(id);
+  const id = await queuePrompt(server, graph);
+  const outputs = await waitHistory(server, id);
   const { images } = pickOutputs(outputs);
   if (!images[0]) throw new Error("Comfy stills: no image output");
-  await downloadView(images[0], opts.outFile);
+  await downloadView(server, images[0], opts.outFile);
   return `comfy:${cfg.stills.checkpoint}`;
 }
 
-export async function comfyMotion(opts: {
+export async function comfyMotion(server: string, opts: {
   prompt: string;
   stillFile: string;
   outFile: string;
@@ -180,7 +180,7 @@ export async function comfyMotion(opts: {
   height: number;
 }) {
   const cfg = loadConfig();
-  const imageName = await uploadComfyImage(opts.stillFile);
+  const imageName = await uploadComfyImage(server, opts.stillFile);
   const graph = patchGraph(loadGraph(cfg.motion.workflow), {
     __PROMPT__: opts.prompt,
     __CKPT__: cfg.motion.checkpoint,
@@ -192,11 +192,11 @@ export async function comfyMotion(opts: {
     __HEIGHT__: opts.height,
     __DURATION__: opts.seconds,
   });
-  const id = await queuePrompt(graph);
-  const outputs = await waitHistory(id, 15 * 60_000);
+  const id = await queuePrompt(server, graph);
+  const outputs = await waitHistory(server, id, 15 * 60_000);
   const { images, videos } = pickOutputs(outputs);
   const file = videos[0] ?? images.at(-1);
   if (!file) throw new Error("Comfy motion: no video output");
-  await downloadView(file, opts.outFile);
+  await downloadView(server, file, opts.outFile);
   return `comfy:${cfg.motion.checkpoint}`;
 }

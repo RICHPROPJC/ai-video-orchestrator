@@ -14,12 +14,12 @@ function arg(name: string, fallback?: string) {
 }
 
 function help() {
-  console.log(`SlateCrew — TUI + CLI + Web，默許 ComfyUI :8188
+  console.log(`SlateCrew — TUI + CLI + Web，兩部機真源（node0 出圖 / node1 出片）
 
 Commands
   tui "<brief>"              全螢幕 TUI 開工（Montaj 式 CLIP）
   produce "<brief>"          行 log 開工
-  doctor                     探 Comfy / ffmpeg / Blender / 模型
+  doctor                     探兩部機 / MARS / ffmpeg / Blender
   models                     睇而家用緊邊個 checkpoint
   models set <dot.path> <v>  換模型，例：stills.checkpoint foo.safetensors
   status [slate]
@@ -30,10 +30,10 @@ Commands
 Flags
   --duration 12  --aspect 16:9|9:16|1:1  --clone ref.wav  --lang yue
 
-Default rack（唔使新 endpoint）
-  Comfy  http://127.0.0.1:8188
-  U1.5   workflows/u15-t2i.api.json
-  H3     workflows/h3-i2v.api.json  (MiniMaxH3ImageToVideo + first_frame)
+Rack（two-host truth）
+  U1.5 /edit  <stills.url>        node0 :8097
+  H3 R2V      <motion.comfyUrl>   node1 :8188
+  MARS        <pictureQc.endpoint>  photo QC 眼
 `);
 }
 
@@ -66,7 +66,8 @@ async function produce(brief: string, tui: boolean) {
   const rack = loadConfig();
   if (!tui || !process.stdout.isTTY) {
     console.log(`\n  SLATE  ${id}`);
-    console.log(`  COMFY  ${rack.comfyUrl}`);
+    console.log(`  U1.5   ${rack.stills.url}`);
+    console.log(`  H3     ${rack.motion.comfyUrl}`);
     console.log(`  BRIEF  ${brief}\n`);
     const { subscribe } = await import("./lib/studio/store");
     subscribe(id, (e) => {
@@ -76,7 +77,7 @@ async function produce(brief: string, tui: boolean) {
     await runPipeline(id, input);
   } else {
     const running = runPipeline(id, input);
-    await runTui(id, `Comfy ${rack.comfyUrl}  stills ${rack.stills.checkpoint}`);
+    await runTui(id, `U1.5 ${rack.stills.url}  H3 ${rack.motion.comfyUrl}`);
     await running;
   }
   const done = readJob(id);

@@ -18,7 +18,6 @@ export function providerConfig() {
     senseVoice: env("SENSEVOICE_ENDPOINT") || file.soundQc.endpoint,
     tts: env("TTS_ENDPOINT") || env("COSYVOICE_URL") || file.tts.endpoint,
     apiKey: env("STUDIO_API_KEY") || env("OPENAI_API_KEY"),
-    comfyUrl: file.comfyUrl,
   };
 }
 
@@ -28,12 +27,15 @@ export async function generateStill(opts: {
   height: number;
   outFile: string;
 }) {
-  const comfy = await probeComfy();
-  if (comfy.up) {
-    try {
-      return await comfyStill(opts);
-    } catch {
-      /* fallback HTTP / studio */
+  const comfyUrl = loadConfig().stills.comfyUrl;
+  if (comfyUrl) {
+    const comfy = await probeComfy(comfyUrl);
+    if (comfy.up) {
+      try {
+        return await comfyStill(comfyUrl, opts);
+      } catch {
+        /* fallback HTTP / studio */
+      }
     }
   }
   return generateStillHttp(opts);
@@ -47,10 +49,11 @@ export async function generateMotion(opts: {
   width: number;
   height: number;
 }) {
-  const comfy = await probeComfy();
+  const comfyUrl = loadConfig().motion.comfyUrl;
+  const comfy = await probeComfy(comfyUrl);
   if (comfy.up) {
     try {
-      return await comfyMotion(opts);
+      return await comfyMotion(comfyUrl, opts);
     } catch {
       /* fallback HTTP / studio */
     }
