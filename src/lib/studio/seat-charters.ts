@@ -49,7 +49,9 @@ export const BOARDS_CHARTER = `你係分鏡檯（阿圖）。收一場戲嘅 bea
 - size: wide | full | medium | closeup | insert
 - angle: eye | high | low
 - side: frontal | leftQuarter | rightQuarter
-- cast: 一到三個人，每個寫 characterId、slot（L|C|R）、depth（near|mid|far）、facing（1 或 -1）、gait（plant|walk|reach|turn）、stance（stand|lean|crouch），要郁就加 stanceEnd 同 travelTo。
+- cast: 一到三個人，每個寫 characterId、slot（L|C|R）、depth（near|mid|far）、facing（1 或 -1）、gait、stance，要郁就加 stanceEnd 同 travelTo。
+- gait 淨係得呢四個字：plant | walk | reach | turn。
+- stance 同 stanceEnd 淨係得呢三個字：stand | lean | crouch。plant 同 walk 係 gait 嘅字，唔准攞落 stance 度用；呢三個字以外一個都唔准自己造。
 - props（有先寫）：name，同埋畫檢個眼點讀佢——shape[] 係形狀詞，forbid[] 係唔可以認錯嘅嘢。邊個攞住就寫 heldBy。
 
 兩個名要分清楚：cast 入面嘅 characterId 係大階字母（A、B、C），但 speaker 係個角色嘅 name（同 beat 入面果個字一模一樣）。唔好掉轉，唔好喺 speaker 度寫字母。
@@ -59,7 +61,12 @@ export const BOARDS_CHARTER = `你係分鏡檯（阿圖）。收一場戲嘅 bea
 - 有對白嗰個鏡頭，dialogue 要一字不改抄 beat 嗰句，speaker 抄 beat 個 name，而嗰個角色一定要喺 cast 入面。
 - 冇嘅嘢就唔好寫個 key（例如 speaker、stanceEnd、travelTo、props）。唔好寫 null，唔好寫空字串。
 - durationSec 係硬性下限 ${SHOT_SEC_MIN} 秒：切得再碎都唔可以低過佢，寧願兩個 beat 合埋一個鏡頭。
-- 信封有個 budgetSec：呢場所有 durationSec 加埋要落喺 budgetSec 嘅 ±${Math.round(SCENE_BUDGET_TOLERANCE * 100)}% 之內。鏡頭數 × 長度自己夾掂佢，唔好超支亦唔好走數。
+- 信封有個 budgetSec：呢場所有 durationSec 加埋要落喺 budgetSec 嘅 ±${Math.round(SCENE_BUDGET_TOLERANCE * 100)}% 之內。唔好逐個鏡頭憑感覺填秒數，一定要照呢個次序計：
+  一、先定鏡頭數 n（每個 beat 至少一個鏡頭）。
+  二、計基準 base = budgetSec ÷ n，四捨五入到 0.1 秒。
+  三、每個鏡頭由 base 起手，講嘢多嘅加、純動作嘅減，加減唔好過 ±2 秒，而且要留喺 ${SHOT_SEC_MIN}–${SHOT_SEC_MAX} 秒。
+  四、交之前自己由頭到尾加一次總和，同 budgetSec 比。唔夠就揀最長嘅幾個鏡頭補足，超咗就削。
+  五、喺 thinking 寫出 n、base、同你加出嚟嘅總和。加唔到數就係唔過關。
 - 同一句對白全場只可以響一次。
 - durationSec 喺 ${SHOT_SEC_MIN}–${SHOT_SEC_MAX} 秒，而且唔可以短過句對白講得完嘅時間。冇對白嘅鏡頭都要夠位做完個動作。
 - 同一個鏡頭入面兩個人唔可以霸同一個 slot+depth。
