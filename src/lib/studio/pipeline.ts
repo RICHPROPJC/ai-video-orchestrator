@@ -58,6 +58,31 @@ async function ffmpeg(args: string[]) {
   }
 }
 
+/** H3's ref-audio clock must equal the video clock: pad the wav with trailing
+ *  silence to the snapped frame length; the same file feeds the mux. */
+export async function padH3Wav(src: string, dst: string, frames: number): Promise<number> {
+  const seconds = frames / 24;
+  await ffmpeg(["-i", src, "-af", `apad=whole_dur=${seconds.toFixed(6)}`, "-c:a", "pcm_s16le", dst]);
+  const got = await wavSeconds(dst);
+  if (Math.abs(got - seconds) > 1 / 48) {
+    throw new Error(`${dst}: padded to ${got.toFixed(4)}s, wanted ${seconds.toFixed(4)}s (${frames}f/24)`);
+  }
+  return got;
+}
+
+/** per-shot mux: own padded wav, level-matched; H3's own audio is dropped */
+export function muxArgs(mp4: string, h3Wav: string, out: string): string[] {
+  return [
+    "-i", mp4,
+    "-i", h3Wav,
+    "-map", "0:v", "-map", "1:a",
+    "-af", "loudnorm=I=-18:TP=-1.5:LRA=11",
+    "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+    "-shortest",
+    out,
+  ];
+}
+
 export async function runPipeline(jobId: string, input: ProduceInput) {
   const initial = readJob(jobId);
   if (!initial) throw new Error("missing job");
@@ -71,6 +96,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     senseVoice: cfg.soundQc.endpoint ? "SenseVoice HTTP" : "SenseVoice schema (local)",
     mars: `MARS ${cfg.pictureQc.endpoint}`,
     blender: "pending",
+    lipSync: "none — H3 audio dropped; own wav muxed",
   };
 
   const speak = async (agent: AgentId, message: string, level: "info" | "warn" | "pass" | "fail" = "info") => {
@@ -169,12 +195,19 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const audioDir = path.join(jobDir(jobId), "audio");
     ensureDir(audioDir);
     const wavByShot = new Map<string, string>();
+    const h3WavByShot = new Map<string, string>();
+    const gapDelivered = new Map<string, number>();
     for (const shot of continuity.boards) {
       const src = path.join(input.wavDir, `${shot.id}.wav`);
       if (!fs.existsSync(src)) throw new Error(`--wav-dir 缺 ${shot.id}.wav（${src}）`);
       const dst = path.join(audioDir, `${shot.id}.wav`);
       fs.copyFileSync(src, dst);
       wavByShot.set(shot.id, dst);
+      const frames = snapDurationToFrames(await wavSeconds(dst));
+      const h3Wav = path.join(audioDir, `${shot.id}.h3.wav`);
+      await padH3Wav(dst, h3Wav, frames);
+      h3WavByShot.set(shot.id, h3Wav);
+      gapDelivered.set(shot.id, Math.round((frames / 24 - (await wavSeconds(dst))) * 1e4) / 1e4);
     }
     const spineGiven = path.join(input.wavDir, "spine.wav");
     const spineWav = fs.existsSync(spineGiven) ? path.join(audioDir, "spine.wav") : undefined;
@@ -186,6 +219,14 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       spineWav,
       outFile: jobFile(jobId, "cut_plan.json"),
     });
+    // h3_clock_s is data for the report (the gate still snaps the ORIGINAL wav)
+    const cutPlanFile = jobFile(jobId, "cut_plan.json");
+    const cutPlanOnDisk = JSON.parse(fs.readFileSync(cutPlanFile, "utf8")) as { shots: { id: string; h3_clock_s?: number }[] };
+    for (const s of cutPlanOnDisk.shots ?? []) {
+      const h3 = h3WavByShot.get(s.id);
+      if (h3) s.h3_clock_s = Math.round((await wavSeconds(h3)) * 1e4) / 1e4;
+    }
+    fs.writeFileSync(cutPlanFile, JSON.stringify(cutPlanOnDisk, null, 2));
     const timed: CallSheet = {
       ...locked,
       durationSec: cutPlan.shots.reduce((a, s) => a + s.duration_s, 0) + gapSec * Math.max(0, cutPlan.shots.length - 1),
@@ -257,7 +298,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         const prose = buildProse(timed, shot);
         const { receiptFile } = await submitH3Shot({
           prose,
-          wavFile: wavByShot.get(shot.id)!,
+          wavFile: h3WavByShot.get(shot.id)!,
           blockoutMp4: path.join(blockoutDir, `${shot.id}.mp4`),
           kfStart: path.join(stillDir, `${shot.id}.png`),
           outMp4: path.join(jobDir(jobId), "motion", `${shot.id}.mp4`),
@@ -386,6 +427,23 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     }
     trace.mars = `MARS ${cfg.pictureQc.endpoint} (${cfg.pictureQc.model})`;
     job = patch(job, { pictureQcStills: geometry, providers: trace, progress: 55 });
+    if (input.until === "stills") {
+      job = patch(job, {
+        status: "stills-ready",
+        currentAgent: "pictureQc",
+        outputs: {
+          ...job.outputs,
+          stills: stills.map((f) => relInJob(jobId, f)),
+          blockout: blockouts.map((f) => relInJob(jobId, f)),
+        },
+      });
+      emit(jobId, {
+        agent: "pictureQc",
+        level: "pass",
+        message: "--until stills：photo QC 全 GREEN，H3 未燒。stills + f0 + require 已出。",
+      });
+      return;
+    }
 
     // motion: H3 R2V per shot — photo QC pin must be accepted before submit
     const motionDir = path.join(jobDir(jobId), "motion");
@@ -413,7 +471,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       });
       const { receiptFile } = await submitH3Shot({
         prose,
-        wavFile: wavByShot.get(shot.id)!,
+        wavFile: h3WavByShot.get(shot.id)!,
         blockoutMp4: path.join(blockoutDir, `${shot.id}.mp4`),
         kfStart: path.join(stillDir, `${shot.id}.png`),
         outMp4: path.join(motionDir, `${shot.id}.mp4`),
@@ -446,6 +504,15 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         receipts,
       },
     });
+    if (input.until === "motion") {
+      job = patch(job, { status: "motion-ready", currentAgent: "motion" });
+      emit(jobId, {
+        agent: "motion",
+        level: "pass",
+        message: "--until motion：H3 片已落，mux 之前停（stills/motion 閘已過）。",
+      });
+      return;
+    }
 
     // voice: wav plug only — spine given, or concat slices with gap silence
     await think("voice");
@@ -477,7 +544,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         await ffmpeg(["-f", "concat", "-safe", "0", "-i", concatList, "-c", "copy", spineFile]);
       }
     }
-    trace.tts = "wav plug";
+    trace.tts = fs.existsSync(path.join(input.wavDir, "sentences.json"))
+      ? "wav plug (AuK slices, natural pace)"
+      : "wav plug";
     job = patch(job, { providers: trace, progress: 76, outputs: { ...job.outputs, voice: "audio/spine.wav" } });
     upsertDoc({
       id: "audio:vo",
@@ -487,16 +556,24 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       absPath: spineFile,
     });
 
-    // sound QC unchanged (runs on the spine)
+    // sound QC on the DELIVERED audio: concat of the padded per-shot wavs —
+    // this is the track actually muxed into the lock, spine only feeds the gate
+    const lockAudio = jobFile(jobId, "delivery", "lock-audio.wav");
+    const lockList = path.join(audioDir, "lock-list.txt");
+    fs.writeFileSync(
+      lockList,
+      cutPlan.shots.map((s) => `file '${h3WavByShot.get(s.id)!.replaceAll("'", "'\\''")}'`).join("\n"),
+    );
+    await ffmpeg(["-f", "concat", "-safe", "0", "-i", lockList, "-c:a", "pcm_s16le", lockAudio]);
     await think("soundQc");
-    await speak("soundQc", "SenseVoice 對稿：ASR、情緒、事件、WER、Clipping。");
+    await speak("soundQc", "SenseVoice 對稿（delivery/lock-audio.wav）：ASR、情緒、事件、WER、Clipping。");
     let sound = localSoundQc({
-      audioFile: spineFile,
+      audioFile: lockAudio,
       expectedText: timed.voiceover,
       expectedEmotion: "NEUTRAL",
       cloneSimilarity: 1,
     });
-    const remoteSv = await senseVoiceHttp(spineFile).catch(() => null);
+    const remoteSv = await senseVoiceHttp(lockAudio).catch(() => null);
     if (remoteSv) {
       sound = { ...sound, ...remoteSv, provider: remoteSv.provider ?? "SenseVoice" };
       trace.senseVoice = "SenseVoice HTTP";
@@ -527,17 +604,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     for (const shotId of cut) {
       const mp4 = shotVideos.find((v) => path.basename(v, ".mp4") === shotId);
       if (!mp4) throw new Error(`cut ${shotId} missing from motion`);
-      const wav = wavByShot.get(shotId)!;
       const out = path.join(motionDir, `${shotId}.muxed.mp4`);
-      await ffmpeg([
-        "-i", mp4,
-        "-i", wav,
-        "-map", "0:v", "-map", "1:a",
-        "-af", "apad",
-        "-c:v", "copy", "-c:a", "aac",
-        "-shortest",
-        out,
-      ]);
+      await ffmpeg(muxArgs(mp4, h3WavByShot.get(shotId)!, out));
       muxed.push(out);
     }
     const muxList = jobFile(jobId, "motion", "mux-list.txt");
@@ -562,6 +630,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       soundQc: sound,
       pictureQcStills: geometry,
       pictureQcVideo: pictureVideo,
+      // the padded tail per shot IS the delivered speech gap
+      gap_delivered_s: Object.fromEntries(gapDelivered),
       locked: Boolean(sound.pass && pictureVideo.pass),
     };
     fs.writeFileSync(jobFile(jobId, "delivery", "qc.json"), JSON.stringify(report, null, 2));

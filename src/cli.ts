@@ -35,6 +35,7 @@ Flags
   --callsheet <json>    載入現成 callsheet，跳過編劇 draft（結構唔齊即刻 fail）
   --gap <sec>           鏡與鏡之間靜音（默許 0）
   --dry-run             行到 prompt/receipt 為止，唔 POST 任何機
+  --until stills|motion 早停閘：stills＝photo QC GREEN 即停（status stills-ready）；motion＝H3 落片即停
 
 Rack（two-host truth）
   U1.5 /edit  <stills.url>        node0 :8097
@@ -56,8 +57,13 @@ async function makeJob(brief: string) {
     blockoutDir: arg("--blockout-dir"),
     gapSec: Number(arg("--gap", "0")),
     dryRun: process.argv.includes("--dry-run"),
+    until: arg("--until") as ProduceInput["until"],
     callSheetPath: arg("--callsheet"),
   };
+  if (input.until && input.until !== "stills" && input.until !== "motion") {
+    console.error('--until 只接受 stills（photo QC GREEN 即停）或 motion（H3 落片即停）');
+    process.exit(1);
+  }
   const job: JobRecord = {
     id,
     slate: id,
@@ -100,6 +106,9 @@ async function produce(brief: string, tui: boolean) {
   console.log(`\n  STATUS ${done?.status}  ${done?.progress}%`);
   if (done?.outputs.pictureLock) {
     console.log(`  LOCK   ${path.join(process.cwd(), "data/jobs", id, done.outputs.pictureLock)}`);
+  }
+  if (done?.status === "stills-ready") {
+    console.log(`  STILLS ${path.join(process.cwd(), "data/jobs", id, "stills")}`);
   }
   if (done?.error) process.exitCode = 1;
 }

@@ -4,7 +4,9 @@ export type JobStatus =
   | "blocked"
   | "locked"
   | "failed"
-  | "dry-run";
+  | "dry-run"
+  | "stills-ready"
+  | "motion-ready";
 
 export type AgentId =
   | "producer"
@@ -41,6 +43,8 @@ export type ProduceInput = {
   blockoutDir?: string;
   gapSec?: number;
   dryRun?: boolean;
+  /** stop early: stills = after photo QC GREEN, motion = after H3 downloads (before mux) */
+  until?: "stills" | "motion";
   /** load this callsheet JSON instead of drafting one from the brief */
   callSheetPath?: string;
 };
@@ -171,6 +175,7 @@ export type ProviderTrace = {
   senseVoice: string;
   mars: string;
   blender: string;
+  lipSync: string;
 };
 
 export type JobRecord = {
