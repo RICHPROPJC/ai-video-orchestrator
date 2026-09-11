@@ -77,6 +77,27 @@ function issueLines(error: unknown): string[] {
   return issues.map((i) => `${(i.path ?? []).join(".") || "(root)"}: ${i.message ?? "invalid"}`);
 }
 
+function isEmptyJson(obj: unknown, seat: string): boolean {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return true;
+  const keys = Object.keys(obj);
+  if (keys.length === 0) return true;
+  if (keys.every((k) => k === "")) return true;
+  if (seat === "boards") {
+    const r = obj as Record<string, unknown>;
+    return !r.sceneId && !r.shots;
+  }
+  return false;
+}
+
+const RETRY_PREFIX = "你上一個回覆唔過 schema。逐項改，只回一個完整 JSON object，唔好道歉、唔好解釋：\n";
+
+function retryUserText(errors: string[]): string {
+  const lines = errors.slice(0, 6).map((e) => `- ${e}`);
+  let text = RETRY_PREFIX + lines.join("\n");
+  if (text.length > 800) text = text.slice(0, 800);
+  return text;
+}
+
 export type ChatJsonResult<T> = { value: T; model: string; receipts: string[] };
 
 /** One seat turn: charter as system, sealed packet as the only user content,
@@ -91,6 +112,7 @@ export async function chatJson<T>(opts: {
   schema: ZodType<T>;
   receiptDir: string;
   maxAttempts?: number;
+  normalize?: (raw: unknown) => unknown;
   fetchImpl?: typeof fetch;
 }): Promise<ChatJsonResult<T>> {
   const endpoint = resolveCrewEndpoint(opts.crew);
@@ -139,9 +161,14 @@ export async function chatJson<T>(opts: {
     let value: T | undefined;
     let errors: string[] = [];
     try {
-      const parsed = opts.schema.safeParse(JSON.parse(extractJsonObject(content)));
-      if (parsed.success) value = parsed.data;
-      else errors = issueLines(parsed.error);
+      let raw: unknown = JSON.parse(extractJsonObject(content));
+      if (isEmptyJson(raw, opts.seat)) errors = ["empty json"];
+      else {
+        if (opts.normalize) raw = opts.normalize(raw);
+        const parsed = opts.schema.safeParse(raw);
+        if (parsed.success) value = parsed.data;
+        else errors = issueLines(parsed.error);
+      }
     } catch (error) {
       errors = [error instanceof Error ? error.message : String(error)];
     }
@@ -168,12 +195,7 @@ export async function chatJson<T>(opts: {
     if (errors.length === 0) return { value: value as T, model: opts.model, receipts };
 
     messages.push({ role: "assistant", content });
-    messages.push({
-      role: "user",
-      content:
-        `你上一個回覆唔過 schema。逐項改，只回一個完整 JSON object，唔好道歉、唔好解釋：\n` +
-        errors.map((e) => `- ${e}`).join("\n"),
-    });
+    messages.push({ role: "user", content: retryUserText(errors) });
   }
   throw new Error(`seat ${opts.seat} could not produce valid ${opts.unit} after ${maxAttempts} attempts`);
 }

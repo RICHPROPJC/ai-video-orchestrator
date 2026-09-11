@@ -5,7 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import { DEFAULT_CREW, type CrewConfig } from "./crew-llm";
 import { runWriter, type SeatDoc } from "./seat-writer";
-import { handoffFrom, runBoards, sheetDigest } from "./seat-boards";
+import { handoffFrom, padBoardDurations, runBoards, sheetDigest } from "./seat-boards";
+import { boardsSceneSchema } from "./boards-contract";
+import { dialogueSeconds } from "./script-contract";
 import { BOARDS_CHARTER, WRITER_BEATS_CHARTER, WRITER_OUTLINE_CHARTER } from "./seat-charters";
 import { loadCallSheet } from "./writer";
 import type { ScriptRanges } from "./script-contract";
@@ -184,6 +186,36 @@ test("the handoff carries each figure's last slot, stance and props forward", ()
   );
   assert.deepEqual(carried.A, { slot: "C", depth: "mid", stance: "lean", props: ["prop-one"] });
   assert.deepEqual(handoffFrom(undefined, carried), carried, "no scene leaves the handoff untouched");
+});
+
+test("padBoardDurations lifts durationSec before the dialogue-clock zod gate", () => {
+  const line = "x".repeat(38);
+  const raw = {
+    sceneId: "SC01",
+    thinking: "三句以內。",
+    shots: [{
+      beatId: "SC01.B01",
+      size: "medium" as const,
+      angle: "eye" as const,
+      side: "frontal" as const,
+      durationSec: 8.5,
+      action: "turns",
+      dialogue: line,
+      speaker: "Cast-A",
+      cast: [{ characterId: "A", slot: "L" as const, depth: "mid" as const, facing: 1 as const, gait: "plant" as const, stance: "stand" as const }],
+    }],
+  };
+  const beats = [{ id: "SC01.B01", action: "turns", dialogue: line, speaker: "Cast-A" }];
+  const schema = boardsSceneSchema({
+    sceneId: "SC01",
+    beats,
+    characters: [{ id: "A", name: "Cast-A" }],
+    budgetSec: 10,
+  });
+  assert.equal(schema.safeParse(raw).success, false);
+  const padded = schema.safeParse(padBoardDurations(raw));
+  assert.equal(padded.success, true);
+  assert.ok(padded.data!.shots[0]!.durationSec >= dialogueSeconds(line));
 });
 
 test("a denied model never reaches the wire, whichever seat asks", async () => {

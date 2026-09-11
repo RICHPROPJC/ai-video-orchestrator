@@ -4,7 +4,7 @@ export const CHARACTER_ID_RE = /^[A-Z]$/;
 export const SCENE_ID_RE = /^SC\d{2}$/;
 export const BEAT_ID_RE = /^SC\d{2}\.B\d{2}$/;
 
-export const DIALOGUE_MAX_CHARS = 60;
+export const DIALOGUE_MAX_CHARS = 32;
 export const ACTION_MAX_CHARS = 120;
 const BEATS_PER_SCENE_MIN = 4;
 const BEATS_PER_SCENE_MAX = 12;

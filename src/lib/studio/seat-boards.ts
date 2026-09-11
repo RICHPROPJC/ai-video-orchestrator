@@ -3,13 +3,28 @@ import { chatJson } from "./crew-llm";
 import { BOARDS_CHARTER } from "./seat-charters";
 import { boardsSceneSchema, type BoardsScene } from "./boards-contract";
 import { assertSheetGates, expandBoards } from "./boards-expand";
-import type { Script } from "./script-contract";
+import { dialogueSeconds, type Script } from "./script-contract";
 import type { CallSheet } from "./types";
 import type { SeatIo } from "./seat-writer";
 
 export type BoardsResult = { sheet: CallSheet; model: string; receipts: string[] };
 
 type Handoff = Record<string, { slot: string; depth: string; stance: string; props: string[] }>;
+
+/** Pad each shot's durationSec to fit its dialogue before zod sees it. */
+export function padBoardDurations(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const obj = raw as Record<string, unknown>;
+  if (!Array.isArray(obj.shots)) return raw;
+  return {
+    ...obj,
+    shots: (obj.shots as Record<string, unknown>[]).map((shot) => {
+      const dialogue = typeof shot.dialogue === "string" ? shot.dialogue.trim() : "";
+      const durationSec = typeof shot.durationSec === "number" ? shot.durationSec : 0;
+      return { ...shot, durationSec: Math.max(durationSec, dialogueSeconds(dialogue)) };
+    }),
+  };
+}
 
 /** What the next scene inherits: where each figure was left standing and what
  *  they were still holding. Derived from this seat's own last shot, never guessed. */
@@ -73,6 +88,7 @@ export async function runBoards(
         previousSceneHandoff: carried,
       }),
       schema: boardsSceneSchema({ sceneId: scene.id, beats, characters, budgetSec }),
+      normalize: padBoardDurations,
       receiptDir: io.receiptDir,
       fetchImpl: io.fetchImpl,
     });

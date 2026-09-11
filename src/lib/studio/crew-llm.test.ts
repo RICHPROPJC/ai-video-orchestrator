@@ -169,6 +169,60 @@ test("three bad attempts throw and leave three receipts", async () => {
   ]);
 });
 
+test("empty-key boards reply yields one empty-json error and a short retry", async () => {
+  const dir = tmpDir();
+  const boardsSchema = z.object({
+    sceneId: z.string(),
+    shots: z.array(z.object({ durationSec: z.number() })).min(1),
+  });
+  const { impl, sent } = fakeFetch([
+    '{"":""}',
+    JSON.stringify({ sceneId: "SC02", shots: [{ durationSec: 6 }] }),
+  ]);
+  const out = await chatJson({
+    seat: "boards",
+    unit: "SC02",
+    model: "qwen3.6-35b",
+    crew,
+    system: "分鏡",
+    user: "{}",
+    schema: boardsSchema,
+    receiptDir: dir,
+    fetchImpl: impl,
+  });
+
+  assert.deepEqual(out.value, { sceneId: "SC02", shots: [{ durationSec: 6 }] });
+  const first = JSON.parse(fs.readFileSync(path.join(dir, "boards.SC02.1.json"), "utf8")) as CrewReceipt;
+  assert.deepEqual(first.errors, ["empty json"]);
+  const retryTurns = sent[1]!.messages as { role: string; content: string }[];
+  assert.match(retryTurns[3]!.content, /empty json/);
+  assert.ok(retryTurns[3]!.content.length <= 800);
+});
+
+test("schema retry feedback is capped at six lines and 800 chars", async () => {
+  const dir = tmpDir();
+  const manyIssues = z.object({ a: z.string(), b: z.string(), c: z.string(), d: z.string(), e: z.string(), f: z.string(), g: z.string() });
+  const { impl, sent } = fakeFetch([
+    JSON.stringify({ a: 1 }),
+    JSON.stringify({ a: "x", b: "x", c: "x", d: "x", e: "x", f: "x", g: "x" }),
+  ]);
+  await chatJson({
+    seat: "writer",
+    unit: "outline",
+    model: "kimi-k3",
+    crew,
+    system: "編劇",
+    user: "{}",
+    schema: manyIssues,
+    receiptDir: dir,
+    fetchImpl: impl,
+  });
+  const retry = (sent[1]!.messages as { content: string }[])[3]!.content;
+  const bulletLines = retry.split("\n").filter((l) => l.startsWith("- "));
+  assert.ok(bulletLines.length <= 6);
+  assert.ok(retry.length <= 800);
+});
+
 test("a leaked <think> block still parses, and HTTP errors fail loud", async () => {
   const dir = tmpDir();
   const { impl } = fakeFetch([`<think>唔應該出街</think>${JSON.stringify({ title: "t", beats: ["a", "b"] })}`]);

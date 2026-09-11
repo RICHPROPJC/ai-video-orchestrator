@@ -32,7 +32,7 @@ export const WRITER_BEATS_CHARTER = `你係編劇檯（阿文）。收一場戲�
 規矩：
 - 一個 beat 係一個做得出嚟嘅動作，唔係一段文。action 最多 ${ACTION_MAX_CHARS} 字。
 - beat id 係「場號.Bxx」，例如 SC03.B01，順住場入面嘅時間行。
-- 對白係時鐘：大約 ${SECONDS_PER_CHAR} 秒一個字再加 ${DIALOGUE_LEAD_IN} 秒起手，所以一句 ${DIALOGUE_MAX_CHARS} 字嘅對白已經食咗成十四秒，係上限。
+- 對白係時鐘：大約 ${SECONDS_PER_CHAR} 秒一個字再加 ${DIALOGUE_LEAD_IN} 秒起手，所以一句 ${DIALOGUE_MAX_CHARS} 字嘅對白已經食咗成八秒，係上限。
 - 一個 beat 出街最少都要 ${SECONDS_PER_BEAT_FLOOR} 秒，所以一場 N 秒最多得 N÷${SECONDS_PER_BEAT_FLOOR} 個 beat（例如 30 秒最多五拍）。寧願拍大啲，唔好切碎。
 - 有 dialogue 就一定要有 speaker，speaker 淨係可以係 speaks 嘅角色個 name。冇對白就兩樣都唔好寫。
 - 唔好寫旁白、唔好寫畫外音、唔好寫字幕。
@@ -77,7 +77,7 @@ export const BOARDS_CHARTER = `你係分鏡檯（阿圖）。收一場戲嘅 bea
 
 - props 入面 shape 同 forbid 兩個都係必填 array，冇嘢禁就寫 []。shape 用英文短詞（例如 long、curved、wood），每個詞最多 12 個字符；唔好用中文長描述。
 - 信封入面有 dialogue 嘅 beat，一定要有一個鏡頭嘅 dialogue 同 speaker 一字不改抄返 beat；唔可以合併到冇對白字段嘅鏡頭度。
-- 有對白嘅鏡頭，durationSec 必須 ≥ 字數 × ${SECONDS_PER_CHAR} + ${DIALOGUE_LEAD_IN}；交之前逐句計，唔夠就加長，唔好低過 ${SHOT_SEC_MIN}。
+- durationSec = max(base, 對白時鐘)：base 係 budget 均分，對白時鐘 = 字數 × ${SECONDS_PER_CHAR} + ${DIALOGUE_LEAD_IN}；抄 dialogue 一字不改，交之前逐句計，唔好低過 ${SHOT_SEC_MIN}。
 
 一個鏡頭嘅樣（照跟呢個形狀，travelTo 同 stanceEnd 係淨嘅字，唔係 object）：
 {"beatId":"SC01.B02","size":"medium","angle":"eye","side":"frontal","durationSec":7.5,
