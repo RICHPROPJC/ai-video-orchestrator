@@ -5,22 +5,6 @@ import { markFor, placeHands } from "./blocking-grid";
 import { dialogueSeconds, type Script } from "./script-contract";
 import type { BoardShot, BoardsScene } from "./boards-contract";
 
-/** Phase-B types.ts folds these in; until then the seats carry them here so the
- *  plug path keeps loading sheets that have none of it. */
-export type CrewShot = Shot & { scene?: string; beatId?: string };
-
-export type Provenance = {
-  writer: { model: string; receipts: string[] };
-  boards: { model: string; receipts: string[] };
-  sha256: string;
-};
-
-export type CrewCallSheet = Omit<CallSheet, "shots"> & {
-  shots: CrewShot[];
-  scenes?: { id: string; heading: string; summary: string; targetSec: number }[];
-  provenance?: Provenance;
-};
-
 const STILL_MODEL = "SenseNova U1.5-8B-MoT";
 const MOTION_MODEL = "MiniMax H3 R2V";
 const DURATION_TOLERANCE = 0.1;
@@ -54,7 +38,7 @@ export function expandBoards(opts: {
   boards: BoardsScene[];
   targetSec: number;
   aspect?: CallSheet["aspect"];
-}): CrewCallSheet {
+}): CallSheet {
   const { outline } = opts.script;
   const heightById = new Map(outline.characters.map((c) => [c.id, c.heightM]));
   const sceneById = new Map(outline.scenes.map((s) => [s.id, s]));
@@ -66,7 +50,7 @@ export function expandBoards(opts: {
     throw new Error(`boards missing for ${missing.join(", ")}`);
   }
 
-  const shots: CrewShot[] = [];
+  const shots: Shot[] = [];
   for (const board of ordered) {
     const scene = sceneById.get(board.sceneId)!;
     for (const shot of board.shots) {
@@ -129,7 +113,7 @@ export function expandBoards(opts: {
 
 /** Sheet-level gates the per-scene schema cannot see. Throwing here means the
  *  seats have to go again; it never edits the sheet into range. */
-export function assertSheetGates(sheet: CrewCallSheet, opts: { script: Script; targetSec: number }): void {
+export function assertSheetGates(sheet: CallSheet, opts: { script: Script; targetSec: number }): void {
   const sum = sheet.shots.reduce((a, s) => a + s.durationSec, 0);
   const lo = opts.targetSec * (1 - DURATION_TOLERANCE);
   const hi = opts.targetSec * (1 + DURATION_TOLERANCE);

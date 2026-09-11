@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { DEFAULT_CREW, type CrewConfig } from "./crew-llm";
 
 export type SlateConfig = {
+  crew: CrewConfig;
   stills: {
     url: string;
     comfyUrl: string;
@@ -30,6 +32,7 @@ export type SlateConfig = {
 };
 
 const DEFAULTS: SlateConfig = {
+  crew: DEFAULT_CREW,
   stills: {
     url: "http://100.76.131.19:8097",
     comfyUrl: "",
@@ -72,6 +75,7 @@ export function loadConfig(): SlateConfig {
   const merged: SlateConfig = {
     ...DEFAULTS,
     ...raw,
+    crew: { ...DEFAULTS.crew, ...raw.crew },
     stills: { ...DEFAULTS.stills, ...raw.stills },
     motion: { ...DEFAULTS.motion, ...raw.motion },
     tts: { ...DEFAULTS.tts, ...raw.tts },
@@ -85,6 +89,8 @@ export function loadConfig(): SlateConfig {
   if (u15) merged.stills.url = u15;
   const mars = process.env.MARS_URL?.trim();
   if (mars) merged.pictureQc.endpoint = mars;
+  const crew = process.env.CREW_LLM_URL?.trim();
+  if (crew) merged.crew.endpoint = crew;
   return merged;
 }
 

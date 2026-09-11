@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { assertSheetGates, expandBoards, type CrewCallSheet } from "./boards-expand";
+import { assertSheetGates, expandBoards } from "./boards-expand";
+import type { CallSheet } from "./types";
 import { boardsSceneSchema, type BoardsScene } from "./boards-contract";
 import {
   assertBeatTotal,
@@ -169,14 +170,14 @@ test("the duration gate refuses a sheet that misses the slate's clock", () => {
 test("the beat-coverage gate refuses a sheet that drops a beat", () => {
   const { script, boards } = fixture();
   const sheet = expandBoards({ script, boards, targetSec: TARGET });
-  const short: CrewCallSheet = { ...sheet, shots: sheet.shots.filter((s) => s.beatId !== "SC02.B03") };
+  const short: CallSheet = { ...sheet, shots: sheet.shots.filter((s) => s.beatId !== "SC02.B03") };
   assert.throws(() => assertSheetGates(short, { script, targetSec: TARGET }), /SC02\.B03 has no shot/);
 });
 
 test("a line spoken twice is refused by the sheet gate", () => {
   const { script, boards } = fixture();
   const sheet = expandBoards({ script, boards, targetSec: TARGET });
-  const doubled: CrewCallSheet = { ...sheet, shots: [...sheet.shots, { ...sheet.shots[0]!, id: "SH13", index: 13 }] };
+  const doubled: CallSheet = { ...sheet, shots: [...sheet.shots, { ...sheet.shots[0]!, id: "SH13", index: 13 }] };
   assert.throws(() => assertSheetGates(doubled, { script, targetSec: TARGET }), /spoken in 2 shots|cut order wants/);
 });
 

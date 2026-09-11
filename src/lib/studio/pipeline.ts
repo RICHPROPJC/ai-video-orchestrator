@@ -6,7 +6,7 @@ import { readWavMono, runCommand } from "./audio";
 import { emit, readJob, writeJob } from "./store";
 import { renderBlockingSvg, sceneSize } from "./painter";
 import { localPictureQc, localSoundQc, senseVoiceHttp } from "./providers";
-import { loadConfig } from "./config";
+import { loadConfig, type SlateConfig } from "./config";
 import type { AgentId, CallSheet, JobRecord, ProduceInput, ProviderTrace, Shot } from "./types";
 import { floorLine, seat } from "./crew";
 import { assertSameCanon, continuityMarkdown, lockContinuity } from "./continuity";
@@ -14,7 +14,10 @@ import { open, packetLine, seal } from "./dispatch";
 import { buildNarrativePlan, planMarkdown } from "./narrative";
 import { indexPlanTexts, recall, upsertDoc, vaultStats } from "./vault";
 import { relInJob } from "./isolate";
-import { draftCallSheet, loadCallSheet } from "./writer";
+import { loadCallSheet } from "./writer";
+import { runWriter } from "./seat-writer";
+import { runBoards } from "./seat-boards";
+import { ensurePortraits } from "./portraits";
 import { ensureDir, jobDir, jobFile } from "./paths";
 import { snapDurationToFrames, wavSeconds } from "./frame-grid";
 import { buildCutPlan, type CutPlan } from "./cut-plan";
@@ -58,6 +61,17 @@ async function ffmpeg(args: string[]) {
   }
 }
 
+/** Runtime of a delivered file as the container reports it. */
+async function mediaSeconds(file: string): Promise<number> {
+  const r = await runCommand("ffprobe", [
+    "-v", "error", "-show_entries", "format=duration", "-of", "json", file,
+  ]);
+  if (r.code !== 0) throw new Error(r.stderr || `ffprobe failed on ${file}`);
+  const d = Number((JSON.parse(r.stdout).format ?? {}).duration);
+  if (!Number.isFinite(d)) throw new Error(`ffprobe: no duration for ${file}`);
+  return Number(d.toFixed(3));
+}
+
 /** H3's ref-audio clock must equal the video clock: pad the wav with trailing
  *  silence to the snapped frame length; the same file feeds the mux. */
 export async function padH3Wav(src: string, dst: string, frames: number): Promise<number> {
@@ -83,10 +97,90 @@ export function muxArgs(mp4: string, h3Wav: string, out: string): string[] {
   ];
 }
 
+/** Speaking parts must be castable, so the roster is read from a data file the
+ *  operator points at — never from a list living in src. */
+function readCastRoster(file?: string): string[] {
+  if (!file) return [];
+  const raw = JSON.parse(fs.readFileSync(file, "utf8")) as { cast?: { name?: string }[] };
+  const names = (raw.cast ?? []).map((c) => c.name).filter((n): n is string => Boolean(n));
+  if (!names.length) throw new Error(`--cast-roster ${file} lists no names`);
+  return names;
+}
+
+type SeatVoice = {
+  speak: (agent: AgentId, message: string, level?: "info" | "warn" | "pass" | "fail") => Promise<void>;
+  think: (agent: AgentId) => Promise<void>;
+};
+
+/** Where the callsheet comes from: a resumed slate, the plug (factory tests
+ *  only), or — by default now — 阿文 and 阿圖 actually writing it. */
+async function authorCallSheet(
+  jobId: string,
+  input: ProduceInput,
+  cfg: SlateConfig,
+  io: SeatVoice,
+): Promise<CallSheet> {
+  const existing = path.join(jobDir(jobId), "callsheet.json");
+  if (input.resume && fs.existsSync(existing)) {
+    const sheet = loadCallSheet(existing);
+    await io.speak("producer", `resume：照返 callsheet.json（${sheet.shots.length} 鏡），唔重開檯。`);
+    return sheet;
+  }
+  if (input.callSheetPath) {
+    const sheet = loadCallSheet(input.callSheetPath);
+    await io.speak("producer", `callsheet plug 載入：${sheet.shots.length} 鏡。`);
+    return sheet;
+  }
+  const targetSec = input.durationSec ?? 600;
+  const receiptDir = path.join(jobDir(jobId), "seats");
+  const index = (doc: { id: string; text: string; shotId?: string }) => {
+    upsertDoc({ id: doc.id, slate: jobId, modality: "text", shotId: doc.shotId, text: doc.text });
+  };
+
+  await io.think("writer");
+  await io.speak("writer", `寫故事同對白。${cfg.crew.writerModel} · 目標 ${targetSec}s。`);
+  const writer = await runWriter(
+    {
+      brief: input.brief,
+      targetSec,
+      language: input.language,
+      castRoster: readCastRoster(input.castRosterPath),
+    },
+    {
+      crew: cfg.crew,
+      model: cfg.crew.writerModel,
+      receiptDir,
+      speak: (thinking) => io.speak("writer", thinking),
+      index,
+    },
+  );
+
+  await io.think("boards");
+  await io.speak("boards", `拆鏡。${cfg.crew.boardsModel} · ${writer.script.outline.scenes.length} 場。`);
+  const boards = await runBoards(
+    {
+      script: writer.script,
+      targetSec,
+      aspect: input.aspect,
+      writer: { model: writer.model, receipts: writer.receipts },
+    },
+    {
+      crew: cfg.crew,
+      model: cfg.crew.boardsModel,
+      receiptDir,
+      speak: (thinking) => io.speak("boards", thinking),
+      index,
+    },
+  );
+  return boards.sheet;
+}
+
 export async function runPipeline(jobId: string, input: ProduceInput) {
   const initial = readJob(jobId);
   if (!initial) throw new Error("missing job");
-  if (!input.wavDir) throw new Error("--wav-dir <dir> is required (one SHxx.wav per shot)");
+  if (!input.wavDir && input.until !== "boards") {
+    throw new Error("--wav-dir <dir> is required (one SHxx.wav per shot)");
+  }
   let job: JobRecord = initial;
   const cfg = loadConfig();
   const trace: ProviderTrace = {
@@ -123,7 +217,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
   try {
     await think("producer");
     await speak("producer", "收 brief。開呢份 slate 嘅信封。舊 project 唔入袋。");
-    const sheet = input.callSheetPath ? loadCallSheet(input.callSheetPath) : draftCallSheet(input);
+    const sheet = await authorCallSheet(jobId, input, cfg, { speak, think });
     fs.writeFileSync(jobFile(jobId, "callsheet.json"), JSON.stringify(sheet, null, 2));
     job = patch(job, {
       callSheet: sheet,
@@ -133,11 +227,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     });
     await speak(
       "producer",
-      `${input.callSheetPath ? "callsheet plug 載入：" : ""}${sheet.title} · ${sheet.durationSec}s · ${sheet.shots.length} shots · ${sheet.location}`,
+      `${sheet.title} · ${sheet.durationSec.toFixed(1)}s · ${sheet.shots.length} shots · ${sheet.location}`,
     );
 
-    await think("writer");
-    await speak("writer", "故事同對白寫死。Shot ID 終身。");
     const toBoards = seal({
       slate: jobId,
       from: "writer",
@@ -146,7 +238,6 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     });
     await speak("producer", packetLine(toBoards));
 
-    await think("boards");
     const boarded = open(toBoards, { slate: jobId, to: "boards" });
     const continuity = assertSameCanon(lockContinuity(boarded.sheet));
     const locked: CallSheet = { ...boarded.sheet, shots: continuity.boards };
@@ -175,7 +266,36 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         vault: "vault.json",
       },
     });
-    await speak("boards", `分鏡專職鎖咗 ${continuity.cut.join(" → ")}。故事＝分鏡＝剪接。Vault 只得 ${jobId}。`);
+    await speak("boards", `分鏡專職鎖咗 ${continuity.cut.length} 鏡。故事＝分鏡＝剪接。Vault 只得 ${jobId}。`);
+
+    if (input.until === "boards") {
+      job = patch(job, {
+        status: "boarded",
+        progress: 20,
+        currentAgent: "boards",
+        providers: trace,
+        outputs: { ...job.outputs, callSheet: "callsheet.json" },
+      });
+      emit(jobId, {
+        agent: "boards",
+        level: "pass",
+        message: `--until boards：${continuity.boards.length} 鏡、${locked.durationSec.toFixed(1)}s 已寫好。落 wav 之後 --resume ${jobId}。`,
+        data: { shots: continuity.boards.length, durationSec: locked.durationSec, provenance: locked.provenance },
+      });
+      return;
+    }
+
+    // portraits before any keyframe: a first appearance needs a face to anchor on
+    await think("stills");
+    const portraits = await ensurePortraits({
+      sheet: locked,
+      outDir: path.join(jobDir(jobId), "portraits"),
+      plugDir: input.portraitsDir,
+      server: cfg.stills.url,
+      seed: cfg.motion.seed,
+      onEvent: (message, data) => emit(jobId, { agent: "stills", level: "info", message, data }),
+    });
+    await speak("stills", `肖像齊：plug ${portraits.plugged.length}、新做 ${portraits.made.length}。`);
 
     await think("art");
     await speak("art", `Grade: ${locked.styleBible.grade}. 只描述已有 ${continuity.boards.length} 鏡，唔另開世界。`);
@@ -244,7 +364,12 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       const outMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
       const wav = wavByShot.get(shot.id)!;
       const frames = snapDurationToFrames(await wavSeconds(wav));
-      if (input.blockoutDir) {
+      const kept = input.resume && fs.existsSync(outMp4)
+        && Math.round((await mediaSeconds(outMp4)) * 24) === frames;
+      if (kept) {
+        trace.blender = "resume (kept)";
+        await speak("layout", `${shot.id} blockout 照舊 ${frames}f，唔重 render。`);
+      } else if (input.blockoutDir) {
         const plugged = await blockoutFromPlug(input.blockoutDir, shot.id, wav);
         fs.copyFileSync(plugged, outMp4);
         trace.blender = "blockout plug";
@@ -262,7 +387,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       await assertFiguresVisible(f0png, shot);
       await writeAnchors(outMp4, path.join(blockoutDir, `${shot.id}.anchors.json`));
       blockouts.push(outMp4);
-      await speak("layout", `${shot.id} blockout ${frames}f（wav 時鐘）`);
+      if (!kept) await speak("layout", `${shot.id} blockout ${frames}f（wav 時鐘）`);
     }
     job = patch(job, {
       providers: trace,
@@ -340,17 +465,25 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     await speak("stills", packetLine(toStills));
     await speak("stills", `U1.5 /edit ${cfg.stills.url} · ${cfg.stills.width}×${cfg.stills.height} · Image-1＝自己 f0，Image-2＋＝肖像（首次）或上一鏡定格。`);
     let prevKeyframe: string | null = null;
+    const editInputs = new Map<string, { prompt: string; nodePaths: string[]; base: string; refs: string[]; first: boolean }>();
+    const greenAlready = new Set<string>();
     for (const { shot, first, prompt, require } of stillPlans) {
       const out = path.join(stillDir, `${shot.id}.png`);
       const recordJson = path.join(stillDir, `${shot.id}.u15_edit.json`);
       const base = path.join(blockoutDir, `${shot.id}.f0.png`);
+      // a hash-matched GREEN keyframe is finished work; resume chains from it
+      if (input.resume && pinQcAccepted(stillDir, shot.id)) {
+        prevKeyframe = out;
+        stills.push(out);
+        greenAlready.add(shot.id);
+        await speak("stills", `${shot.id} keyframe 照舊（QC 已 GREEN），唔重出。`);
+        continue;
+      }
       const refIds = [...new Set(shot.marks.map((m) => m.characterId))];
       const refFiles = first
         ? refIds.map((id) => {
-            const p = input.portraitsDir ? path.join(input.portraitsDir, `${id}.png`) : "";
-            if (!p || !fs.existsSync(p)) {
-              throw new Error(`${shot.id}: 首次出場要 --portraits <dir>（缺 ${id}.png）`);
-            }
+            const p = portraits.files[id];
+            if (!p || !fs.existsSync(p)) throw new Error(`${shot.id}: 首次出場冇肖像（${id}）`);
             return p;
           })
         : [prevKeyframe!];
@@ -390,6 +523,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           refs: refFiles,
         },
       });
+      editInputs.set(shot.id, { prompt, nodePaths, base, refs: refFiles, first });
       prevKeyframe = out;
       stills.push(out);
       upsertDoc({
@@ -418,10 +552,61 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       throw new Error(`picture QC plan-geometry pre-check failed: ${detail}`);
     }
     for (const { shot, require } of stillPlans) {
+      if (greenAlready.has(shot.id)) continue;
       const png = path.join(stillDir, `${shot.id}.png`);
-      const result = await runPhotoQc(png, path.join(stillDir, `${shot.id}.photo_qc.json`), require);
+      const qcJson = path.join(stillDir, `${shot.id}.photo_qc.json`);
+      let result = await runPhotoQc(png, qcJson, require);
       if (result.status !== "GREEN") {
-        throw new Error(`picture QC ${shot.id}: ${result.checks.fail_reasons.join("; ") || "not GREEN"}`);
+        const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
+        await speak("pictureQc", `${shot.id} 唔過（${reasons}）— 補一句 prompt 再 /edit 一次。`, "warn");
+        const inputs = editInputs.get(shot.id);
+        if (!inputs) throw new Error(`picture QC ${shot.id}: no /edit inputs to retry with`);
+        // retry changes only the prompt: same base, same refs, same lane settings
+        const retryPrompt = `${inputs.prompt} Fix these: ${reasons}.`;
+        const payload = buildEditPayload({
+          prompt: retryPrompt,
+          images: inputs.nodePaths,
+          width: cfg.stills.width || size.width,
+          height: cfg.stills.height || size.height,
+        });
+        await u15Edit({
+          server: cfg.stills.url,
+          payload,
+          nodePaths: inputs.nodePaths,
+          outFile: png,
+          recordJson: path.join(stillDir, `${shot.id}.u15_edit.retry.json`),
+          health: await checkHealth(cfg.stills.url, inputs.nodePaths.length),
+          record: {
+            ts: new Date().toISOString(),
+            prompt: retryPrompt,
+            img_cfg: payload.img_cfg_scale,
+            cfg: payload.cfg_scale,
+            steps: payload.num_steps,
+            use_edit_pe: payload.use_edit_pe,
+            width: payload.width,
+            height: payload.height,
+            first: inputs.first,
+            base: inputs.base,
+            refs: inputs.refs,
+          },
+        });
+        result = await runPhotoQc(png, qcJson, require);
+      }
+      if (result.status !== "GREEN") {
+        const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
+        job = patch(job, {
+          status: "blocked",
+          currentAgent: "pictureQc",
+          providers: trace,
+          error: `picture QC ${shot.id} 連續兩次唔過：${reasons}`,
+        });
+        emit(jobId, {
+          agent: "pictureQc",
+          level: "fail",
+          message: `${shot.id} 兩次都唔過（${reasons}）。停手，唔硬出。修 prompt 或者換 plug 之後 --resume ${jobId}。`,
+          data: { shot: shot.id, require, fail_reasons: result.checks.fail_reasons },
+        });
+        return;
       }
       await speak("pictureQc", `${shot.id} GREEN（人數 ${require.people_count}）`, "pass");
     }
@@ -469,6 +654,19 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         requireQuote: Boolean(shot.dialogue.trim()),
         wardrobe: wardrobeClauses(timed),
       });
+      const doneMp4 = path.join(motionDir, `${shot.id}.mp4`);
+      const doneReceipt = path.join(motionDir, `${shot.id}.h3_submit.json`);
+      // an mp4 whose stream already holds the snapped frame count needs no re-burn
+      if (
+        input.resume && fs.existsSync(doneMp4) && fs.existsSync(doneReceipt)
+        && Math.round((await mediaSeconds(doneMp4)) * 24)
+          === Math.round((cutPlan.shots.find((c) => c.id === shot.id)?.duration_s ?? -1) * 24)
+      ) {
+        shotVideos.push(doneMp4);
+        receipts.push(relInJob(jobId, doneReceipt));
+        await speak("motion", `${shot.id} 照舊，唔重燒 H3。`);
+        continue;
+      }
       const { receiptFile } = await submitH3Shot({
         prose,
         wavFile: h3WavByShot.get(shot.id)!,
@@ -622,11 +820,16 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
 
     await think("delivery");
     await speak("delivery", "交片包：mp4 + continuity + QC + Blender。故事＝分鏡＝剪接。");
+    const deliveredSec = await mediaSeconds(pictureLock);
     const report = {
       slate: job.slate,
       title: timed.title,
       cut: continuity.cut,
       providers: trace,
+      // measured off the delivered mp4, not the planned sum
+      delivered_s: deliveredSec,
+      planned_s: timed.durationSec,
+      provenance: timed.provenance,
       soundQc: sound,
       pictureQcStills: geometry,
       pictureQcVideo: pictureVideo,

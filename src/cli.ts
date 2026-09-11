@@ -7,6 +7,8 @@ import { doctor, formatDoctor } from "./lib/studio/doctor";
 import { runTui } from "./lib/studio/tui";
 import type { JobRecord, ProduceInput } from "./lib/studio/types";
 
+const UNTIL_GATES: NonNullable<ProduceInput["until"]>[] = ["boards", "stills", "motion"];
+
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(name);
   if (i >= 0 && process.argv[i + 1]) return process.argv[i + 1];
@@ -29,13 +31,16 @@ Commands
 
 Flags
   --duration 12  --aspect 16:9|9:16|1:1  --clone ref.wav  --lang yue
-  --wav-dir <dir>       必需：每鏡 SHxx.wav（可加 spine.wav 全片聲軌）
+  --wav-dir <dir>       每鏡 SHxx.wav（可加 spine.wav 全片聲軌）；除 --until boards 外必需
   --portraits <dir>     角色肖像 A.png/B.png（首次出場 /edit 參考圖）
   --blockout-dir <dir>  預渲染 blockout SHxx.mp4（864x480 24fps，frames=wav snap）
-  --callsheet <json>    載入現成 callsheet，跳過編劇 draft（結構唔齊即刻 fail）
+  --callsheet <json>    載入現成 callsheet，跳過兩張檯（結構唔齊即刻 fail）
+  --cast-roster <json>  可出聲角色名單（有聲音檔嘅名），編劇檯只准用呢批名
   --gap <sec>           鏡與鏡之間靜音（默許 0）
   --dry-run             行到 prompt/receipt 為止，唔 POST 任何機
-  --until stills|motion 早停閘：stills＝photo QC GREEN 即停（status stills-ready）；motion＝H3 落片即停
+  --until boards|stills|motion 早停閘：boards＝劇本同分鏡出齊即停（status boarded，唔使 wav）；
+                        stills＝photo QC GREEN 即停（stills-ready）；motion＝H3 落片即停
+  --resume <slate>      接返舊 slate：callsheet 照舊，過咗閘嘅 blockout／keyframe／片唔重做
 
 Rack（two-host truth）
   U1.5 /edit  <stills.url>        node0 :8097
@@ -59,9 +64,10 @@ async function makeJob(brief: string) {
     dryRun: process.argv.includes("--dry-run"),
     until: arg("--until") as ProduceInput["until"],
     callSheetPath: arg("--callsheet"),
+    castRosterPath: arg("--cast-roster"),
   };
-  if (input.until && input.until !== "stills" && input.until !== "motion") {
-    console.error('--until 只接受 stills（photo QC GREEN 即停）或 motion（H3 落片即停）');
+  if (input.until && !UNTIL_GATES.includes(input.until)) {
+    console.error(`--until 只接受 ${UNTIL_GATES.join(" / ")}`);
     process.exit(1);
   }
   const job: JobRecord = {
@@ -79,12 +85,39 @@ async function makeJob(brief: string) {
   return { id, input };
 }
 
-async function produce(brief: string, tui: boolean) {
-  if (!arg("--wav-dir")) {
-    console.error('produce/tui 需要 --wav-dir <dir>（每鏡 SHxx.wav，可加 spine.wav）');
+/** Resume keeps the slate's own brief and clock — only the plug paths and the
+ *  stop gate come from this command line. */
+function resumeJob(slate: string) {
+  const job = readJob(slate);
+  if (!job) {
+    console.error(`--resume ${slate}：搵唔到呢份 slate`);
     process.exit(1);
   }
-  const { id, input } = await makeJob(brief);
+  const input: ProduceInput = {
+    ...job.input,
+    resume: true,
+    wavDir: arg("--wav-dir") ?? job.input.wavDir,
+    portraitsDir: arg("--portraits") ?? job.input.portraitsDir,
+    blockoutDir: arg("--blockout-dir") ?? job.input.blockoutDir,
+    gapSec: process.argv.includes("--gap") ? Number(arg("--gap", "0")) : job.input.gapSec,
+    dryRun: process.argv.includes("--dry-run"),
+    until: (arg("--until") as ProduceInput["until"]) ?? undefined,
+  };
+  if (input.until && !UNTIL_GATES.includes(input.until)) {
+    console.error(`--until 只接受 ${UNTIL_GATES.join(" / ")}`);
+    process.exit(1);
+  }
+  writeJob({ ...job, input, status: "queued", error: undefined, updatedAt: new Date().toISOString() });
+  return { id: job.id, input };
+}
+
+async function produce(brief: string, tui: boolean) {
+  // boards stops before the wav is the clock, so it is the one gate that runs dry
+  if (!arg("--wav-dir") && arg("--until") !== "boards") {
+    console.error('produce/tui 需要 --wav-dir <dir>（每鏡 SHxx.wav，可加 spine.wav）；只出分鏡用 --until boards');
+    process.exit(1);
+  }
+  const { id, input } = arg("--resume") ? resumeJob(arg("--resume")!) : await makeJob(brief);
   const rack = loadConfig();
   if (!tui || !process.stdout.isTTY) {
     console.log(`\n  SLATE  ${id}`);
@@ -106,6 +139,10 @@ async function produce(brief: string, tui: boolean) {
   console.log(`\n  STATUS ${done?.status}  ${done?.progress}%`);
   if (done?.outputs.pictureLock) {
     console.log(`  LOCK   ${path.join(process.cwd(), "data/jobs", id, done.outputs.pictureLock)}`);
+  }
+  if (done?.status === "boarded") {
+    console.log(`  SHEET  ${path.join(process.cwd(), "data/jobs", id, "callsheet.json")}`);
+    console.log(`  NEXT   落好 wav 之後：produce "" --resume ${id} --wav-dir <dir>`);
   }
   if (done?.status === "stills-ready") {
     console.log(`  STILLS ${path.join(process.cwd(), "data/jobs", id, "stills")}`);
@@ -181,8 +218,8 @@ async function main() {
   }
   if (cmd === "tui") {
     const brief = process.argv[3] || "";
-    if (!brief) {
-      console.error("tui needs a brief");
+    if (!brief && !arg("--resume")) {
+      console.error("tui needs a brief（或 --resume <slate>）");
       process.exitCode = 1;
       return;
     }
@@ -191,8 +228,8 @@ async function main() {
   }
   if (cmd === "produce") {
     const brief = process.argv[3] || "";
-    if (!brief) {
-      console.error("produce needs a brief");
+    if (!brief && !arg("--resume")) {
+      console.error("produce needs a brief（或 --resume <slate>）");
       process.exitCode = 1;
       return;
     }

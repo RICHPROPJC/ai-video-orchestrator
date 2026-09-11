@@ -5,6 +5,7 @@ export type JobStatus =
   | "locked"
   | "failed"
   | "dry-run"
+  | "boarded"
   | "stills-ready"
   | "motion-ready";
 
@@ -43,9 +44,14 @@ export type ProduceInput = {
   blockoutDir?: string;
   gapSec?: number;
   dryRun?: boolean;
-  /** stop early: stills = after photo QC GREEN, motion = after H3 downloads (before mux) */
-  until?: "stills" | "motion";
-  /** load this callsheet JSON instead of drafting one from the brief */
+  /** stop early: boards = seats have written the callsheet (no wavs yet),
+   *  stills = after photo QC GREEN, motion = after H3 downloads (before mux) */
+  until?: "boards" | "stills" | "motion";
+  /** reuse this slate's callsheet and finished artefacts instead of starting over */
+  resume?: boolean;
+  /** names the writer may cast speaking parts from (data file, never in src) */
+  castRosterPath?: string;
+  /** load this callsheet JSON instead of letting the seats author one */
   callSheetPath?: string;
 };
 
@@ -109,6 +115,16 @@ export type Shot = {
   props?: ShotProp[];
   stillPrompt: string;
   motionPrompt: string;
+  /** which scene and beat the seats cut this shot from */
+  scene?: string;
+  beatId?: string;
+};
+
+/** Which seat wrote the sheet, on which model, with the receipts to prove it. */
+export type Provenance = {
+  writer: { model: string; receipts: string[] };
+  boards: { model: string; receipts: string[] };
+  sha256: string;
 };
 
 export type CallSheet = {
@@ -130,6 +146,8 @@ export type CallSheet = {
   };
   shots: Shot[];
   voiceover: string;
+  scenes?: { id: string; heading: string; summary: string; targetSec: number }[];
+  provenance?: Provenance;
 };
 
 export type QcIssue = {

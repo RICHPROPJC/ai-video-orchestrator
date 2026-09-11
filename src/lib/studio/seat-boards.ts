@@ -2,12 +2,12 @@ import crypto from "node:crypto";
 import { chatJson } from "./crew-llm";
 import { BOARDS_CHARTER } from "./seat-charters";
 import { boardsSceneSchema, type BoardsScene } from "./boards-contract";
-import { assertSheetGates, expandBoards, type CrewCallSheet } from "./boards-expand";
+import { assertSheetGates, expandBoards } from "./boards-expand";
 import type { Script } from "./script-contract";
 import type { CallSheet } from "./types";
 import type { SeatIo } from "./seat-writer";
 
-export type BoardsResult = { sheet: CrewCallSheet; model: string; receipts: string[] };
+export type BoardsResult = { sheet: CallSheet; model: string; receipts: string[] };
 
 type Handoff = Record<string, { slot: string; depth: string; stance: string; props: string[] }>;
 
@@ -29,7 +29,7 @@ export function handoffFrom(scene: BoardsScene | undefined, carried: Handoff): H
   return next;
 }
 
-export function sheetDigest(sheet: CrewCallSheet): string {
+export function sheetDigest(sheet: CallSheet): string {
   const { provenance: _drop, ...rest } = sheet;
   return crypto.createHash("sha256").update(JSON.stringify(rest)).digest("hex");
 }
@@ -85,7 +85,7 @@ export async function runBoards(
 
   const expanded = expandBoards({ script, boards, targetSec: opts.targetSec, aspect: opts.aspect });
   assertSheetGates(expanded, { script, targetSec: opts.targetSec });
-  const sheet: CrewCallSheet = {
+  const sheet: CallSheet = {
     ...expanded,
     provenance: {
       writer: { model: opts.writer.model, receipts: opts.writer.receipts },
