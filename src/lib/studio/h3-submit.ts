@@ -3,7 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { loadConfig } from "./config";
 import { snapDurationToFrames, wavSeconds } from "./frame-grid";
-import { SCRIPT_HEADER, validateProse } from "./h3-prose";
+import { SCRIPT_HEADER, validateProse, type ValidateProseOpts } from "./h3-prose";
 import { buildH3Graph, BINDINGS, type H3GraphModels } from "./h3-r2v-graph";
 import { scpToHost } from "./scp-upload";
 import { queuePrompt, waitHistory, downloadView, uploadComfyFile } from "./comfy";
@@ -63,10 +63,11 @@ export async function submitH3Shot(opts: {
   dryRun: boolean;
   shot?: string;
   requireQuote?: boolean;
+  wardrobe?: ValidateProseOpts["wardrobe"];
 }): Promise<{ receipt: H3SubmitReceipt; receiptFile: string }> {
   const cfg = loadConfig();
   const promptText = `${SCRIPT_HEADER}\n${opts.prose}`;
-  validateProse(promptText, { requireQuote: opts.requireQuote !== false });
+  validateProse(promptText, { requireQuote: opts.requireQuote !== false, wardrobe: opts.wardrobe });
 
   const seconds = await wavSeconds(opts.wavFile);
   const frames = snapDurationToFrames(seconds);

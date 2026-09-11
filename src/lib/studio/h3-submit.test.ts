@@ -8,10 +8,10 @@ import { submitH3Shot } from "./h3-submit";
 
 function validProse() {
   return [
-    "Photoreal. 茶餐廳門口，night，rain。兩人企喺燈下相認 2 people. No one else.",
-    "The grey placeholders in <Video 1> carry motion only — follow their positions and timing; replace their look entirely.",
-    "Faces and clothes stay as the start and end keyframe images. Do not add people.",
-    '阿月: "你仲記得個門口個燈？"',
+    "Photoreal. 茶餐廳門口, night.",
+    "Have the 2 people act following the movements of the grey placeholders in <Video 1> — they carry motion only; replace their look entirely.",
+    "Faces, clothes, the props and the field continue exactly from the start keyframe image. Do not add people.",
+    '阿月 (left) speaks the line in Audio 1: "你仲記得個門口個燈？". 阿衡 listens.',
   ].join("\n\n");
 }
 

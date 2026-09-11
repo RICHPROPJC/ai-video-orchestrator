@@ -22,7 +22,7 @@ import { checkGate } from "./concat-gate";
 import { writeAnchors } from "./dhash-anchors";
 import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "./blockout";
 import { keyframeEditPrompt, keyframeRequire } from "./keyframe-prompt";
-import { buildProse, validateProse, SCRIPT_HEADER } from "./h3-prose";
+import { buildProse, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
 import { checkHealth, buildEditPayload, u15Edit, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
@@ -265,6 +265,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           dryRun: true,
           shot: shot.id,
           requireQuote: Boolean(shot.dialogue.trim()),
+          wardrobe: wardrobeClauses(timed),
         });
         receipts.push(relInJob(jobId, receiptFile));
       }
@@ -406,7 +407,10 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         throw new Error(`${shot.id}: photo_qc 未 GREEN（sha 或 schema 唔吻合）— 唔准燒 H3`);
       }
       const prose = buildProse(timed, shot);
-      validateProse(`${SCRIPT_HEADER}\n${prose}`, { requireQuote: Boolean(shot.dialogue.trim()) });
+      validateProse(`${SCRIPT_HEADER}\n${prose}`, {
+        requireQuote: Boolean(shot.dialogue.trim()),
+        wardrobe: wardrobeClauses(timed),
+      });
       const { receiptFile } = await submitH3Shot({
         prose,
         wavFile: wavByShot.get(shot.id)!,
@@ -417,6 +421,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         dryRun: false,
         shot: shot.id,
         requireQuote: Boolean(shot.dialogue.trim()),
+        wardrobe: wardrobeClauses(timed),
       });
       const mp4 = path.join(motionDir, `${shot.id}.mp4`);
       shotVideos.push(mp4);
