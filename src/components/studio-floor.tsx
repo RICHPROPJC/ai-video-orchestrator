@@ -51,6 +51,7 @@ export function StudioFloor({
   const [rack, setRack] = useState<DoctorReport | null>(null);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<{ id: string; modality: string; score: number; text: string; shotId?: string }[] | null>(null);
+  const [tab, setTab] = useState("board");
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -353,15 +354,15 @@ export function StudioFloor({
           </Card>
 
           <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
-            <Tabs defaultValue="board">
-              <TabsList>
+            <Tabs value={tab} onValueChange={(value) => setTab(String(value))}>
+              <TabsList className="flex h-auto min-h-8 w-full flex-wrap justify-start gap-1">
                 <TabsTrigger value="board">分鏡</TabsTrigger>
                 <TabsTrigger value="plan">計劃</TabsTrigger>
                 <TabsTrigger value="block">走位</TabsTrigger>
                 <TabsTrigger value="qc">QC</TabsTrigger>
                 <TabsTrigger value="lock">成片</TabsTrigger>
               </TabsList>
-              <TabsContent value="board">
+              <TabsContent value="board" className="mt-3 min-h-48">
                 <div className="space-y-3">
                   {job?.continuity ? (
                     <p className="text-xs text-muted-foreground">
@@ -383,7 +384,7 @@ export function StudioFloor({
                   </div>
                 </div>
               </TabsContent>
-              <TabsContent value="plan">
+              <TabsContent value="plan" className="mt-3 min-h-48">
                 <div className="space-y-3 text-sm">
                   <p className="text-xs text-muted-foreground">
                     ViMax 式 DAG。JSON 存在 <code>data/jobs/{job?.slate ?? "SLATE"}/</code>。Embed / rerank 只讀呢份 vault.json。
@@ -437,7 +438,7 @@ export function StudioFloor({
                   ) : null}
                 </div>
               </TabsContent>
-              <TabsContent value="block">
+              <TabsContent value="block" className="mt-3 min-h-48">
                 {job?.outputs.blockingPreview ? (
                   <div className="space-y-3">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -454,7 +455,7 @@ export function StudioFloor({
                   <Empty label="Layout agent 未出 mark。" />
                 )}
               </TabsContent>
-              <TabsContent value="qc">
+              <TabsContent value="qc" className="mt-3 min-h-48">
                 <div className="grid gap-3 md:grid-cols-2">
                   <QcCard title="SenseVoice 聲檢" data={job?.soundQc} />
                   <QcCard title="MARS-8B 畫檢（stills）" data={job?.pictureQcStills} />
@@ -475,7 +476,7 @@ export function StudioFloor({
                   </Card>
                 </div>
               </TabsContent>
-              <TabsContent value="lock">
+              <TabsContent value="lock" className="mt-3 min-h-48">
                 {job?.outputs.pictureLock ? (
                   <div className="space-y-3">
                     <video
