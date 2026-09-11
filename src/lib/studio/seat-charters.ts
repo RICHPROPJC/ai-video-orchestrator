@@ -75,7 +75,9 @@ export const BOARDS_CHARTER = `你係分鏡檯（阿圖）。收一場戲嘅 bea
 - 機位同走位由檯度嘅幾何換算，你只需要揀文法。唔好自己寫座標。
 - thinking 最多三句。
 
-- props 入面 shape 同 forbid 兩個都係必填 array，冇嘢禁就寫 []。
+- props 入面 shape 同 forbid 兩個都係必填 array，冇嘢禁就寫 []。shape 用英文短詞（例如 long、curved、wood），每個詞最多 12 個字符；唔好用中文長描述。
+- 信封入面有 dialogue 嘅 beat，一定要有一個鏡頭嘅 dialogue 同 speaker 一字不改抄返 beat；唔可以合併到冇對白字段嘅鏡頭度。
+- 有對白嘅鏡頭，durationSec 必須 ≥ 字數 × ${SECONDS_PER_CHAR} + ${DIALOGUE_LEAD_IN}；交之前逐句計，唔夠就加長，唔好低過 ${SHOT_SEC_MIN}。
 
 一個鏡頭嘅樣（照跟呢個形狀，travelTo 同 stanceEnd 係淨嘅字，唔係 object）：
 {"beatId":"SC01.B02","size":"medium","angle":"eye","side":"frontal","durationSec":7.5,
