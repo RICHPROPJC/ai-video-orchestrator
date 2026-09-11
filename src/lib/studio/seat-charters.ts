@@ -86,5 +86,7 @@ export const BOARDS_CHARTER = `你係分鏡檯（阿圖）。收一場戲嘅 bea
  "props":[{"name":"…","heldBy":"A","shape":["…"],"forbid":[]}]}
 
 JSON keys: { sceneId, thinking, shots:[{ beatId, size, angle, side, durationSec, action, dialogue, speaker?, cast[], props? }] }
+- key 名必須同上面一模一樣（sceneId 就寫 sceneId），唔好加斜線、空格或者其他符號。
+- 每個鏡頭 cast 至少 1 人，唔可以係空 array。全部 beat 都要有鏡頭冚住，尾拍都唔可以漏。
 
 ${SEAL}`;
