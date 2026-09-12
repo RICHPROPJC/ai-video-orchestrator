@@ -1,9 +1,9 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import * as nodeTest from "node:test";
 import {
   chatJson,
   DEFAULT_CREW,
@@ -14,6 +14,15 @@ import {
   type CrewConfig,
   type CrewReceipt,
 } from "./crew-llm";
+
+/** One file, three doors: bun's node:test shim only works under `bun test`,
+ *  so bare `bun <this file>` self-drives the collected cases; `bun test` and
+ *  `tsx --test` use the real runner. */
+const bareBun = !!process.versions.bun && process.env.BUN_TEST !== "1";
+const cases: { name: string; fn: () => void | Promise<void> }[] = [];
+const test = bareBun
+  ? (name: string, fn: () => void | Promise<void>) => cases.push({ name, fn })
+  : nodeTest.test;
 
 const schema = z.object({ title: z.string(), beats: z.array(z.string()).min(2) });
 
@@ -37,12 +46,33 @@ function fakeFetch(replies: string[]) {
   return { impl, sent };
 }
 
+/** Injected fetch with per-call HTTP status; 200 bodies carry one message content. */
+function seqFetch(calls: { status: number; content?: string }[]) {
+  const sent: Record<string, unknown>[] = [];
+  const impl = (async (_url: string | URL | Request, init?: RequestInit) => {
+    sent.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    const c = calls[Math.min(sent.length - 1, calls.length - 1)]!;
+    const content = c.content ?? "{}";
+    return c.status === 200
+      ? new Response(JSON.stringify({ choices: [{ message: { content, reasoning_content: "" } }] }), { status: 200 })
+      : new Response("rate limited", { status: c.status });
+  }) as unknown as typeof fetch;
+  return { impl, sent };
+}
+
+/** Records every wait instead of sleeping. */
+function fakeClock() {
+  const slept: number[] = [];
+  return { slept, sleepImpl: async (ms: number) => { slept.push(ms); } };
+}
+
 function call(opts: {
   model?: string;
   replies: string[];
   dir: string;
   crewCfg?: CrewConfig;
   fetchImpl?: typeof fetch;
+  sleepImpl?: (ms: number) => Promise<void>;
 }) {
   return chatJson({
     seat: "writer",
@@ -54,6 +84,7 @@ function call(opts: {
     schema,
     receiptDir: opts.dir,
     fetchImpl: opts.fetchImpl,
+    sleepImpl: opts.sleepImpl,
   });
 }
 
@@ -134,6 +165,33 @@ test("first-pass success: quirks on the wire, JSON mode, one receipt", async () 
   assert.equal(receipt.messages.length, 2);
 });
 
+test("deterministic repairs land on the attempt receipt as repair: lines", async () => {
+  const dir = tmpDir();
+  const { impl } = fakeFetch([JSON.stringify({ title: "門", beats: ["a", "b"], lang: "zh" })]);
+  const out = await chatJson({
+    seat: "writer",
+    unit: "outline",
+    model: "kimi-k3",
+    crew,
+    system: "編劇",
+    user: "{}",
+    schema,
+    receiptDir: dir,
+    fetchImpl: impl,
+    normalize: (raw, note) => {
+      note(`repair: lang saw "zh" became "zh-Hant"`);
+      note(`mood saw 冷峻 became 冷`); // prefix is stamped on, never trusted
+      return raw;
+    },
+  });
+  assert.equal(out.value.title, "門");
+  const receipt = JSON.parse(fs.readFileSync(path.join(dir, "writer.outline.1.json"), "utf8")) as CrewReceipt;
+  assert.deepEqual(receipt.repairs, [
+    'repair: lang saw "zh" became "zh-Hant"',
+    "repair: mood saw 冷峻 became 冷",
+  ]);
+});
+
 test("schema failure feeds the validator's errors back and recovers", async () => {
   const dir = tmpDir();
   const { impl, sent } = fakeFetch([
@@ -147,16 +205,21 @@ test("schema failure feeds the validator's errors back and recovers", async () =
   const retryTurns = sent[1]!.messages as { role: string; content: string }[];
   assert.equal(retryTurns.length, 4);
   assert.equal(retryTurns[2]!.role, "assistant");
+  // repair-prompt, not a re-roll: the zod path and a slice of its own last output
   assert.match(retryTurns[3]!.content, /beats/);
+  assert.match(retryTurns[3]!.content, /門/);
+  assert.ok(retryTurns[3]!.content.length <= 800);
 
   const first = JSON.parse(fs.readFileSync(path.join(dir, "writer.outline.1.json"), "utf8")) as CrewReceipt;
   assert.equal(first.valid, false);
   assert.match(first.errors.join(" "), /beats/);
+  assert.deepEqual(first.repairs, []);
 });
 
 test("three bad attempts throw and leave three receipts", async () => {
   const dir = tmpDir();
-  const { impl, sent } = fakeFetch(["{}", "{}", "{}", "{}"]);
+  const bad = JSON.stringify({ thinking: "短。" });
+  const { impl, sent } = fakeFetch([bad, bad, bad, bad]);
   await assert.rejects(
     () => call({ replies: [], dir, fetchImpl: impl }),
     /seat writer could not produce valid outline after 3 attempts/,
@@ -175,8 +238,11 @@ test("empty-key boards reply yields one empty-json error and a short retry", asy
     sceneId: z.string(),
     shots: z.array(z.object({ durationSec: z.number() })).min(1),
   });
+  // long enough not to be junk: a keyless-enough object that reaches the
+  // schema lane still burns an attempt and gets the empty-json repair-prompt
+  const longEmpty = JSON.stringify({ notes: "x".repeat(130) });
   const { impl, sent } = fakeFetch([
-    '{"":""}',
+    longEmpty,
     JSON.stringify({ sceneId: "SC02", shots: [{ durationSec: 6 }] }),
   ]);
   const out = await chatJson({
@@ -199,12 +265,72 @@ test("empty-key boards reply yields one empty-json error and a short retry", asy
   assert.ok(retryTurns[3]!.content.length <= 800);
 });
 
+test("SC02 grave: the junk object { \",\": \"error\" } does not burn attempt 1", async () => {
+  const dir = tmpDir();
+  const boardsSchema = z.object({
+    sceneId: z.string(),
+    shots: z.array(z.object({ durationSec: z.number() })).min(1),
+  });
+  const { impl, sent } = fakeFetch([
+    '{",":"error"}',
+    JSON.stringify({ sceneId: "SC02", shots: [{ durationSec: 6 }] }),
+  ]);
+  const clock = fakeClock();
+  const out = await chatJson({
+    seat: "boards",
+    unit: "SC02",
+    model: "qwen3.6-35b",
+    crew,
+    system: "分鏡",
+    user: "{}",
+    schema: boardsSchema,
+    receiptDir: dir,
+    fetchImpl: impl,
+    sleepImpl: clock.sleepImpl,
+  });
+
+  // junk re-asked, not counted: the good reply is still attempt 1
+  assert.equal(sent.length, 2);
+  assert.deepEqual(out.receipts, ["boards.SC02.1.json"]);
+  assert.deepEqual(clock.slept, [5000]);
+});
+
+test("junk passes are free even with fetchImpl set: attempts still reach three", async () => {
+  const dir = tmpDir();
+  const bad = JSON.stringify({ thinking: "短。" });
+  const { impl, sent } = fakeFetch([
+    "{}",
+    '{",":"error"}',
+    bad,
+    JSON.stringify({ title: "門", beats: ["a", "b"] }),
+  ]);
+  const clock = fakeClock();
+  const out = await call({ replies: [], dir, fetchImpl: impl, sleepImpl: clock.sleepImpl });
+
+  assert.deepEqual(out.receipts, ["writer.outline.1.json", "writer.outline.2.json"]);
+  assert.equal(sent.length, 4);
+  assert.deepEqual(clock.slept, [5000, 5000]);
+});
+
+test("unparseable / junk-only lane stops at the 5-call ceiling and burns nothing", async () => {
+  const dir = tmpDir();
+  const { impl, sent } = fakeFetch(["講嘢，唔係 JSON", "{}", '{",":"error"}', "[]", " 又唔係 "]);
+  const clock = fakeClock();
+  await assert.rejects(
+    () => call({ replies: [], dir, fetchImpl: impl, sleepImpl: clock.sleepImpl }),
+    /5-call ceiling/,
+  );
+  assert.equal(sent.length, 5);
+  assert.deepEqual(fs.readdirSync(dir), [], "junk leaves no attempt receipts");
+  assert.deepEqual(clock.slept, [5000, 5000, 5000, 5000]);
+});
+
 test("schema retry feedback is capped at six lines and 800 chars", async () => {
   const dir = tmpDir();
   const manyIssues = z.object({ a: z.string(), b: z.string(), c: z.string(), d: z.string(), e: z.string(), f: z.string(), g: z.string() });
   const { impl, sent } = fakeFetch([
-    JSON.stringify({ a: 1 }),
-    JSON.stringify({ a: "x", b: "x", c: "x", d: "x", e: "x", f: "x", g: "x" }),
+    JSON.stringify({ thinking: "七項。", a: 1 }),
+    JSON.stringify({ thinking: "改好。", a: "x", b: "x", c: "x", d: "x", e: "x", f: "x", g: "x" }),
   ]);
   await chatJson({
     seat: "writer",
@@ -232,3 +358,52 @@ test("a leaked <think> block still parses, and HTTP errors fail loud", async () 
   const bad = (async () => new Response("upstream boom", { status: 502 })) as unknown as typeof fetch;
   await assert.rejects(() => call({ replies: [], dir: tmpDir(), fetchImpl: bad }), /HTTP 502/);
 });
+
+test("HTTP 429 backs off 20s/40s/80s then throws with the status intact", async () => {
+  const { impl, sent } = seqFetch([{ status: 429 }, { status: 429 }, { status: 429 }, { status: 429 }]);
+  const clock = fakeClock();
+  await assert.rejects(
+    () => call({ replies: [], dir: tmpDir(), fetchImpl: impl, sleepImpl: clock.sleepImpl }),
+    /HTTP 429/,
+  );
+  assert.equal(sent.length, 4);
+  assert.deepEqual(clock.slept, [20_000, 40_000, 80_000]);
+});
+
+test("HTTP 429 then 200 recovers after exactly one 20s backoff", async () => {
+  const ok = JSON.stringify({ title: "門", beats: ["a", "b"] });
+  const { impl, sent } = seqFetch([{ status: 429 }, { status: 200, content: ok }]);
+  const clock = fakeClock();
+  const out = await call({ replies: [], dir: tmpDir(), fetchImpl: impl, sleepImpl: clock.sleepImpl });
+  assert.deepEqual(out.value, { title: "門", beats: ["a", "b"] });
+  assert.equal(sent.length, 2);
+  assert.deepEqual(clock.slept, [20_000]);
+});
+
+test("non-429 HTTP errors stay immediate: no backoff sleep at all", async () => {
+  const bad = (async () => new Response("upstream boom", { status: 502 })) as unknown as typeof fetch;
+  const clock = fakeClock();
+  await assert.rejects(
+    () => call({ replies: [], dir: tmpDir(), fetchImpl: bad, sleepImpl: clock.sleepImpl }),
+    /HTTP 502/,
+  );
+  assert.deepEqual(clock.slept, []);
+});
+
+if (bareBun) {
+  // IIFE, not top-level await: tsx transpiles this file as CJS
+  void (async () => {
+    let failed = 0;
+    for (const c of cases) {
+      try {
+        await c.fn();
+        console.log(`ok - ${c.name}`);
+      } catch (err) {
+        failed += 1;
+        console.error(`not ok - ${c.name}\n${err instanceof Error ? err.stack : String(err)}`);
+      }
+    }
+    console.log(`# ${cases.length - failed}/${cases.length} passed`);
+    if (failed > 0) process.exit(1);
+  })();
+}

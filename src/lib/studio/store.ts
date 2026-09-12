@@ -26,6 +26,18 @@ export function listJobs(): JobRecord[] {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+/** Serial floor: one slate runs at a time. Returns the running job that blocks
+ *  a new produce, or null. Resuming that same job is allowed; queued, failed
+ *  and boarded history never blocks. */
+export function runningBlocker(resumeSlate?: string): JobRecord | null {
+  for (const j of listJobs()) {
+    if (j.status !== "running") continue;
+    if (resumeSlate && (j.id === resumeSlate || j.slate === resumeSlate)) continue;
+    return j;
+  }
+  return null;
+}
+
 export function subscribe(id: string, fn: (e: JobEvent) => void) {
   const set = listeners.get(id) ?? new Set();
   set.add(fn);

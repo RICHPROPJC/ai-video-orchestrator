@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 import path from "node:path";
 import { runPipeline, describeFloor } from "./lib/studio/pipeline";
-import { newSlateId, writeJob, readJob, listJobs, readEvents } from "./lib/studio/store";
+import { newSlateId, writeJob, readJob, listJobs, readEvents, runningBlocker } from "./lib/studio/store";
 import { loadConfig, setConfigPath } from "./lib/studio/config";
 import { doctor, formatDoctor } from "./lib/studio/doctor";
 import { runTui } from "./lib/studio/tui";
@@ -117,7 +117,14 @@ async function produce(brief: string, tui: boolean) {
     console.error('produce/tui 需要 --wav-dir <dir>（每鏡 SHxx.wav，可加 spine.wav）；只出分鏡用 --until boards');
     process.exit(1);
   }
-  const { id, input } = arg("--resume") ? resumeJob(arg("--resume")!) : await makeJob(brief);
+  // serial floor: refuse a second concurrent slate before any job is touched
+  const resumeSlate = arg("--resume");
+  const blocker = runningBlocker(resumeSlate);
+  if (blocker) {
+    console.error(`一次一份：slate ${blocker.id} 仲行緊（running）。等佢完先開新工，或者 --resume ${blocker.id} 接返呢份。`);
+    process.exit(1);
+  }
+  const { id, input } = resumeSlate ? resumeJob(resumeSlate) : await makeJob(brief);
   const rack = loadConfig();
   if (!tui || !process.stdout.isTTY) {
     console.log(`\n  SLATE  ${id}`);

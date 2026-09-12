@@ -13,8 +13,8 @@ const BEATS_PER_SCENE_MAX = 12;
  *  counts are a knob with this default rather than a constant in the schema. */
 export type ScriptRanges = { scenes: [number, number]; totalBeats: [number, number] };
 export const FEATURE_RANGES: ScriptRanges = { scenes: [6, 14], totalBeats: [60, 110] };
-const SCENE_TARGET_MIN = 24;
-const SCENE_TARGET_MAX = 120;
+export const SCENE_TARGET_MIN = 24;
+export const SCENE_TARGET_MAX = 120;
 const TARGET_TOLERANCE = 0.1;
 
 /** A beat becomes at least one shot and no shot is shorter than the frame grid

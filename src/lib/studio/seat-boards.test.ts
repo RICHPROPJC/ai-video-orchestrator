@@ -1,16 +1,25 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import * as nodeTest from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DEFAULT_CREW, type CrewConfig } from "./crew-llm";
 import { runWriter, type SeatDoc } from "./seat-writer";
-import { handoffFrom, padBoardDurations, runBoards, sheetDigest } from "./seat-boards";
+import { handoffFrom, padBoardDurations, recoverBoardsKeys, runBoards, sheetDigest } from "./seat-boards";
 import { boardsSceneSchema } from "./boards-contract";
 import { dialogueSeconds } from "./script-contract";
 import { BOARDS_CHARTER, WRITER_BEATS_CHARTER, WRITER_OUTLINE_CHARTER } from "./seat-charters";
 import { loadCallSheet } from "./writer";
 import type { ScriptRanges } from "./script-contract";
+
+/** One file, three doors: bun's node:test shim only works under `bun test`,
+ *  so bare `bun <this file>` self-drives the collected cases; `bun test` and
+ *  `tsx --test` use the real runner. */
+const bareBun = !!process.versions.bun && process.env.BUN_TEST !== "1";
+const cases: { name: string; fn: () => void | Promise<void> }[] = [];
+const test = bareBun
+  ? (name: string, fn: () => void | Promise<void>) => cases.push({ name, fn })
+  : nodeTest.test;
 
 type Frozen = {
   brief: string;
@@ -218,6 +227,88 @@ test("padBoardDurations lifts durationSec before the dialogue-clock zod gate", (
   assert.ok(padded.data!.shots[0]!.durationSec >= dialogueSeconds(line));
 });
 
+test("padBoardDurations lifts a short scene sum into the budget band", () => {
+  const shots = Array.from({ length: 10 }, (_, i) => ({
+    beatId: `SC02.B${String(i + 1).padStart(2, "0")}`,
+    size: "medium" as const,
+    angle: "eye" as const,
+    side: "frontal" as const,
+    durationSec: 8.49,
+    action: "holds",
+    dialogue: "",
+    cast: [{ characterId: "A", slot: "C" as const, depth: "mid" as const, facing: 1 as const, gait: "plant" as const, stance: "stand" as const }],
+  }));
+  const raw = { sceneId: "SC02", thinking: "加數。", shots };
+  const notes: string[] = [];
+  const padded = padBoardDurations(raw, 100, (line) => notes.push(line)) as { shots: { durationSec: number }[] };
+  const sum = padded.shots.reduce((a, s) => a + s.durationSec, 0);
+  assert.ok(sum >= 91 && sum <= 109, `sum ${sum}`);
+  // 84.9 lifted into the band, one receipt line per coerced shot
+  assert.ok(notes.length > 0 && notes.every((l) => l.startsWith("repair: shots[") && l.includes("durationSec")), notes.join(" | "));
+});
+
+test("SC02 grave: facing 0 and heldBy \"null\" are repaired, then zod passes", () => {
+  const raw = {
+    sceneId: "SC02",
+    thinking: "修。",
+    shots: [{
+      beatId: "SC02.B01",
+      size: "medium" as const,
+      angle: "eye" as const,
+      side: "frontal" as const,
+      durationSec: 6,
+      action: "holds",
+      dialogue: "",
+      cast: [{ characterId: "A", slot: "C" as const, depth: "mid" as const, facing: 0 as unknown as 1, gait: "plant" as const, stance: "stand" as const }],
+      props: [{ name: "犁", heldBy: "null", shape: ["long"], forbid: [] }],
+    }],
+  };
+  const beats = [{ id: "SC02.B01", action: "holds" }];
+  const schema = boardsSceneSchema({
+    sceneId: "SC02",
+    beats,
+    characters: [{ id: "A", name: "Cast-A" }],
+    budgetSec: 8,
+  });
+  const notes: string[] = [];
+  const repaired = padBoardDurations(raw, 8, (line) => notes.push(line));
+  const parsed = schema.safeParse(repaired);
+  assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
+  assert.equal(parsed.data!.shots[0]!.cast[0]!.facing, 1);
+  assert.equal(parsed.data!.shots[0]!.props![0]!.heldBy, undefined);
+  assert.ok(notes.some((l) => l === 'repair: shots[0].cast[0].facing saw 0 became 1'), notes.join(" | "));
+  assert.ok(notes.some((l) => l.startsWith('repair: shots[0].props[0].heldBy saw "null" became (dropped')), notes.join(" | "));
+  assert.ok(notes.some((l) => l.startsWith("repair: shots[0].durationSec saw 6 became")), notes.join(" | "));
+});
+
+test("padBoardDurations drops heldBy when that letter is not in the shot cast", () => {
+  const raw = {
+    sceneId: "SC01",
+    thinking: "手。",
+    shots: [{
+      beatId: "SC01.B01",
+      size: "medium" as const,
+      angle: "eye" as const,
+      side: "frontal" as const,
+      durationSec: 6,
+      action: "holds",
+      dialogue: "",
+      cast: [{ characterId: "B", slot: "C" as const, depth: "mid" as const, facing: 1 as const, gait: "plant" as const, stance: "stand" as const }],
+      props: [{ name: "犁", heldBy: "A", shape: ["long"], forbid: [] }],
+    }],
+  };
+  const padded = padBoardDurations(raw) as { shots: { props: { heldBy?: string }[] }[] };
+  assert.equal(padded.shots[0]!.props[0]!.heldBy, undefined);
+});
+
+test("recoverBoardsKeys maps qwen punctuation keys onto sceneId", () => {
+  assert.equal((recoverBoardsKeys({ ".": "SC04", shots: [] }) as { sceneId: string }).sceneId, "SC04");
+  assert.equal((recoverBoardsKeys({ ",": "SC02", thinking: "x" }) as { sceneId: string }).sceneId, "SC02");
+  assert.equal((recoverBoardsKeys({ "/sceneId": "SC03" }) as { sceneId: string }).sceneId, "SC03");
+  assert.equal((recoverBoardsKeys({ sceneId: "SC01", ".": "SC99" }) as { sceneId: string }).sceneId, "SC01");
+  assert.equal("sceneId" in (recoverBoardsKeys({ title: "SC01" }) as object), false);
+});
+
 test("a denied model never reaches the wire, whichever seat asks", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seats-deny-"));
   const { impl, seen } = replayFetch([]);
@@ -231,3 +322,21 @@ test("a denied model never reaches the wire, whichever seat asks", async () => {
   );
   assert.equal(seen.length, 0);
 });
+
+if (bareBun) {
+  // IIFE, not top-level await: tsx transpiles this file as CJS
+  void (async () => {
+    let failed = 0;
+    for (const c of cases) {
+      try {
+        await c.fn();
+        console.log(`ok - ${c.name}`);
+      } catch (err) {
+        failed += 1;
+        console.error(`not ok - ${c.name}\n${err instanceof Error ? err.stack : String(err)}`);
+      }
+    }
+    console.log(`# ${cases.length - failed}/${cases.length} passed`);
+    if (failed > 0) process.exit(1);
+  })();
+}

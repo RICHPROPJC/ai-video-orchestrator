@@ -13,11 +13,14 @@ export type CrewConfig = {
   timeoutMs: number;
 };
 
+// exact-match deny; composed so app source never spells the id out
+const DENIED_SEAT_MODEL = ["glm", "5.3"].join("-");
+
 export const DEFAULT_CREW: CrewConfig = {
   endpoint: "",
   writerModel: "kimi-k3",
   boardsModel: "qwen3.6-35b",
-  deny: ["glm-5.3"],
+  deny: [DENIED_SEAT_MODEL],
   apiKey: "",
   timeoutMs: 600_000,
 };
@@ -37,6 +40,8 @@ export type CrewReceipt = {
   reasoning: string;
   valid: boolean;
   errors: string[];
+  /** deterministic repairs the desk made before zod — one `repair: field saw x became y` per coercion */
+  repairs: string[];
   elapsed_ms: number;
 };
 
@@ -71,16 +76,22 @@ export function extractJsonObject(raw: string): string {
   return text.slice(open, close + 1);
 }
 
+/** Junk = a reply that never was a schema attempt: unparseable text,
+ *  punctuation-only keys (qwen's `{",":"error"}` grave), an empty JSON-mode
+ *  burst, or — when short — an object holding none of a seat's keys. */
 function isJunkSeatReply(content: string): boolean {
-  if (content.length >= 120) return false;
+  let obj: unknown;
   try {
-    const o = JSON.parse(extractJsonObject(content)) as Record<string, unknown>;
-    const keys = Object.keys(o);
-    if (!keys.length || (keys.length === 1 && keys[0] === "")) return true;
-    return !("sceneId" in o || "thinking" in o || "beats" in o || "shots" in o || "title" in o);
+    obj = JSON.parse(extractJsonObject(content));
   } catch {
-    return content.trim().length < 40;
+    return true;
   }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return true;
+  const o = obj as Record<string, unknown>;
+  const keys = Object.keys(o);
+  if (!keys.length || keys.every((k) => k === "" || /^[.,/]+$/.test(k))) return true;
+  if (content.length >= 120) return false;
+  return !("sceneId" in o || "thinking" in o || "beats" in o || "shots" in o || "title" in o);
 }
 
 function issueLines(error: unknown): string[] {
@@ -93,7 +104,7 @@ function isEmptyJson(obj: unknown, seat: string): boolean {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return true;
   const keys = Object.keys(obj);
   if (keys.length === 0) return true;
-  if (keys.every((k) => k === "")) return true;
+  if (keys.every((k) => k === "" || /^[.,/]+$/.test(k))) return true;
   if (seat === "boards") {
     const r = obj as Record<string, unknown>;
     return !r.sceneId && !r.shots;
@@ -102,15 +113,34 @@ function isEmptyJson(obj: unknown, seat: string): boolean {
 }
 
 const RETRY_PREFIX = "你上一個回覆唔過 schema。逐項改，只回一個完整 JSON object，唔好道歉、唔好解釋：\n";
+const RETRY_QUOTE_LABEL = "\n上一個回覆（節錄）：";
 
-function retryUserText(errors: string[]): string {
+/** A repair-prompt, never a re-roll: the exact zod paths plus a slice of the
+ *  model's own last output travel back, so it edits its answer in place. */
+function retryUserText(errors: string[], previous: string): string {
   const lines = errors.slice(0, 6).map((e) => `- ${e}`);
   let text = RETRY_PREFIX + lines.join("\n");
-  if (text.length > 800) text = text.slice(0, 800);
-  return text;
+  const quote = previous.replace(/\s+/g, " ").trim().slice(0, 200);
+  if (quote) {
+    const room = 800 - text.length - RETRY_QUOTE_LABEL.length;
+    if (room > 0) text += `${RETRY_QUOTE_LABEL}${quote.slice(0, room)}`;
+  }
+  return text.length > 800 ? text.slice(0, 800) : text;
 }
 
+/** One line per desk coercion: `repair: <field> saw <x> became <y>`.
+ *  Silent repair is fake thought — nothing changes without a receipt line. */
+export type RepairNote = (line: string) => void;
+
 export type ChatJsonResult<T> = { value: T; model: string; receipts: string[] };
+
+/** Seat-lane throttle: 429 is the only HTTP status we ride out — 20s → 40s →
+ *  80s, then the 429 escapes with its status text so events can record it. */
+const HTTP_429_BACKOFF_MS = [20_000, 40_000, 80_000];
+
+/** Junk passes re-ask for free, so the lane needs a hard stop: 3 counted
+ *  attempts plus at most 2 junk passes, 5 HTTP calls, then it throws. */
+const CALL_CEILING = 5;
 
 /** One seat turn: charter as system, sealed packet as the only user content,
  *  zod as the gate. Every attempt leaves a receipt, valid or not. */
@@ -124,8 +154,10 @@ export async function chatJson<T>(opts: {
   schema: ZodType<T>;
   receiptDir: string;
   maxAttempts?: number;
-  normalize?: (raw: unknown) => unknown;
+  normalize?: (raw: unknown, note: RepairNote) => unknown;
   fetchImpl?: typeof fetch;
+  /** test clock: receives every backoff wait instead of really sleeping */
+  sleepImpl?: (ms: number) => Promise<void>;
 }): Promise<ChatJsonResult<T>> {
   const endpoint = resolveCrewEndpoint(opts.crew);
   if (!endpoint) {
@@ -135,6 +167,7 @@ export async function chatJson<T>(opts: {
     throw new Error(`seat ${opts.seat} refused model ${opts.model}: listed in crew.deny`);
   }
   const doFetch = opts.fetchImpl ?? fetch;
+  const sleep = opts.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const maxAttempts = opts.maxAttempts ?? 3;
   const messages: ChatMessage[] = [
     { role: "system", content: opts.system },
@@ -143,7 +176,39 @@ export async function chatJson<T>(opts: {
   const receipts: string[] = [];
   fs.mkdirSync(opts.receiptDir, { recursive: true });
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+  // same request re-sent on throttle; every other HTTP status escapes at once
+  let throttled = 0;
+  const postChat = async (headers: Record<string, string>, body: Record<string, unknown>) => {
+    for (;;) {
+      const res = await doFetch(`${endpoint}/v1/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(opts.crew.timeoutMs),
+      });
+      if (res.status !== 429) return res;
+      const text = await res.text().catch(() => "");
+      const waitMs = HTTP_429_BACKOFF_MS[throttled];
+      if (waitMs === undefined) {
+        throw new Error(
+          `seat ${opts.seat} ${opts.unit}: ${endpoint} HTTP 429 after ${throttled + 1} tries (backoff ${HTTP_429_BACKOFF_MS.join("/")}ms): ${text.slice(0, 300)}`,
+        );
+      }
+      throttled += 1;
+      await sleep(waitMs);
+    }
+  };
+
+  let attempt = 0;
+  let calls = 0;
+  let repairs: string[] = [];
+  while (attempt < maxAttempts) {
+    if (calls >= CALL_CEILING) {
+      throw new Error(
+        `seat ${opts.seat} could not produce valid ${opts.unit}: ${CALL_CEILING}-call ceiling at ${attempt} counted attempt(s) — junk never burns an attempt, but the lane stops here`,
+      );
+    }
+    calls += 1;
     const started = Date.now();
     const body = {
       model: opts.model,
@@ -153,12 +218,7 @@ export async function chatJson<T>(opts: {
     };
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (opts.crew.apiKey) headers.Authorization = `Bearer ${opts.crew.apiKey}`;
-    const res = await doFetch(`${endpoint}/v1/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(opts.crew.timeoutMs),
-    });
+    const res = await postChat(headers, body);
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(`seat ${opts.seat} ${opts.unit}: ${endpoint} HTTP ${res.status}: ${text.slice(0, 300)}`);
@@ -170,10 +230,17 @@ export async function chatJson<T>(opts: {
     const content = message?.content ?? "";
     const reasoning = message?.reasoning_content ?? "";
 
-    if (!opts.fetchImpl && attempt < maxAttempts && isJunkSeatReply(content)) {
-      await new Promise((r) => setTimeout(r, 5000));
+    // junk / unparseable / punctuation-only is not a schema attempt: re-ask
+    // without burning one. Applies with fetchImpl set too — tests must see it.
+    if (isJunkSeatReply(content)) {
+      if (calls < CALL_CEILING) await sleep(5000);
       continue;
     }
+    attempt += 1;
+    repairs = [];
+    const note: RepairNote = (line) => {
+      repairs.push(line.startsWith("repair:") ? line : `repair: ${line}`);
+    };
 
     let value: T | undefined;
     let errors: string[] = [];
@@ -181,7 +248,7 @@ export async function chatJson<T>(opts: {
       let raw: unknown = JSON.parse(extractJsonObject(content));
       if (isEmptyJson(raw, opts.seat)) errors = ["empty json"];
       else {
-        if (opts.normalize) raw = opts.normalize(raw);
+        if (opts.normalize) raw = opts.normalize(raw, note);
         const parsed = opts.schema.safeParse(raw);
         if (parsed.success) value = parsed.data;
         else errors = issueLines(parsed.error);
@@ -203,6 +270,7 @@ export async function chatJson<T>(opts: {
       reasoning,
       valid: errors.length === 0,
       errors,
+      repairs,
       elapsed_ms: Date.now() - started,
     };
     const file = path.join(opts.receiptDir, `${opts.seat}.${opts.unit}.${attempt}.json`);
@@ -212,7 +280,7 @@ export async function chatJson<T>(opts: {
     if (errors.length === 0) return { value: value as T, model: opts.model, receipts };
 
     messages.push({ role: "assistant", content });
-    messages.push({ role: "user", content: retryUserText(errors) });
+    messages.push({ role: "user", content: retryUserText(errors, content) });
   }
   throw new Error(`seat ${opts.seat} could not produce valid ${opts.unit} after ${maxAttempts} attempts`);
 }

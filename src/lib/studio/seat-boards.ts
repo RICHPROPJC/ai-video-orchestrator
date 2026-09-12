@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
-import { chatJson } from "./crew-llm";
+import { chatJson, type RepairNote } from "./crew-llm";
 import { BOARDS_CHARTER } from "./seat-charters";
-import { boardsSceneSchema, type BoardsScene } from "./boards-contract";
+import { boardsSceneSchema, SHOT_SEC_MAX, SHOT_SEC_MIN, SCENE_BUDGET_TOLERANCE, type BoardsScene } from "./boards-contract";
 import { assertSheetGates, expandBoards } from "./boards-expand";
 import { dialogueSeconds, type Script } from "./script-contract";
 import type { CallSheet } from "./types";
@@ -11,19 +11,113 @@ export type BoardsResult = { sheet: CallSheet; model: string; receipts: string[]
 
 type Handoff = Record<string, { slot: string; depth: string; stance: string; props: string[] }>;
 
-/** Pad each shot's durationSec to fit its dialogue before zod sees it. */
-export function padBoardDurations(raw: unknown): unknown {
+const SCENE_ID_RE = /^SC\d{2}$/;
+
+/** qwen JSON-mode sometimes stores sceneId under "." / "," / "/sceneId". */
+export function recoverBoardsKeys(raw: unknown, note?: RepairNote): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
-  const obj = raw as Record<string, unknown>;
-  if (!Array.isArray(obj.shots)) return raw;
-  return {
-    ...obj,
-    shots: (obj.shots as Record<string, unknown>[]).map((shot) => {
-      const dialogue = typeof shot.dialogue === "string" ? shot.dialogue.trim() : "";
-      const durationSec = typeof shot.durationSec === "number" ? shot.durationSec : 0;
-      return { ...shot, durationSec: Math.max(durationSec, dialogueSeconds(dialogue)) };
-    }),
-  };
+  const obj = { ...(raw as Record<string, unknown>) };
+  if (typeof obj.sceneId === "string" && SCENE_ID_RE.test(obj.sceneId)) return obj;
+  for (const [key, value] of Object.entries(obj)) {
+    if (key === "sceneId") continue;
+    if (typeof value === "string" && SCENE_ID_RE.test(value) && /sceneId|^[.,/]+$/i.test(key)) {
+      note?.(`repair: sceneId saw ${JSON.stringify(key)}:${JSON.stringify(value)} became sceneId=${JSON.stringify(value)}`);
+      obj.sceneId = value;
+      return obj;
+    }
+  }
+  return obj;
+}
+
+function tenth(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+/** Pad each shot's durationSec to fit its dialogue, drop illegal heldBy
+ *  ("null"/"undefined" included), face illegal facing right, then nudge the
+ *  sum into the scene budget band before zod sees it. Every coercion leaves
+ *  a `repair:` line on the attempt receipt. */
+export function padBoardDurations(raw: unknown, budgetSec?: number, note?: RepairNote): unknown {
+  const repair = note ?? (() => {});
+  const recovered = recoverBoardsKeys(raw, repair);
+  if (!recovered || typeof recovered !== "object" || Array.isArray(recovered)) return recovered;
+  const obj = recovered as Record<string, unknown>;
+  if (!Array.isArray(obj.shots)) return recovered;
+  const shots = (obj.shots as Record<string, unknown>[]).map((shot, i): Record<string, unknown> => {
+    const dialogue = typeof shot.dialogue === "string" ? shot.dialogue.trim() : "";
+    const durationSec = typeof shot.durationSec === "number" ? shot.durationSec : 0;
+    let cast = shot.cast;
+    if (Array.isArray(cast)) {
+      cast = cast.map((member, j) => {
+        if (!member || typeof member !== "object" || Array.isArray(member)) return member;
+        const m = { ...(member as Record<string, unknown>) };
+        // only 1|-1 are legal; anything else (0, "1", 2 …) faces camera-right
+        if (m.facing !== 1 && m.facing !== -1) {
+          repair(`repair: shots[${i}].cast[${j}].facing saw ${JSON.stringify(m.facing)} became 1`);
+          m.facing = 1;
+        }
+        return m;
+      });
+    }
+    const ids = new Set(
+      (Array.isArray(cast) ? cast : [])
+        .map((m) => (m && typeof m === "object" ? (m as { characterId?: string }).characterId : undefined))
+        .filter((id): id is string => typeof id === "string"),
+    );
+    let props = shot.props;
+    if (Array.isArray(props)) {
+      props = props.map((prop, j) => {
+        if (!prop || typeof prop !== "object") return prop;
+        const heldBy = (prop as { heldBy?: string }).heldBy;
+        if (heldBy && !ids.has(heldBy)) {
+          repair(`repair: shots[${i}].props[${j}].heldBy saw ${JSON.stringify(heldBy)} became (dropped: not cast in shot)`);
+          const { heldBy: _drop, ...rest } = prop as Record<string, unknown>;
+          return rest;
+        }
+        return prop;
+      });
+    }
+    const dialogueClock = dialogueSeconds(dialogue);
+    const floor = Math.max(dialogueClock, SHOT_SEC_MIN);
+    if (durationSec < floor) {
+      const why = dialogue && dialogueClock >= SHOT_SEC_MIN ? "dialogue clock" : `floor ${SHOT_SEC_MIN}`;
+      repair(`repair: shots[${i}].durationSec saw ${durationSec} became ${floor.toFixed(1)} (${why})`);
+    }
+    return { ...shot, cast, props, durationSec: Math.max(durationSec, floor) };
+  });
+  if (typeof budgetSec === "number" && budgetSec > 0) {
+    const lo = budgetSec * (1 - SCENE_BUDGET_TOLERANCE);
+    const hi = budgetSec * (1 + SCENE_BUDGET_TOLERANCE);
+    const sum = shots.reduce((a, s) => a + (s.durationSec as number), 0);
+    if (sum < lo) {
+      let need = lo - sum + 0.05;
+      for (let i = 0; i < shots.length && need > 0; i += 1) {
+        const shot = shots[i]!;
+        const room = SHOT_SEC_MAX - (shot.durationSec as number);
+        if (room <= 0) continue;
+        const add = Math.min(room, need);
+        const before = shot.durationSec as number;
+        shot.durationSec = tenth(before + add);
+        need -= add;
+        repair(`repair: shots[${i}].durationSec saw ${before} became ${shot.durationSec} (sum lift toward band ${lo.toFixed(1)}–${hi.toFixed(1)})`);
+      }
+    } else if (sum > hi) {
+      let extra = sum - hi;
+      for (let k = shots.length - 1; k >= 0 && extra > 0; k -= 1) {
+        const shot = shots[k]!;
+        const dialogue = typeof shot.dialogue === "string" ? shot.dialogue.trim() : "";
+        const floor = Math.max(SHOT_SEC_MIN, dialogueSeconds(dialogue));
+        const room = (shot.durationSec as number) - floor;
+        if (room <= 0) continue;
+        const cut = Math.min(room, extra);
+        const before = shot.durationSec as number;
+        shot.durationSec = tenth(before - cut);
+        extra -= cut;
+        repair(`repair: shots[${k}].durationSec saw ${before} became ${shot.durationSec} (sum cut toward band ${lo.toFixed(1)}–${hi.toFixed(1)})`);
+      }
+    }
+  }
+  return { ...obj, shots };
 }
 
 /** What the next scene inherits: where each figure was left standing and what
@@ -91,7 +185,7 @@ export async function runBoards(
         previousSceneHandoff: carried,
       }),
       schema: boardsSceneSchema({ sceneId: scene.id, beats, characters, budgetSec }),
-      normalize: padBoardDurations,
+      normalize: (raw, note) => padBoardDurations(raw, budgetSec, note),
       receiptDir: io.receiptDir,
       fetchImpl: io.fetchImpl,
     });
