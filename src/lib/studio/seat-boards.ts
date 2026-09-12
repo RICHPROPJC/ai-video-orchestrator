@@ -110,18 +110,28 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
         repair(`repair: shots[${i}].durationSec saw ${before} became ${shot.durationSec} (sum lift toward band ${lo.toFixed(1)}–${hi.toFixed(1)})`);
       }
     } else if (sum > hi) {
-      let extra = sum - hi;
-      for (let k = shots.length - 1; k >= 0 && extra > 0; k -= 1) {
-        const shot = shots[k]!;
-        const dialogue = typeof shot.dialogue === "string" ? shot.dialogue.trim() : "";
-        const floor = Math.max(SHOT_SEC_MIN, dialogueSeconds(dialogue));
-        const room = (shot.durationSec as number) - floor;
-        if (room <= 0) continue;
-        const cut = Math.min(room, extra);
-        const before = shot.durationSec as number;
-        shot.durationSec = tenth(before - cut);
-        extra -= cut;
-        repair(`repair: shots[${k}].durationSec saw ${before} became ${shot.durationSec} (sum cut toward band ${lo.toFixed(1)}–${hi.toFixed(1)})`);
+      // the 07JZ SC06 grave: cutting exactly sum - hi let tenth() round the
+      // cut shot back up (7 − 0.05 → 7), so the sum stayed 49.1 against a true
+      // hi of 49.05 (45 × 1.09) and zod's `runtime > hi` killed the scene.
+      // The lift leaves 0.05 under lo; the cut leaves the same 0.05 over hi
+      // and keeps cutting while the live sum still overshoots.
+      const liveSum = () => shots.reduce((a, s) => a + (s.durationSec as number), 0);
+      while (liveSum() > hi) {
+        const sumBefore = liveSum();
+        let extra = sumBefore - hi + 0.05;
+        for (let k = shots.length - 1; k >= 0 && extra > 0; k -= 1) {
+          const shot = shots[k]!;
+          const dialogue = typeof shot.dialogue === "string" ? shot.dialogue.trim() : "";
+          const floor = Math.max(SHOT_SEC_MIN, dialogueSeconds(dialogue));
+          const room = (shot.durationSec as number) - floor;
+          if (room <= 0) continue;
+          const cut = Math.min(room, extra);
+          const before = shot.durationSec as number;
+          shot.durationSec = tenth(before - cut);
+          extra -= cut;
+          repair(`repair: shots[${k}].durationSec saw ${before} became ${shot.durationSec} (sum cut toward band ${lo.toFixed(1)}–${hi.toFixed(1)})`);
+        }
+        if (liveSum() >= sumBefore) break; // nothing cuttable moved; zod reports the miss
       }
     }
   }

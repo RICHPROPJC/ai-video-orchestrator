@@ -247,6 +247,43 @@ test("padBoardDurations lifts a short scene sum into the budget band", () => {
   assert.ok(notes.length > 0 && notes.every((l) => l.startsWith("repair: shots[") && l.includes("durationSec")), notes.join(" | "));
 });
 
+test("07JZ SC06 grave: a 49.1 sum against hi 49.05 cuts back inside the band", () => {
+  // budget 45 → hi = 45 × 1.09 = 49.05; the message rounds it to 49.1. The old
+  // cut took sum − hi = 0.05 off the last shot, tenth() rounded 6.95 back to 7,
+  // and zod's `runtime > hi` saw 49.1 > 49.05 — three identical SC06 rejects.
+  const shots = Array.from({ length: 7 }, (_, i) => ({
+    beatId: `SC06.B${String(i + 1).padStart(2, "0")}`,
+    size: "medium" as const,
+    angle: "eye" as const,
+    side: "frontal" as const,
+    durationSec: i === 0 ? 7.1 : 7.0,
+    action: "holds",
+    dialogue: "",
+    cast: [{ characterId: "A", slot: "C" as const, depth: "mid" as const, facing: 1 as const, gait: "plant" as const, stance: "stand" as const }],
+  }));
+  const beats = shots.map((s) => ({ id: s.beatId, action: "holds" }));
+  const schema = boardsSceneSchema({
+    sceneId: "SC06",
+    beats,
+    characters: [{ id: "A", name: "Cast-A" }],
+    budgetSec: 45,
+  });
+  const raw = { sceneId: "SC06", thinking: "修。", shots };
+  const unpatched = schema.safeParse(raw);
+  assert.equal(unpatched.success, false, "the grave must fail zod before the pad");
+  assert.ok(
+    !unpatched.success && unpatched.error.issues.some((i) => i.message.includes("add up to 49.1s")),
+    JSON.stringify(unpatched.success ? [] : unpatched.error.issues.map((i) => i.message)),
+  );
+  const notes: string[] = [];
+  const padded = padBoardDurations(raw, 45, (line) => notes.push(line)) as { shots: { durationSec: number }[] };
+  const sum = padded.shots.reduce((a, s) => a + s.durationSec, 0);
+  assert.ok(sum <= 45 * 1.09, `sum ${sum} must land at or under hi 49.05, like the lift's 0.05 margin`);
+  const parsed = schema.safeParse(padded);
+  assert.equal(parsed.success, true, JSON.stringify(parsed.success ? [] : parsed.error?.issues.map((i) => i.message)));
+  assert.ok(notes.some((l) => l.startsWith("repair: shots[6].durationSec saw 7 became")), notes.join(" | "));
+});
+
 test("SC02 grave: facing 0 and heldBy \"null\" are repaired, then zod passes", () => {
   const raw = {
     sceneId: "SC02",
