@@ -281,6 +281,48 @@ test("SC02 grave: facing 0 and heldBy \"null\" are repaired, then zod passes", (
   assert.ok(notes.some((l) => l.startsWith("repair: shots[0].durationSec saw 6 became")), notes.join(" | "));
 });
 
+test("T5MM SC01 grave: missing, null and illegal gait become plant, then zod passes", () => {
+  const raw = {
+    sceneId: "SC01",
+    thinking: "修。",
+    shots: [{
+      beatId: "SC01.B01",
+      size: "medium" as const,
+      angle: "eye" as const,
+      side: "frontal" as const,
+      durationSec: 6,
+      action: "holds",
+      dialogue: "",
+      // the parsed T5MM grave: gait omitted, nulled, and a stance word in its slot
+      cast: [
+        { characterId: "A", slot: "L" as const, depth: "mid" as const, facing: 1 as const, stance: "stand" as const },
+        { characterId: "B", slot: "C" as const, depth: "mid" as const, facing: 1 as const, gait: null as unknown as "plant", stance: "stand" as const },
+        { characterId: "C", slot: "R" as const, depth: "mid" as const, facing: 1 as const, gait: "stand" as unknown as "plant", stance: "stand" as const },
+      ],
+    }],
+  };
+  const beats = [{ id: "SC01.B01", action: "holds" }];
+  const schema = boardsSceneSchema({
+    sceneId: "SC01",
+    beats,
+    characters: [
+      { id: "A", name: "Cast-A" },
+      { id: "B", name: "Cast-B" },
+      { id: "C", name: "Cast-C" },
+    ],
+    budgetSec: 8,
+  });
+  assert.equal(schema.safeParse(raw).success, false, "the grave must fail zod before the pad");
+  const notes: string[] = [];
+  const repaired = padBoardDurations(raw, 8, (line) => notes.push(line));
+  const parsed = schema.safeParse(repaired);
+  assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
+  assert.deepEqual(parsed.data!.shots[0]!.cast.map((c) => c.gait), ["plant", "plant", "plant"]);
+  assert.ok(notes.some((l) => l === "repair: shots[0].cast[0].gait saw undefined became plant"), notes.join(" | "));
+  assert.ok(notes.some((l) => l === "repair: shots[0].cast[1].gait saw null became plant"), notes.join(" | "));
+  assert.ok(notes.some((l) => l === 'repair: shots[0].cast[2].gait saw "stand" became plant'), notes.join(" | "));
+});
+
 test("padBoardDurations drops heldBy when that letter is not in the shot cast", () => {
   const raw = {
     sceneId: "SC01",

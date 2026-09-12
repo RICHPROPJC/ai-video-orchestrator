@@ -13,6 +13,7 @@ export type BoardsResult = { sheet: CallSheet; model: string; receipts: string[]
 type Handoff = Record<string, { slot: string; depth: string; stance: string; props: string[] }>;
 
 const SCENE_ID_RE = /^SC\d{2}$/;
+const GAITS = new Set(["plant", "walk", "reach", "turn"]);
 
 /** qwen JSON-mode sometimes stores sceneId under "." / "," / "/sceneId". */
 export function recoverBoardsKeys(raw: unknown, note?: RepairNote): unknown {
@@ -35,9 +36,9 @@ function tenth(n: number): number {
 }
 
 /** Pad each shot's durationSec to fit its dialogue, drop illegal heldBy
- *  ("null"/"undefined" included), face illegal facing right, then nudge the
- *  sum into the scene budget band before zod sees it. Every coercion leaves
- *  a `repair:` line on the attempt receipt. */
+ *  ("null"/"undefined" included), face illegal facing right, plant illegal
+ *  gait, then nudge the sum into the scene budget band before zod sees it.
+ *  Every coercion leaves a `repair:` line on the attempt receipt. */
 export function padBoardDurations(raw: unknown, budgetSec?: number, note?: RepairNote): unknown {
   const repair = note ?? (() => {});
   const recovered = recoverBoardsKeys(raw, repair);
@@ -56,6 +57,12 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
         if (m.facing !== 1 && m.facing !== -1) {
           repair(`repair: shots[${i}].cast[${j}].facing saw ${JSON.stringify(m.facing)} became 1`);
           m.facing = 1;
+        }
+        // the T5MM SC01 grave: qwen omits gait (or nulls it / borrows a stance
+        // word); a figure standing where it stands is the only honest default
+        if (typeof m.gait !== "string" || !GAITS.has(m.gait)) {
+          repair(`repair: shots[${i}].cast[${j}].gait saw ${JSON.stringify(m.gait)} became plant`);
+          m.gait = "plant";
         }
         return m;
       });
