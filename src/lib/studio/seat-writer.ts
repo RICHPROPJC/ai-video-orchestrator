@@ -2,11 +2,11 @@ import { chatJson, type CrewConfig, type RepairNote } from "./crew-llm";
 import { WRITER_BEATS_CHARTER, WRITER_OUTLINE_CHARTER } from "./seat-charters";
 import { assemblePlaybook, markPass } from "./playbook";
 import {
-  FEATURE_RANGES,
   SCENE_TARGET_MAX,
   SCENE_TARGET_MIN,
   assertBeatTotal,
   outlineSchema,
+  rangesFor,
   sceneBeatsSchema,
   type Outline,
   type Script,
@@ -136,7 +136,9 @@ export type SeatIo = {
 
 /** 阿文 works twice: the shape of the film, then the beats of one scene at a
  *  time — a whole 10-minute script in one reply is where models start drifting. */
-export async function runWriter(packet: WriterPacket, io: SeatIo, ranges: ScriptRanges = FEATURE_RANGES): Promise<WriterResult> {
+export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: ScriptRanges): Promise<WriterResult> {
+  // the slate's own seconds decide the band: 300s episodes are not squeezed features
+  ranges ??= rangesFor(packet.targetSec);
   const receipts: string[] = [];
   // system = charter (law) + global playbook + own playbook; charter never shrinks
   const book = assemblePlaybook("writer", io.playbookDir);

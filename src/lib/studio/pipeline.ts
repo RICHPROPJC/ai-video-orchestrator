@@ -31,6 +31,7 @@ import { submitH3Shot } from "./h3-submit";
 import { checkHealth, buildEditPayload, u15Edit, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
 import { runPhotoQc, pinQcAccepted, type QcRequire } from "./photo-qc";
+import { rangesFor } from "./script-contract";
 
 function patch(job: JobRecord, partial: Partial<JobRecord>) {
   const next = { ...job, ...partial };
@@ -155,6 +156,7 @@ async function authorCallSheet(
       index,
       playbookDir: seatsDir(),
     },
+    rangesFor(targetSec),
   );
 
   await io.think("boards");

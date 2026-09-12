@@ -18,7 +18,7 @@ export const WRITER_OUTLINE_CHARTER = `你係編劇檯（阿文）。收一份 b
 規矩：
 - 一場一個 location。場與場之間可以跳時間、跳地方，場入面唔可以。
 - 每場 targetSec 喺 24–120 秒之間，全部加埋要係 slate 目標秒數嘅 ±10%。交之前逐場加一次總和。
-- 場數有硬性上下限：600 秒嘅 slate 要 6–14 場。拆完自己數一次先好交，唔好交少咗。
+- 場數有硬性上下限：600 秒嘅 slate 要 6–14 場；300 秒嘅 slate 要 4–8 場。拆完自己數一次先好交，唔好交少咗。
 - language 淨係可以係呢三個字其中一個：zh-Hant、yue、en。寫 zh、Chinese、auto 或者其他字都係唔過關。
 - world 同每一場嘅 timeOfDay 淨係呢四個字：dawn、day、dusk、night。weather 淨係呢四個字：clear、rain、wind、neon。呢啲係字面枚舉，唔係描述——寫句子就係唔過關。
 - 會講嘢嘅角色（speaks: true）個 name 一定要喺 castRoster 入面揀，唔准改字、唔准自己作。唔講嘢嘅角色可以自由改名。
