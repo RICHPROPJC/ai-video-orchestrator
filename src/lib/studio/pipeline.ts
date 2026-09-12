@@ -18,7 +18,8 @@ import { loadCallSheet } from "./writer";
 import { runWriter } from "./seat-writer";
 import { runBoards } from "./seat-boards";
 import { ensurePortraits } from "./portraits";
-import { ensureDir, jobDir, jobFile } from "./paths";
+import { ensureDir, jobDir, jobFile, seatsDir } from "./paths";
+import { runReflector } from "./reflector";
 import { snapDurationToFrames, wavSeconds } from "./frame-grid";
 import { buildCutPlan, type CutPlan } from "./cut-plan";
 import { checkGate } from "./concat-gate";
@@ -152,6 +153,7 @@ async function authorCallSheet(
       receiptDir,
       speak: (thinking) => io.speak("writer", thinking),
       index,
+      playbookDir: seatsDir(),
     },
   );
 
@@ -170,6 +172,7 @@ async function authorCallSheet(
       receiptDir,
       speak: (thinking) => io.speak("boards", thinking),
       index,
+      playbookDir: seatsDir(),
     },
   );
   return boards.sheet;
@@ -866,6 +869,18 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const message = error instanceof Error ? error.message : String(error);
     job = patch(job, { status: "failed", error: message });
     emit(jobId, { agent: "system", level: "error", message });
+    // reflector: strictly after the job is marked failed, never inside a live
+    // stage — the 27B reads this grave and curatePlaybook (code) writes lessons
+    try {
+      const lessons = await runReflector({ jobId, crew: cfg.crew });
+      for (const line of lessons) emit(jobId, { agent: "system", level: "warn", message: line });
+    } catch (err) {
+      emit(jobId, {
+        agent: "system",
+        level: "warn",
+        message: `Reflector 未行到：${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   }
 }
 

@@ -91,7 +91,8 @@ function isJunkSeatReply(content: string): boolean {
   const keys = Object.keys(o);
   if (!keys.length || keys.every((k) => k === "" || /^[.,/]+$/.test(k))) return true;
   if (content.length >= 120) return false;
-  return !("sceneId" in o || "thinking" in o || "beats" in o || "shots" in o || "title" in o);
+  // "ops" is the Reflector's reply shape — an ops object is a schema attempt
+  return !("sceneId" in o || "thinking" in o || "beats" in o || "shots" in o || "title" in o || "ops" in o);
 }
 
 function issueLines(error: unknown): string[] {

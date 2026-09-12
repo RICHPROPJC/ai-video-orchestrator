@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { chatJson, type RepairNote } from "./crew-llm";
 import { BOARDS_CHARTER } from "./seat-charters";
+import { assemblePlaybook, markPass } from "./playbook";
 import { boardsSceneSchema, SHOT_SEC_MAX, SHOT_SEC_MIN, SCENE_BUDGET_TOLERANCE, type BoardsScene } from "./boards-contract";
 import { assertSheetGates, expandBoards } from "./boards-expand";
 import { dialogueSeconds, type Script } from "./script-contract";
@@ -152,6 +153,8 @@ export async function runBoards(
   const { script } = opts;
   const characters = script.outline.characters.map((c) => ({ id: c.id, name: c.name }));
   const receipts: string[] = [];
+  // system = charter (law) + global playbook + own playbook; charter never shrinks
+  const book = assemblePlaybook("boards", io.playbookDir);
   const boards: BoardsScene[] = [];
   let carried: Handoff = {};
   // the writer's scene targets are within 10% of the slate; rescaling them to
@@ -170,7 +173,7 @@ export async function runBoards(
       unit: scene.id,
       model: io.model,
       crew: io.crew,
-      system: BOARDS_CHARTER,
+      system: BOARDS_CHARTER + book.text,
       user: JSON.stringify({
         scene: { ...scene, targetSec: Number(budgetSec.toFixed(1)) },
         budgetSec: Number(budgetSec.toFixed(1)),
@@ -198,6 +201,8 @@ export async function runBoards(
 
   const expanded = expandBoards({ script, boards, targetSec: opts.targetSec, aspect: opts.aspect });
   assertSheetGates(expanded, { script, targetSec: opts.targetSec });
+  // the boards stage passed with these bullets in the prompt: ship gate
+  receipts.push(...markPass(["boards", "global"], io.playbookDir));
   const sheet: CallSheet = {
     ...expanded,
     provenance: {

@@ -1,5 +1,6 @@
 import { chatJson, type CrewConfig, type RepairNote } from "./crew-llm";
 import { WRITER_BEATS_CHARTER, WRITER_OUTLINE_CHARTER } from "./seat-charters";
+import { assemblePlaybook, markPass } from "./playbook";
 import {
   FEATURE_RANGES,
   SCENE_TARGET_MAX,
@@ -128,18 +129,23 @@ export type SeatIo = {
   speak?: (thinking: string) => void | Promise<void>;
   index?: (doc: SeatDoc) => void;
   fetchImpl?: typeof fetch;
+  /** seats/ dir: set it and every writer system prompt carries the global +
+   *  writer playbooks (charter untouched), and a PASS promotes their trials. */
+  playbookDir?: string;
 };
 
 /** 阿文 works twice: the shape of the film, then the beats of one scene at a
  *  time — a whole 10-minute script in one reply is where models start drifting. */
 export async function runWriter(packet: WriterPacket, io: SeatIo, ranges: ScriptRanges = FEATURE_RANGES): Promise<WriterResult> {
   const receipts: string[] = [];
+  // system = charter (law) + global playbook + own playbook; charter never shrinks
+  const book = assemblePlaybook("writer", io.playbookDir);
   const outlinePass = await chatJson<Outline>({
     seat: "writer",
     unit: "outline",
     model: io.model,
     crew: io.crew,
-    system: WRITER_OUTLINE_CHARTER,
+    system: WRITER_OUTLINE_CHARTER + book.text,
     user: JSON.stringify({
       brief: packet.brief,
       targetSec: packet.targetSec,
@@ -169,7 +175,7 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges: Script
       unit: scene.id,
       model: io.model,
       crew: io.crew,
-      system: WRITER_BEATS_CHARTER,
+      system: WRITER_BEATS_CHARTER + book.text,
       user: JSON.stringify({
         scene,
         title: outline.title,
@@ -196,5 +202,7 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges: Script
 
   const script: Script = { outline, scenes };
   assertBeatTotal(script, ranges);
+  // the writer's whole stage passed with these bullets in the prompt: ship gate
+  receipts.push(...markPass(["writer", "global"], io.playbookDir));
   return { script, model: outlinePass.model, receipts };
 }
