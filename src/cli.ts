@@ -6,6 +6,7 @@ import { loadConfig, setConfigPath } from "./lib/studio/config";
 import { doctor, formatDoctor } from "./lib/studio/doctor";
 import { runTui } from "./lib/studio/tui";
 import type { JobRecord, ProduceInput } from "./lib/studio/types";
+import { SCENE_ID_RE } from "./lib/studio/script-contract";
 
 const UNTIL_GATES: NonNullable<ProduceInput["until"]>[] = ["boards", "stills", "motion"];
 
@@ -40,6 +41,7 @@ Flags
   --dry-run             行到 prompt/receipt 為止，唔 POST 任何機
   --until boards|stills|motion 早停閘：boards＝劇本同分鏡出齊即停（status boarded，唔使 wav）；
                         stills＝photo QC GREEN 即停（stills-ready）；motion＝H3 落片即停
+  --scene SCxx          淨係燒呢一場嘅 H3（一場一 hop）；唔加＝出齊全部鏡（原有行為）
   --resume <slate>      接返舊 slate：callsheet 照舊，過咗閘嘅 blockout／keyframe／片唔重做
 
 Rack（two-host truth）
@@ -63,11 +65,16 @@ async function makeJob(brief: string) {
     gapSec: Number(arg("--gap", "0")),
     dryRun: process.argv.includes("--dry-run"),
     until: arg("--until") as ProduceInput["until"],
+    scene: arg("--scene"),
     callSheetPath: arg("--callsheet"),
     castRosterPath: arg("--cast-roster"),
   };
   if (input.until && !UNTIL_GATES.includes(input.until)) {
     console.error(`--until 只接受 ${UNTIL_GATES.join(" / ")}`);
+    process.exit(1);
+  }
+  if (input.scene && !SCENE_ID_RE.test(input.scene)) {
+    console.error("--scene 只接受 SCxx（例：--scene SC01）");
     process.exit(1);
   }
   const job: JobRecord = {
@@ -102,9 +109,14 @@ function resumeJob(slate: string) {
     gapSec: process.argv.includes("--gap") ? Number(arg("--gap", "0")) : job.input.gapSec,
     dryRun: process.argv.includes("--dry-run"),
     until: (arg("--until") as ProduceInput["until"]) ?? undefined,
+    scene: arg("--scene") ?? undefined,
   };
   if (input.until && !UNTIL_GATES.includes(input.until)) {
     console.error(`--until 只接受 ${UNTIL_GATES.join(" / ")}`);
+    process.exit(1);
+  }
+  if (input.scene && !SCENE_ID_RE.test(input.scene)) {
+    console.error("--scene 只接受 SCxx（例：--scene SC01）");
     process.exit(1);
   }
   writeJob({ ...job, input, status: "queued", error: undefined, updatedAt: new Date().toISOString() });

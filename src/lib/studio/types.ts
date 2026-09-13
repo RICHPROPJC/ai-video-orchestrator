@@ -47,6 +47,9 @@ export type ProduceInput = {
   /** stop early: boards = seats have written the callsheet (no wavs yet),
    *  stills = after photo QC GREEN, motion = after H3 downloads (before mux) */
   until?: "boards" | "stills" | "motion";
+  /** C-scene-hop: burn H3 for ONE scene only (must match SCxx). Motion-lane
+   *  filter — stills/QC/layout stay full-slate. Omitted = all shots. */
+  scene?: string;
   /** reuse this slate's callsheet and finished artefacts instead of starting over */
   resume?: boolean;
   /** names the writer may cast speaking parts from (data file, never in src) */
