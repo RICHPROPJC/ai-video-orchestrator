@@ -61,6 +61,14 @@ export type JobEvent = {
   level: "info" | "warn" | "error" | "pass" | "fail";
   message: string;
   data?: Record<string, unknown>;
+  /** D1a topology: which pipeline step emitted this event, its upstream steps
+   *  (boards → keyframe-prompt → require), the seat that wrote it, and which
+   *  trace constraint ids were checked at that step. emit passes them through
+   *  when present; think/speak text is never rewritten. */
+  step_id?: string;
+  parent_steps?: string[];
+  seat?: string;
+  constraints_checked?: string[];
 };
 
 export type Character = {

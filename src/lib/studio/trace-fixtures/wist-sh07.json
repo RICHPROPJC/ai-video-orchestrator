@@ -1,0 +1,43 @@
+{
+  "label": "wist-sh07",
+  "frozen": true,
+  "kind": "keyframe-prop-drift",
+  "note": "Frozen excerpt of the WIST SH07 regression (state before the garment-class fix): a coat prop got the held-tool plow sentence and a require.tool gate the blind MARS write-up could never satisfy. D1a replays this slice: the soft prop-drift row at keyframe-prompt must precede the hard require fail. Story nouns are allowed here — fixtures are exempt from the noun-lint.",
+  "characters": [
+    { "id": "X1", "name": "阿月", "role": "保險調查員", "wardrobe": "深藍乾濕褸", "palette": ["#111", "#222", "#333"], "voice": { "pitchHz": 200, "gender": "f" } },
+    { "id": "X2", "name": "阿衡", "role": "舊同事", "wardrobe": "白襯衫", "palette": ["#111", "#222", "#333"], "voice": { "pitchHz": 180, "gender": "m" } }
+  ],
+  "shot": {
+    "id": "SH07",
+    "index": 6,
+    "heading": "7",
+    "size": "medium",
+    "location": "亂葬崗",
+    "action": "扯過死將軍嘅外套披上肩",
+    "dialogue": "",
+    "durationSec": 4,
+    "camera": { "pos": { "x": 0, "y": -5, "z": 1.7 }, "lookAt": { "x": 0, "y": 0, "z": 1.2 }, "lensMm": 35 },
+    "marks": [
+      { "characterId": "X1", "start": { "x": 30, "y": 50 }, "end": { "x": 30, "y": 50 }, "facing": 1, "handL": { "x": 34, "y": 45 }, "handR": { "x": 36, "y": 45 }, "footL": { "x": 28, "y": 80 }, "footR": { "x": 32, "y": 80 }, "gait": "plant" },
+      { "characterId": "X2", "start": { "x": 70, "y": 50 }, "end": { "x": 70, "y": 50 }, "facing": 1, "handL": { "x": 66, "y": 45 }, "handR": { "x": 74, "y": 45 }, "footL": { "x": 68, "y": 80 }, "footR": { "x": 72, "y": 80 }, "gait": "plant" }
+    ],
+    "props": [
+      { "name": "死將軍外套", "heldBy": "X1", "shape": ["披", "肩"], "forbid": ["木犁", "鐵犁鏵"] }
+    ],
+    "stillPrompt": "",
+    "motionPrompt": ""
+  },
+  "prompt": "Image-1 係呢一鏡嘅 Blender 灰模概念圖：灰色人偶係角色佔位，唔係道具、唔係石頭。將呢張概念圖轉成 photoreal 實拍一格，\n人偶位置、姿勢、比例、鏡位、地平線完全照 Image-1。\n左起第1個人偶＝阿月（保險調查員）：深藍乾濕褸。\n左起第2個人偶＝阿衡（舊同事）：白襯衫。\n人偶手中／兩人之間嘅長條係死將軍外套：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具，背景冇任何其他工具；唔係木犁、鐵犁鏵。\nImage-2 係上一鏡嘅定格：兩人樣貌、衣服、犁、光線同色調全部跟 Image-2，唯獨姿勢跟 Image-1。\n亂葬崗，dusk，wind。唔好加人。",
+  "require": {
+    "people_count": 2,
+    "grey_blocks": false,
+    "tool": "死將軍外套",
+    "tool_shape": ["披", "肩"],
+    "tool_forbid": ["木犁", "鐵犁鏵"]
+  },
+  "photo_qc": {
+    "status": "FAIL",
+    "checks": { "people_count": true, "grey_blocks": true, "tool": false, "status": "FAIL", "fail_reasons": ["tool: require \"死將軍外套\"; written=null; named=false shape=false forbid=[\"木犁\"]"] },
+    "fail_reasons": ["tool: require \"死將軍外套\"; written=null; named=false shape=false forbid=[\"木犁\"]"]
+  }
+}

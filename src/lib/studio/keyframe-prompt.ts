@@ -1,12 +1,22 @@
 import type { CallSheet, Shot } from "./types";
 import type { QcRequire } from "./photo-qc";
 
-/** garments are clothes on the body — they never take the held-tool/plow gate.
- *  forbid lists are not echoed for garments (sheet forbids name the plow). */
-const GARMENT_RE = /外套|大衣|衫|衣|coat|jacket|cloak|robe/i;
+/** A prop's noun class decides its prompt template and its QC gate. Classes
+ *  are generic vocabulary only — sheet proper names never appear here (the
+ *  noun-lint holds that line). Noun-class preservation: a garment is prompted
+ *  as clothing, a flat paper document as a document, only a held tool gets
+ *  the one-tool farm sentence. A document is not a held farm tool. */
+export type PropNounClass = "garment" | "document" | "tool";
 
-function isGarment(name: string): boolean {
-  return GARMENT_RE.test(name);
+const GARMENT_RE = /外套|大衣|衫|衣|coat|jacket|cloak|robe/i;
+/** flat paper/board things carried, shown or read — never swung like a tool */
+const DOCUMENT_RE =
+  /令|詔|旨|敕|書|信|箋|函|卷|軸|圖|紙|契|券|符|帖|牒|表|冊|decree|edict|letter|scroll|document|paper|map|warrant|pardon|deed|pass\b/i;
+
+export function propNounClass(name: string): PropNounClass {
+  if (GARMENT_RE.test(name)) return "garment";
+  if (DOCUMENT_RE.test(name)) return "document";
+  return "tool";
 }
 
 /** /edit prompt for one shot keyframe, naming images by slot. Under img_cfg 1.0
@@ -27,38 +37,43 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
     lines.push(`左起第${i + 1}個人偶＝${c.name}（${c.role}）：${c.wardrobe}。`);
   });
   const prop = shot.props?.[0];
-  const garment = prop ? isGarment(prop.name) : false;
-  if (prop) {
-    if (garment) {
-      // clothing on the body, never farm vocabulary — a coat drawn as a plow blade is the SH07 regression
-      lines.push(
-        `${prop.name}係一件衣物：披上膊頭或者着住喺身嘅衣服，有領有袖，布料隨姿勢自然垂落，屬於角色造型一部分。`,
-      );
-    } else {
-      // "one blade, one tool" — U1.5's default farm tool is a multi-tine rake
-      lines.push(
-        `人偶手中／兩人之間嘅長條係${prop.name}：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具，背景冇任何其他工具；唔係${prop.forbid.join("、")}。`,
-      );
-    }
+  const cls = prop ? propNounClass(prop.name) : null;
+  if (prop && cls === "garment") {
+    // clothing on the body, never farm vocabulary — a coat drawn as a plow blade is the SH07 regression
+    lines.push(
+      `${prop.name}係一件衣物：披上膊頭或者着住喺身嘅衣服，有領有袖，布料隨姿勢自然垂落，屬於角色造型一部分。`,
+    );
+  } else if (prop && cls === "document") {
+    // flat paper document in the hands — never the plow sentence, never a tool
+    lines.push(
+      `${prop.name}係一張紙本文書：薄而平，可以喺手中展開、遞出或者攤開睇，上面有字有印；佢係文具唔係工具，畫面冇任何農具或者長柄器具。`,
+    );
+  } else if (prop) {
+    // "one blade, one tool" — U1.5's default farm tool is a multi-tine rake
+    lines.push(
+      `人偶手中／兩人之間嘅長條係${prop.name}：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具，背景冇任何其他工具；唔係${prop.forbid.join("、")}。`,
+    );
   }
   lines.push(
     opts.first
       ? "Image-2…Image-N 係上述角色嘅正面肖像，只借樣貌。"
-      : `Image-2 係上一鏡嘅定格：兩人樣貌、衣服、${garment && prop ? prop.name : "犁"}、光線同色調全部跟 Image-2，唯獨姿勢跟 Image-1。`,
+      : `Image-2 係上一鏡嘅定格：兩人樣貌、衣服、${prop ? prop.name : "犁"}、光線同色調全部跟 Image-2，唯獨姿勢跟 Image-1。`,
   );
   lines.push(`${sheet.location}，${sheet.timeOfDay}，${sheet.weather}。唔好加人。`);
   return lines.join("\n");
 }
 
 /** what photo QC requires of this shot's keyframe: the marks decide people_count;
- *  a held tool (when the sheet carries one) adds the proven tool gate from data.
- *  A garment is wardrobe, not a tool — no tool gate: blind QC can only describe
- *  shape words, never the sheet's proper name, so the name gate never turns GREEN. */
+ *  only a held tool (noun class "tool") adds the proven tool gate from data.
+ *  Garments and documents are wardrobe/paper, not tools — no tool gate: blind QC
+ *  can only describe shape words, never the sheet's proper name, so the name
+ *  gate never turns GREEN. */
 export function keyframeRequire(shot: Shot): QcRequire {
   const prop = shot.props?.[0];
+  const heldTool = prop && propNounClass(prop.name) === "tool" ? prop : undefined;
   return {
     people_count: new Set(shot.marks.map((m) => m.characterId)).size,
     grey_blocks: false,
-    ...(prop && !isGarment(prop.name) ? { tool: prop.name, tool_shape: prop.shape, tool_forbid: prop.forbid } : {}),
+    ...(heldTool ? { tool: heldTool.name, tool_shape: heldTool.shape, tool_forbid: heldTool.forbid } : {}),
   };
 }

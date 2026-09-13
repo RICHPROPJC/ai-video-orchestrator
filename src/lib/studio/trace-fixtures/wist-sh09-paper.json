@@ -1,0 +1,30 @@
+{
+  "label": "wist-sh09-paper",
+  "frozen": true,
+  "kind": "keyframe-paper-prop",
+  "note": "Frozen excerpt of the WIST SH09 boundary (after SH07 went GREEN): a flat paper prop (赦免令) still got the plow sentence and a require.tool gate — a document is not a held farm tool. D1a replays this slice against the FIXED keyframe code: prompt has no 木犁, require carries no tool gate, and both soft edge rows pass. Story nouns are allowed here — fixtures are exempt from the noun-lint.",
+  "characters": [
+    { "id": "X1", "name": "阿月", "role": "保險調查員", "wardrobe": "深藍乾濕褸", "palette": ["#111", "#222", "#333"], "voice": { "pitchHz": 200, "gender": "f" } },
+    { "id": "X2", "name": "阿衡", "role": "舊同事", "wardrobe": "白襯衫", "palette": ["#111", "#222", "#333"], "voice": { "pitchHz": 180, "gender": "m" } }
+  ],
+  "shot": {
+    "id": "SH09",
+    "index": 8,
+    "heading": "9",
+    "size": "closeup",
+    "location": "亂葬崗",
+    "action": "遞出赦免令",
+    "dialogue": "",
+    "durationSec": 3,
+    "camera": { "pos": { "x": 0, "y": -3, "z": 1.5 }, "lookAt": { "x": 0, "y": 0, "z": 1.2 }, "lensMm": 50 },
+    "marks": [
+      { "characterId": "X1", "start": { "x": 30, "y": 50 }, "end": { "x": 30, "y": 50 }, "facing": 1, "handL": { "x": 34, "y": 45 }, "handR": { "x": 36, "y": 45 }, "footL": { "x": 28, "y": 80 }, "footR": { "x": 32, "y": 80 }, "gait": "plant" },
+      { "characterId": "X2", "start": { "x": 70, "y": 50 }, "end": { "x": 70, "y": 50 }, "facing": 1, "handL": { "x": 66, "y": 45 }, "handR": { "x": 74, "y": 45 }, "footL": { "x": 68, "y": 80 }, "footR": { "x": 72, "y": 80 }, "gait": "reach" }
+    ],
+    "props": [
+      { "name": "赦免令", "heldBy": "X1", "shape": ["紙", "字", "薄"], "forbid": ["木犁", "鋤頭"] }
+    ],
+    "stillPrompt": "",
+    "motionPrompt": ""
+  }
+}

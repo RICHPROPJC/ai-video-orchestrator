@@ -31,6 +31,7 @@ import { submitH3Shot } from "./h3-submit";
 import { checkHealth, buildEditPayload, u15Edit, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
 import { runPhotoQc, pinQcAccepted, type QcRequire } from "./photo-qc";
+import { appendViolation, checkBoardsToKeyframe, checkKeyframeToStills, hardErrorRow, hardPhotoQcRow } from "./trace";
 import { rangesFor } from "./script-contract";
 
 function patch(job: JobRecord, partial: Partial<JobRecord>) {
@@ -418,6 +419,10 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       const first = i === 0 || (prev ? prev.size !== shot.size : false) || newChar;
       const prompt = keyframeEditPrompt(timed, shot, { first });
       const require = keyframeRequire(shot);
+      // D1a trace: soft edge invariants (boards→keyframe, keyframe→stills),
+      // written for pass and fail alike, always before any QC gate can fail
+      const softRows = [...checkBoardsToKeyframe(timed.characters, shot, prompt), ...checkKeyframeToStills(shot, require)];
+      for (const row of softRows) appendViolation(jobDir(jobId), row);
       fs.writeFileSync(path.join(stillDir, `${shot.id}.require.json`), JSON.stringify(require, null, 2));
       return { shot, first, prompt, require };
     });
@@ -539,7 +544,16 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         text: prompt,
         absPath: out,
       });
-      emit(jobId, { agent: "stills", level: "info", message: `${shot.id} keyframe /edit 完成`, data: { file: `stills/${shot.id}.png` } });
+      emit(jobId, {
+        agent: "stills",
+        level: "info",
+        message: `${shot.id} keyframe /edit 完成`,
+        data: { file: `stills/${shot.id}.png` },
+        step_id: "keyframe-prompt",
+        parent_steps: ["boards"],
+        seat: "stills",
+        constraints_checked: ["prop-drift", "cast-drift", "require-keys"],
+      });
     }
     job = patch(job, {
       providers: trace,
@@ -554,6 +568,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const geometry = localPictureQc({ stills, sheet: timed, target: "stills" });
     if (!geometry.pass) {
       const detail = geometry.issues.map((i) => i.detail).join("; ");
+      // D1a: a hard QC fail is also a violation row, upstream soft rows already on disk
+      appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc-geometry", geometry.issues.map((i) => i.detail)));
       throw new Error(`picture QC plan-geometry pre-check failed: ${detail}`);
     }
     for (const { shot, require } of stillPlans) {
@@ -563,6 +579,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       let result = await runPhotoQc(png, qcJson, require);
       if (result.status !== "GREEN") {
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
+        appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
         await speak("pictureQc", `${shot.id} 唔過（${reasons}）— 補一句 prompt 再 /edit 一次。`, "warn");
         const inputs = editInputs.get(shot.id);
         if (!inputs) throw new Error(`picture QC ${shot.id}: no /edit inputs to retry with`);
@@ -599,6 +616,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       }
       if (result.status !== "GREEN") {
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
+        appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
         job = patch(job, {
           status: "blocked",
           currentAgent: "pictureQc",
@@ -610,6 +628,10 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           level: "fail",
           message: `${shot.id} 兩次都唔過（${reasons}）。停手，唔硬出。修 prompt 或者換 plug 之後 --resume ${jobId}。`,
           data: { shot: shot.id, require, fail_reasons: result.checks.fail_reasons },
+          step_id: "require",
+          parent_steps: ["keyframe-prompt"],
+          seat: "pictureQc",
+          constraints_checked: ["photo-qc"],
         });
         return;
       }
@@ -870,6 +892,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     job = patch(job, { status: "failed", error: message });
+    // D1a: the throw site also lands a hard row (zod / pipeline) — the soft
+    // rows written earlier in topological order already sit above it
+    appendViolation(jobDir(jobId), hardErrorRow(error));
     emit(jobId, { agent: "system", level: "error", message });
     // reflector: strictly after the job is marked failed, never inside a live
     // stage — the 27B reads this grave and curatePlaybook (code) writes lessons

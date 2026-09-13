@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import * as nodeTest from "node:test";
-import { keyframeEditPrompt, keyframeRequire } from "./keyframe-prompt";
+import { keyframeEditPrompt, keyframeRequire, propNounClass } from "./keyframe-prompt";
 import type { CallSheet, Shot, ShotProp } from "./types";
 
 /** One file, three doors: bun's node:test shim only works under `bun test`,
  *  so bare `bun <this file>` self-drives the collected cases; `bun test` and
- *  `tsx --test` use the real runner. (store.test.ts idiom.) */
+ *  `tsx --test` use the real runner. (store.test.ts idiom.)
+ *  Story nouns (frozen sheet proper names) live in trace-fixtures/, never
+ *  here — the noun-lint fails on any of them in src code. */
 const bareBun = !!process.versions.bun && process.env.BUN_TEST !== "1";
 const cases: { name: string; fn: () => void | Promise<void> }[] = [];
 const test = bareBun
@@ -23,8 +25,8 @@ const sheet: CallSheet = {
   durationSec: 4,
   aspect: "16:9",
   characters: [
-    { id: "A", name: "阿月", role: "保險調查員", wardrobe: "深藍乾濕褸", palette: ["#111", "#222", "#333"], voice: { pitchHz: 200, gender: "f" } },
-    { id: "B", name: "阿衡", role: "舊同事", wardrobe: "白襯衫", palette: ["#111", "#222", "#333"], voice: { pitchHz: 180, gender: "m" } },
+    { id: "A", name: "角色一", role: "保險調查員", wardrobe: "深藍乾濕褸", palette: ["#111", "#222", "#333"], voice: { pitchHz: 200, gender: "f" } },
+    { id: "B", name: "角色二", role: "舊同事", wardrobe: "白襯衫", palette: ["#111", "#222", "#333"], voice: { pitchHz: 180, gender: "m" } },
   ],
   styleBible: { grade: "g", refs: [], stillModel: "u15", motionModel: "h3" },
   shots: [],
@@ -38,7 +40,7 @@ function shotWithProp(prop?: ShotProp): Shot {
     heading: "7",
     size: "medium",
     location: "亂葬崗",
-    action: "扯過死將軍嘅外套披上肩",
+    action: "扯過件外套披上肩",
     dialogue: "",
     durationSec: 4,
     camera: { pos: { x: 0, y: -5, z: 1.7 }, lookAt: { x: 0, y: 0, z: 1.2 }, lensMm: 35 },
@@ -52,12 +54,13 @@ function shotWithProp(prop?: ShotProp): Shot {
   } satisfies Shot;
 }
 
-const coat: ShotProp = { name: "死將軍外套", heldBy: "A", shape: ["披", "肩"], forbid: ["木犁", "鐵犁鏵"] };
+const coat: ShotProp = { name: "軍大衣", heldBy: "A", shape: ["披", "肩"], forbid: ["木犁", "鐵犁鏵"] };
+const decree: ShotProp = { name: "通緝令", heldBy: "A", shape: ["紙", "字"], forbid: ["木犁", "鋤頭"] };
 
-test("garment prop: prompt names the coat as clothing, never a plow (SH07)", () => {
+test("garment prop: prompt names the coat as clothing, never a plow (SH07 class)", () => {
   const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: false });
-  assert.ok(text.includes("死將軍外套"), "prop name from sheet");
-  assert.ok(text.includes("外套"), "card: contains 外套");
+  assert.ok(text.includes("軍大衣"), "prop name from sheet");
+  assert.ok(text.includes("係一件衣物"), "card: garment-class sentence present");
   assert.ok(!text.includes("木犁"), "card: no 木犁");
   assert.ok(!text.includes("犁"), "no plow character at all — not even the forbid echo");
   assert.ok(/披上|着住/.test(text), "described as clothing on the body (披上／着住)");
@@ -66,7 +69,7 @@ test("garment prop: prompt names the coat as clothing, never a plow (SH07)", () 
 test("garment prop: later-shot continuity carries the coat, not the 犁", () => {
   const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: false });
   assert.ok(text.includes("Image-2 係上一鏡嘅定格"), "continuity line present");
-  assert.ok(text.includes("死將軍外套、光線同色調"), "the garment is the carried prop");
+  assert.ok(text.includes("軍大衣、光線同色調"), "the garment is the carried prop");
   assert.ok(!text.includes("犁"), "no plow in the carry-over list");
 });
 
@@ -74,6 +77,21 @@ test("garment prop: require keeps people_count + grey_blocks, no tool gate", () 
   const req = keyframeRequire(shotWithProp(coat));
   assert.equal(req.people_count, 2);
   assert.equal(req.grey_blocks, false);
+  assert.equal("tool" in req, false, "card: require has no tool");
+  assert.equal("tool_shape" in req, false);
+  assert.equal("tool_forbid" in req, false);
+});
+
+test("paper prop (SH09 class): flat document sentence — no 木犁 in prompt, require has no tool", () => {
+  const text = keyframeEditPrompt(sheet, shotWithProp(decree), { first: false });
+  assert.ok(text.includes("通緝令"), "prop name from sheet");
+  assert.ok(text.includes("紙本文書"), "described as a flat paper document");
+  assert.ok(!text.includes("木犁"), "card: paper-prop fixture ⇒ no 木犁 in prompt");
+  assert.ok(!text.includes("犁"), "no plow character at all");
+  assert.ok(!text.includes(decree.forbid.join("、")), "no forbid echo for documents either");
+  assert.ok(text.includes("通緝令、光線同色調"), "the document is the carried prop");
+  const req = keyframeRequire(shotWithProp(decree));
+  assert.equal(req.people_count, 2);
   assert.equal("tool" in req, false, "card: require has no tool");
   assert.equal("tool_shape" in req, false);
   assert.equal("tool_forbid" in req, false);
@@ -91,7 +109,7 @@ test("tool prop (犁): plow sentence + tool gate unchanged", () => {
   assert.deepEqual(req.tool_forbid, ["锹", "铲", "锄"]);
 });
 
-test("tool prop (槍): not a garment, keeps the tool gate", () => {
+test("tool prop (槍): not a garment or document, keeps the tool gate", () => {
   const spear: ShotProp = { name: "長槍", heldBy: "B", shape: ["长", "杆", "尖"], forbid: ["剑", "戟"] };
   const text = keyframeEditPrompt(sheet, shotWithProp(spear), { first: true });
   assert.ok(text.includes("長槍"), "prop name from sheet");
@@ -99,14 +117,18 @@ test("tool prop (槍): not a garment, keeps the tool gate", () => {
   assert.equal(keyframeRequire(shotWithProp(spear)).tool, "長槍");
 });
 
-test("garment regex: 大衣/衣/coat/jacket/cloak/robe are wardrobe; 犁/槍/鋤 are tools", () => {
+test("noun classes: garments and documents never take the held-tool gate; 犁/槍/鋤 do", () => {
   for (const name of ["軍大衣", "蓑衣", "斗篷 cloak", "leather jacket", "silk robe"]) {
-    const req = keyframeRequire(shotWithProp({ name, shape: [], forbid: [] }));
-    assert.equal("tool" in req, false, `${name} is a garment`);
+    assert.equal(propNounClass(name), "garment", `${name} is a garment`);
+    assert.equal("tool" in keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })), false);
+  }
+  for (const name of ["詔書", "通緝令", "書信", "地圖", "secret letter", "land deed"]) {
+    assert.equal(propNounClass(name), "document", `${name} is a document`);
+    assert.equal("tool" in keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })), false);
   }
   for (const name of ["曲轅犁", "長槍", "鋤頭"]) {
-    const req = keyframeRequire(shotWithProp({ name, shape: [], forbid: [] }));
-    assert.equal(req.tool, name, `${name} is a held tool`);
+    assert.equal(propNounClass(name), "tool", `${name} is a held tool`);
+    assert.equal(keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })).tool, name);
   }
 });
 
