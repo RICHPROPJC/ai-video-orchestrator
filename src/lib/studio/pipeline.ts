@@ -31,6 +31,7 @@ import { submitH3Shot } from "./h3-submit";
 import { checkHealth, buildEditPayload, u15Edit, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
 import { runPhotoQc, pinQcAccepted, type QcRequire } from "./photo-qc";
+import { pinVideoQcAccepted, runVideoQc } from "./video-qc";
 import { appendViolation, checkBoardsToKeyframe, checkKeyframeToStills, hardErrorRow, hardPhotoQcRow } from "./trace";
 import { rangesFor } from "./script-contract";
 
@@ -733,16 +734,33 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       });
       const doneMp4 = path.join(motionDir, `${shot.id}.mp4`);
       const doneReceipt = path.join(motionDir, `${shot.id}.h3_submit.json`);
-      // an mp4 whose stream already holds the snapped frame count needs no re-burn
-      if (
-        input.resume && fs.existsSync(doneMp4) && fs.existsSync(doneReceipt)
-        && Math.round((await mediaSeconds(doneMp4)) * 24)
-          === Math.round((cutPlan.shots.find((c) => c.id === shot.id)?.duration_s ?? -1) * 24)
-      ) {
+      const requirePath = path.join(stillDir, `${shot.id}.require.json`);
+      const require = JSON.parse(fs.readFileSync(requirePath, "utf8")) as QcRequire;
+      const videoQcJson = path.join(motionDir, `${shot.id}.video_qc.json`);
+      const wantFrames = Math.round(
+        (cutPlan.shots.find((c) => c.id === shot.id)?.duration_s ?? -1) * 24,
+      );
+      const frameSnap = fs.existsSync(doneMp4)
+        && Math.round((await mediaSeconds(doneMp4)) * 24) === wantFrames;
+      // resume keeps an mp4 only when frame clock matches AND blind MARS video_qc is GREEN
+      const kept =
+        input.resume
+        && fs.existsSync(doneMp4)
+        && fs.existsSync(doneReceipt)
+        && frameSnap
+        && pinVideoQcAccepted(motionDir, shot.id);
+      if (kept) {
         shotVideos.push(doneMp4);
         receipts.push(relInJob(jobId, doneReceipt));
-        await speak("motion", `${shot.id} 照舊，唔重燒 H3。`);
+        await speak("motion", `${shot.id} 照舊，唔重燒 H3（video_qc GREEN）。`);
         continue;
+      }
+      if (input.resume && fs.existsSync(doneMp4) && fs.existsSync(doneReceipt) && frameSnap) {
+        await speak(
+          "motion",
+          `${shot.id} mp4 時鐘啱但 video_qc 未 GREEN — 下一跳重燒。`,
+          "warn",
+        );
       }
       const { receiptFile } = await submitH3Shot({
         prose,
@@ -768,6 +786,19 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         text: prose,
         absPath: mp4,
       });
+      await think("pictureQc");
+      const videoQc = await runVideoQc({
+        mp4,
+        outJson: videoQcJson,
+        require,
+        shotId: shot.id,
+      });
+      if (videoQc.status !== "GREEN") {
+        const reasons = videoQc.checks.fail_reasons.join("; ") || "not GREEN";
+        await speak("motion", `${shot.id} motion 眼 FAIL（${reasons}）— clip 留低。`, "fail");
+      } else {
+        await speak("motion", `${shot.id} motion 眼 GREEN`, "pass");
+      }
       emit(jobId, { agent: "motion", level: "info", message: `${shot.id} motion 完成` });
     }
     job = patch(job, {
@@ -889,9 +920,10 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const pictureLock = jobFile(jobId, "delivery", "picture-lock.mp4");
     await ffmpeg(["-f", "concat", "-safe", "0", "-i", muxList, "-c", "copy", pictureLock]);
 
-    const pictureVideo = localPictureQc({ stills, sheet: timed, target: "video" });
+    const markGeometry = localPictureQc({ stills, sheet: timed, target: "video" });
+    const videoQcPass = cut.every((id) => pinVideoQcAccepted(motionDir, id));
     job = patch(job, {
-      pictureQcVideo: pictureVideo,
+      pictureQcVideo: markGeometry,
       progress: 92,
       outputs: { ...job.outputs, concatGate: "concat_gate.json", pictureLock: "delivery/picture-lock.mp4" },
     });
@@ -910,10 +942,10 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       provenance: timed.provenance,
       soundQc: sound,
       pictureQcStills: geometry,
-      pictureQcVideo: pictureVideo,
+      markGeometry,
       // the padded tail per shot IS the delivered speech gap
       gap_delivered_s: Object.fromEntries(gapDelivered),
-      locked: Boolean(sound.pass && pictureVideo.pass),
+      locked: Boolean(sound.pass && videoQcPass),
     };
     fs.writeFileSync(jobFile(jobId, "delivery", "qc.json"), JSON.stringify(report, null, 2));
     fs.writeFileSync(jobFile(jobId, "delivery", "callsheet.md"), markdownCallSheet(timed, job.slate));

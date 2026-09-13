@@ -14,7 +14,7 @@ const SUMMARIZE_PROMPT =
   "- people_count (integer or null)\n" +
   "- pose_notes (short string)\n" +
   '- tool_as_written (verbatim clause about any held object, including shape words)\n' +
-  "- grey_blocks (true/false/unknown): grey cubes or mannequin placeholders\n" +
+  "- grey_blocks (true/false/unknown): grey cubes, mannequin/i-mannequin placeholders, placards, or white silhouettes\n" +
   "Do not name characters. Do not decide whether an object is 'correct'.";
 
 export type QcRequire = {
@@ -37,7 +37,8 @@ export type QcVerdict = {
   checks: Record<string, unknown> & { status: string; fail_reasons: string[] };
 };
 
-const GREY_RE = /灰色方块|灰色方塊|灰块|灰塊|占位人偶|灰色立方|grey cubes?|gray cubes?|grey blocks?/i;
+const GREY_RE =
+  /灰色方块|灰色方塊|灰块|灰塊|占位人偶|灰色立方|灰色人形|人偶|i-?mannequin|mannequin|placard|標牌|看板|剪影|silhouette|grey cubes?|gray cubes?|grey blocks?/i;
 
 /** GET /v1/models on the configured vision endpoint; resolves the exact model,
  *  else any model with "mars" in its id. Throws when neither is served. */
@@ -64,11 +65,12 @@ async function chat(url: string, model: string, content: unknown, maxTokens: num
   return (json.choices?.[0]?.message?.content ?? "").trim();
 }
 
-export async function blindDescribe(url: string, model: string, pngFile: string): Promise<string> {
-  const b64 = fs.readFileSync(pngFile).toString("base64");
+export async function blindDescribe(url: string, model: string, imageFile: string): Promise<string> {
+  const b64 = fs.readFileSync(imageFile).toString("base64");
+  const mime = imageFile.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
   return chat(url, model, [
     { type: "text", text: BLIND_PROMPT },
-    { type: "image_url", image_url: { url: `data:image/png;base64,${b64}` } },
+    { type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } },
   ], 2000);
 }
 

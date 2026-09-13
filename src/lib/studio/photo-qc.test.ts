@@ -30,6 +30,18 @@ test("灰色方块 in the write-up fails grey_blocks", () => {
   assert.ok(v.checks.fail_reasons.some((r) => r.includes("grey_blocks")));
 });
 
+test("i-mannequin / placard / silhouette in write-up fails grey_blocks", () => {
+  for (const extra of [
+    "畫面係 Blender i-mannequin 占位。",
+    "面前有塊 placard 標牌。",
+    "兩個白色人形剪影。",
+  ]) {
+    const v = judge(`${DESC} ${extra}`, { people_count: 1, grey_blocks: false }, { people_count: 1, grey_blocks: false });
+    assert.equal(v.status, "FAIL", extra);
+    assert.ok(v.checks.fail_reasons.some((r) => r.includes("grey_blocks")), extra);
+  }
+});
+
 test("empty require fails", () => {
   const v = judge(DESC, { people_count: 2 }, {});
   assert.equal(v.status, "FAIL");

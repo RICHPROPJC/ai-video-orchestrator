@@ -22,6 +22,7 @@ function help() {
 Commands
   tui "<brief>"              全螢幕 TUI 開工（Montaj 式 CLIP）
   produce "<brief>"          行 log 開工
+  frames <job> <shot>        從 motion mp4 抽 QC 帧（首/中/尾 + 每 2s）→ jpg
   doctor                     探兩部機 / MARS / ffmpeg / Blender
   models                     睇而家用緊邊個 checkpoint
   models set <dot.path> <v>  換模型，例：stills.checkpoint foo.safetensors
@@ -195,6 +196,22 @@ async function main() {
   }
   if (cmd === "serve") {
     console.log("npm run dev   →  http://127.0.0.1:43127");
+    return;
+  }
+  if (cmd === "frames") {
+    const job = process.argv[3];
+    const shot = process.argv[4];
+    if (!job || !shot) {
+      console.error("frames <job> <shot>");
+      process.exitCode = 1;
+      return;
+    }
+    const { dataRoot } = await import("./lib/studio/paths");
+    const { extractMotionFrames } = await import("./lib/studio/motion-frames");
+    const mp4 = path.join(dataRoot(), job, "motion", `${shot}.mp4`);
+    const outDir = path.join(dataRoot(), job, "motion", `${shot}.frames`);
+    const frames = await extractMotionFrames(mp4, outDir, shot);
+    console.log(JSON.stringify({ job, shot, mp4, outDir, frames }, null, 2));
     return;
   }
   if (cmd === "doctor") {

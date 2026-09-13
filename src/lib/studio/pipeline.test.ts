@@ -17,6 +17,22 @@ const test = bareBun
   ? (name: string, fn: () => void | Promise<void>) => cases.push({ name, fn })
   : nodeTest.test;
 
+function pinGreenVideo(motionDir: string, shotId: string) {
+  const mp4 = path.join(motionDir, `${shotId}.mp4`);
+  const sha = crypto.createHash("sha256").update(fs.readFileSync(mp4)).digest("hex");
+  fs.writeFileSync(
+    path.join(motionDir, `${shotId}.video_qc.json`),
+    JSON.stringify({
+      tool: "slatecrew.video_qc",
+      status: "GREEN",
+      sha256: sha,
+      require: { people_count: 1, grey_blocks: false },
+      frames: [],
+      checks: { status: "GREEN", fail_reasons: [] },
+    }),
+  );
+}
+
 function pinGreenStill(stillDir: string, shotId: string) {
   fs.mkdirSync(stillDir, { recursive: true });
   const bytes = Buffer.concat([Buffer.from("89504e470d0a1a0a0000", "hex"), Buffer.alloc(9000)]);
@@ -138,6 +154,7 @@ test("resume + all stills GREEN skips portraits and reaches motion-prep", async 
     fs.mkdirSync(motionDir);
     fs.copyFileSync(blockoutMp4, path.join(motionDir, "SH01.mp4"));
     fs.writeFileSync(path.join(motionDir, "SH01.h3_submit.json"), "{}");
+    pinGreenVideo(motionDir, "SH01");
 
     await runPipeline(jobId, { brief: "fixture", wavDir, resume: true, until: "motion" });
 

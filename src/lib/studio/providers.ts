@@ -156,8 +156,9 @@ export function localPictureQc(opts: {
     }
   }
   const overall = (hands + feet + composition + identity + artifacts) / 5;
+  const video = opts.target === "video";
   return {
-    provider: "mars-8b-local-schema",
+    provider: video ? "mark-geometry" : "mars-8b-local-schema",
     target: opts.target,
     overall,
     identity,
@@ -165,9 +166,10 @@ export function localPictureQc(opts: {
     hands,
     feet,
     artifacts,
-    pass: overall >= 0.72 && !issues.some((i) => i.severity === "block"),
-    notes:
-      "plan-geometry pre-check (marks/crop/feet). The delivery gate is blind MARS photo QC per still.",
+    pass: video ? false : overall >= 0.72 && !issues.some((i) => i.severity === "block"),
+    notes: video
+      ? "mark-geometry pre-check (marks/crop/feet). The delivery gate is blind MARS video QC per frame."
+      : "plan-geometry pre-check (marks/crop/feet). The delivery gate is blind MARS photo QC per still.",
     issues,
   };
 }
