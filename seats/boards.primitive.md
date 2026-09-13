@@ -1,4 +1,4 @@
-# boards playbook — 阿圖學過嘅教訓（Curator 代碼寫；Chau 刪一行即否決）
+# boards primitive playbook — boards 檯跨劇目教訓（Curator 代碼寫；Chau 刪一行即否決）
 - [b3] schema.ref field=props.heldBy saw=A rule=props.heldBy 必須引用同一個鏡頭 cast 入面實際存在嘅 characterId。如果道具係由某角色持有，就確保嗰個角色嘅 characterId 已經喺該鏡頭嘅 cast array 入面。 hits=2 status=proven src=SC-0912-T0N1
 - [b4] arithmetic.clock field=shots.durationSec saw=9.3s rule=durationSec 必須大於等於對白字數 × 0.23 + 0.6 嘅結果。例如 38 字對白需要 9.3s，唔可以只寫 8.5s。 hits=2 status=proven src=SC-0912-C7IQ
 - [b5] schema.enum field=cast.stanceEnd saw=walk rule=stanceEnd 字段絕對唔可以用 gait 嘅值（如 walk, reach, turn, plant），只能係 stand, lean, crouch 其中一個。 hits=2 status=proven src=SC-0912-2Y0V

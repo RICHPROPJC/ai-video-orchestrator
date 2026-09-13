@@ -4,7 +4,14 @@ import { z } from "zod";
 import { chatJson, type CrewConfig, type CrewReceipt } from "./crew-llm";
 import { BOARDS_CHARTER, WRITER_BEATS_CHARTER, WRITER_OUTLINE_CHARTER } from "./seat-charters";
 import { curatePlaybook, type PlaybookOp } from "./playbook";
-import { jobDir, seatsDir } from "./paths";
+import {
+  dramasWithPlaybooks,
+  jobDir,
+  playbookPath,
+  projectsRootFromSeatsDir,
+  seatsDir,
+  type PlaybookAddress,
+} from "./paths";
 
 /** The Reflector: the only place a failure becomes a lesson. It is 27B
  *  (`crew.boardsModel`, qwen3.6-35b) and it runs strictly off the hot path —
@@ -20,7 +27,8 @@ const REFLECTOR_SYSTEM = `你係 Reflector（27B，場外）。一個 produce �
 - saw 係一個 token，冇空格，而且一定要係下面證據入面出現過嘅原文——照抄（例如 plant、84.9s、undefined、"null"、zh）。你自己作嘅總結詞（多變、混亂）會被 Curator 拒收。
 - rule 係寫俾個 seat 聽嘅一句話：下次見到 saw 呢款值就做咩。
 - class 係短嘅失敗類別，一個 token：schema.enum、schema.missing、arithmetic.sum、arithmetic.clock、schema.roster、machine.429 咁。
-- 機器級教訓（429 節流、空 JSON、tag 漏出）to:"global"；seat 行為教訓 to:"seat"。
+- 機器級教訓（429 節流、空 JSON、tag 漏出）to:"all"；seat 行為教訓 to:"seat"。
+- 劇目名詞（角色名、道具名、地點名）照寫唔使避——Curator 會將帶名詞嘅 bullet 自動落返嗰個劇目嘅 playbook，跨劇目檔永遠冇名詞。
 - playbook 已有同 class 同 field 嘅 bullet 就用 UPDATE（帶佢個 id），唔好重複 ADD；完全唔啱用就 REMOVE。
 - 冇嘢好學就交 ops:[]。寧願空，都唔好作。
 - thinking 寫你點樣由 error path 推到個 class，最多五句。
@@ -30,7 +38,7 @@ JSON keys: { thinking, ops:[{ op:"ADD", to:"seat"|"global", class, field, saw, r
 const opShape = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("ADD"),
-    to: z.enum(["seat", "global"]),
+    to: z.enum(["seat", "all"]),
     class: z.string().min(1).max(32).regex(/^\S+$/, "class 一定要一個 token，冇空格"),
     field: z.string().min(1).max(64).regex(/^\S+$/, "field 一定要一個 token，冇空格"),
     saw: z.string().min(1).max(48).regex(/^\S+$/, "saw 一定要一個 token，冇空格"),
@@ -38,14 +46,14 @@ const opShape = z.discriminatedUnion("op", [
   }),
   z.object({
     op: z.literal("UPDATE"),
-    to: z.enum(["seat", "global"]),
+    to: z.enum(["seat", "all"]),
     id: z.string().min(1).max(8),
     rule: z.string().min(1).max(120).optional(),
     saw: z.string().min(1).max(48).regex(/^\S+$/, "saw 一定要一個 token，冇空格").optional(),
   }),
   z.object({
     op: z.literal("REMOVE"),
-    to: z.enum(["seat", "global"]),
+    to: z.enum(["seat", "all"]),
     id: z.string().min(1).max(8),
   }),
 ]);
@@ -173,11 +181,14 @@ export type ReflectorOutcome = { receipts: string[]; ops: ReflectorOps["ops"] };
 
 /** Off-path entry point. Runs only when the job on disk is already failed;
  *  proposes ≤3 ops through 27B and lets the Curator write. Returns the
- *  playbook receipt lines for events. */
+ *  playbook receipt lines for events. `drama` names the job's drama — the
+ *  Curator needs it to demote entity-noun bullets out of the primitive files. */
 export async function runReflector(opts: {
   jobId: string;
   crew: CrewConfig;
   seatsDir?: string;
+  projectsDir?: string;
+  drama?: string;
   jobDir?: string;
   fetchImpl?: typeof fetch;
 }): Promise<string[]> {
@@ -186,9 +197,22 @@ export async function runReflector(opts: {
   if (!failure) return []; // not a failed job (or nothing there): never reflect a live stage
   assertReflectorModel(opts.crew.boardsModel);
   const booksDir = opts.seatsDir ?? seatsDir();
-  const playbookText = (["global", failure.seat ?? "global"] as const)
-    .filter((s, i, a) => a.indexOf(s) === i)
-    .map((s) => `### ${s}.playbook.md\n${fs.existsSync(path.join(booksDir, `${s}.playbook.md`)) ? fs.readFileSync(path.join(booksDir, `${s}.playbook.md`), "utf8") : "(空)"}`)
+  const proot = opts.projectsDir ?? projectsRootFromSeatsDir(booksDir);
+  // one drama in play, or exactly one drama owning playbooks — two or more
+  // without opts.drama means noun demotion has no target, so none is claimed
+  const drama = opts.drama ?? (dramasWithPlaybooks(proot).length === 1 ? dramasWithPlaybooks(proot)[0] : undefined);
+
+  const files: { label: string; addr: PlaybookAddress }[] = [
+    { label: "all.primitive.md", addr: { lifetime: "primitive", scope: "all", dir: booksDir } },
+    ...(failure.seat ? [{ label: `${failure.seat}.primitive.md`, addr: { lifetime: "primitive" as const, scope: failure.seat, dir: booksDir } }] : []),
+    ...(drama ? [{ label: `projects/${drama}/playbook/all.md`, addr: { lifetime: "drama" as const, scope: "all" as const, drama, dir: proot } }] : []),
+    ...(drama && failure.seat ? [{ label: `projects/${drama}/playbook/${failure.seat}.md`, addr: { lifetime: "drama" as const, scope: failure.seat, drama, dir: proot } }] : []),
+  ];
+  const playbookText = files
+    .map(({ label, addr }) => {
+      const file = playbookPath(addr);
+      return `### ${label}\n${fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "(空)"}`;
+    })
     .join("\n\n");
 
   const userText = buildReflectorUser(opts.jobId, failure, playbookText);
@@ -204,21 +228,29 @@ export async function runReflector(opts: {
     fetchImpl: opts.fetchImpl,
   });
 
+  // the Reflector speaks seat-vs-all; the Curator call names the scope and
+  // the noun test decides the lifetime
   const seatOps: PlaybookOp[] = [];
-  const globalOps: PlaybookOp[] = [];
+  const allOps: PlaybookOp[] = [];
   for (const op of pass.value.ops) {
-    (op.to === "global" ? globalOps : seatOps).push(op as PlaybookOp);
+    const curried =
+      op.op === "ADD"
+        ? { op: "ADD" as const, class: op.class, field: op.field, saw: op.saw, rule: op.rule }
+        : op.op === "UPDATE"
+          ? { op: "UPDATE" as const, id: op.id, rule: op.rule, saw: op.saw }
+          : { op: "REMOVE" as const, id: op.id };
+    (op.to === "all" ? allOps : seatOps).push(curried);
   }
   const receipts: string[] = [];
   // the user prompt IS the evidence: an ADD whose saw the Reflector never
   // actually saw is rejected by the Curator, not by the model's conscience
   if (failure.seat && seatOps.length) {
-    receipts.push(...curatePlaybook(failure.seat, seatOps, { src: opts.jobId, dir: booksDir, evidence: userText }).receipts);
+    receipts.push(...curatePlaybook(failure.seat, seatOps, { src: opts.jobId, seatsDir: booksDir, projectsDir: proot, drama, evidence: userText }).receipts);
   } else if (seatOps.length) {
     receipts.push(`playbook: REJECT ${seatOps.length} seat op(s): no failing seat this time`);
   }
-  if (globalOps.length) {
-    receipts.push(...curatePlaybook("global", globalOps, { src: opts.jobId, dir: booksDir, evidence: userText }).receipts);
+  if (allOps.length) {
+    receipts.push(...curatePlaybook("all", allOps, { src: opts.jobId, seatsDir: booksDir, projectsDir: proot, drama, evidence: userText }).receipts);
   }
   return receipts;
 }
