@@ -146,10 +146,24 @@ export type PhotoQcRecord = {
 /** blind write-up → summarize → judge vs require. HTTP failures throw (no local
  *  schema substitute); only a summary-parse failure records FAIL. */
 export async function runPhotoQc(pngFile: string, outJson: string, require: QcRequire): Promise<PhotoQcRecord> {
-  const cfg = loadConfig();
-  const url = cfg.pictureQc.endpoint;
   const raw = fs.readFileSync(pngFile);
   const digest = crypto.createHash("sha256").update(raw).digest("hex");
+  if (fs.existsSync(outJson)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(outJson, "utf8")) as PhotoQcRecord;
+      if (
+        existing.tool === "slatecrew.photo_qc" &&
+        existing.status === "GREEN" &&
+        existing.sha256 === digest
+      ) {
+        return existing;
+      }
+    } catch {
+      /* fall through — re-run QC */
+    }
+  }
+  const cfg = loadConfig();
+  const url = cfg.pictureQc.endpoint;
   const model = await probeVisionEndpoint(url, cfg.pictureQc.model);
   const desc = await blindDescribe(url, model, pngFile);
   let summary: QcSummary;

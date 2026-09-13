@@ -1,11 +1,20 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import * as nodeTest from "node:test";
 import { judge, pinQcAccepted } from "./photo-qc";
 import { keyframeRequire } from "./keyframe-prompt";
+
+/** One file, three doors: bun's node:test shim only works under `bun test`,
+ *  so bare `bun <this file>` self-drives the collected cases; `bun test` and
+ *  `tsx --test` use the real runner. (store.test.ts idiom) */
+const bareBun = !!process.versions.bun && process.env.BUN_TEST !== "1";
+const cases: { name: string; fn: () => void | Promise<void> }[] = [];
+const test = bareBun
+  ? (name: string, fn: () => void | Promise<void>) => cases.push({ name, fn })
+  : nodeTest.test;
 
 const DESC = "兩個人企喺茶餐廳門口，一個着深藍乾濕褸，一個着白襯衫，地面濕，背景係霓虹燈。";
 
@@ -62,6 +71,35 @@ test("pinQcAccepted: FAIL status is false", () => {
   assert.equal(pinQcAccepted(qcDir("FAIL", null), "SH01"), false);
 });
 
+test("runPhotoQc: GREEN write-once keeps existing record when sha matches", async () => {
+  const { runPhotoQc } = await import("./photo-qc");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-qc-wo-"));
+  const png = path.join(dir, "SH01.png");
+  const qc = path.join(dir, "SH01.photo_qc.json");
+  const bytes = Buffer.from("89504e470d0a1a2a0000", "hex");
+  fs.writeFileSync(png, bytes);
+  const sha = crypto.createHash("sha256").update(bytes).digest("hex");
+  const existing = {
+    tool: "slatecrew.photo_qc",
+    ts: "2020-01-01T00:00:00.000Z",
+    image: png,
+    sha256: sha,
+    endpoint: "http://fixture",
+    model: "fixture",
+    require: { people_count: 1, grey_blocks: false },
+    status: "GREEN",
+    blind: "fixture",
+    summary: { people_count: 1, grey_blocks: false },
+    checks: { status: "GREEN", fail_reasons: [], people_count: true, grey_blocks: true },
+  };
+  fs.writeFileSync(qc, JSON.stringify(existing));
+  const before = fs.readFileSync(qc, "utf8");
+  const result = await runPhotoQc(png, qc, { people_count: 1, grey_blocks: false });
+  assert.equal(fs.readFileSync(qc, "utf8"), before);
+  assert.equal(result.status, "GREEN");
+  assert.equal(result.sha256, sha);
+});
+
 test("keyframeRequire adds tool keys when the shot carries a prop", () => {
   const shot = {
     id: "SH01",
@@ -112,3 +150,20 @@ test("keyframeRequire has no tool keys without props", () => {
   assert.equal("tool_shape" in req, false);
   assert.equal("tool_forbid" in req, false);
 });
+
+if (bareBun) {
+  void (async () => {
+    let failed = 0;
+    for (const c of cases) {
+      try {
+        await c.fn();
+        console.log(`ok - ${c.name}`);
+      } catch (err) {
+        failed += 1;
+        console.error(`not ok - ${c.name}\n${err instanceof Error ? err.stack : String(err)}`);
+      }
+    }
+    console.log(`# ${cases.length - failed}/${cases.length} passed`);
+    if (failed > 0) process.exit(1);
+  })();
+}

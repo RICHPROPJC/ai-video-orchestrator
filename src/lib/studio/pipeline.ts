@@ -18,14 +18,14 @@ import { loadCallSheet } from "./writer";
 import { runWriter } from "./seat-writer";
 import { runBoards } from "./seat-boards";
 import { ensurePortraits } from "./portraits";
-import { ensureDir, jobDir, jobFile, seatsDir } from "./paths";
+import { ensureDir, jobDir, jobFile, projectsDir, seatsDir } from "./paths";
 import { runReflector } from "./reflector";
 import { snapDurationToFrames, wavSeconds } from "./frame-grid";
 import { buildCutPlan, type CutPlan } from "./cut-plan";
 import { checkGate } from "./concat-gate";
 import { writeAnchors } from "./dhash-anchors";
 import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "./blockout";
-import { keyframeEditPrompt, keyframeRequire } from "./keyframe-prompt";
+import { keyframeEditPrompt, keyframeRequire, loadBaseCast } from "./keyframe-prompt";
 import { buildProse, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
 import { checkHealth, buildEditPayload, u15Edit, type U15EditRecord } from "./u15-edit";
@@ -98,6 +98,21 @@ export function muxArgs(mp4: string, h3Wav: string, out: string): string[] {
     "-shortest",
     out,
   ];
+}
+
+/** C-scene-hop: `--scene SCxx` narrows ONLY the H3 lane to one scene's shots
+ *  (scene field, else beatId prefix `SCxx.`). Omitted = every shot, the
+ *  existing whole-slate path. Zero matches throws — never silently fall back
+ *  to burning the full slate's H3. */
+export function shotsForScene(shots: Shot[], scene?: string): Shot[] {
+  if (!scene) return shots;
+  const kept = shots.filter(
+    (s) => s.scene === scene || (s.beatId ?? "").startsWith(`${scene}.`),
+  );
+  if (!kept.length) {
+    throw new Error(`--scene ${scene}：一鏡都對唔上（冇 shot 嘅 scene／beatId 係 ${scene}）— 唔靜靜哋燒成個 slate`);
+  }
+  return kept;
 }
 
 /** Speaking parts must be castable, so the roster is read from a data file the
@@ -222,7 +237,19 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
 
   try {
     await think("producer");
-    await speak("producer", "收 brief。開呢份 slate 嘅信封。舊 project 唔入袋。");
+    // L1b: the producer is the only writer of the lifetime ids — a job that
+    // names its drama runs in that drama's base layer, its episode's surface
+    // playbooks, and its base cast wardrobe facts
+    if (input.drama || input.episode) {
+      job = patch(job, {
+        ...(input.drama ? { drama: input.drama } : {}),
+        ...(input.episode ? { episode: input.episode } : {}),
+      });
+    }
+    await speak(
+      "producer",
+      `收 brief。開呢份 slate 嘅信封。舊 project 唔入袋。${input.drama ? `劇目 ${input.drama}${input.episode ? `・${input.episode}` : ""}。` : ""}`,
+    );
     const sheet = await authorCallSheet(jobId, input, cfg, { speak, think });
     fs.writeFileSync(jobFile(jobId, "callsheet.json"), JSON.stringify(sheet, null, 2));
     job = patch(job, {
@@ -292,16 +319,30 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     }
 
     // portraits before any keyframe: a first appearance needs a face to anchor on
-    await think("stills");
-    const portraits = await ensurePortraits({
-      sheet: locked,
-      outDir: path.join(jobDir(jobId), "portraits"),
-      plugDir: input.portraitsDir,
-      server: cfg.stills.url,
-      seed: cfg.motion.seed,
-      onEvent: (message, data) => emit(jobId, { agent: "stills", level: "info", message, data }),
-    });
-    await speak("stills", `肖像齊：plug ${portraits.plugged.length}、新做 ${portraits.made.length}。`);
+    const stillDir = path.join(jobDir(jobId), "stills");
+    const skipPortraits =
+      input.resume && continuity.boards.every((shot) => pinQcAccepted(stillDir, shot.id));
+    let portraits: Awaited<ReturnType<typeof ensurePortraits>>;
+    if (skipPortraits) {
+      emit(jobId, {
+        agent: "stills",
+        level: "info",
+        message: "repair: portraits saw ensurePortraits became skip (all stills pinned GREEN on resume)",
+      });
+      await speak("stills", "肖像跳過：stills 已全 GREEN，肖像唔再守門");
+      portraits = { files: {}, made: [], plugged: [], kept: [] };
+    } else {
+      await think("stills");
+      portraits = await ensurePortraits({
+        sheet: locked,
+        outDir: path.join(jobDir(jobId), "portraits"),
+        plugDir: input.portraitsDir,
+        server: cfg.stills.url,
+        seed: cfg.motion.seed,
+        onEvent: (message, data) => emit(jobId, { agent: "stills", level: "info", message, data }),
+      });
+      await speak("stills", `肖像齊：plug ${portraits.plugged.length}、新做 ${portraits.made.length}。`);
+    }
 
     await think("art");
     await speak("art", `Grade: ${locked.styleBible.grade}. 只描述已有 ${continuity.boards.length} 鏡，唔另開世界。`);
@@ -409,15 +450,17 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     await speak("layout", `cut_plan ${cutPlan.shots.length} 鏡 · gap ${gapSec}s · 走位稿已出。`);
 
     // stills lane prompts + require (built in both live and dry run)
-    const stillDir = path.join(jobDir(jobId), "stills");
     ensureDir(stillDir);
+    // base cast (L1b): a job with a drama reads its fixed wardrobe from
+    // projects/<drama>/base/cast.json — a base fact, not a playbook bullet
+    const baseCast = job.drama ? loadBaseCast(projectsDir(), job.drama) : undefined;
     const stillPlans = continuity.boards.map((boardShot, i) => {
       const shot = timed.shots.find((s) => s.id === boardShot.id)!;
       const prev = i > 0 ? continuity.boards[i - 1]! : null;
       const seenChars = new Set(continuity.boards.slice(0, i).flatMap((b) => b.marks.map((m) => m.characterId)));
       const newChar = shot.marks.some((m) => !seenChars.has(m.characterId));
       const first = i === 0 || (prev ? prev.size !== shot.size : false) || newChar;
-      const prompt = keyframeEditPrompt(timed, shot, { first });
+      const prompt = keyframeEditPrompt(timed, shot, { first, ...(baseCast ? { cast: baseCast } : {}) });
       const require = keyframeRequire(shot);
       // D1a trace: soft edge invariants (boards→keyframe, keyframe→stills),
       // written for pass and fail alike, always before any QC gate can fail
@@ -672,7 +715,13 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     open(toMotion, { slate: jobId, to: "motion" });
     await speak("motion", packetLine(toMotion));
     await speak("motion", `H3 R2V ${cfg.motion.comfyUrl} · <Video 1> motion only · 零 ref_images · 一鏡一 submit。`);
-    for (const { shot } of stillPlans) {
+    // C-scene-hop: the scene flag crops ONLY this loop — stills/QC/layout above
+    // ran full-slate; a no-match scene throws before any H3 is burned
+    const motionShots = shotsForScene(stillPlans.map((p) => p.shot), input.scene);
+    if (input.scene) {
+      await speak("motion", `--scene ${input.scene} hop：燒 ${motionShots.length}/${stillPlans.length} 鏡，其餘唔郁。`);
+    }
+    for (const shot of motionShots) {
       if (!pinQcAccepted(stillDir, shot.id)) {
         throw new Error(`${shot.id}: photo_qc 未 GREEN（sha 或 schema 唔吻合）— 唔准燒 H3`);
       }
