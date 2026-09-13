@@ -49,6 +49,25 @@ test("dry run writes a 124-frame receipt and touches no socket", async () => {
   assert.equal(fs.existsSync(path.join(dir, "motion", "SH01.mp4")), false);
 });
 
+test("dry run with kfEnd wires end_image on kfinject", async () => {
+  const dir = shotDir();
+  const kf = path.join(dir, "SH01.png");
+  const { receipt } = await submitH3Shot({
+    prose: validProse(),
+    wavFile: path.join(dir, "SH01.wav"),
+    blockoutMp4: path.join(dir, "SH01.mp4"),
+    kfStart: kf,
+    kfEnd: kf,
+    outMp4: path.join(dir, "motion", "SH01.mp4"),
+    receiptJson: path.join(dir, "motion", "SH01.h3_submit_dryrun.json"),
+    dryRun: true,
+    shot: "SH01",
+  });
+  assert.ok(receipt.uploads.kf_end);
+  const graph = receipt.graph as { kfinject: { inputs: Record<string, unknown> } };
+  assert.deepEqual(graph.kfinject.inputs.end_image, ["kf_end_in", 0]);
+});
+
 test("dry run never clobbers a real receipt", async () => {
   const dir = shotDir();
   const receiptJson = path.join(dir, "motion", "SH01.h3_submit.json");
