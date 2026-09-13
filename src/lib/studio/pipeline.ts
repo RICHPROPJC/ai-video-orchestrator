@@ -26,8 +26,9 @@ import { checkGate } from "./concat-gate";
 import { writeAnchors } from "./dhash-anchors";
 import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "./blockout";
 import { keyframeEditPrompt, keyframeRequire, loadBaseCast } from "./keyframe-prompt";
-import { buildProse, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
+import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
+import type { H3GraphVariant } from "./h3-r2v-graph";
 import { checkHealth, buildEditPayload, u15Edit, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
 import { runPhotoQc, pinQcAccepted, type QcRequire } from "./photo-qc";
@@ -39,6 +40,38 @@ function patch(job: JobRecord, partial: Partial<JobRecord>) {
   const next = { ...job, ...partial };
   writeJob(next);
   return next;
+}
+
+function h3GraphVariant(input: ProduceInput): H3GraphVariant {
+  return input.graphVariant ?? "a";
+}
+
+function h3MotionPack(
+  timed: CallSheet,
+  shot: Shot,
+  variant: H3GraphVariant,
+  stillPng: string,
+  portraitFiles: Record<string, string>,
+) {
+  if (variant === "a") {
+    return { prose: buildProse(timed, shot), refImageFiles: undefined as string[] | undefined, kfEnd: stillPng };
+  }
+  const ids = [...new Set(shot.marks.map((m) => m.characterId))];
+  const portraits = ids
+    .map((id) => {
+      const c = timed.characters.find((ch) => ch.id === id);
+      return c ? { id, name: c.name } : null;
+    })
+    .filter((p): p is { id: string; name: string } => Boolean(p));
+  const refImageFiles =
+    variant === "b" || variant === "bkf"
+      ? [stillPng, ...ids.map((id) => portraitFiles[id]).filter((p) => p && fs.existsSync(p))]
+      : undefined;
+  return {
+    prose: buildProsePositive(timed, shot, { motionOnly: variant === "c", portraits }),
+    refImageFiles,
+    kfEnd: undefined as string | undefined,
+  };
 }
 
 async function raster(svg: string, outFile: string) {
@@ -472,21 +505,26 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     });
 
     if (input.dryRun) {
+      const variant = h3GraphVariant(input);
       const receipts: string[] = [];
       for (const { shot } of stillPlans) {
-        const prose = buildProse(timed, shot);
+        const stillPng = path.join(stillDir, `${shot.id}.png`);
+        const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files);
         const { receiptFile } = await submitH3Shot({
-          prose,
+          prose: pack.prose,
           wavFile: h3WavByShot.get(shot.id)!,
           blockoutMp4: path.join(blockoutDir, `${shot.id}.mp4`),
-          kfStart: path.join(stillDir, `${shot.id}.png`),
-          kfEnd: path.join(stillDir, `${shot.id}.png`),
+          kfStart: stillPng,
+          kfEnd: pack.kfEnd,
+          refImageFiles: pack.refImageFiles,
           outMp4: path.join(jobDir(jobId), "motion", `${shot.id}.mp4`),
           receiptJson: jobFile(jobId, "motion", `${shot.id}.h3_submit_dryrun.json`),
           dryRun: true,
           shot: shot.id,
           requireQuote: Boolean(shot.dialogue.trim()),
           wardrobe: wardrobeClauses(timed),
+          graphVariant: variant,
+          stepsOverride: input.steps,
         });
         receipts.push(relInJob(jobId, receiptFile));
       }
@@ -727,11 +765,16 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       if (!pinQcAccepted(stillDir, shot.id)) {
         throw new Error(`${shot.id}: photo_qc 未 GREEN（sha 或 schema 唔吻合）— 唔准燒 H3`);
       }
-      const prose = buildProse(timed, shot);
-      validateProse(`${SCRIPT_HEADER}\n${prose}`, {
-        requireQuote: Boolean(shot.dialogue.trim()),
-        wardrobe: wardrobeClauses(timed),
-      });
+      const variant = h3GraphVariant(input);
+      const stillPng = path.join(stillDir, `${shot.id}.png`);
+      const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files);
+      const prose = pack.prose;
+      if (variant === "a") {
+        validateProse(`${SCRIPT_HEADER}\n${prose}`, {
+          requireQuote: Boolean(shot.dialogue.trim()),
+          wardrobe: wardrobeClauses(timed),
+        });
+      }
       const doneMp4 = path.join(motionDir, `${shot.id}.mp4`);
       const doneReceipt = path.join(motionDir, `${shot.id}.h3_submit.json`);
       const requirePath = path.join(stillDir, `${shot.id}.require.json`);
@@ -766,14 +809,17 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         prose,
         wavFile: h3WavByShot.get(shot.id)!,
         blockoutMp4: path.join(blockoutDir, `${shot.id}.mp4`),
-        kfStart: path.join(stillDir, `${shot.id}.png`),
-        kfEnd: path.join(stillDir, `${shot.id}.png`),
+        kfStart: stillPng,
+        kfEnd: pack.kfEnd,
+        refImageFiles: pack.refImageFiles,
         outMp4: path.join(motionDir, `${shot.id}.mp4`),
         receiptJson: path.join(motionDir, `${shot.id}.h3_submit.json`),
         dryRun: false,
         shot: shot.id,
         requireQuote: Boolean(shot.dialogue.trim()),
         wardrobe: wardrobeClauses(timed),
+        graphVariant: variant,
+        stepsOverride: input.steps,
       });
       const mp4 = path.join(motionDir, `${shot.id}.mp4`);
       shotVideos.push(mp4);

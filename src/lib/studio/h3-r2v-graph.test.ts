@@ -63,14 +63,56 @@ test("steps and length are numbers, not coerced strings", () => {
   assert.equal(typeof g.noise_a.inputs.noise_seed, "number");
 });
 
-test("zero ref_images keys anywhere in the graph", () => {
-  const g = buildH3Graph({ ...args, kfEndName: "__KF_END__" });
+test("variant A: zero ref_images, Video 1 wired, kfinject guider", () => {
+  const g = buildH3Graph({ ...args, kfEndName: "__KF_END__", variant: "a" });
   const hits = Object.entries(g).flatMap(([n, node]) =>
     Object.keys(node.inputs).filter((k) => k.includes("ref_images")).map((k) => `${n}.${k}`),
   );
   assert.deepEqual(hits, []);
+  assert.ok(g.blender_vid);
   assert.deepEqual(g.r2v.inputs["ref_videos.ref_video_0"], ["blender_vid", 0]);
   assert.deepEqual(g.r2v.inputs["ref_audios.ref_audio_0"], ["voice_guard", 0]);
   assert.deepEqual(g.samp_a.inputs.latent_image, ["r2v", 1]);
+  assert.deepEqual(g.guider_a.inputs.conditioning, ["kfinject", 0]);
+  assert.deepEqual(g.split.inputs.bindings, BINDINGS);
+});
+
+test("variant B: ref_images populated, no Video 1, no kfinject", () => {
+  const g = buildH3Graph({
+    ...args,
+    variant: "b",
+    bindings: "",
+    refImageNames: ["__STILL__", "__PORTRAIT__"],
+  });
+  assert.equal("blender_vid" in g, false);
+  assert.equal("kfinject" in g, false);
+  assert.deepEqual(g.r2v.inputs["ref_images.ref_image_0"], ["ref_img_0", 0]);
+  assert.deepEqual(g.r2v.inputs["ref_images.ref_image_1"], ["ref_img_1", 0]);
+  assert.equal("ref_videos.ref_video_0" in g.r2v.inputs, false);
+  assert.deepEqual(g.guider_a.inputs.conditioning, ["cond_cs", 0]);
+  assert.equal(g.split.inputs.bindings, "");
+});
+
+test("variant BKF: ref_images + start kfinject, no Video 1", () => {
+  const g = buildH3Graph({
+    ...args,
+    variant: "bkf",
+    bindings: "",
+    refImageNames: ["__STILL__"],
+  });
+  assert.equal("blender_vid" in g, false);
+  assert.ok(g.kfinject);
+  assert.equal("end_image" in g.kfinject.inputs, false);
+  assert.deepEqual(g.r2v.inputs["ref_images.ref_image_0"], ["ref_img_0", 0]);
+  assert.deepEqual(g.guider_a.inputs.conditioning, ["kfinject", 0]);
+});
+
+test("variant C: zero refs, start kfinject, no Video 1", () => {
+  const g = buildH3Graph({ ...args, variant: "c", bindings: "" });
+  assert.equal("blender_vid" in g, false);
+  assert.equal("ref_img_0" in g, false);
+  assert.equal("ref_videos.ref_video_0" in g.r2v.inputs, false);
+  assert.equal("ref_images.ref_image_0" in g.r2v.inputs, false);
+  assert.ok(g.kfinject);
   assert.deepEqual(g.guider_a.inputs.conditioning, ["kfinject", 0]);
 });

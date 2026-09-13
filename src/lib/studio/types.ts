@@ -56,6 +56,10 @@ export type ProduceInput = {
   castRosterPath?: string;
   /** load this callsheet JSON instead of letting the seats author one */
   callSheetPath?: string;
+  /** H3 graph shape: default A (Video 1 + kfinject); B/BKF/C for verify/ab experiments */
+  graphVariant?: "a" | "b" | "bkf" | "c";
+  /** test-only H3 sampler steps override; live default stays config.motion.steps (4) */
+  steps?: number;
 };
 
 export type JobEvent = {

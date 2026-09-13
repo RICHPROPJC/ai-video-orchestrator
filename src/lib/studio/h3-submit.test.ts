@@ -37,9 +37,11 @@ test("dry run writes a 124-frame receipt and touches no socket", async () => {
     shot: "SH01",
   });
   assert.equal(receipt.dry_run, true);
+  assert.equal(receipt.graph_variant, "a");
   assert.equal(receipt.frames, 124);
   assert.equal(receipt.prompt_id, null);
   assert.equal(receipt.uploads.kf_end, null);
+  assert.deepEqual(receipt.uploads.ref_images, []);
   assert.ok(receipt.graph && typeof receipt.graph === "object");
   assert.equal(receiptFile, receiptJson);
   const onDisk = JSON.parse(fs.readFileSync(receiptFile, "utf8"));

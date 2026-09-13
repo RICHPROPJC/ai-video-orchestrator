@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SCRIPT_HEADER, VIDEO_SENTENCE, PIN_SENTENCE, buildProse, validateProse, wardrobeClauses } from "./h3-prose";
+import {
+  SCRIPT_HEADER,
+  VIDEO_SENTENCE,
+  PIN_SENTENCE,
+  buildProse,
+  buildProsePositive,
+  validateProse,
+  validateProsePositive,
+  wardrobeClauses,
+} from "./h3-prose";
 import type { CallSheet, Shot } from "./types";
 
 const mark = (characterId: string, x = 20) => ({
@@ -134,6 +143,32 @@ test("75 unquoted words blow the 70-word budget", () => {
   const pad = Array.from({ length: 75 }, (_, i) => `w${i}`).join(" ");
   const prose = `${buildProse(sheet(), shot("行啦"))}\n\n${pad}`;
   assert.throws(() => validateProse(wrap(prose)), /over budget/);
+});
+
+test("buildProsePositive assigns Picture tags and timed beats", () => {
+  const body = buildProsePositive(sheet(), shot("行啦", "阿月"), {
+    portraits: [{ id: "A", name: "阿月" }, { id: "B", name: "阿衡" }],
+  });
+  assert.match(body, /^Photoreal\. 茶餐廳門口, night\./);
+  assert.ok(body.includes("<Picture 1> = scene still."));
+  assert.ok(body.includes("<Picture 2> = 阿月."));
+  assert.ok(body.includes("[0-"));
+  assert.ok(!body.includes("<Video 1>"));
+  validateProsePositive(wrap(body), { requireQuote: true });
+});
+
+test("buildProsePositive motionOnly skips Picture assignment lines", () => {
+  const body = buildProsePositive(sheet(), shot("行啦", "阿月"), { motionOnly: true });
+  assert.equal(body.includes("<Picture 1>"), false);
+  validateProsePositive(wrap(body), { requireQuote: true, motionOnly: true });
+});
+
+test("validateProsePositive rejects grey-model negatives", () => {
+  const body = buildProsePositive(sheet(), shot("行啦", "阿月"));
+  assert.throws(
+    () => validateProsePositive(wrap(`${body}\n\nignore grey placeholders.`)),
+    /ignore\/do-not\/grey negatives/,
+  );
 });
 
 test("location is trimmed to its first clause, keeping the header ≤ 18 words", () => {

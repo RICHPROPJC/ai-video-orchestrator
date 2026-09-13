@@ -42,6 +42,8 @@ export type H3GraphModels = {
   turboLora: string;
 };
 
+export type H3GraphVariant = "a" | "b" | "bkf" | "c";
+
 export type BuildH3GraphOpts = {
   script: string;
   bindings: string;
@@ -54,7 +56,13 @@ export type BuildH3GraphOpts = {
   blockoutName: string;
   wavName: string;
   models: H3GraphModels;
+  /** default A — current Video 1 + kfinject graph */
+  variant?: H3GraphVariant;
+  /** B/BKF: still first, then portrait upload names for ref_images.ref_image_N */
+  refImageNames?: string[];
 };
+
+const KFINJECT_VARIANTS = new Set<H3GraphVariant>(["a", "bkf", "c"]);
 
 /** v6-parity R2V graph: node ids and values identical to shotdag
  *  h3_submit.build_graph (single shot, zero ref_images, turbo LoRA via
@@ -62,6 +70,7 @@ export type BuildH3GraphOpts = {
  *  H3FreeTextEncoder+H3ConditionStrength conditioning, voice via
  *  LoadAudio->H3ReferenceAudio, blockout via VHS_LoadVideo). */
 export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
+  const variant = opts.variant ?? "a";
   const m = opts.models;
   const g: ComfyGraph = {
     clip: { class_type: "H3ClipLoaderAny", inputs: { clip_name: m.textEncoder, type: m.encoderType } },
@@ -106,27 +115,32 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     class_type: "H3ReferenceAudio",
     inputs: { audio: ["voice_in", 0], max_seconds: VOICE_MAX_SECONDS },
   };
-  // blockout: VHS_LoadVideo (upload name) -> ref_videos.ref_video_0
-  g.blender_vid = {
-    class_type: "VHS_LoadVideo",
-    inputs: { video: opts.blockoutName, custom_width: WIDTH, custom_height: HEIGHT, ...BLOCKOUT_VHS },
+  if (variant === "a") {
+    g.blender_vid = {
+      class_type: "VHS_LoadVideo",
+      inputs: { video: opts.blockoutName, custom_width: WIDTH, custom_height: HEIGHT, ...BLOCKOUT_VHS },
+    };
+  }
+  const r2vInputs: Record<string, unknown> = {
+    clip: ["clip", 0],
+    vae: ["vvae", 0],
+    audio_vae: ["avae", 0],
+    prompt: ["split", 0],
+    width: WIDTH,
+    height: HEIGHT,
+    length: opts.frames,
+    ref_image_size: REF_IMAGE_SIZE,
+    "ref_audios.ref_audio_0": ["voice_guard", 0],
   };
-  // r2v: prompt comes from H3EpisodeSplit out 0; zero ref_images
-  g.r2v = {
-    class_type: "MiniMaxH3ReferenceToVideo",
-    inputs: {
-      clip: ["clip", 0],
-      vae: ["vvae", 0],
-      audio_vae: ["avae", 0],
-      prompt: ["split", 0],
-      width: WIDTH,
-      height: HEIGHT,
-      length: opts.frames,
-      ref_image_size: REF_IMAGE_SIZE,
-      "ref_audios.ref_audio_0": ["voice_guard", 0],
-      "ref_videos.ref_video_0": ["blender_vid", 0],
-    },
-  };
+  if (variant === "a") {
+    r2vInputs["ref_videos.ref_video_0"] = ["blender_vid", 0];
+  }
+  for (const [i, name] of (opts.refImageNames ?? []).entries()) {
+    const nodeId = `ref_img_${i}`;
+    g[nodeId] = { class_type: "LoadImage", inputs: { image: name } };
+    r2vInputs[`ref_images.ref_image_${i}`] = [nodeId, 0];
+  }
+  g.r2v = { class_type: "MiniMaxH3ReferenceToVideo", inputs: r2vInputs };
   g.cond_evict = {
     class_type: "H3FreeTextEncoder",
     inputs: { conditioning: ["r2v", 0], clip: ["clip", 0] },
@@ -135,28 +149,31 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     class_type: "H3ConditionStrength",
     inputs: { conditioning: ["cond_evict", 0], visual_strength: COND_VISUAL, audio_strength: COND_AUDIO },
   };
-  // keyframe pins: H3KeyframeInject start/end over the conditioning chain
-  g.kf_start_in = { class_type: "LoadImage", inputs: { image: opts.kfStartName } };
-  const kfInputs: Record<string, unknown> = {
-    conditioning: ["cond_cs", 0],
-    vae: ["vvae", 0],
-    start_image: ["kf_start_in", 0],
-    width: WIDTH,
-    height: HEIGHT,
-    length: opts.frames,
-  };
-  if (opts.kfEndName) {
-    g.kf_end_in = { class_type: "LoadImage", inputs: { image: opts.kfEndName } };
-    kfInputs.end_image = ["kf_end_in", 0];
+  let condOut: [string, number] = ["cond_cs", 0];
+  if (KFINJECT_VARIANTS.has(variant)) {
+    g.kf_start_in = { class_type: "LoadImage", inputs: { image: opts.kfStartName } };
+    const kfInputs: Record<string, unknown> = {
+      conditioning: ["cond_cs", 0],
+      vae: ["vvae", 0],
+      start_image: ["kf_start_in", 0],
+      width: WIDTH,
+      height: HEIGHT,
+      length: opts.frames,
+    };
+    if (variant === "a" && opts.kfEndName) {
+      g.kf_end_in = { class_type: "LoadImage", inputs: { image: opts.kfEndName } };
+      kfInputs.end_image = ["kf_end_in", 0];
+    }
+    g.kfinject = { class_type: "H3KeyframeInject", inputs: kfInputs };
+    condOut = ["kfinject", 0];
   }
-  g.kfinject = { class_type: "H3KeyframeInject", inputs: kfInputs };
   g.noise_a = { class_type: "RandomNoise", inputs: { noise_seed: opts.seed } };
   g.sampler_sel = { class_type: "KSamplerSelect", inputs: { sampler_name: SAMPLER } };
   g.sched_a = {
     class_type: "BasicScheduler",
     inputs: { model: modelA, scheduler: SCHEDULER, steps: opts.steps, denoise: 1.0 },
   };
-  g.guider_a = { class_type: "BasicGuider", inputs: { model: modelA, conditioning: ["kfinject", 0] } };
+  g.guider_a = { class_type: "BasicGuider", inputs: { model: modelA, conditioning: condOut } };
   g.samp_a = {
     class_type: "SamplerCustomAdvanced",
     inputs: {

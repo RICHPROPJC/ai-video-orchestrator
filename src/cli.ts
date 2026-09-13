@@ -9,6 +9,7 @@ import type { JobRecord, ProduceInput } from "./lib/studio/types";
 import { SCENE_ID_RE } from "./lib/studio/script-contract";
 
 const UNTIL_GATES: NonNullable<ProduceInput["until"]>[] = ["boards", "stills", "motion"];
+const GRAPH_VARIANTS: NonNullable<ProduceInput["graphVariant"]>[] = ["a", "b", "bkf", "c"];
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(name);
@@ -40,6 +41,8 @@ Flags
   --cast-roster <json>  可出聲角色名單（有聲音檔嘅名），編劇檯只准用呢批名
   --gap <sec>           鏡與鏡之間靜音（默許 0）
   --dry-run             行到 prompt/receipt 為止，唔 POST 任何機
+  --graph-variant a|b|bkf|c  H3 graph（默認 a）；b/bkf/c 唔餵 Video 1
+  --steps <n>           測試用 H3 steps 覆寫（默認 4）
   --until boards|stills|motion 早停閘：boards＝劇本同分鏡出齊即停（status boarded，唔使 wav）；
                         stills＝photo QC GREEN 即停（stills-ready）；motion＝H3 落片即停
   --scene SCxx          淨係燒呢一場嘅 H3（一場一 hop）；唔加＝出齊全部鏡（原有行為）
@@ -69,7 +72,13 @@ async function makeJob(brief: string) {
     scene: arg("--scene"),
     callSheetPath: arg("--callsheet"),
     castRosterPath: arg("--cast-roster"),
+    graphVariant: (arg("--graph-variant", "a") as ProduceInput["graphVariant"]) || "a",
+    steps: process.argv.includes("--steps") ? Number(arg("--steps", "4")) : undefined,
   };
+  if (input.graphVariant && !GRAPH_VARIANTS.includes(input.graphVariant)) {
+    console.error(`--graph-variant 只接受 ${GRAPH_VARIANTS.join(" / ")}`);
+    process.exit(1);
+  }
   if (input.until && !UNTIL_GATES.includes(input.until)) {
     console.error(`--until 只接受 ${UNTIL_GATES.join(" / ")}`);
     process.exit(1);
@@ -111,7 +120,15 @@ function resumeJob(slate: string) {
     dryRun: process.argv.includes("--dry-run"),
     until: (arg("--until") as ProduceInput["until"]) ?? undefined,
     scene: arg("--scene") ?? undefined,
+    graphVariant: arg("--graph-variant")
+      ? (arg("--graph-variant") as ProduceInput["graphVariant"])
+      : job.input.graphVariant,
+    steps: process.argv.includes("--steps") ? Number(arg("--steps", "4")) : job.input.steps,
   };
+  if (input.graphVariant && !GRAPH_VARIANTS.includes(input.graphVariant)) {
+    console.error(`--graph-variant 只接受 ${GRAPH_VARIANTS.join(" / ")}`);
+    process.exit(1);
+  }
   if (input.until && !UNTIL_GATES.includes(input.until)) {
     console.error(`--until 只接受 ${UNTIL_GATES.join(" / ")}`);
     process.exit(1);
