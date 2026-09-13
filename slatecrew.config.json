@@ -25,7 +25,7 @@
     "model": "Fun-CosyVoice3-0.5B"
   },
   "pictureQc": {
-    "endpoint": "http://172.17.0.2:8015",
+    "endpoint": "http://127.0.0.1:8015",
     "model": "mars-fa2"
   },
   "soundQc": {

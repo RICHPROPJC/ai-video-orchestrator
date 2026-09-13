@@ -55,7 +55,7 @@ const DEFAULTS: SlateConfig = {
     seed: 42,
   },
   tts: { endpoint: "", model: "Fun-CosyVoice3-0.5B" },
-  pictureQc: { endpoint: "http://172.17.0.2:8015", model: "mars-fa2" },
+  pictureQc: { endpoint: "http://127.0.0.1:8015", model: "mars-fa2" },
   soundQc: { endpoint: "", model: "FunAudioLLM/SenseVoiceSmall" },
   ssh: {
     user: "hojaiv3v",
