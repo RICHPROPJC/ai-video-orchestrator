@@ -7,11 +7,16 @@ import {
   blindDescribe,
   judge,
   probeVisionEndpoint,
+  resolveSecondEye,
+  runSecondEye,
+  judgeSecondEye,
   sameRequire,
   summarize,
   type QcRequire,
   type QcSummary,
   type QcVerdict,
+  type SecondEyeOpts,
+  type SecondEyeRecord,
 } from "./photo-qc";
 import { machineGreyFailReason, measureWorkbenchGreyLeak } from "./workbench-grey-leak";
 
@@ -37,6 +42,7 @@ export type VideoQcRecord = {
   status: "GREEN" | "FAIL";
   frames: VideoFrameQc[];
   checks: QcVerdict["checks"];
+  second?: SecondEyeRecord & { frame: number };
 };
 
 function videoDigest(mp4: string): string {
@@ -126,15 +132,17 @@ async function qcOneFrame(
   }
 }
 
-/** MARS on extracted motion frames vs the shot still require — writes motion/SHxx.video_qc.json. */
+/** MARS on extracted motion frames vs the shot still require — writes motion/SHxx.video_qc.json.
+ *  The glm second eye (when armed) sees ONE mid frame, sequentially after the frame loop. */
 export async function runVideoQc(opts: {
   mp4: string;
   outJson: string;
   require: QcRequire;
   shotId: string;
   framesDir?: string;
-}): Promise<VideoQcRecord> {
+} & SecondEyeOpts): Promise<VideoQcRecord> {
   const digest = videoDigest(opts.mp4);
+  const secondCfg = resolveSecondEye(opts);
   if (fs.existsSync(opts.outJson)) {
     try {
       const existing = JSON.parse(fs.readFileSync(opts.outJson, "utf8")) as VideoQcRecord;
@@ -142,7 +150,8 @@ export async function runVideoQc(opts: {
         existing.tool === "slatecrew.video_qc" &&
         existing.status === "GREEN" &&
         existing.sha256 === digest &&
-        sameRequire(existing.require, opts.require)
+        sameRequire(existing.require, opts.require) &&
+        (!secondCfg || existing.second?.model === secondCfg.model)
       ) {
         return existing;
       }
@@ -162,6 +171,14 @@ export async function runVideoQc(opts: {
   const failReasons = frameResults.flatMap((f) =>
     (f.checks.fail_reasons ?? []).map((r) => `f${f.frame}: ${r}`),
   );
+  let second: (SecondEyeRecord & { frame: number }) | undefined;
+  if (secondCfg && frameResults.length > 0) {
+    const mid = frameResults[Math.floor(frameResults.length / 2)]!; // one mid frame — no fan-out
+    const eye = await runSecondEye(secondCfg.endpoint, secondCfg.model, mid.file);
+    second = { ...eye, frame: mid.frame };
+    const se = judgeSecondEye(opts.require, eye);
+    if (!se.ok && se.reason) failReasons.push(`f${mid.frame}: ${se.reason}`);
+  }
   if (Object.keys(opts.require).length === 0) failReasons.push("no require: cannot accept");
   const status: "GREEN" | "FAIL" =
     frameResults.length > 0 && failReasons.length === 0 ? "GREEN" : "FAIL";
@@ -176,6 +193,7 @@ export async function runVideoQc(opts: {
     status,
     frames: frameResults,
     checks: { status, fail_reasons: failReasons },
+    ...(second ? { second } : {}),
   };
   fs.mkdirSync(path.dirname(opts.outJson), { recursive: true });
   fs.writeFileSync(opts.outJson, JSON.stringify(record, null, 2));

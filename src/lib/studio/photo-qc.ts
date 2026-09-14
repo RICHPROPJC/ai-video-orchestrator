@@ -115,8 +115,8 @@ export async function blindDescribe(url: string, model: string, imageFile: strin
   ], 2000);
 }
 
-export async function summarize(url: string, model: string, desc: string): Promise<QcSummary> {
-  const raw = await chat(url, model, `${SUMMARIZE_PROMPT}\n\n---\n${desc}`, 800);
+export async function summarize(url: string, model: string, desc: string, maxTokens = 800): Promise<QcSummary> {
+  const raw = await chat(url, model, `${SUMMARIZE_PROMPT}\n\n---\n${desc}`, maxTokens);
   let text = raw.trim();
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) text = (fence[1] ?? "").trim();
@@ -252,6 +252,64 @@ export function judge(desc: string, summary: QcSummary, require: QcRequire, ctx:
   return { status, checks: { ...checks, status, fail_reasons: reasons } };
 }
 
+/** C10 second eye — glm-5.3-flash via LiteLLM :4000. MARS stays the first eye;
+ *  the second eye is one extra sequential pass, never fan-out. */
+export type SecondEyeConfig = { endpoint: string; model: string };
+
+export type SecondEyeRecord = {
+  endpoint: string;
+  model: string;
+  blind: string;
+  summary: QcSummary | { parse_error: string; raw: string };
+};
+
+export type SecondEyeOpts = { secondEndpoint?: string; secondModel?: string };
+
+/** opts → env SLATECREW_SECOND_ENDPOINT/SLATECREW_SECOND_MODEL → default model.
+ *  Empty endpoint ⇒ null: no second eye this run (skip, not fail). */
+export function resolveSecondEye(opts: SecondEyeOpts = {}): SecondEyeConfig | null {
+  const endpoint = (opts.secondEndpoint ?? process.env.SLATECREW_SECOND_ENDPOINT ?? "").trim();
+  if (!endpoint) return null;
+  const model = (opts.secondModel ?? process.env.SLATECREW_SECOND_MODEL ?? "glm-5.3-flash").trim();
+  return { endpoint, model };
+}
+
+/** Sequential 拆步 against the second eye: describe the frame, THEN summarize.
+ *  One describe + one summarize, awaited in order — never a parallel batch. */
+export async function runSecondEye(
+  endpoint: string,
+  model: string,
+  imageFile: string,
+): Promise<SecondEyeRecord> {
+  const blind = await blindDescribe(endpoint, model, imageFile);
+  let summary: SecondEyeRecord["summary"];
+  try {
+    // glm reasoning models burn max_tokens on reasoning_content — give the
+    // summarize leg a bigger budget so the JSON survives it (receipt 2026-09-14).
+    summary = await summarize(endpoint, model, blind, 4000);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    summary = { parse_error: message, raw: blind.slice(0, 2000) };
+  }
+  return { endpoint, model, blind, summary };
+}
+
+/** Second-eye gate: only armed when the require bans grey blocks. glm grey ⇒ FAIL. */
+export function judgeSecondEye(
+  require: QcRequire,
+  second: Pick<SecondEyeRecord, "blind" | "summary">,
+): { ok: boolean; reason?: string } {
+  if (require.grey_blocks !== false) return { ok: true };
+  const summary = second.summary;
+  if (!("grey_blocks" in summary)) return { ok: true }; // degraded second eye — first eye + machine grey still gate
+  const grey = (summary as QcSummary).grey_blocks;
+  const saidGrey = grey === true || grey === "true" || GREY_RE.test(second.blind);
+  if (saidGrey) {
+    return { ok: false, reason: "second_eye: glm second eye saw grey/placeholder blocks" };
+  }
+  return { ok: true };
+}
+
 export type PhotoQcRecord = {
   tool: "slatecrew.photo_qc";
   ts: string;
@@ -264,18 +322,29 @@ export type PhotoQcRecord = {
   blind: string;
   summary: QcSummary | { parse_error: string; raw: string };
   checks: QcVerdict["checks"];
+  second?: SecondEyeRecord;
+};
+
+/** eyes overrides keep runPhotoQc testable without touching config.ts: first.eye
+ *  points the MARS leg at a fixture; second arms the glm second eye. */
+export type PhotoQcEyes = {
+  first?: { url?: string; model?: string };
+  second?: SecondEyeOpts;
 };
 
 /** blind write-up → summarize → judge vs require. HTTP failures throw (no local
- *  schema substitute); only a summary-parse failure records FAIL. */
+ *  schema substitute); only a summary-parse failure records FAIL. Second eye
+ *  (when armed) runs AFTER the first-eye verdict, sequentially. */
 export async function runPhotoQc(
   pngFile: string,
   outJson: string,
   require: QcRequire,
   ctx: PhotoQcCtx = {},
+  eyes: PhotoQcEyes = {},
 ): Promise<PhotoQcRecord> {
   const raw = fs.readFileSync(pngFile);
   const digest = crypto.createHash("sha256").update(raw).digest("hex");
+  const secondCfg = resolveSecondEye(eyes.second);
   if (fs.existsSync(outJson)) {
     try {
       const existing = JSON.parse(fs.readFileSync(outJson, "utf8")) as PhotoQcRecord;
@@ -283,7 +352,8 @@ export async function runPhotoQc(
         existing.tool === "slatecrew.photo_qc" &&
         existing.status === "GREEN" &&
         existing.sha256 === digest &&
-        sameRequire(existing.require, require)
+        sameRequire(existing.require, require) &&
+        (!secondCfg || existing.second?.model === secondCfg.model)
       ) {
         return existing;
       }
@@ -292,8 +362,8 @@ export async function runPhotoQc(
     }
   }
   const cfg = loadConfig();
-  const url = cfg.pictureQc.endpoint;
-  const model = await probeVisionEndpoint(url, cfg.pictureQc.model);
+  const url = eyes.first?.url ?? cfg.pictureQc.endpoint;
+  const model = await probeVisionEndpoint(url, eyes.first?.model ?? cfg.pictureQc.model);
   const desc = await blindDescribe(url, model, pngFile);
   let summary: QcSummary;
   let verdict: QcVerdict;
@@ -304,6 +374,17 @@ export async function runPhotoQc(
     const message = error instanceof Error ? error.message : String(error);
     summary = { parse_error: message, raw: desc.slice(0, 2000) };
     verdict = { status: "FAIL", checks: { status: "FAIL", fail_reasons: [`summary parse: ${message}`] } };
+  }
+  let second: SecondEyeRecord | undefined;
+  if (secondCfg) {
+    second = await runSecondEye(secondCfg.endpoint, secondCfg.model, pngFile);
+    const se = judgeSecondEye(require, second);
+    if (!se.ok && se.reason) {
+      verdict = {
+        status: "FAIL",
+        checks: { ...verdict.checks, status: "FAIL", fail_reasons: [...verdict.checks.fail_reasons, se.reason] },
+      };
+    }
   }
   const record: PhotoQcRecord = {
     tool: "slatecrew.photo_qc",
@@ -317,6 +398,7 @@ export async function runPhotoQc(
     blind: desc,
     summary,
     checks: verdict.checks,
+    ...(second ? { second } : {}),
   };
   fs.mkdirSync(path.dirname(outJson), { recursive: true });
   fs.writeFileSync(outJson, JSON.stringify(record, null, 2));

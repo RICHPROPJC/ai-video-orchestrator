@@ -202,6 +202,33 @@ test("runVideoQc live on WIST kfend frames when MARS_URL is set", async () => {
   assert.ok(record.checks.fail_reasons.some((r) => r.includes("grey_blocks")));
 });
 
+test("runVideoQc second eye sees ONE mid frame when MARS_URL + SLATECREW_SECOND_ENDPOINT set", async () => {
+  if (!process.env.MARS_URL?.trim() || !process.env.SLATECREW_SECOND_ENDPOINT?.trim()) {
+    console.log("# skip live second eye — MARS_URL / SLATECREW_SECOND_ENDPOINT unset");
+    return;
+  }
+  const repo = path.resolve(__dirname, "../../../..");
+  const jobDir = path.join(repo, "data/jobs/SC-0913-WIST");
+  const mp4 = path.join(jobDir, "motion/SH01.mp4");
+  if (!fs.existsSync(mp4)) {
+    console.log("# skip live second eye — SH01.mp4 missing");
+    return;
+  }
+  const outJson = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sc-vqc-se-")), "SH01.video_qc.json");
+  const record = await runVideoQc({
+    mp4,
+    outJson,
+    require: WIST_REQUIRE,
+    shotId: "SH01",
+    secondEndpoint: process.env.SLATECREW_SECOND_ENDPOINT,
+    secondModel: process.env.SLATECREW_SECOND_MODEL,
+  });
+  assert.ok(record.second, "second eye record present");
+  const mid = record.frames[Math.floor(record.frames.length / 2)]!.frame;
+  assert.equal(record.second.frame, mid, "second eye ran on the mid frame only — no fan-out");
+  assert.equal(record.status, "FAIL");
+});
+
 if (bareBun) {
   void (async () => {
     let failed = 0;
