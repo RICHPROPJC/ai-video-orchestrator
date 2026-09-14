@@ -61,5 +61,84 @@
       "wave",
       "走路"
     ]
+  },
+  {
+    "id": "pb.stance.sit.v1",
+    "version": "1.0.0",
+    "title": "Character stance: sit",
+    "intents": [
+      "sit",
+      "sitting",
+      "坐",
+      "坐下",
+      "坐着",
+      "坐低"
+    ]
+  },
+  {
+    "id": "pb.stance.lie.v1",
+    "version": "1.0.0",
+    "title": "Character stance: lie",
+    "intents": [
+      "lie",
+      "lying",
+      "lie down",
+      "躺",
+      "躺下",
+      "瞓",
+      "瞓低"
+    ]
+  },
+  {
+    "id": "pb.stance.kneel.v1",
+    "version": "1.0.0",
+    "title": "Character stance: kneel",
+    "intents": [
+      "kneel",
+      "kneeling",
+      "跪",
+      "跪下",
+      "跪低"
+    ]
+  },
+  {
+    "id": "pb.stance.crouch.v1",
+    "version": "1.0.0",
+    "title": "Character stance: crouch",
+    "intents": [
+      "crouch",
+      "crouching",
+      "squat",
+      "蹲",
+      "蹲下",
+      "踎"
+    ]
+  },
+  {
+    "id": "pb.stance.lean.v1",
+    "version": "1.0.0",
+    "title": "Character stance: lean",
+    "intents": [
+      "lean",
+      "leaning",
+      "倚",
+      "挨",
+      "靠住",
+      "倚靠"
+    ]
+  },
+  {
+    "id": "pb.stance.turn-away.v1",
+    "version": "1.0.0",
+    "title": "Character stance: turn away",
+    "intents": [
+      "turn away",
+      "turnaround",
+      "back turn",
+      "轉身",
+      "轉頭走",
+      "背對",
+      "转身"
+    ]
   }
 ]

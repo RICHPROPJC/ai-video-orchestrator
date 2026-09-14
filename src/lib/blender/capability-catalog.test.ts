@@ -29,7 +29,15 @@ test("model may pick only wired+receipted ids; unknown is no_playbook", () => {
   assert.equal(pickCapability("pb.plaza.v2")?.receipt, "shots/fixtures/f4");
   assert.equal(pickCapability("walk_cycle")?.receipt, "shots/fixtures/f2");
   assert.equal(selectPlaybook("plaza")?.id, "pb.plaza.v2");
+  assert.equal(selectPlaybook("sit")?.id, "pb.stance.sit.v1");
+  assert.equal(selectPlaybook("跪")?.id, "pb.stance.kneel.v1");
+  assert.equal(pickCapability("sit_stance")?.receipt, "shots/fixtures/f2");
+  assert.equal(pickCapability("crouch_stance")?.receipt, "shots/fixtures/f2/crouch");
   assert.equal(selectPlaybook("invent a dragon plaza"), null);
+  assert.equal(
+    getCapabilityCatalog().some((entry) => entry.id.startsWith("pb.drama.")),
+    false,
+  );
 });
 
 test("getSpec exposes the same catalog — no parallel enum", () => {

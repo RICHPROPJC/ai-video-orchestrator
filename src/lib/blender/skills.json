@@ -384,5 +384,53 @@
         "action": "wave"
       }
     }
+  ],
+  "sit_stance": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "sit"
+      }
+    }
+  ],
+  "lie_stance": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "lie"
+      }
+    }
+  ],
+  "kneel_stance": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "kneel"
+      }
+    }
+  ],
+  "crouch_stance": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "crouch"
+      }
+    }
+  ],
+  "lean_stance": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "lean"
+      }
+    }
+  ],
+  "turn_away_stance": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "turn_away"
+      }
+    }
   ]
 }
