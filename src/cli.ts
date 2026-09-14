@@ -1,7 +1,9 @@
 #!/usr/bin/env tsx
+import fs from "node:fs";
 import path from "node:path";
 import { runPipeline, describeFloor } from "./lib/studio/pipeline";
-import { newSlateId, writeJob, readJob, listJobs, readEvents, runningBlocker } from "./lib/studio/store";
+import { newSlateId, writeJob, readJob, listJobs, readEvents, readEpEvents, runningBlocker } from "./lib/studio/store";
+import { projectsDir } from "./lib/studio/paths";
 import { loadConfig, setConfigPath } from "./lib/studio/config";
 import { doctor, formatDoctor } from "./lib/studio/doctor";
 import { runTui } from "./lib/studio/tui";
@@ -24,6 +26,7 @@ Commands
   tui "<brief>"              全螢幕 TUI 開工（Montaj 式 CLIP）
   produce "<brief>"          行 log 開工
   frames <job> <shot>        從 motion mp4 抽 QC 帧（首/中/尾 + 每 2s）→ jpg
+  events [slate] [--follow]  睇 projects/<ep>/events.jsonl；--follow 點住尾
   doctor                     探兩部機 / MARS / ffmpeg / Blender
   models                     睇而家用緊邊個 checkpoint
   models set <dot.path> <v>  換模型，例：stills.checkpoint foo.safetensors
@@ -250,6 +253,50 @@ async function main() {
     }
     console.log(JSON.stringify(loadConfig(), null, 2));
     return;
+  }
+  if (cmd === "events") {
+    // A4: the ep events file is the one source Chau/Grok/Vera read — not a PTY
+    const positional = process.argv.slice(3).filter((a) => !a.startsWith("--"));
+    const slate = positional[0] ?? listJobs()[0]?.slate ?? listJobs()[0]?.id;
+    if (!slate) {
+      console.error("冇 slate：events [slate] 或先開一個 produce");
+      process.exitCode = 1;
+      return;
+    }
+    const file = path.join(projectsDir(), slate, "events.jsonl");
+    const printEvent = (e: import("./lib/studio/types").JobEvent) => {
+      const d = e.data as Record<string, unknown> | undefined;
+      const stage = d?.shot !== undefined
+        ? `  [${d.shot} ${d.stage ?? "?"} ${d.eye ?? e.agent} ${d.verdict ?? e.level}${d.proof ? ` proof=${d.proof}` : ""}${d.ms !== undefined ? ` ${d.ms}ms` : ""}]`
+        : "";
+      console.log(e.ts, e.agent, e.message + stage);
+    };
+    let history = readEpEvents(slate);
+    if (!history.length) {
+      // jobs older than the alias fall back to their per-job log
+      const job = readJob(slate);
+      if (job) history = readEvents(job.id);
+    }
+    for (const e of history) printEvent(e);
+    if (!process.argv.includes("--follow")) return;
+    console.log(`-- follow ${file}（Ctrl-C 離開）`);
+    let offset = fs.existsSync(file) ? fs.statSync(file).size : 0;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 500));
+      const size = fs.existsSync(file) ? fs.statSync(file).size : 0;
+      if (size <= offset) continue;
+      const buf = Buffer.alloc(size - offset);
+      const fh = fs.openSync(file, "r");
+      try {
+        fs.readSync(fh, buf, 0, buf.length, offset);
+      } finally {
+        fs.closeSync(fh);
+      }
+      offset = size;
+      for (const line of buf.toString("utf8").split("\n").filter(Boolean)) {
+        printEvent(JSON.parse(line) as import("./lib/studio/types").JobEvent);
+      }
+    }
   }
   if (cmd === "status") {
     const id = process.argv[3];

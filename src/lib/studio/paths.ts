@@ -36,6 +36,15 @@ export function projectsRootFromSeatsDir(seats: string) {
   return path.join(path.dirname(path.resolve(seats)), "projects");
 }
 
+/** A4 events law: every slate (ep) owns projects/<ep>/events.jsonl — the one
+ *  events file Chau, Grok and Vera read instead of a PTY. emit() appends the
+ *  same line here and to the per-job log; never a second log format. */
+export function epEventsFile(slate: string) {
+  const dir = path.join(projectsDir(), slate);
+  ensureDir(dir);
+  return path.join(dir, "events.jsonl");
+}
+
 /** Scope axis — which seats a playbook file addresses. `all` replaced the
  *  retired `global` name (call 6 L1); no legacy alias is kept. */
 export const PLAYBOOK_SCOPES = ["writer", "boards", "all"] as const;
