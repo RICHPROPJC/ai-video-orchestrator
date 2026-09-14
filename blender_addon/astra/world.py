@@ -183,8 +183,11 @@ def character_appear(args: dict[str, Any]) -> str:
 
 
 def camera_mode(args: dict[str, Any]) -> str:
+    from .observe import hero_bounds
+
     mode = str(args.get("mode") or "director")
     follow = str(args.get("follow") or "Truman")
+    root, _meshes, center, _low, _high, _depsgraph = hero_bounds(follow)
     cam = bpy.context.scene.camera
     if cam is None:
         bpy.ops.object.camera_add()
@@ -194,17 +197,17 @@ def camera_mode(args: dict[str, Any]) -> str:
     if mode == "first_person" and head:
         cam.parent = head
         cam.location = (0, -0.15, 0.05)
-        cam.rotation_euler = (1.5708, 0, 0)
+        cam.rotation_euler = Vector((0, 1, 0)).to_track_quat("-Z", "Y").to_euler()
     elif mode == "third_person" and head:
         cam.parent = None
-        cam.location = head.location + Vector((0, -4.6, 1.6))
-        _look_at(cam, tuple(head.location))
+        cam.location = center + Vector((0, -4.6, 1.6))
+        _look_at(cam, tuple(center))
     elif mode == "hidden":
         hidden = next((o for o in bpy.data.objects if o.get("astra_role") == "hidden_cam"), None)
         if hidden:
             bpy.context.scene.camera = hidden
-            return "Camera hidden"
     bpy.context.scene["astra_camera_mode"] = mode
+    bpy.context.scene["astra_follow"] = root.name
     return f"Camera {mode}"
 
 

@@ -15,7 +15,7 @@ export const TOOL_CATALOG: {
   { name: "object.set_material", summary: "Assign a lookdev preset", blender: "Principled BSDF values" },
   { name: "light.create", summary: "Add POINT, SUN, SPOT, or AREA light", blender: "bpy.ops.object.light_add" },
   { name: "camera.create", summary: "Add or move the active camera", blender: "bpy.ops.object.camera_add" },
-  { name: "camera.frame", summary: "Frame meshes like view3d.camera_to_view_selected", blender: "bpy.ops.view3d.camera_to_view_selected" },
+  { name: "camera.frame", summary: "Frame evaluated hero meshes and check camera occlusion", blender: "evaluated mesh bbox + to_track_quat + scene.ray_cast" },
   { name: "camera.mode", summary: "Director / first person / third person / hidden cameras", blender: "camera parent to head or chase empty" },
   { name: "animation.turntable", summary: "Orbit playback for lookdev", blender: "camera orbit keyframes" },
   { name: "world.build", summary: "Build a town, interior, or Truman-style dome world", blender: "mesh primitives + world + cameras" },
@@ -26,7 +26,7 @@ export const TOOL_CATALOG: {
   { name: "physics.set", summary: "Enable gravity and blockers", blender: "rigidbody.world_add" },
   { name: "mask.set", summary: "Cryptomatte-style pass index / holdout", blender: "obj.pass_index + holdout" },
   { name: "skill.run", summary: "Run an authored multi-tool skill", blender: "Astra skill expander" },
-  { name: "render.frame", summary: "WORKBENCH FLAT+MATERIAL still PNG", blender: "bpy.ops.render.render(write_still=True)" },
-  { name: "render.animation", summary: "WORKBENCH FLAT+MATERIAL blockout MP4", blender: "PNG sequence + ffmpeg libx264" },
+  { name: "render.frame", summary: "WORKBENCH FLAT+MATERIAL still PNG; optional mask", blender: "bpy.ops.render.render(write_still=True)" },
+  { name: "render.animation", summary: "Blockout MP4 gated by a fresh midpoint hero mask centroid", blender: "evaluated observation + PIL hero_on_screen + PNG sequence + ffmpeg libx264" },
   { name: "render.matte", summary: "Visible pass_index mask MP4; hero=2 extras=3", blender: "pass_index white/black material override + ffmpeg" },
 ];

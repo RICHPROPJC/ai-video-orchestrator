@@ -1,0 +1,90 @@
+{
+  "observation": {
+    "protocol": "astra.protocol.v2",
+    "blender": "5.1.2",
+    "frame": 3,
+    "hero": {
+      "name": "HeroRig",
+      "meshes": [
+        "HeroMesh"
+      ],
+      "maskId": 2,
+      "location": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "bounds": {
+        "min": [
+          -0.5,
+          -0.5,
+          0.0
+        ],
+        "max": [
+          0.5,
+          0.5,
+          2.0
+        ]
+      },
+      "screenPos": [
+        0.49916553828461196,
+        0.5123662429308667
+      ]
+    },
+    "camera": {
+      "name": "Camera",
+      "location": [
+        0.0,
+        -8.0,
+        2.0
+      ],
+      "forward": [
+        0.0,
+        0.9922779202461243,
+        -0.12403447926044464
+      ],
+      "aimAngleDeg": 0.0,
+      "occluded": false,
+      "blocker": null,
+      "evaluated": true
+    },
+    "pixelEvidence": {
+      "source": "PIL",
+      "maskId": 2,
+      "frame": 3,
+      "camera": "Camera",
+      "meshes": [
+        "HeroMesh"
+      ],
+      "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/constrained_camera/blockout.camera/hero-mask.png",
+      "sha256": "1be474df390b3ee98488f213471e34f69a49e49488b43fa6964f806e9db4b044",
+      "width": 320,
+      "height": 180,
+      "pixelCount": 6739,
+      "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/constrained_camera/blockout.camera/frame.png",
+      "frameSha256": "ed608d59c1f7e30a4b55cb7800439324ce68055b1ed8289038f99c4dfe95903e"
+    },
+    "errors": []
+  },
+  "checks": [
+    {
+      "id": "camera_aimed_at_hero",
+      "ok": true,
+      "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+      "required": false
+    },
+    {
+      "id": "camera_occluded",
+      "ok": true,
+      "detail": "occluded=False; blocker=None",
+      "required": false
+    },
+    {
+      "id": "hero_on_screen",
+      "ok": true,
+      "detail": "PIL centroid=[0.49916553828461196, 0.5123662429308667]; pixels=6739; centre region=(0.25, 0.75)",
+      "required": true
+    }
+  ],
+  "ok": true
+}

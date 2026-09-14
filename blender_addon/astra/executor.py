@@ -110,6 +110,8 @@ PRIM_OPS = {
 def scene_clear(_args: dict) -> str:
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
+    if "astra_follow" in bpy.context.scene:
+        del bpy.context.scene["astra_follow"]
     bpy.ops.object.camera_add(location=(7.4, -6.8, 4.8))
     cam = bpy.context.object
     cam.name = "Camera"
@@ -234,29 +236,29 @@ def camera_create(args: dict) -> str:
     return f"Camera {cam.name}"
 
 
-def camera_frame(_args: dict) -> str:
-    meshes = [o for o in bpy.data.objects if o.type == "MESH"]
-    if not meshes:
-        return "No meshes to frame"
-    mins = Vector((math.inf, math.inf, math.inf))
-    maxs = Vector((-math.inf, -math.inf, -math.inf))
-    for obj in meshes:
-        for corner in obj.bound_box:
-            world = obj.matrix_world @ Vector(corner)
-            mins.x, mins.y, mins.z = min(mins.x, world.x), min(mins.y, world.y), min(mins.z, world.z)
-            maxs.x, maxs.y, maxs.z = max(maxs.x, world.x), max(maxs.y, world.y), max(maxs.z, world.z)
-    center = (mins + maxs) * 0.5
-    size = max((maxs - mins).length, 0.8)
-    dist = max(size * 1.35, 4.0)
-    cam = bpy.context.scene.camera
+def camera_frame(args: dict) -> dict:
+    from .observe import hero_bounds, observe, run_checks
+
+    follow = args.get("follow")
+    try:
+        root, _meshes, center, low, high, _depsgraph = hero_bounds(follow)
+    except ValueError as error:
+        return {"ok": False, "message": str(error)}
+    scene = bpy.context.scene
+    scene["astra_follow"] = root.name
+    cam = scene.camera
     if cam is None:
         bpy.ops.object.camera_add()
         cam = bpy.context.object
-        bpy.context.scene.camera = cam
-    cam.location = center + Vector((dist * 0.72, -dist, dist * 0.48))
-    direction = center - cam.location
-    cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
-    return "Camera framed to selection"
+        scene.camera = cam
+    distance = max((high - low).length * 1.35, 4.0)
+    cam.parent = None
+    cam.location = center + Vector((distance * 0.72, -distance, distance * 0.48))
+    cam.rotation_euler = (center - cam.location).to_track_quat("-Z", "Y").to_euler()
+    evidence = observe(root.name)
+    checks = run_checks(evidence, ("camera_aimed_at_hero", "camera_occluded"))
+    return {"ok": all(check["ok"] for check in checks),
+            "message": "Camera framed to evaluated hero meshes", "observation": evidence, "checks": checks}
 
 
 def animation_turntable(args: dict) -> str:
@@ -280,24 +282,13 @@ def animation_turntable(args: dict) -> str:
 MASK_IDS = {"set": 1, "hero": 2, "extras": 3, "door": 4, "ocean": 5, "cams": 6, "sky": 8}
 
 
-def _render(args: dict, *, animation: bool, matte: bool = False) -> str:
-    """Render locally; Workbench has no IndexOB pass, so use index-selected materials.
-
-    Non-target geometry stays black and still occludes the white target. A copied
-    scene and temporary geometry keep the author's materials/settings intact.
-    PNG sequences + CPU ffmpeg also work on Blender 5 (no built-in FFmpeg output).
-    """
+def _render_settings(args: dict, *, animation: bool) -> dict:
     from pathlib import Path
-    import subprocess
-    import tempfile
 
     path = Path(str(args.get("path", "")))
     suffix = ".mp4" if animation else ".png"
     if path.suffix.lower() != suffix:
         raise ValueError(f"path must end in {suffix}")
-    mask = args.get("mask")
-    if matte and mask not in MASK_IDS:
-        raise ValueError(f"mask must be one of {', '.join(MASK_IDS)}")
     source = bpy.context.scene
     if source.camera is None:
         raise ValueError("render requires an active camera")
@@ -314,6 +305,27 @@ def _render(args: dict, *, animation: bool, matte: bool = False) -> str:
     fps = integer("fps", source.render.fps)
     if animation and (end < start or width % 2 or height % 2):
         raise ValueError("animation requires frameEnd >= frameStart and even dimensions")
+    return dict(path=path, width=width, height=height, start=start, end=end, frame=frame, fps=fps)
+
+
+def _render(args: dict, *, animation: bool, matte: bool = False, target_names: set[str] | None = None) -> str:
+    """Render locally; Workbench has no IndexOB pass, so use index-selected materials.
+
+    Non-target geometry stays black and still occludes the white target. A copied
+    scene and temporary geometry keep the author's materials/settings intact.
+    PNG sequences + CPU ffmpeg also work on Blender 5 (no built-in FFmpeg output).
+    """
+    from pathlib import Path
+    import subprocess
+    import tempfile
+
+    settings = _render_settings(args, animation=animation)
+    path, width, height = settings["path"], settings["width"], settings["height"]
+    start, end, frame, fps = (settings[key] for key in ("start", "end", "frame", "fps"))
+    mask = args.get("mask")
+    if matte and mask not in MASK_IDS:
+        raise ValueError(f"mask must be one of {', '.join(MASK_IDS)}")
+    source = bpy.context.scene
     path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     scene = source.copy()
@@ -360,7 +372,8 @@ def _render(args: dict, *, animation: bool, matte: bool = False) -> str:
                 slots = [(slot.link, slot.material) for slot in obj.material_slots]
                 geometry.append((obj, data, copied, slots))
                 obj.data = copied
-                material = materials[int(obj.pass_index == MASK_IDS[mask])]
+                material = materials[int(obj.pass_index == MASK_IDS[mask]
+                                         and (target_names is None or obj.name in target_names))]
                 if not copied.materials:
                     copied.materials.append(material)
                 for slot in obj.material_slots:
@@ -404,11 +417,17 @@ def _render(args: dict, *, animation: bool, matte: bool = False) -> str:
 
 
 def render_frame(args: dict) -> str:
-    return _render(args, animation=False)
+    return _render(args, animation=False, matte="mask" in args)
 
 
-def render_animation(args: dict) -> str:
-    return _render(args, animation=True)
+def render_animation(args: dict) -> dict:
+    from .observe import camera_gate
+
+    result = camera_gate(args)
+    if not result["ok"]:
+        return {**result, "message": "hero_on_screen failed: animation blocked"}
+    path = _render(args, animation=True)
+    return {**result, "message": path}
 
 
 def render_matte(args: dict) -> str:
@@ -467,6 +486,8 @@ def run_call(call: dict) -> dict:
     if handler is None:
         return {"ok": False, "tool": tool, "message": f"Unknown tool {tool}"}
     message = handler(args)
+    if isinstance(message, dict):
+        return {**message, "tool": tool}
     return {"ok": True, "tool": tool, "message": message}
 
 

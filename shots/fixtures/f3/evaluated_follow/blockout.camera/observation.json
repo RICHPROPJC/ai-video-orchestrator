@@ -1,0 +1,90 @@
+{
+  "observation": {
+    "protocol": "astra.protocol.v2",
+    "blender": "5.1.2",
+    "frame": 3,
+    "hero": {
+      "name": "HeroRig",
+      "meshes": [
+        "HeroMesh"
+      ],
+      "maskId": 2,
+      "location": [
+        6.0,
+        0.0,
+        1.0
+      ],
+      "bounds": {
+        "min": [
+          5.5,
+          -0.5,
+          0.0
+        ],
+        "max": [
+          6.5,
+          0.5,
+          2.0
+        ]
+      },
+      "screenPos": [
+        0.4992033710629921,
+        0.4888727884708856
+      ]
+    },
+    "camera": {
+      "name": "Camera",
+      "location": [
+        6.0,
+        -4.599999904632568,
+        2.5999999046325684
+      ],
+      "forward": [
+        0.0,
+        0.9444968104362488,
+        -0.3285205364227295
+      ],
+      "aimAngleDeg": 0.0,
+      "occluded": false,
+      "blocker": null,
+      "evaluated": true
+    },
+    "pixelEvidence": {
+      "source": "PIL",
+      "maskId": 2,
+      "frame": 3,
+      "camera": "Camera",
+      "meshes": [
+        "HeroMesh"
+      ],
+      "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/evaluated_follow/blockout.camera/hero-mask.png",
+      "sha256": "02d53c69ecd5a342f1cd26e0c3661134bd44599d2a4bfeabb4626aac428a02f1",
+      "width": 320,
+      "height": 180,
+      "pixelCount": 18288,
+      "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/evaluated_follow/blockout.camera/frame.png",
+      "frameSha256": "d32cdf4a3f744b9775c5afd46f277065d06a7583c54ef0142369c0881f0c1b02"
+    },
+    "errors": []
+  },
+  "checks": [
+    {
+      "id": "camera_aimed_at_hero",
+      "ok": true,
+      "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+      "required": false
+    },
+    {
+      "id": "camera_occluded",
+      "ok": true,
+      "detail": "occluded=False; blocker=None",
+      "required": false
+    },
+    {
+      "id": "hero_on_screen",
+      "ok": true,
+      "detail": "PIL centroid=[0.4992033710629921, 0.4888727884708856]; pixels=18288; centre region=(0.25, 0.75)",
+      "required": true
+    }
+  ],
+  "ok": true
+}

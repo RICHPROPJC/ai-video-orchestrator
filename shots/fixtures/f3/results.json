@@ -1,0 +1,1097 @@
+{
+  "shot4_bad": {
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 3,
+      "hero": {
+        "name": "HeroRig",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "maskId": 2,
+        "location": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "bounds": {
+          "min": [
+            -0.5,
+            -0.5,
+            0.0
+          ],
+          "max": [
+            0.5,
+            0.5,
+            2.0
+          ]
+        },
+        "screenPos": null
+      },
+      "camera": {
+        "name": "Camera",
+        "location": [
+          38.0,
+          -8.0,
+          2.0
+        ],
+        "forward": [
+          0.0,
+          0.9922779202461243,
+          -0.1240348070859909
+        ],
+        "aimAngleDeg": 78.02148311548744,
+        "occluded": false,
+        "blocker": null,
+        "evaluated": true
+      },
+      "pixelEvidence": {
+        "source": "PIL",
+        "maskId": 2,
+        "frame": 3,
+        "camera": "Camera",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/shot4_bad/blockout.camera/hero-mask.png",
+        "sha256": "efe2650a2bbc82261ae6e736d839a699b28995d44f44462f45892237def0578b",
+        "width": 320,
+        "height": 180,
+        "pixelCount": 0,
+        "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/shot4_bad/blockout.camera/frame.png",
+        "frameSha256": "a36a5d16e22c13a3eaef54f447a7d7f267d751b08919fce492534dfcdec48ace"
+      },
+      "errors": []
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": false,
+        "detail": "evaluated hero bbox aim angle=78.02148311548744; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": true,
+        "detail": "occluded=False; blocker=None",
+        "required": false
+      },
+      {
+        "id": "hero_on_screen",
+        "ok": false,
+        "detail": "PIL centroid=None; pixels=0; centre region=(0.25, 0.75)",
+        "required": true
+      }
+    ],
+    "ok": false,
+    "message": "hero_on_screen failed: animation blocked",
+    "tool": "render.animation",
+    "expected": false
+  },
+  "shot4_fixed": {
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 3,
+      "hero": {
+        "name": "HeroRig",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "maskId": 2,
+        "location": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "bounds": {
+          "min": [
+            -0.5,
+            -0.5,
+            0.0
+          ],
+          "max": [
+            0.5,
+            0.5,
+            2.0
+          ]
+        },
+        "screenPos": [
+          0.49497118991215083,
+          0.48106444466379317
+        ]
+      },
+      "camera": {
+        "name": "Camera",
+        "location": [
+          2.880000114440918,
+          -4.0,
+          2.9200000762939453
+        ],
+        "forward": [
+          -0.5444555282592773,
+          0.7561882138252258,
+          -0.36297041177749634
+        ],
+        "aimAngleDeg": 0.0,
+        "occluded": false,
+        "blocker": null,
+        "evaluated": true
+      },
+      "pixelEvidence": {
+        "source": "PIL",
+        "maskId": 2,
+        "frame": 3,
+        "camera": "Camera",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/shot4_fixed/blockout.camera/hero-mask.png",
+        "sha256": "17794cdfd9735d9894cf2c0989ca1a8e3ac52bdc187b7cfa3ed1af64eb8feea7",
+        "width": 320,
+        "height": 180,
+        "pixelCount": 20262,
+        "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/shot4_fixed/blockout.camera/frame.png",
+        "frameSha256": "0958c63aad78db31d82787c5a8df40cb9794233251be137e90396525af3bc97e"
+      },
+      "errors": []
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": true,
+        "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": true,
+        "detail": "occluded=False; blocker=None",
+        "required": false
+      },
+      {
+        "id": "hero_on_screen",
+        "ok": true,
+        "detail": "PIL centroid=[0.49497118991215083, 0.48106444466379317]; pixels=20262; centre region=(0.25, 0.75)",
+        "required": true
+      }
+    ],
+    "ok": true,
+    "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/shot4_fixed/blockout.mp4",
+    "tool": "render.animation",
+    "expected": true
+  },
+  "wrong_hero_decoy": {
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 3,
+      "hero": {
+        "name": "HeroRig",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "maskId": 2,
+        "location": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "bounds": {
+          "min": [
+            -0.5,
+            -0.5,
+            0.0
+          ],
+          "max": [
+            0.5,
+            0.5,
+            2.0
+          ]
+        },
+        "screenPos": null
+      },
+      "camera": {
+        "name": "Camera",
+        "location": [
+          38.0,
+          -8.0,
+          2.0
+        ],
+        "forward": [
+          0.0,
+          0.9922779202461243,
+          -0.1240348070859909
+        ],
+        "aimAngleDeg": 78.02148311548744,
+        "occluded": false,
+        "blocker": null,
+        "evaluated": true
+      },
+      "pixelEvidence": {
+        "source": "PIL",
+        "maskId": 2,
+        "frame": 3,
+        "camera": "Camera",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/wrong_hero_decoy/blockout.camera/hero-mask.png",
+        "sha256": "0022e3c8896e66d1da603e3df983b7e620f3f11659432995b1273a0fc2ed10e5",
+        "width": 320,
+        "height": 180,
+        "pixelCount": 0,
+        "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/wrong_hero_decoy/blockout.camera/frame.png",
+        "frameSha256": "da6b845c2205078f60312bee2e9600754e4c23141120839d87fe98767deec01f"
+      },
+      "errors": []
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": false,
+        "detail": "evaluated hero bbox aim angle=78.02148311548744; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": true,
+        "detail": "occluded=False; blocker=None",
+        "required": false
+      },
+      {
+        "id": "hero_on_screen",
+        "ok": false,
+        "detail": "PIL centroid=None; pixels=0; centre region=(0.25, 0.75)",
+        "required": true
+      }
+    ],
+    "ok": false,
+    "message": "hero_on_screen failed: animation blocked",
+    "tool": "render.animation",
+    "expected": false
+  },
+  "occluded": {
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 3,
+      "hero": {
+        "name": "HeroRig",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "maskId": 2,
+        "location": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "bounds": {
+          "min": [
+            -0.5,
+            -0.5,
+            0.0
+          ],
+          "max": [
+            0.5,
+            0.5,
+            2.0
+          ]
+        },
+        "screenPos": null
+      },
+      "camera": {
+        "name": "Camera",
+        "location": [
+          0.0,
+          -8.0,
+          2.0
+        ],
+        "forward": [
+          0.0,
+          0.9922779202461243,
+          -0.1240348070859909
+        ],
+        "aimAngleDeg": 0.0,
+        "occluded": true,
+        "blocker": "Mezzanine",
+        "evaluated": true
+      },
+      "pixelEvidence": {
+        "source": "PIL",
+        "maskId": 2,
+        "frame": 3,
+        "camera": "Camera",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/occluded/blockout.camera/hero-mask.png",
+        "sha256": "9df6f396f4f230d5604a4b8e26e5eed75b3a76f43d326e46439b986854f3b318",
+        "width": 320,
+        "height": 180,
+        "pixelCount": 0,
+        "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/occluded/blockout.camera/frame.png",
+        "frameSha256": "953d1ba22bc68524af06477987b41a56bbfd9fc7d8cc99aca48e153b0c173a4b"
+      },
+      "errors": []
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": true,
+        "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": false,
+        "detail": "occluded=True; blocker=Mezzanine",
+        "required": false
+      },
+      {
+        "id": "hero_on_screen",
+        "ok": false,
+        "detail": "PIL centroid=None; pixels=0; centre region=(0.25, 0.75)",
+        "required": true
+      }
+    ],
+    "ok": false,
+    "message": "hero_on_screen failed: animation blocked",
+    "tool": "render.animation",
+    "expected": false
+  },
+  "occluded_fixed": {
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 3,
+      "hero": {
+        "name": "HeroRig",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "maskId": 2,
+        "location": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "bounds": {
+          "min": [
+            -0.5,
+            -0.5,
+            0.0
+          ],
+          "max": [
+            0.5,
+            0.5,
+            2.0
+          ]
+        },
+        "screenPos": [
+          0.49916553828461196,
+          0.5123662429308667
+        ]
+      },
+      "camera": {
+        "name": "Camera",
+        "location": [
+          0.0,
+          -8.0,
+          2.0
+        ],
+        "forward": [
+          0.0,
+          0.9922779202461243,
+          -0.1240348070859909
+        ],
+        "aimAngleDeg": 0.0,
+        "occluded": false,
+        "blocker": null,
+        "evaluated": true
+      },
+      "pixelEvidence": {
+        "source": "PIL",
+        "maskId": 2,
+        "frame": 3,
+        "camera": "Camera",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/occluded_fixed/blockout.camera/hero-mask.png",
+        "sha256": "6be356cac213d75bdef8b3da88f79d70b966ad7d55354e54a56d083416d54f54",
+        "width": 320,
+        "height": 180,
+        "pixelCount": 6739,
+        "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/occluded_fixed/blockout.camera/frame.png",
+        "frameSha256": "bf898ad726c348af933fd65e67a25e08393572c0bd4b6c3de70359c7e4867169"
+      },
+      "errors": []
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": true,
+        "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": true,
+        "detail": "occluded=False; blocker=None",
+        "required": false
+      },
+      {
+        "id": "hero_on_screen",
+        "ok": true,
+        "detail": "PIL centroid=[0.49916553828461196, 0.5123662429308667]; pixels=6739; centre region=(0.25, 0.75)",
+        "required": true
+      }
+    ],
+    "ok": true,
+    "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/occluded_fixed/blockout.mp4",
+    "tool": "render.animation",
+    "expected": true
+  },
+  "offscreen_with_good_vector": {
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 3,
+      "hero": {
+        "name": "HeroRig",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "maskId": 2,
+        "location": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "bounds": {
+          "min": [
+            -0.5,
+            -0.5,
+            0.0
+          ],
+          "max": [
+            0.5,
+            0.5,
+            2.0
+          ]
+        },
+        "screenPos": null
+      },
+      "camera": {
+        "name": "Camera",
+        "location": [
+          0.0,
+          -8.0,
+          2.0
+        ],
+        "forward": [
+          0.0,
+          0.9922779202461243,
+          -0.1240348070859909
+        ],
+        "aimAngleDeg": 0.0,
+        "occluded": false,
+        "blocker": null,
+        "evaluated": true
+      },
+      "pixelEvidence": {
+        "source": "PIL",
+        "maskId": 2,
+        "frame": 3,
+        "camera": "Camera",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/offscreen_with_good_vector/blockout.camera/hero-mask.png",
+        "sha256": "c0e3d6de39394b30b2191571295370672373585e1b9bef916201bb0d8d588adb",
+        "width": 320,
+        "height": 180,
+        "pixelCount": 0,
+        "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/offscreen_with_good_vector/blockout.camera/frame.png",
+        "frameSha256": "3973ed35a5fe58684b8609ab9dfabd65f67dedc162f4b83cce6a2f4dafb682b8"
+      },
+      "errors": []
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": true,
+        "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": true,
+        "detail": "occluded=False; blocker=None",
+        "required": false
+      },
+      {
+        "id": "hero_on_screen",
+        "ok": false,
+        "detail": "PIL centroid=None; pixels=0; centre region=(0.25, 0.75)",
+        "required": true
+      }
+    ],
+    "ok": false,
+    "message": "hero_on_screen failed: animation blocked",
+    "tool": "render.animation",
+    "expected": false
+  },
+  "constrained_camera": {
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 3,
+      "hero": {
+        "name": "HeroRig",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "maskId": 2,
+        "location": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "bounds": {
+          "min": [
+            -0.5,
+            -0.5,
+            0.0
+          ],
+          "max": [
+            0.5,
+            0.5,
+            2.0
+          ]
+        },
+        "screenPos": [
+          0.49916553828461196,
+          0.5123662429308667
+        ]
+      },
+      "camera": {
+        "name": "Camera",
+        "location": [
+          0.0,
+          -8.0,
+          2.0
+        ],
+        "forward": [
+          0.0,
+          0.9922779202461243,
+          -0.12403447926044464
+        ],
+        "aimAngleDeg": 0.0,
+        "occluded": false,
+        "blocker": null,
+        "evaluated": true
+      },
+      "pixelEvidence": {
+        "source": "PIL",
+        "maskId": 2,
+        "frame": 3,
+        "camera": "Camera",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/constrained_camera/blockout.camera/hero-mask.png",
+        "sha256": "1be474df390b3ee98488f213471e34f69a49e49488b43fa6964f806e9db4b044",
+        "width": 320,
+        "height": 180,
+        "pixelCount": 6739,
+        "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/constrained_camera/blockout.camera/frame.png",
+        "frameSha256": "ed608d59c1f7e30a4b55cb7800439324ce68055b1ed8289038f99c4dfe95903e"
+      },
+      "errors": []
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": true,
+        "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": true,
+        "detail": "occluded=False; blocker=None",
+        "required": false
+      },
+      {
+        "id": "hero_on_screen",
+        "ok": true,
+        "detail": "PIL centroid=[0.49916553828461196, 0.5123662429308667]; pixels=6739; centre region=(0.25, 0.75)",
+        "required": true
+      }
+    ],
+    "ok": true,
+    "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/constrained_camera/blockout.mp4",
+    "tool": "render.animation",
+    "expected": true,
+    "rawAngleDeg": 82.87498138875264
+  },
+  "changed_after_pass": {
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 3,
+      "hero": {
+        "name": "HeroRig",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "maskId": 2,
+        "location": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "bounds": {
+          "min": [
+            -0.5,
+            -0.5,
+            0.0
+          ],
+          "max": [
+            0.5,
+            0.5,
+            2.0
+          ]
+        },
+        "screenPos": null
+      },
+      "camera": {
+        "name": "Camera",
+        "location": [
+          0.0,
+          -8.0,
+          2.0
+        ],
+        "forward": [
+          0.0,
+          0.9922779202461243,
+          -0.12403447926044464
+        ],
+        "aimAngleDeg": 0.0,
+        "occluded": false,
+        "blocker": null,
+        "evaluated": true
+      },
+      "pixelEvidence": {
+        "source": "PIL",
+        "maskId": 2,
+        "frame": 3,
+        "camera": "Camera",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/changed_after_pass/blockout.camera/hero-mask.png",
+        "sha256": "51ed4de53f9482afc69b56964b5d200d5e5ff784b40974ea8e5309116e6a9978",
+        "width": 320,
+        "height": 180,
+        "pixelCount": 0,
+        "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/changed_after_pass/blockout.camera/frame.png",
+        "frameSha256": "7eba66c34178b4a656546d00653ddc18eb2f592dff5a84c15ff12bf348a7a8db"
+      },
+      "errors": []
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": true,
+        "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": true,
+        "detail": "occluded=False; blocker=None",
+        "required": false
+      },
+      {
+        "id": "hero_on_screen",
+        "ok": false,
+        "detail": "PIL centroid=None; pixels=0; centre region=(0.25, 0.75)",
+        "required": true
+      }
+    ],
+    "ok": false,
+    "message": "hero_on_screen failed: animation blocked",
+    "tool": "render.animation",
+    "expected": false
+  },
+  "midpoint_not_current_frame": {
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 3,
+      "hero": {
+        "name": "HeroRig",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "maskId": 2,
+        "location": [
+          38.0,
+          0.0,
+          1.0
+        ],
+        "bounds": {
+          "min": [
+            37.5,
+            -0.5,
+            0.0
+          ],
+          "max": [
+            38.5,
+            0.5,
+            2.0
+          ]
+        },
+        "screenPos": null
+      },
+      "camera": {
+        "name": "Camera",
+        "location": [
+          0.0,
+          -8.0,
+          2.0
+        ],
+        "forward": [
+          0.0,
+          0.9922779202461243,
+          -0.1240348070859909
+        ],
+        "aimAngleDeg": 78.02148311548744,
+        "occluded": false,
+        "blocker": null,
+        "evaluated": true
+      },
+      "pixelEvidence": {
+        "source": "PIL",
+        "maskId": 2,
+        "frame": 3,
+        "camera": "Camera",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/midpoint_not_current_frame/blockout.camera/hero-mask.png",
+        "sha256": "b9b5a757787568c4d75e71abc610b453dbec31046f37dec4603f9d035bda1fa7",
+        "width": 320,
+        "height": 180,
+        "pixelCount": 0,
+        "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/midpoint_not_current_frame/blockout.camera/frame.png",
+        "frameSha256": "d1c60fd573047816a25c08ee981760e57908f9417f94a4bef54eb69c6fd5fbd5"
+      },
+      "errors": []
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": false,
+        "detail": "evaluated hero bbox aim angle=78.02148311548744; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": true,
+        "detail": "occluded=False; blocker=None",
+        "required": false
+      },
+      {
+        "id": "hero_on_screen",
+        "ok": false,
+        "detail": "PIL centroid=None; pixels=0; centre region=(0.25, 0.75)",
+        "required": true
+      }
+    ],
+    "ok": false,
+    "message": "hero_on_screen failed: animation blocked",
+    "tool": "render.animation",
+    "expected": false
+  },
+  "evaluated_follow": {
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 3,
+      "hero": {
+        "name": "HeroRig",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "maskId": 2,
+        "location": [
+          6.0,
+          0.0,
+          1.0
+        ],
+        "bounds": {
+          "min": [
+            5.5,
+            -0.5,
+            0.0
+          ],
+          "max": [
+            6.5,
+            0.5,
+            2.0
+          ]
+        },
+        "screenPos": [
+          0.4992033710629921,
+          0.4888727884708856
+        ]
+      },
+      "camera": {
+        "name": "Camera",
+        "location": [
+          6.0,
+          -4.599999904632568,
+          2.5999999046325684
+        ],
+        "forward": [
+          0.0,
+          0.9444968104362488,
+          -0.3285205364227295
+        ],
+        "aimAngleDeg": 0.0,
+        "occluded": false,
+        "blocker": null,
+        "evaluated": true
+      },
+      "pixelEvidence": {
+        "source": "PIL",
+        "maskId": 2,
+        "frame": 3,
+        "camera": "Camera",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/evaluated_follow/blockout.camera/hero-mask.png",
+        "sha256": "02d53c69ecd5a342f1cd26e0c3661134bd44599d2a4bfeabb4626aac428a02f1",
+        "width": 320,
+        "height": 180,
+        "pixelCount": 18288,
+        "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/evaluated_follow/blockout.camera/frame.png",
+        "frameSha256": "d32cdf4a3f744b9775c5afd46f277065d06a7583c54ef0142369c0881f0c1b02"
+      },
+      "errors": []
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": true,
+        "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": true,
+        "detail": "occluded=False; blocker=None",
+        "required": false
+      },
+      {
+        "id": "hero_on_screen",
+        "ok": true,
+        "detail": "PIL centroid=[0.4992033710629921, 0.4888727884708856]; pixels=18288; centre region=(0.25, 0.75)",
+        "required": true
+      }
+    ],
+    "ok": true,
+    "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/evaluated_follow/blockout.mp4",
+    "tool": "render.animation",
+    "expected": true
+  },
+  "camera_frame_occluded": {
+    "ok": false,
+    "message": "Camera framed to evaluated hero meshes",
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 1,
+      "hero": {
+        "name": "HeroRig",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "maskId": 2,
+        "location": [
+          6.0,
+          0.0,
+          1.0
+        ],
+        "bounds": {
+          "min": [
+            5.5,
+            -0.5,
+            0.0
+          ],
+          "max": [
+            6.5,
+            0.5,
+            2.0
+          ]
+        },
+        "screenPos": null
+      },
+      "camera": {
+        "name": "Camera",
+        "location": [
+          8.880000114440918,
+          -4.0,
+          2.9200000762939453
+        ],
+        "forward": [
+          -0.5444555282592773,
+          0.7561882138252258,
+          -0.36297041177749634
+        ],
+        "aimAngleDeg": 0.0,
+        "occluded": true,
+        "blocker": "FrameBlocker",
+        "evaluated": true
+      },
+      "pixelEvidence": null,
+      "errors": []
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": true,
+        "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": false,
+        "detail": "occluded=True; blocker=FrameBlocker",
+        "required": false
+      }
+    ],
+    "tool": "camera.frame"
+  },
+  "missing_hero_mask": {
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 3,
+      "hero": null,
+      "camera": null,
+      "pixelEvidence": null,
+      "errors": [
+        "hero_missing: no pass_index=2 mesh under the selected rig"
+      ]
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": false,
+        "detail": "evaluated hero bbox aim angle=None; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": false,
+        "detail": "occluded=None; blocker=None",
+        "required": false
+      },
+      {
+        "id": "hero_on_screen",
+        "ok": false,
+        "detail": "PIL centroid=None; pixels=0; centre region=(0.25, 0.75)",
+        "required": true
+      }
+    ],
+    "ok": false,
+    "message": "hero_on_screen failed: animation blocked",
+    "tool": "render.animation",
+    "expected": false
+  },
+  "pillow_unconfigured": {
+    "observation": {
+      "protocol": "astra.protocol.v2",
+      "blender": "5.1.2",
+      "frame": 3,
+      "hero": {
+        "name": "HeroRig",
+        "meshes": [
+          "HeroMesh"
+        ],
+        "maskId": 2,
+        "location": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "bounds": {
+          "min": [
+            -0.5,
+            -0.5,
+            0.0
+          ],
+          "max": [
+            0.5,
+            0.5,
+            2.0
+          ]
+        },
+        "screenPos": null
+      },
+      "camera": {
+        "name": "Camera",
+        "location": [
+          0.0,
+          -8.0,
+          2.0
+        ],
+        "forward": [
+          0.0,
+          0.9922779202461243,
+          -0.1240348070859909
+        ],
+        "aimAngleDeg": 0.0,
+        "occluded": false,
+        "blocker": null,
+        "evaluated": true
+      },
+      "pixelEvidence": null,
+      "errors": [
+        "pillow_unconfigured"
+      ]
+    },
+    "checks": [
+      {
+        "id": "camera_aimed_at_hero",
+        "ok": true,
+        "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+        "required": false
+      },
+      {
+        "id": "camera_occluded",
+        "ok": true,
+        "detail": "occluded=False; blocker=None",
+        "required": false
+      },
+      {
+        "id": "hero_on_screen",
+        "ok": false,
+        "detail": "PIL centroid=None; pixels=0; centre region=(0.25, 0.75)",
+        "required": true
+      }
+    ],
+    "ok": false,
+    "message": "hero_on_screen failed: animation blocked",
+    "tool": "render.animation",
+    "expected": false
+  }
+}
