@@ -19,6 +19,7 @@ import {
   type SecondEyeRecord,
 } from "./photo-qc";
 import { machineGreyFailReason, measureWorkbenchGreyLeak } from "./workbench-grey-leak";
+import { judgeWalkCrop, type WalkCropEvidence } from "./walk-crop-qc";
 
 export type VideoFrameQc = {
   frame: number;
@@ -81,6 +82,21 @@ export function judgeVideoFrames(
     status,
     frames: judged,
     checks: { status, fail_reasons: failReasons },
+  };
+}
+
+/** Geometry gate: cropped head / sliding root / camera order. Missing evidence ≠ PASS. */
+export function gateVideoWithWalkCrop(
+  judged: Pick<VideoQcRecord, "status" | "frames" | "checks">,
+  evidence: WalkCropEvidence,
+): Pick<VideoQcRecord, "status" | "frames" | "checks"> {
+  const extra = judgeWalkCrop(evidence);
+  if (extra.status === "GREEN") return judged;
+  const fail_reasons = [...(judged.checks.fail_reasons ?? []), ...extra.fail_reasons];
+  return {
+    ...judged,
+    status: "FAIL",
+    checks: { ...judged.checks, status: "FAIL", fail_reasons, walk_crop_rule: extra.rule },
   };
 }
 

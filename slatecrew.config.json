@@ -21,8 +21,10 @@
     "seed": 42
   },
   "tts": {
-    "endpoint": "",
-    "model": "Fun-CosyVoice3-0.5B"
+    "endpoint": "http://127.0.0.1:9882",
+    "model": "auk-flash-1.5B",
+    "promptWav": "/mnt/ssd/AuK/assets/demo-input-audio/zero-shot-tts/ref.wav",
+    "seed": 20260914
   },
   "pictureQc": {
     "endpoint": "http://127.0.0.1:8015",

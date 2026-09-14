@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getCapabilityCatalog, isWired } from "./capability-catalog";
 import { TOOL_CATALOG } from "./catalog";
 import playbooks from "./playbooks.json";
 import skills from "./skills.json";
@@ -92,7 +93,8 @@ export type PlanContext = z.infer<typeof PlanContextSchema>;
 export function selectPlaybook(intent: string) {
   const normalized = intent.trim().toLowerCase().replace(/\s+/g, " ");
   const book = playbooks.find((entry) => entry.id === normalized || entry.intents.some((alias) => alias.toLowerCase() === normalized));
-  return book ? structuredClone(book) : null;
+  if (!book || !isWired(book.id)) return null;
+  return structuredClone(book);
 }
 
 export function expandedSkill(id: keyof typeof skills): ValidatedToolCall[] {
@@ -105,11 +107,13 @@ export function getSpec() {
     tools: TOOL_CATALOG.filter((entry) => !authorOnly.has(entry.name)).map((entry) => ({ ...entry })),
     authoringOnly: [...authorOnly],
     playbooks: structuredClone(playbooks), skills: structuredClone(skills),
+    capabilities: getCapabilityCatalog(),
     planSchema: z.toJSONSchema(PlanSchema),
     contextSchema: z.toJSONSchema(PlanContextSchema),
     errors: ["plan_invalid", "no_playbook"],
     rules: {
       intent: "Exact authored intent alias or playbook id; no substring fallback or invented vocabulary",
+      pick: "Only catalog entries with a receipt; else no_playbook",
       nextAllowed: "Trusted runner context, never model output; applies to every call and expanded skill step",
       preflight: "Validate the complete batch before invoking the executor; obtain new context for each new observation",
       animation: "Even dimensions; inclusive frameEnd >= frameStart; fresh midpoint hero_on_screen gate in Python",

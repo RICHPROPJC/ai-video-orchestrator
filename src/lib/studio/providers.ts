@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { peakAndSilence, readWavMono } from "./audio";
+import { assertAukTtsPin, genSecondsForText, runAukTts } from "./auk-tts";
 import { loadConfig } from "./config";
 import type { CallSheet, PictureQc, SoundQc } from "./types";
 
@@ -20,16 +21,24 @@ function apiKey() {
   return process.env.STUDIO_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim() || undefined;
 }
 
-export async function ttsHttp(opts: { text: string; reference?: string; outFile: string }) {
+export async function ttsHttp(opts: {
+  text: string;
+  reference?: string;
+  outFile: string;
+  seconds?: number;
+  synthesize?: typeof runAukTts;
+}) {
   const cfg = loadConfig();
-  if (!cfg.tts.endpoint) return null;
-  const res = await postJson(cfg.tts.endpoint, {
-    model: cfg.tts.model,
+  if (!cfg.tts.endpoint.trim()) throw new Error("tts.endpoint unconfigured — AuK http://127.0.0.1:9882");
+  assertAukTtsPin(cfg.tts);
+  const synth = opts.synthesize ?? runAukTts;
+  await synth({
     text: opts.text,
-    reference: opts.reference,
-  }, apiKey());
-  fs.writeFileSync(opts.outFile, Buffer.from(await res.arrayBuffer()));
-  return "cosyvoice-http";
+    outFile: opts.outFile,
+    genSeconds: opts.seconds ?? genSecondsForText(opts.text),
+    promptWav: opts.reference,
+  });
+  return "auk-9882" as const;
 }
 
 export async function senseVoiceHttp(audioFile: string): Promise<Partial<SoundQc> | null> {
@@ -68,6 +77,36 @@ function wer(ref: string, hyp: string) {
   if (!a.length) return hyp.trim() ? 1 : 0;
   const miss = a.filter((t) => !b.has(t)).length;
   return miss / a.length;
+}
+
+function levenshtein(a: string[], b: string[]): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) => {
+    const row = new Array<number>(n + 1);
+    row[0] = i;
+    return row;
+  });
+  for (let j = 0; j <= n; j += 1) dp[0]![j] = j;
+  for (let i = 1; i <= m; i += 1) {
+    for (let j = 1; j <= n; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i]![j] = Math.min(dp[i - 1]![j]! + 1, dp[i]![j - 1]! + 1, dp[i - 1]![j - 1]! + cost);
+    }
+  }
+  return dp[m]![n]!;
+}
+
+/** CJK = character edit rate; EN = word miss rate. Service down is unconfigured, not this. */
+export function scriptEditRate(ref: string, hyp: string): { rate: number; code: "cer" | "wer" } {
+  const chars = [...ref.replace(/\s+/g, "")];
+  const cjk = chars.filter((ch) => /\p{Script=Han}/u.test(ch)).length;
+  if (chars.length && cjk / chars.length >= 0.5) {
+    const b = [...hyp.replace(/\s+/g, "")];
+    const rate = chars.length ? levenshtein(chars, b) / chars.length : b.length ? 1 : 0;
+    return { rate, code: "cer" };
+  }
+  return { rate: wer(ref, hyp), code: "wer" };
 }
 
 /** A3 fail-loud: an ear is a provider. No endpoint = stage FAIL "unconfigured",
@@ -116,15 +155,21 @@ export function soundQcFromRemote(opts: {
   wav: ReturnType<typeof wavPrecheck>;
 }): SoundQc {
   const issues = [...opts.wav.issues];
-  const w = wer(opts.expectedText, opts.remote.transcript ?? "");
-  if (w > 0.18) issues.push({ code: "wer", severity: "block" as const, detail: `WER ${w.toFixed(2)} vs script` });
+  const { rate, code } = scriptEditRate(opts.expectedText, opts.remote.transcript ?? "");
+  if (rate > 0.18) {
+    issues.push({
+      code,
+      severity: "block" as const,
+      detail: `${code.toUpperCase()} ${rate.toFixed(2)} vs script`,
+    });
+  }
   return {
     provider: opts.remote.provider ?? "sensevoice-http",
     transcript: opts.remote.transcript ?? "",
     language: opts.remote.language ?? (/[㐀-鿿]/.test(opts.expectedText) ? "yue/zh" : "en"),
     emotion: opts.remote.emotion ?? opts.expectedEmotion,
     events: opts.remote.events ?? ["Speech"],
-    wer: w,
+    wer: rate,
     durationSec: opts.wav.durationSec,
     peak: opts.wav.peak,
     silenceRatio: opts.wav.silenceRatio,

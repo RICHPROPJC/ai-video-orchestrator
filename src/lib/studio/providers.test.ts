@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import * as nodeTest from "node:test";
 import { loadConfig } from "./config";
-import { ocrHttp, soundQcFromRemote, soundQcUnconfigured } from "./providers";
+import { ocrHttp, scriptEditRate, soundQcFromRemote, soundQcUnconfigured, ttsHttp } from "./providers";
 
 const bareBun = !!process.versions.bun && process.env.BUN_TEST !== "1";
 const cases: { name: string; fn: () => void | Promise<void> }[] = [];
@@ -58,7 +59,7 @@ test("soundQcFromRemote: matching SenseVoice transcript is a real verdict", () =
   assert.equal(s.wer, 0);
 });
 
-test("soundQcFromRemote: wrong words and clipping block the delivery", () => {
+test("soundQcFromRemote: CJK char edit + clipping block the delivery", () => {
   const s = soundQcFromRemote({
     remote: { transcript: "完全唔同嘅句子", emotion: "NEUTRAL" },
     expectedText: "今日天氣好",
@@ -67,8 +68,42 @@ test("soundQcFromRemote: wrong words and clipping block the delivery", () => {
     wav: { durationSec: 1, peak: 0.99, silenceRatio: 0.1, issues: [{ code: "clip", severity: "block", detail: "Peak clipping on VO" }] },
   });
   assert.equal(s.pass, false);
-  assert.ok(s.issues.some((i) => i.code === "wer"));
+  assert.ok(s.issues.some((i) => i.code === "cer"));
   assert.ok(s.issues.some((i) => i.code === "clip"));
+});
+
+test("scriptEditRate: CJK is char edit, EN is word miss", () => {
+  assert.equal(scriptEditRate("今日天氣好", "今日天氣好").code, "cer");
+  assert.equal(scriptEditRate("今日天氣好", "今日天氣好").rate, 0);
+  assert.ok(scriptEditRate("今日天氣好", "今日天氣").rate > 0);
+  assert.equal(scriptEditRate("hello world", "hello world").code, "wer");
+  assert.ok(scriptEditRate("hello world", "hello there").rate > 0.18);
+});
+
+test("config pins tts to AuK :9882, not CosyVoice", () => {
+  const cfg = loadConfig();
+  assert.equal(cfg.tts.endpoint, "http://127.0.0.1:9882");
+  assert.equal(cfg.tts.model, "auk-flash-1.5B");
+  assert.doesNotMatch(`${cfg.tts.endpoint} ${cfg.tts.model}`, /cosyvoice|9880/i);
+});
+
+test("ttsHttp uses AuK adapter, never CosyVoice skip", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-auk-tts-"));
+  const outFile = path.join(dir, "o.wav");
+  let called = 0;
+  const out = await ttsHttp({
+    text: "測",
+    outFile,
+    synthesize: async (opts) => {
+      called += 1;
+      fs.mkdirSync(path.dirname(opts.outFile), { recursive: true });
+      fs.writeFileSync(opts.outFile, "x");
+      return { provider: "auk-9882" as const, genSeconds: 2, bytes: 1, peak: 0.5 };
+    },
+  });
+  assert.equal(out, "auk-9882");
+  assert.equal(called, 1);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("tripwire: no *-local-schema provider id anywhere in studio src", () => {
