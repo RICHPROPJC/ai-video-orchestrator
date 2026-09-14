@@ -4,7 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import * as nodeTest from "node:test";
-import { judge, pinQcAccepted, sameRequire } from "./photo-qc";
+import {
+  judge,
+  judgeSecondEye,
+  pinQcAccepted,
+  resolveSecondEye,
+  runSecondEye,
+  sameRequire,
+} from "./photo-qc";
 import { keyframeRequire } from "./keyframe-prompt";
 
 /** One file, three doors: bun's node:test shim only works under `bun test`,
@@ -208,6 +215,94 @@ test("keyframeRequire adds tool keys when the shot carries a prop", () => {
   assert.equal(req.tool, "曲轅犁");
   assert.deepEqual(req.tool_shape, ["弯", "木", "插入"]);
   assert.deepEqual(req.tool_forbid, ["锹", "铲", "锄"]);
+});
+
+test("resolveSecondEye: opts arm :4000 glm-5.3-flash", () => {
+  const cfg = resolveSecondEye({ secondEndpoint: "http://127.0.0.1:4000", secondModel: "glm-5.3-flash" });
+  assert.deepEqual(cfg, { endpoint: "http://127.0.0.1:4000", model: "glm-5.3-flash" });
+});
+
+test("resolveSecondEye: empty endpoint ⇒ null (skip, not fail); env arms with default model", () => {
+  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
+  const prevM = process.env.SLATECREW_SECOND_MODEL;
+  delete process.env.SLATECREW_SECOND_ENDPOINT;
+  delete process.env.SLATECREW_SECOND_MODEL;
+  try {
+    assert.equal(resolveSecondEye(), null);
+    assert.equal(resolveSecondEye({ secondEndpoint: "   " }), null);
+    process.env.SLATECREW_SECOND_ENDPOINT = "http://127.0.0.1:4000";
+    assert.deepEqual(resolveSecondEye(), { endpoint: "http://127.0.0.1:4000", model: "glm-5.3-flash" });
+    assert.deepEqual(resolveSecondEye({ secondModel: "glm-5.3" }), { endpoint: "http://127.0.0.1:4000", model: "glm-5.3" });
+  } finally {
+    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
+    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
+    if (prevM === undefined) delete process.env.SLATECREW_SECOND_MODEL;
+    else process.env.SLATECREW_SECOND_MODEL = prevM;
+  }
+});
+
+test("judgeSecondEye: glm grey on a grey-banned shot fails second_eye", () => {
+  const v = judgeSecondEye(
+    { people_count: 1, grey_blocks: false },
+    { blind: "一個灰色人形剪影企喺房中間。", summary: { grey_blocks: true } },
+  );
+  assert.equal(v.ok, false);
+  assert.ok(v.reason?.includes("second_eye"));
+});
+
+test("judgeSecondEye: blind-only grey also fails; clean stays ok", () => {
+  assert.equal(
+    judgeSecondEye({ grey_blocks: false }, { blind: "牆邊有幾個灰色方塊。", summary: { grey_blocks: false } }).ok,
+    false,
+  );
+  assert.equal(
+    judgeSecondEye({ grey_blocks: false }, { blind: "兩個人企喺茶餐廳門口。", summary: { grey_blocks: false } }).ok,
+    true,
+  );
+});
+
+test("judgeSecondEye: no grey ban or degraded summary ⇒ skip (first eye + machine grey still gate)", () => {
+  assert.equal(
+    judgeSecondEye({ people_count: 1 }, { blind: "灰色方塊", summary: { grey_blocks: true } }).ok,
+    true,
+  );
+  assert.equal(
+    judgeSecondEye({ grey_blocks: false }, { blind: "灰色方塊", summary: { parse_error: "boom", raw: "x" } }).ok,
+    true,
+  );
+});
+
+test("runSecondEye: sequential describe then summarize against a local fixture", async () => {
+  const http = await import("node:http");
+  const calls: unknown[] = [];
+  const server = http.createServer((_req, res) => {
+    let body = "";
+    _req.on("data", (c) => (body += c));
+    _req.on("end", () => {
+      const content = (JSON.parse(body) as { messages: { content: unknown }[] }).messages[0]!.content;
+      calls.push(content);
+      const reply = calls.length === 1
+        ? "兩個人企喺茶餐廳門口，地面濕。"
+        : '{"people_count":2,"grey_blocks":false}';
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+  try {
+    const png = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sc-se-")), "f.png");
+    fs.writeFileSync(png, Buffer.from("89504e470d0a1a2a0000", "hex"));
+    const rec = await runSecondEye(`http://127.0.0.1:${port}`, "glm-5.3-flash", png);
+    assert.equal(calls.length, 2); // 拆步: exactly one describe + one summarize, awaited in order
+    assert.ok(Array.isArray(calls[0]), "describe sends image parts");
+    assert.equal(typeof calls[1], "string", "summarize sends the blind text only");
+    assert.ok(rec.blind.includes("茶餐廳"));
+    assert.equal((rec.summary as { grey_blocks?: boolean }).grey_blocks, false);
+    assert.equal(rec.model, "glm-5.3-flash");
+  } finally {
+    server.close();
+  }
 });
 
 test("keyframeRequire has no tool keys without props", () => {
