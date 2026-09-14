@@ -29,7 +29,7 @@ export type LightType = "POINT" | "SUN" | "SPOT" | "AREA";
 
 export type CameraMode = "director" | "first_person" | "third_person" | "hidden";
 
-export type CharacterAction = "idle" | "walk" | "wave" | "sit" | "look";
+export type CharacterAction = "idle" | "walk" | "wave" | "sit" | "look" | "lie" | "kneel" | "crouch" | "lean" | "turn_away";
 
 export type CharacterBone = "root" | "torso" | "head" | "hair" | "armL" | "armR" | "legL" | "legR" | "hip";
 
@@ -152,6 +152,11 @@ export type ToolName =
   | "character.move"
   | "physics.set"
   | "mask.set"
+  | "object.place_on"
+  | "object.place_against_wall"
+  | "object.place_beside"
+  | "camera.frame_subject"
+  | "camera.search"
   | "render.frame"
   | "render.animation"
   | "render.matte"

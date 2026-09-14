@@ -1,0 +1,65 @@
+[
+  {
+    "id": "pb.seahaven.v2",
+    "version": "2.1.0",
+    "title": "Seahaven dome world",
+    "intents": [
+      "truman",
+      "seahaven",
+      "open world",
+      "楚門",
+      "楚门",
+      "開放式世界",
+      "开放世界",
+      "開放世界"
+    ]
+  },
+  {
+    "id": "pb.plaza.v2",
+    "version": "2.1.0",
+    "title": "Walkable plaza",
+    "intents": [
+      "plaza",
+      "小鎮",
+      "小镇",
+      "場景",
+      "场景"
+    ]
+  },
+  {
+    "id": "pb.interior.v2",
+    "version": "2.1.0",
+    "title": "Interior actor",
+    "intents": [
+      "interior",
+      "室內",
+      "室内"
+    ]
+  },
+  {
+    "id": "pb.product.v2",
+    "version": "2.1.0",
+    "title": "Studio product shot",
+    "intents": [
+      "product",
+      "studio",
+      "chrome",
+      "torus",
+      "產品",
+      "棚拍"
+    ]
+  },
+  {
+    "id": "pb.character.v2",
+    "version": "2.1.0",
+    "title": "Character appearance + action",
+    "intents": [
+      "character",
+      "人物",
+      "外形",
+      "揮手",
+      "wave",
+      "走路"
+    ]
+  }
+]

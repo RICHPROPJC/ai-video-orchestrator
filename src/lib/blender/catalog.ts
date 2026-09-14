@@ -21,7 +21,7 @@ export const TOOL_CATALOG: {
   { name: "world.build", summary: "Build a town, interior, or Truman-style dome world", blender: "mesh primitives + world + cameras" },
   { name: "character.spawn", summary: "Spawn a rigged-looking character with appearance", blender: "parented mesh blocks + pass index" },
   { name: "character.appear", summary: "Recolor shirt, pants, skin, hair", blender: "Principled base color on named parts" },
-  { name: "character.action", summary: "idle / walk / wave / sit / look", blender: "NLA / keyframes on the rig empty" },
+  { name: "character.action", summary: "idle / walk / wave / sit / look / lie / kneel / crouch / lean / turn_away", blender: "C5 pivot tilt + hip offset + torso/leg scale; rig walk keyframes" },
   { name: "character.move", summary: "Walk a character with physics collision", blender: "root location + rigid body" },
   { name: "physics.set", summary: "Enable gravity and blockers", blender: "rigidbody.world_add" },
   { name: "mask.set", summary: "Cryptomatte-style pass index / holdout", blender: "obj.pass_index + holdout" },
@@ -29,4 +29,9 @@ export const TOOL_CATALOG: {
   { name: "render.frame", summary: "WORKBENCH FLAT+MATERIAL still PNG; optional mask", blender: "bpy.ops.render.render(write_still=True)" },
   { name: "render.animation", summary: "Blockout MP4 gated by a fresh midpoint hero mask centroid", blender: "evaluated observation + PIL hero_on_screen + PNG sequence + ffmpeg libx264" },
   { name: "render.matte", summary: "Visible pass_index mask MP4; hero=2 extras=3", blender: "pass_index white/black material override + ffmpeg" },
+  { name: "object.place_on", summary: "Place a named object on a named support with solver clamping", blender: "evaluated bounds + support solver" },
+  { name: "object.place_against_wall", summary: "Place a named object against a named wall inside scene bounds", blender: "wall-normal placement + collision solver" },
+  { name: "object.place_beside", summary: "Place beside a named reference with bounded gap", blender: "evaluated bounds + collision solver" },
+  { name: "camera.frame_subject", summary: "Frame the hero using wide/medium/close and eye/high/low grammar", blender: "evaluated hero bbox + authored camera grammar" },
+  { name: "camera.search", summary: "Choose among four camera candidates using fresh PIL mask evidence", blender: "four authored candidates + PIL hero_on_screen score" },
 ];

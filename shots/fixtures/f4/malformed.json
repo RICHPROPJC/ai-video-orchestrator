@@ -1,0 +1,65 @@
+[
+  {
+    "id": "invalid_json",
+    "raw": "{\"playbookId\":",
+    "error": "plan_invalid"
+  },
+  {
+    "id": "wrong_envelope",
+    "raw": "[]",
+    "error": "plan_invalid"
+  },
+  {
+    "id": "unknown_tool",
+    "raw": "{\"playbookId\": \"pb.plaza.v2\", \"calls\": [{\"tool\": \"bpy.exec\", \"args\": {\"code\": \"bpy.ops.object.delete()\"}}]}",
+    "error": "plan_invalid"
+  },
+  {
+    "id": "extra_code_argument",
+    "raw": "{\"playbookId\": \"pb.plaza.v2\", \"calls\": [{\"tool\": \"object.create\", \"args\": {\"name\": \"Hero\", \"python\": \"import os\"}}]}",
+    "error": "plan_invalid"
+  },
+  {
+    "id": "wrong_vector_type",
+    "raw": "{\"playbookId\": \"pb.plaza.v2\", \"calls\": [{\"tool\": \"object.create\", \"args\": {\"location\": [0, \"north\", 1]}}]}",
+    "error": "plan_invalid"
+  },
+  {
+    "id": "invented_action",
+    "raw": "{\"playbookId\": \"pb.plaza.v2\", \"calls\": [{\"tool\": \"character.action\", \"args\": {\"action\": \"teleport\"}}]}",
+    "error": "plan_invalid"
+  },
+  {
+    "id": "unknown_intent",
+    "raw": "{\"playbookId\": \"pb.plaza.v2\", \"calls\": [{\"tool\": \"world.build\", \"args\": {\"preset\": \"plaza\"}}]}",
+    "context": {
+      "intent": "zero gravity dragon battle in a plaza"
+    },
+    "error": "no_playbook"
+  },
+  {
+    "id": "next_allowed_top_level",
+    "raw": "{\"playbookId\": \"pb.plaza.v2\", \"calls\": [{\"tool\": \"world.build\", \"args\": {\"preset\": \"plaza\"}}]}",
+    "context": {
+      "nextAllowed": [
+        "render.frame"
+      ]
+    },
+    "error": "plan_invalid"
+  },
+  {
+    "id": "next_allowed_skill_expansion",
+    "raw": "{\"playbookId\": \"pb.plaza.v2\", \"calls\": [{\"tool\": \"skill.run\", \"args\": {\"skill\": \"studio_soft\"}}]}",
+    "context": {
+      "nextAllowed": [
+        "skill.run"
+      ]
+    },
+    "error": "plan_invalid"
+  },
+  {
+    "id": "invalid_tail_after_valid_prefix",
+    "raw": "{\"playbookId\": \"pb.plaza.v2\", \"calls\": [{\"tool\": \"scene.clear\", \"args\": {}}, {\"tool\": \"mask.set\", \"args\": {\"name\": \"Hero\", \"id\": 7}}]}",
+    "error": "plan_invalid"
+  }
+]

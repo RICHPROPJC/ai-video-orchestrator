@@ -1,0 +1,1621 @@
+{
+  "protocol": "astra.protocol.v2",
+  "version": "forge.f4.1",
+  "tools": [
+    {
+      "name": "scene.clear",
+      "summary": "Reset to an empty scene with a default camera",
+      "blender": "bpy.ops.object.select_all + delete"
+    },
+    {
+      "name": "scene.set_world",
+      "summary": "World color, strength, and mood",
+      "blender": "bpy.context.scene.world"
+    },
+    {
+      "name": "object.delete",
+      "summary": "Delete by name or id",
+      "blender": "bpy.data.objects.remove"
+    },
+    {
+      "name": "object.rename",
+      "summary": "Rename a datablock",
+      "blender": "obj.name ="
+    },
+    {
+      "name": "object.set_material",
+      "summary": "Assign a lookdev preset",
+      "blender": "Principled BSDF values"
+    },
+    {
+      "name": "camera.frame",
+      "summary": "Frame evaluated hero meshes and check camera occlusion",
+      "blender": "evaluated mesh bbox + to_track_quat + scene.ray_cast"
+    },
+    {
+      "name": "camera.mode",
+      "summary": "Director / first person / third person / hidden cameras",
+      "blender": "camera parent to head or chase empty"
+    },
+    {
+      "name": "world.build",
+      "summary": "Build a town, interior, or Truman-style dome world",
+      "blender": "mesh primitives + world + cameras"
+    },
+    {
+      "name": "character.spawn",
+      "summary": "Spawn a rigged-looking character with appearance",
+      "blender": "parented mesh blocks + pass index"
+    },
+    {
+      "name": "character.appear",
+      "summary": "Recolor shirt, pants, skin, hair",
+      "blender": "Principled base color on named parts"
+    },
+    {
+      "name": "character.action",
+      "summary": "idle / walk / wave / sit / look / lie / kneel / crouch / lean / turn_away",
+      "blender": "C5 pivot tilt + hip offset + torso/leg scale; rig walk keyframes"
+    },
+    {
+      "name": "physics.set",
+      "summary": "Enable gravity and blockers",
+      "blender": "rigidbody.world_add"
+    },
+    {
+      "name": "mask.set",
+      "summary": "Cryptomatte-style pass index / holdout",
+      "blender": "obj.pass_index + holdout"
+    },
+    {
+      "name": "skill.run",
+      "summary": "Run an authored multi-tool skill",
+      "blender": "Astra skill expander"
+    },
+    {
+      "name": "render.frame",
+      "summary": "WORKBENCH FLAT+MATERIAL still PNG; optional mask",
+      "blender": "bpy.ops.render.render(write_still=True)"
+    },
+    {
+      "name": "render.animation",
+      "summary": "Blockout MP4 gated by a fresh midpoint hero mask centroid",
+      "blender": "evaluated observation + PIL hero_on_screen + PNG sequence + ffmpeg libx264"
+    },
+    {
+      "name": "render.matte",
+      "summary": "Visible pass_index mask MP4; hero=2 extras=3",
+      "blender": "pass_index white/black material override + ffmpeg"
+    },
+    {
+      "name": "object.place_on",
+      "summary": "Place a named object on a named support with solver clamping",
+      "blender": "evaluated bounds + support solver"
+    },
+    {
+      "name": "object.place_against_wall",
+      "summary": "Place a named object against a named wall inside scene bounds",
+      "blender": "wall-normal placement + collision solver"
+    },
+    {
+      "name": "object.place_beside",
+      "summary": "Place beside a named reference with bounded gap",
+      "blender": "evaluated bounds + collision solver"
+    },
+    {
+      "name": "camera.frame_subject",
+      "summary": "Frame the hero using wide/medium/close and eye/high/low grammar",
+      "blender": "evaluated hero bbox + authored camera grammar"
+    },
+    {
+      "name": "camera.search",
+      "summary": "Choose among four camera candidates using fresh PIL mask evidence",
+      "blender": "four authored candidates + PIL hero_on_screen score"
+    }
+  ],
+  "authoringOnly": [
+    "object.create",
+    "object.transform",
+    "object.duplicate",
+    "light.create",
+    "camera.create",
+    "animation.turntable",
+    "character.move"
+  ],
+  "playbooks": [
+    {
+      "id": "pb.seahaven.v2",
+      "version": "2.1.0",
+      "title": "Seahaven dome world",
+      "intents": [
+        "truman",
+        "seahaven",
+        "open world",
+        "楚門",
+        "楚门",
+        "開放式世界",
+        "开放世界",
+        "開放世界"
+      ]
+    },
+    {
+      "id": "pb.plaza.v2",
+      "version": "2.1.0",
+      "title": "Walkable plaza",
+      "intents": [
+        "plaza",
+        "小鎮",
+        "小镇",
+        "場景",
+        "场景"
+      ]
+    },
+    {
+      "id": "pb.interior.v2",
+      "version": "2.1.0",
+      "title": "Interior actor",
+      "intents": [
+        "interior",
+        "室內",
+        "室内"
+      ]
+    },
+    {
+      "id": "pb.product.v2",
+      "version": "2.1.0",
+      "title": "Studio product shot",
+      "intents": [
+        "product",
+        "studio",
+        "chrome",
+        "torus",
+        "產品",
+        "棚拍"
+      ]
+    },
+    {
+      "id": "pb.character.v2",
+      "version": "2.1.0",
+      "title": "Character appearance + action",
+      "intents": [
+        "character",
+        "人物",
+        "外形",
+        "揮手",
+        "wave",
+        "走路"
+      ]
+    }
+  ],
+  "skills": {
+    "three_point_lighting": [
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "Key",
+          "type": "AREA",
+          "location": [
+            4.2,
+            -3.4,
+            5.6
+          ],
+          "energy": 420,
+          "color": "#fff3dd"
+        }
+      },
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "Fill",
+          "type": "AREA",
+          "location": [
+            -3.8,
+            -2.2,
+            3.4
+          ],
+          "energy": 140,
+          "color": "#d7e7ff"
+        }
+      },
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "Rim",
+          "type": "AREA",
+          "location": [
+            0.2,
+            4.6,
+            4.8
+          ],
+          "energy": 220,
+          "color": "#fff7f0"
+        }
+      }
+    ],
+    "studio_soft": [
+      {
+        "tool": "scene.set_world",
+        "args": {
+          "mood": "studio",
+          "color": "#0c0d12",
+          "strength": 0.18
+        }
+      },
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "SoftKey",
+          "type": "AREA",
+          "location": [
+            3.6,
+            -4.2,
+            6.2
+          ],
+          "energy": 380,
+          "color": "#fff7ea"
+        }
+      },
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "SoftFill",
+          "type": "AREA",
+          "location": [
+            -4.4,
+            -1.4,
+            3.8
+          ],
+          "energy": 110,
+          "color": "#e8f0ff"
+        }
+      },
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "Top",
+          "type": "AREA",
+          "location": [
+            0,
+            0,
+            7.5
+          ],
+          "energy": 90,
+          "color": "#ffffff"
+        }
+      }
+    ],
+    "overcast": [
+      {
+        "tool": "scene.set_world",
+        "args": {
+          "mood": "overcast",
+          "color": "#9eb0c6",
+          "strength": 0.55
+        }
+      },
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "Sky",
+          "type": "SUN",
+          "location": [
+            2,
+            -4,
+            8
+          ],
+          "energy": 2.2,
+          "color": "#e9f1ff"
+        }
+      }
+    ],
+    "night_neon": [
+      {
+        "tool": "scene.set_world",
+        "args": {
+          "mood": "night",
+          "color": "#05060c",
+          "strength": 0.08
+        }
+      },
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "Cyan",
+          "type": "AREA",
+          "location": [
+            -3.2,
+            -2,
+            2.4
+          ],
+          "energy": 260,
+          "color": "#3ec6e0"
+        }
+      },
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "Magenta",
+          "type": "AREA",
+          "location": [
+            3.4,
+            1.6,
+            2.2
+          ],
+          "energy": 240,
+          "color": "#d946ef"
+        }
+      },
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "Moon",
+          "type": "SUN",
+          "location": [
+            -6,
+            3,
+            9
+          ],
+          "energy": 1.1,
+          "color": "#9bb7ff"
+        }
+      }
+    ],
+    "sunset_rim": [
+      {
+        "tool": "scene.set_world",
+        "args": {
+          "mood": "sunset",
+          "color": "#24160e",
+          "strength": 0.22
+        }
+      },
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "SunKey",
+          "type": "SUN",
+          "location": [
+            6,
+            -2,
+            4
+          ],
+          "energy": 4.2,
+          "color": "#ffb067"
+        }
+      },
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "CoolFill",
+          "type": "AREA",
+          "location": [
+            -4,
+            -3,
+            2.4
+          ],
+          "energy": 80,
+          "color": "#8fb4ff"
+        }
+      },
+      {
+        "tool": "light.create",
+        "args": {
+          "name": "Rim",
+          "type": "AREA",
+          "location": [
+            1,
+            5,
+            3.2
+          ],
+          "energy": 180,
+          "color": "#ffd0a0"
+        }
+      }
+    ],
+    "cinematic_camera": [
+      {
+        "tool": "camera.create",
+        "args": {
+          "location": [
+            6.4,
+            -7.8,
+            2.6
+          ],
+          "lookAt": [
+            0,
+            0,
+            0.9
+          ],
+          "fov": 35
+        }
+      }
+    ],
+    "product_camera": [
+      {
+        "tool": "camera.create",
+        "args": {
+          "location": [
+            5.6,
+            -5.8,
+            4.2
+          ],
+          "lookAt": [
+            0,
+            0,
+            0.7
+          ],
+          "fov": 40
+        }
+      },
+      {
+        "tool": "camera.frame",
+        "args": {}
+      }
+    ],
+    "turntable": [
+      {
+        "tool": "animation.turntable",
+        "args": {
+          "mode": "turntable"
+        }
+      }
+    ],
+    "clay_preview": [
+      {
+        "tool": "object.set_material",
+        "args": {
+          "material": "clay",
+          "color": "#d5c4ae"
+        }
+      }
+    ],
+    "studio_ground": [
+      {
+        "tool": "object.create",
+        "args": {
+          "primitive": "plane",
+          "name": "StudioGround",
+          "location": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            14,
+            14,
+            1
+          ],
+          "material": "matte",
+          "color": "#1a1c22"
+        }
+      }
+    ],
+    "marble_plinth": [
+      {
+        "tool": "object.create",
+        "args": {
+          "primitive": "cylinder",
+          "name": "Plinth",
+          "location": [
+            0,
+            0,
+            0.28
+          ],
+          "scale": [
+            1.1,
+            1.1,
+            0.56
+          ],
+          "material": "marble"
+        }
+      }
+    ],
+    "truman_world": [
+      {
+        "tool": "world.build",
+        "args": {
+          "preset": "truman"
+        }
+      }
+    ],
+    "town_plaza": [
+      {
+        "tool": "world.build",
+        "args": {
+          "preset": "plaza"
+        }
+      }
+    ],
+    "interior_room": [
+      {
+        "tool": "world.build",
+        "args": {
+          "preset": "interior"
+        }
+      }
+    ],
+    "first_person": [
+      {
+        "tool": "camera.mode",
+        "args": {
+          "mode": "first_person"
+        }
+      }
+    ],
+    "third_person": [
+      {
+        "tool": "camera.mode",
+        "args": {
+          "mode": "third_person"
+        }
+      }
+    ],
+    "hidden_cameras": [
+      {
+        "tool": "camera.mode",
+        "args": {
+          "mode": "hidden"
+        }
+      }
+    ],
+    "walk_cycle": [
+      {
+        "tool": "character.action",
+        "args": {
+          "action": "walk"
+        }
+      }
+    ],
+    "wave_action": [
+      {
+        "tool": "character.action",
+        "args": {
+          "action": "wave"
+        }
+      }
+    ]
+  },
+  "planSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "playbookId": {
+        "type": "string",
+        "enum": [
+          "pb.seahaven.v2",
+          "pb.plaza.v2",
+          "pb.interior.v2",
+          "pb.product.v2",
+          "pb.character.v2"
+        ]
+      },
+      "calls": {
+        "minItems": 1,
+        "maxItems": 128,
+        "type": "array",
+        "items": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "character.spawn"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "hero",
+                        "extra"
+                      ]
+                    },
+                    "shirt": {
+                      "type": "string",
+                      "pattern": "^#[a-fA-F0-9]{6}$"
+                    },
+                    "pants": {
+                      "type": "string",
+                      "pattern": "^#[a-fA-F0-9]{6}$"
+                    },
+                    "skin": {
+                      "type": "string",
+                      "pattern": "^#[a-fA-F0-9]{6}$"
+                    },
+                    "hair": {
+                      "type": "string",
+                      "pattern": "^#[a-fA-F0-9]{6}$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "scene.clear"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "scene.set_world"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "color": {
+                      "type": "string",
+                      "pattern": "^#[a-fA-F0-9]{6}$"
+                    },
+                    "strength": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "mood": {
+                      "type": "string",
+                      "enum": [
+                        "studio",
+                        "overcast",
+                        "night",
+                        "sunset",
+                        "neutral",
+                        "day"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "object.delete"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "object.rename"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "newName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    }
+                  },
+                  "required": [
+                    "newName"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "object.set_material"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "material": {
+                      "type": "string",
+                      "enum": [
+                        "plastic",
+                        "matte",
+                        "glossy",
+                        "rubber",
+                        "clay",
+                        "metal",
+                        "chrome",
+                        "gold",
+                        "copper",
+                        "silver",
+                        "glass",
+                        "toon",
+                        "marble",
+                        "wood",
+                        "emissive",
+                        "foliage",
+                        "skin",
+                        "asphalt",
+                        "water",
+                        "sky"
+                      ]
+                    },
+                    "color": {
+                      "type": "string",
+                      "pattern": "^#[a-fA-F0-9]{6}$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "camera.frame"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "follow": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "camera.mode"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "director",
+                        "first_person",
+                        "third_person",
+                        "hidden"
+                      ]
+                    },
+                    "follow": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "world.build"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "preset": {
+                      "type": "string",
+                      "enum": [
+                        "truman",
+                        "plaza",
+                        "interior"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "preset"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "character.appear"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "shirt": {
+                      "type": "string",
+                      "pattern": "^#[a-fA-F0-9]{6}$"
+                    }
+                  },
+                  "required": [
+                    "shirt"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "character.action"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "idle",
+                        "walk",
+                        "wave",
+                        "sit",
+                        "look",
+                        "lie",
+                        "kneel",
+                        "crouch",
+                        "lean",
+                        "turn_away"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "action"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "physics.set"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "mask.set"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "const": 1
+                        },
+                        {
+                          "type": "number",
+                          "const": 2
+                        },
+                        {
+                          "type": "number",
+                          "const": 3
+                        },
+                        {
+                          "type": "number",
+                          "const": 4
+                        },
+                        {
+                          "type": "number",
+                          "const": 5
+                        },
+                        {
+                          "type": "number",
+                          "const": 6
+                        },
+                        {
+                          "type": "number",
+                          "const": 8
+                        }
+                      ]
+                    },
+                    "holdout": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "skill.run"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "string",
+                      "enum": [
+                        "three_point_lighting",
+                        "studio_soft",
+                        "overcast",
+                        "night_neon",
+                        "sunset_rim",
+                        "cinematic_camera",
+                        "product_camera",
+                        "turntable",
+                        "clay_preview",
+                        "studio_ground",
+                        "marble_plinth",
+                        "truman_world",
+                        "town_plaza",
+                        "interior_room",
+                        "first_person",
+                        "third_person",
+                        "hidden_cameras",
+                        "walk_cycle",
+                        "wave_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "object.place_on"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "surface": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "surface"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "object.place_against_wall"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "wall": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "gap": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "wall"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "object.place_beside"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "reference": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "side": {
+                      "type": "string",
+                      "enum": [
+                        "left",
+                        "right",
+                        "front",
+                        "behind"
+                      ]
+                    },
+                    "gap": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "reference"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "camera.frame_subject"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "follow": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "shot": {
+                      "type": "string",
+                      "enum": [
+                        "wide",
+                        "medium",
+                        "close"
+                      ]
+                    },
+                    "angle": {
+                      "type": "string",
+                      "enum": [
+                        "eye",
+                        "high",
+                        "low"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "shot"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "camera.search"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "follow": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f]+$"
+                    },
+                    "n": {
+                      "type": "number",
+                      "const": 4
+                    },
+                    "shot": {
+                      "type": "string",
+                      "enum": [
+                        "wide",
+                        "medium",
+                        "close"
+                      ]
+                    },
+                    "angle": {
+                      "type": "string",
+                      "enum": [
+                        "eye",
+                        "high",
+                        "low"
+                      ]
+                    },
+                    "proofDir": {
+                      "type": "string",
+                      "pattern": "^shots\\/(?:[A-Za-z0-9_-]+\\/)*[A-Za-z0-9_-]+$"
+                    },
+                    "frameStart": {
+                      "type": "integer",
+                      "minimum": -1048574,
+                      "maximum": 1048574
+                    },
+                    "frameEnd": {
+                      "type": "integer",
+                      "minimum": -1048574,
+                      "maximum": 1048574
+                    }
+                  },
+                  "required": [
+                    "shot",
+                    "proofDir"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "render.frame"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "pattern": "^shots\\/(?:[A-Za-z0-9_-]+\\/)*[A-Za-z0-9_-]+\\.png$"
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 2,
+                      "maximum": 8192
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 2,
+                      "maximum": 8192
+                    },
+                    "frame": {
+                      "type": "integer",
+                      "minimum": -1048574,
+                      "maximum": 1048574
+                    },
+                    "mask": {
+                      "type": "string",
+                      "enum": [
+                        "set",
+                        "hero",
+                        "extras",
+                        "door",
+                        "ocean",
+                        "cams",
+                        "sky"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "render.animation"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "pattern": "^shots\\/(?:[A-Za-z0-9_-]+\\/)*[A-Za-z0-9_-]+\\.mp4$"
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 2,
+                      "maximum": 8192
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 2,
+                      "maximum": 8192
+                    },
+                    "frameStart": {
+                      "type": "integer",
+                      "minimum": -1048574,
+                      "maximum": 1048574
+                    },
+                    "frameEnd": {
+                      "type": "integer",
+                      "minimum": -1048574,
+                      "maximum": 1048574
+                    },
+                    "fps": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 240
+                    }
+                  },
+                  "required": [
+                    "path"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "const": "render.matte"
+                },
+                "args": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "pattern": "^shots\\/(?:[A-Za-z0-9_-]+\\/)*[A-Za-z0-9_-]+\\.mp4$"
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 2,
+                      "maximum": 8192
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 2,
+                      "maximum": 8192
+                    },
+                    "frameStart": {
+                      "type": "integer",
+                      "minimum": -1048574,
+                      "maximum": 1048574
+                    },
+                    "frameEnd": {
+                      "type": "integer",
+                      "minimum": -1048574,
+                      "maximum": 1048574
+                    },
+                    "fps": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 240
+                    },
+                    "mask": {
+                      "type": "string",
+                      "enum": [
+                        "set",
+                        "hero",
+                        "extras",
+                        "door",
+                        "ocean",
+                        "cams",
+                        "sky"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "mask"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "tool",
+                "args"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      }
+    },
+    "required": [
+      "playbookId",
+      "calls"
+    ],
+    "additionalProperties": false
+  },
+  "contextSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "intent": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "nextAllowed": {
+        "maxItems": 29,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "scene.clear",
+            "scene.set_world",
+            "object.create",
+            "object.transform",
+            "object.delete",
+            "object.duplicate",
+            "object.rename",
+            "object.set_material",
+            "light.create",
+            "camera.create",
+            "camera.frame",
+            "camera.mode",
+            "animation.turntable",
+            "world.build",
+            "character.spawn",
+            "character.appear",
+            "character.action",
+            "character.move",
+            "physics.set",
+            "mask.set",
+            "skill.run",
+            "render.frame",
+            "render.animation",
+            "render.matte",
+            "object.place_on",
+            "object.place_against_wall",
+            "object.place_beside",
+            "camera.frame_subject",
+            "camera.search"
+          ]
+        }
+      }
+    },
+    "required": [
+      "intent",
+      "nextAllowed"
+    ],
+    "additionalProperties": false
+  },
+  "errors": [
+    "plan_invalid",
+    "no_playbook"
+  ],
+  "rules": {
+    "intent": "Exact authored intent alias or playbook id; no substring fallback or invented vocabulary",
+    "nextAllowed": "Trusted runner context, never model output; applies to every call and expanded skill step",
+    "preflight": "Validate the complete batch before invoking the executor; obtain new context for each new observation",
+    "animation": "Even dimensions; inclusive frameEnd >= frameStart; fresh midpoint hero_on_screen gate in Python",
+    "code": "No raw coordinates, bpy, Python, shell or arbitrary executable text fields; named relational tools only for placement"
+  }
+}
