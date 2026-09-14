@@ -78,6 +78,20 @@ export type JobEvent = {
   constraints_checked?: string[];
 };
 
+/** A4 events law: a per-stage line carries these keys inside JobEvent.data —
+ *  shot, stage, eye, verdict, proof (repo-relative artefact path; absent when
+ *  the stage proves nothing on disk) and ms (the stage's own wall clock).
+ *  Stage events land in data verbatim; emit dual-writes them to
+ *  projects/<ep>/events.jsonl. Tests lock all six. */
+export type StageFacts = {
+  shot: string;
+  stage: string;
+  eye: string;
+  verdict: "pass" | "fail" | "info";
+  proof?: string;
+  ms?: number;
+};
+
 export type Character = {
   id: string;
   name: string;

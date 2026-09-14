@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { JobEvent, JobRecord } from "./types";
-import { dataRoot, ensureDir, jobDir, jobFile } from "./paths";
+import { dataRoot, ensureDir, epEventsFile, jobDir, jobFile, projectsDir } from "./paths";
 
 const listeners = new Map<string, Set<(e: JobEvent) => void>>();
 
@@ -49,9 +49,12 @@ export function subscribe(id: string, fn: (e: JobEvent) => void) {
 
 export function emit(id: string, event: Omit<JobEvent, "ts"> & { ts?: string }) {
   const full: JobEvent = { ...event, ts: event.ts ?? new Date().toISOString() };
-  const file = jobFile(id, "events.jsonl");
-  fs.appendFileSync(file, `${JSON.stringify(full)}\n`);
+  const line = `${JSON.stringify(full)}\n`;
+  fs.appendFileSync(jobFile(id, "events.jsonl"), line);
+  // A4: the same line, byte for byte, lands in the ep's own events file —
+  // one log written twice, never a second format to reconcile
   const job = readJob(id);
+  if (job?.slate) fs.appendFileSync(epEventsFile(job.slate), line);
   if (job) {
     writeJob(job);
   }
@@ -61,6 +64,17 @@ export function emit(id: string, event: Omit<JobEvent, "ts"> & { ts?: string }) 
 
 export function readEvents(id: string): JobEvent[] {
   const file = path.join(jobDir(id), "events.jsonl");
+  if (!fs.existsSync(file)) return [];
+  return fs
+    .readFileSync(file, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as JobEvent);
+}
+
+/** The ep view `slatecrew events [slate]` prints and --follows. */
+export function readEpEvents(slate: string): JobEvent[] {
+  const file = path.join(projectsDir(), slate, "events.jsonl");
   if (!fs.existsSync(file)) return [];
   return fs
     .readFileSync(file, "utf8")

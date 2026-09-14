@@ -572,6 +572,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         await speak("stills", `${shot.id} keyframe 照舊（QC 已 GREEN），唔重出。`);
         continue;
       }
+      const stillStarted = Date.now();
       const refIds = [...new Set(shot.marks.map((m) => m.characterId))];
       const refFiles = first
         ? refIds.map((id) => {
@@ -631,7 +632,11 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         agent: "stills",
         level: "info",
         message: `${shot.id} keyframe /edit 完成`,
-        data: { file: `stills/${shot.id}.png` },
+        data: {
+          file: `stills/${shot.id}.png`,
+          shot: shot.id, stage: "keyframe", eye: "stills", verdict: "pass",
+          proof: `stills/${shot.id}.png`, ms: Date.now() - stillStarted,
+        },
         step_id: "keyframe-prompt",
         parent_steps: ["boards"],
         seat: "stills",
@@ -658,6 +663,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     for (const { shot, require } of stillPlans) {
       if (greenAlready.has(shot.id)) continue;
       const png = path.join(stillDir, `${shot.id}.png`);
+      const qcStarted = Date.now();
       const qcJson = path.join(stillDir, `${shot.id}.photo_qc.json`);
       let result = await runPhotoQc(png, qcJson, require);
       if (result.status !== "GREEN") {
@@ -710,7 +716,11 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           agent: "pictureQc",
           level: "fail",
           message: `${shot.id} 兩次都唔過（${reasons}）。停手，唔硬出。修 prompt 或者換 plug 之後 --resume ${jobId}。`,
-          data: { shot: shot.id, require, fail_reasons: result.checks.fail_reasons },
+          data: {
+            shot: shot.id, require, fail_reasons: result.checks.fail_reasons,
+            stage: "require", eye: "pictureQc", verdict: "fail",
+            proof: `stills/${shot.id}.photo_qc.json`, ms: Date.now() - qcStarted,
+          },
           step_id: "require",
           parent_steps: ["keyframe-prompt"],
           seat: "pictureQc",
@@ -719,6 +729,19 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         return;
       }
       await speak("pictureQc", `${shot.id} GREEN（人數 ${require.people_count}）`, "pass");
+      emit(jobId, {
+        agent: "pictureQc",
+        level: "pass",
+        message: `${shot.id} photo QC GREEN（人數 ${require.people_count}）`,
+        data: {
+          shot: shot.id, stage: "require", eye: "pictureQc", verdict: "pass",
+          proof: `stills/${shot.id}.photo_qc.json`, ms: Date.now() - qcStarted,
+        },
+        step_id: "require",
+        parent_steps: ["keyframe-prompt"],
+        seat: "pictureQc",
+        constraints_checked: ["photo-qc"],
+      });
     }
     trace.mars = `MARS ${cfg.pictureQc.endpoint} (${cfg.pictureQc.model})`;
     job = patch(job, { pictureQcStills: geometry, providers: trace, progress: 55 });
@@ -805,6 +828,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           "warn",
         );
       }
+      const motionStarted = Date.now();
       const { receiptFile } = await submitH3Shot({
         prose,
         wavFile: h3WavByShot.get(shot.id)!,
@@ -845,7 +869,18 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       } else {
         await speak("motion", `${shot.id} motion 眼 GREEN`, "pass");
       }
-      emit(jobId, { agent: "motion", level: "info", message: `${shot.id} motion 完成` });
+      emit(jobId, {
+        agent: "motion",
+        level: "info",
+        message: `${shot.id} motion 完成`,
+        data: {
+          shot: shot.id, stage: "motion", eye: "motion", verdict: videoQc.status === "GREEN" ? "pass" : "fail",
+          proof: `motion/${shot.id}.mp4`, ms: Date.now() - motionStarted,
+        },
+        step_id: "motion",
+        parent_steps: ["require"],
+        seat: "motion",
+      });
     }
     job = patch(job, {
       providers: trace,

@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as nodeTest from "node:test";
-import { listJobs, newSlateId, readJob, runningBlocker, writeJob } from "./store";
-import type { JobRecord } from "./types";
+import { listJobs, newSlateId, readEpEvents, readEvents, readJob, runningBlocker, writeJob, emit } from "./store";
+import type { JobEvent, JobRecord, StageFacts } from "./types";
 
 /** One file, three doors: bun's node:test shim only works under `bun test`,
  *  so bare `bun <this file>` self-drives the collected cases; `bun test` and
@@ -83,6 +83,34 @@ test("resuming a different slate while one runs is still blocked", async () =>
     const blocker = runningBlocker("SC-0913-OTHR");
     assert.ok(blocker);
     assert.equal(blocker!.id, "SC-0913-RUN1");
+  }));
+
+test("A4: emit writes the same line to job events.jsonl and projects/<ep>/events.jsonl", async () =>
+  scratch(() => {
+    writeJob(job("SC-0914-EVNT", "running"));
+    const stage: StageFacts = { shot: "SH03", stage: "require", eye: "pictureQc", verdict: "pass", proof: "data/jobs/SC-0914-EVNT/stills/SH03.png", ms: 812 };
+    emit("SC-0914-EVNT", { agent: "pictureQc", level: "pass", message: "SH03 GREEN", data: { ...stage } });
+    const jobLines = readEvents("SC-0914-EVNT");
+    const epLines = readEpEvents("SC-0914-EVNT");
+    assert.equal(jobLines.length, 1);
+    assert.equal(epLines.length, 1);
+    assert.deepEqual(jobLines[0], epLines[0]);
+    // the six A4 keys survive the dual write, byte-identical
+    const d = epLines[0]!.data as StageFacts;
+    assert.equal(d.shot, "SH03");
+    assert.equal(d.stage, "require");
+    assert.equal(d.eye, "pictureQc");
+    assert.equal(d.verdict, "pass");
+    assert.equal(d.proof, "data/jobs/SC-0914-EVNT/stills/SH03.png");
+    assert.equal(d.ms, 812);
+    assert.ok(fs.existsSync("projects/SC-0914-EVNT/events.jsonl"));
+  }));
+
+test("A4: emit before writeJob still lands the job log, no ep line, no crash", async () =>
+  scratch(() => {
+    emit("SC-0914-NOJOB", { agent: "system", level: "info", message: "開工" });
+    assert.equal(readEvents("SC-0914-NOJOB").length, 1);
+    assert.deepEqual(readEpEvents("SC-0914-NOJOB"), []);
   }));
 
 if (bareBun) {
