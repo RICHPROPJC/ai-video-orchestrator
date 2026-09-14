@@ -5,7 +5,7 @@ import { blenderBlockingScript } from "./blender";
 import { readWavMono, runCommand } from "./audio";
 import { emit, readJob, writeJob } from "./store";
 import { renderBlockingSvg, sceneSize } from "./painter";
-import { localPictureQc, localSoundQc, senseVoiceHttp } from "./providers";
+import { localPictureQc, senseVoiceHttp, soundQcFromRemote, soundQcUnconfigured, wavPrecheck } from "./providers";
 import { loadConfig, type SlateConfig } from "./config";
 import type { AgentId, CallSheet, JobRecord, ProduceInput, ProviderTrace, Shot } from "./types";
 import { floorLine, seat } from "./crew";
@@ -242,7 +242,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     stills: `U1.5 /edit ${cfg.stills.url}`,
     motion: `H3 R2V ${cfg.motion.comfyUrl}`,
     tts: "wav plug",
-    senseVoice: cfg.soundQc.endpoint ? "SenseVoice HTTP" : "SenseVoice schema (local)",
+    senseVoice: cfg.soundQc.endpoint ? "SenseVoice HTTP" : "SenseVoice unconfigured",
     mars: `MARS ${cfg.pictureQc.endpoint}`,
     blender: "pending",
     lipSync: "none — H3 audio dropped; own wav muxed",
@@ -920,17 +920,23 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     await ffmpeg(["-f", "concat", "-safe", "0", "-i", lockList, "-c:a", "pcm_s16le", lockAudio]);
     await think("soundQc");
     await speak("soundQc", "SenseVoice 對稿（delivery/lock-audio.wav）：ASR、情緒、事件、WER、Clipping。");
-    let sound = localSoundQc({
-      audioFile: lockAudio,
-      expectedText: timed.voiceover,
-      expectedEmotion: "NEUTRAL",
-      cloneSimilarity: 1,
-    });
-    const remoteSv = await senseVoiceHttp(lockAudio).catch(() => null);
-    if (remoteSv) {
-      sound = { ...sound, ...remoteSv, provider: remoteSv.provider ?? "SenseVoice" };
-      trace.senseVoice = "SenseVoice HTTP";
-    }
+    // A3 fail-loud: no endpoint, or an unreachable ear = FAIL "unconfigured".
+    // Never a schema stand-in for the SenseVoice verdict.
+    const earConfigured = cfg.soundQc.endpoint.trim().length > 0;
+    const wavCheck = earConfigured ? wavPrecheck({ audioFile: lockAudio }) : null;
+    const remoteSv = earConfigured ? await senseVoiceHttp(lockAudio).catch(() => null) : null;
+    const sound = !earConfigured
+      ? soundQcUnconfigured()
+      : remoteSv && wavCheck
+        ? soundQcFromRemote({
+            remote: remoteSv,
+            expectedText: timed.voiceover,
+            expectedEmotion: "NEUTRAL",
+            cloneSimilarity: 1,
+            wav: wavCheck,
+          })
+        : soundQcUnconfigured(`sensevoice ${cfg.soundQc.endpoint} unreachable or unparseable`);
+    trace.senseVoice = earConfigured && remoteSv ? "SenseVoice HTTP" : "SenseVoice FAIL (unconfigured)";
     job = patch(job, { soundQc: sound, providers: trace, progress: 82 });
     await speak("soundQc", `Sound QC ${sound.pass ? "PASS" : "FAIL"}  peak ${sound.peak.toFixed(2)}  silence ${sound.silenceRatio.toFixed(2)}`, sound.pass ? "pass" : "fail");
 

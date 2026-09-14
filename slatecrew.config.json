@@ -29,7 +29,7 @@
     "model": "mars-fa2"
   },
   "soundQc": {
-    "endpoint": "",
+    "endpoint": "http://127.0.0.1:9881",
     "model": "FunAudioLLM/SenseVoiceSmall"
   },
   "ssh": {

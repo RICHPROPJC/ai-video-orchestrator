@@ -70,36 +70,78 @@ function wer(ref: string, hyp: string) {
   return miss / a.length;
 }
 
-export function localSoundQc(opts: {
-  audioFile: string;
-  expectedText: string;
-  expectedEmotion: string;
-  cloneSimilarity: number;
-}): SoundQc {
+/** A3 fail-loud: an ear is a provider. No endpoint = stage FAIL "unconfigured",
+ *  never a schema stand-in. */
+export function soundQcUnconfigured(reason = "soundQc.endpoint not set — no ASR ear on this stage"): SoundQc {
+  return {
+    provider: "unconfigured",
+    transcript: "",
+    language: "unknown",
+    emotion: "unknown",
+    events: [],
+    wer: 1,
+    durationSec: 0,
+    peak: 0,
+    silenceRatio: 0,
+    cloneSimilarity: 0,
+    pass: false,
+    issues: [{ code: "unconfigured", severity: "block", detail: reason }],
+  };
+}
+
+/** Real wav measurements only — clip / level / holes. No transcript, no WER,
+ *  no pass verdict: the ear is senseVoiceHttp or the stage fails loud. */
+export function wavPrecheck(opts: { audioFile: string }): {
+  durationSec: number;
+  peak: number;
+  silenceRatio: number;
+  issues: SoundQc["issues"];
+} {
   const wav = readWavMono(opts.audioFile);
   const { peak, silenceRatio } = peakAndSilence(wav.samples);
   const durationSec = wav.samples.length / wav.sampleRate;
-  const transcript = opts.expectedText;
-  const issues = [];
+  const issues: SoundQc["issues"] = [];
   if (peak > 0.98) issues.push({ code: "clip", severity: "block" as const, detail: "Peak clipping on VO" });
   if (peak < 0.08) issues.push({ code: "too-quiet", severity: "block" as const, detail: "VO too quiet for delivery" });
   if (silenceRatio > 0.55) issues.push({ code: "holes", severity: "warn" as const, detail: "Long silence holes" });
-  const w = wer(opts.expectedText, transcript);
+  return { durationSec, peak, silenceRatio, issues };
+}
+
+/** SenseVoice HTTP transcript → full SoundQc verdict against the script. */
+export function soundQcFromRemote(opts: {
+  remote: NonNullable<Awaited<ReturnType<typeof senseVoiceHttp>>>;
+  expectedText: string;
+  expectedEmotion: string;
+  cloneSimilarity: number;
+  wav: ReturnType<typeof wavPrecheck>;
+}): SoundQc {
+  const issues = [...opts.wav.issues];
+  const w = wer(opts.expectedText, opts.remote.transcript ?? "");
   if (w > 0.18) issues.push({ code: "wer", severity: "block" as const, detail: `WER ${w.toFixed(2)} vs script` });
   return {
-    provider: "sensevoice-local-schema",
-    transcript,
-    language: /[㐀-鿿]/.test(opts.expectedText) ? "yue/zh" : "en",
-    emotion: opts.expectedEmotion,
-    events: ["Speech"],
+    provider: opts.remote.provider ?? "sensevoice-http",
+    transcript: opts.remote.transcript ?? "",
+    language: opts.remote.language ?? (/[㐀-鿿]/.test(opts.expectedText) ? "yue/zh" : "en"),
+    emotion: opts.remote.emotion ?? opts.expectedEmotion,
+    events: opts.remote.events ?? ["Speech"],
     wer: w,
-    durationSec,
-    peak,
-    silenceRatio,
+    durationSec: opts.wav.durationSec,
+    peak: opts.wav.peak,
+    silenceRatio: opts.wav.silenceRatio,
     cloneSimilarity: opts.cloneSimilarity,
     pass: !issues.some((i) => i.severity === "block"),
     issues,
   };
+}
+
+/** A3: OCR is a provider slot — empty endpoint fails loud, no fake pass. */
+export async function ocrHttp(opts: { imageFile: string }): Promise<{ text: string }> {
+  const cfg = loadConfig();
+  if (!cfg.ocr.endpoint.trim()) throw new Error("ocr.endpoint unconfigured — no OCR provider");
+  const b64 = fs.readFileSync(opts.imageFile).toString("base64");
+  const res = await postJson(cfg.ocr.endpoint, { image_b64: b64 }, apiKey());
+  const json = (await res.json()) as { text?: string };
+  return { text: json.text ?? "" };
 }
 
 /** plan-geometry pre-check only — the delivery gate for stills is the blind
@@ -158,7 +200,8 @@ export function localPictureQc(opts: {
   const overall = (hands + feet + composition + identity + artifacts) / 5;
   const video = opts.target === "video";
   return {
-    provider: video ? "mark-geometry" : "mars-8b-local-schema",
+    // A3: the plan-geometry pre-check never wears a MARS name — photo-qc MARS is the eye
+    provider: "mark-geometry",
     target: opts.target,
     overall,
     identity,
