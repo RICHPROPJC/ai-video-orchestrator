@@ -120,6 +120,7 @@ def character_spawn(args: dict[str, Any]) -> str:
     root.name = name
     root["astra_rig"] = name
     root["astra_bone"] = "root"
+    root["astra_height"] = 1.0
     parts = [
         (f"{name}_Torso", "cube", (x, y, 1.16), (0.52, 0.3, 0.68), "plastic", shirt),
         (f"{name}_Head", "uv_sphere", (x, y, 1.72), (0.3, 0.3, 0.3), "skin", skin),
@@ -136,16 +137,74 @@ def character_spawn(args: dict[str, Any]) -> str:
         if obj:
             obj.parent = root
             obj.matrix_parent_inverse = root.matrix_world.inverted()
+            obj["astra_bone"] = pname.rsplit("_", 1)[-1].lower()
             _pass(obj, 2 if args.get("role") != "extra" else 3)
     return f"Spawned {name}"
+
+
+# C5 (rot_x_degrees, hip_height_factor, torso_z_scale, leg_z_scale).
+# Preserve the pivot-tilt rule: lie rotates the whole figure, not just its torso.
+STANCE = {
+    "stand": (0.0, 0.0, 1.0, 1.0),
+    "lean": (-25.0, 0.0, 1.0, 1.0),
+    "crouch": (0.0, -0.28, 0.75, 0.5),
+    "sit": (18.0, 0.70, 0.55, 0.38),
+    "kneel": (6.0, -0.22, 1.0, 0.18),
+    "lie": (90.0, 0.22, 1.0, 0.40),
+    "turn_away": (0.0, 0.0, 1.0, 1.0),
+}
+CHARACTER_ACTIONS = {"idle", "walk", "wave", "sit", "look", "lie", "kneel", "crouch", "lean", "turn_away"}
+
+
+def _apply_stance(root, stance: str):
+    parts = {}
+    for obj in root.children_recursive:
+        if obj.type == "MESH":
+            bone = str(obj.get("astra_bone") or obj.name.rsplit("_", 1)[-1]).lower()
+            parts[bone] = obj
+    required = {"torso", "head", "legl", "legr"}
+    if not required.issubset(parts):
+        raise ValueError(f"character_parts_missing: {sorted(required - parts.keys())}")
+    rotation, hip, torso_z, leg_z = STANCE[stance]
+    height = float(root.get("astra_height", 1.0))
+    # Subtract the last pose offsets before applying new ones: repeated calls do
+    # not accumulate translation/rotation, and character.move remains the base.
+    base_location = root.location.copy() - Vector(root.get("astra_stance_offset", (0, 0, 0)))
+    base_rotation = Vector(root.rotation_euler) - Vector(root.get("astra_stance_rotation", (0, 0, 0)))
+    offset = Vector((0, 0, hip * height))
+    delta_rotation = Vector((math.radians(rotation) if abs(rotation) >= 45 else 0,
+                             0, math.pi if stance == "turn_away" else 0))
+    # An action replaces the previous action on these authored rig channels.
+    # Datablocks are retained; a previous walk must not overwrite the new pose.
+    root.animation_data_clear()
+    root.location = base_location + offset
+    root.rotation_euler = base_rotation + delta_rotation
+    root["astra_stance_offset"] = list(offset)
+    root["astra_stance_rotation"] = list(delta_rotation)
+    for obj in parts.values():
+        if "astra_rest_scale" not in obj:
+            obj["astra_rest_scale"] = list(obj.scale)
+            obj["astra_rest_rotation"] = list(obj.rotation_euler)
+        obj.animation_data_clear()
+        obj.scale = obj["astra_rest_scale"]
+        obj.rotation_euler = obj["astra_rest_rotation"]
+    part_rotation = 0 if abs(rotation) >= 45 else math.radians(rotation)
+    for bone in ("torso", "head"):
+        parts[bone].rotation_euler.x += part_rotation
+    parts["torso"].scale.z *= torso_z
+    for bone in ("legl", "legr"):
+        parts[bone].scale.z *= leg_z
 
 
 def character_action(args: dict[str, Any]) -> str:
     name = str(args.get("name") or "Truman")
     action = str(args.get("action") or "walk")
+    if action not in CHARACTER_ACTIONS:
+        raise ValueError(f"character_action_invalid: {action}")
     root = bpy.data.objects.get(name)
     if not root:
         return f"No rig {name}"
+    _apply_stance(root, action if action in STANCE else "stand")
     root["astra_action"] = action
     if action == "walk":
         scene = bpy.context.scene
@@ -165,9 +224,9 @@ def character_move(args: dict[str, Any]) -> str:
         return f"No rig {name}"
     loc = args.get("location")
     if isinstance(loc, (list, tuple)) and len(loc) >= 3:
-        root.location = (float(loc[0]), float(loc[1]), float(loc[2]))
+        root.location = Vector((float(loc[0]), float(loc[1]), float(loc[2]))) + Vector(root.get("astra_stance_offset", (0, 0, 0)))
     if args.get("yaw") is not None:
-        root.rotation_euler[2] = math.radians(float(args["yaw"]))
+        root.rotation_euler[2] = math.radians(float(args["yaw"])) + root.get("astra_stance_rotation", (0, 0, 0))[2]
     return f"Moved {name}"
 
 

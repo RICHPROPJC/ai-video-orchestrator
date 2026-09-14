@@ -1,0 +1,1429 @@
+{
+  "blender": "5.1.2",
+  "actions": {
+    "lie": {
+      "c5_transform_parity": true,
+      "poses": {
+        "SH_lie_\u963f\u6708_pivot": {
+          "location": [
+            0.1737326681613922,
+            2.656416654586792,
+            0.23100000619888306
+          ],
+          "rotation": [
+            1.5707963705062866,
+            0.0,
+            -1.6262948513031006
+          ],
+          "parts": {
+            "torso": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "legl": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.4000000059604645
+              ]
+            },
+            "legr": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.4000000059604645
+              ]
+            },
+            "arm0": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm1": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "head": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        },
+        "SH_lie_\u963f\u8861_pivot": {
+          "location": [
+            1.1886465549468994,
+            2.6000325679779053,
+            0.20239999890327454
+          ],
+          "rotation": [
+            1.5707963705062866,
+            0.0,
+            -1.6262948513031006
+          ],
+          "parts": {
+            "torso": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "legl": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.4000000059604645
+              ]
+            },
+            "legr": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.4000000059604645
+              ]
+            },
+            "arm0": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm1": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "head": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        }
+      },
+      "runtime": {
+        "observation": {
+          "protocol": "astra.protocol.v2",
+          "blender": "5.1.2",
+          "frame": 2,
+          "hero": {
+            "name": "Hero",
+            "meshes": [
+              "Hero_ArmL",
+              "Hero_ArmR",
+              "Hero_Hair",
+              "Hero_Head",
+              "Hero_Hip",
+              "Hero_LegL",
+              "Hero_LegR",
+              "Hero_Torso"
+            ],
+            "maskId": 2,
+            "location": [
+              0.0,
+              -1.0740000009536743,
+              0.21999995410442352
+            ],
+            "bounds": {
+              "min": [
+                -0.4399999976158142,
+                -1.940000057220459,
+                0.06999993324279785
+              ],
+              "max": [
+                0.4399999976158142,
+                -0.20800000429153442,
+                0.3699999749660492
+              ]
+            },
+            "screenPos": [
+              0.48199988367455465,
+              0.5177191349818311
+            ]
+          },
+          "camera": {
+            "name": "Camera",
+            "location": [
+              2.880000114440918,
+              -5.073999881744385,
+              2.1399998664855957
+            ],
+            "forward": [
+              -0.5444555282592773,
+              0.7561882138252258,
+              -0.36297041177749634
+            ],
+            "aimAngleDeg": 0.0,
+            "occluded": false,
+            "blocker": null,
+            "evaluated": true
+          },
+          "pixelEvidence": {
+            "source": "PIL",
+            "maskId": 2,
+            "frame": 2,
+            "camera": "Camera",
+            "meshes": [
+              "Hero_ArmL",
+              "Hero_ArmR",
+              "Hero_Hair",
+              "Hero_Head",
+              "Hero_Hip",
+              "Hero_LegL",
+              "Hero_LegR",
+              "Hero_Torso"
+            ],
+            "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/lie/blockout.camera/hero-mask.png",
+            "sha256": "2d7f5c9508fe9e20c150ef81fb39045a9f5e925f27fd085b7409af9b6d8edec8",
+            "width": 320,
+            "height": 180,
+            "pixelCount": 3761,
+            "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/lie/blockout.camera/frame.png",
+            "frameSha256": "0b9f50039845f806bf92661027dbd5887ac84177f0cf4d7ba926757d32596077"
+          },
+          "errors": []
+        },
+        "checks": [
+          {
+            "id": "camera_aimed_at_hero",
+            "ok": true,
+            "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+            "required": false
+          },
+          {
+            "id": "camera_occluded",
+            "ok": true,
+            "detail": "occluded=False; blocker=None",
+            "required": false
+          },
+          {
+            "id": "hero_on_screen",
+            "ok": true,
+            "detail": "PIL centroid=[0.48199988367455465, 0.5177191349818311]; pixels=3761; centre region=(0.25, 0.75)",
+            "required": true
+          }
+        ],
+        "ok": true,
+        "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/lie/blockout.mp4",
+        "tool": "render.animation"
+      },
+      "idempotent": true
+    },
+    "kneel": {
+      "c5_transform_parity": true,
+      "poses": {
+        "SH_kneel_\u963f\u6708_pivot": {
+          "location": [
+            0.1737326681613922,
+            2.656416654586792,
+            -0.23100000619888306
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            -1.6262948513031006
+          ],
+          "parts": {
+            "torso": {
+              "rotation": [
+                0.10471975803375244,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "legl": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.18000000715255737
+              ]
+            },
+            "legr": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.18000000715255737
+              ]
+            },
+            "arm0": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm1": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "head": {
+              "rotation": [
+                0.10471975803375244,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        },
+        "SH_kneel_\u963f\u8861_pivot": {
+          "location": [
+            1.1886465549468994,
+            2.6000325679779053,
+            -0.20239999890327454
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            -1.6262948513031006
+          ],
+          "parts": {
+            "torso": {
+              "rotation": [
+                0.10471975803375244,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "legl": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.18000000715255737
+              ]
+            },
+            "legr": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.18000000715255737
+              ]
+            },
+            "arm0": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm1": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "head": {
+              "rotation": [
+                0.10471975803375244,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        }
+      },
+      "runtime": {
+        "observation": {
+          "protocol": "astra.protocol.v2",
+          "blender": "5.1.2",
+          "frame": 2,
+          "hero": {
+            "name": "Hero",
+            "meshes": [
+              "Hero_ArmL",
+              "Hero_ArmR",
+              "Hero_Hair",
+              "Hero_Head",
+              "Hero_Hip",
+              "Hero_LegL",
+              "Hero_LegR",
+              "Hero_Torso"
+            ],
+            "maskId": 2,
+            "location": [
+              0.0,
+              0.0,
+              0.8903000354766846
+            ],
+            "bounds": {
+              "min": [
+                -0.4399999976158142,
+                -0.18471798300743103,
+                0.060600001364946365
+              ],
+              "max": [
+                0.4399999976158142,
+                0.18471798300743103,
+                1.7200000286102295
+              ]
+            },
+            "screenPos": [
+              0.502321259469697,
+              0.48003261784511786
+            ]
+          },
+          "camera": {
+            "name": "Camera",
+            "location": [
+              2.880000114440918,
+              -4.0,
+              2.810299873352051
+            ],
+            "forward": [
+              -0.5444556474685669,
+              0.7561882138252258,
+              -0.36297041177749634
+            ],
+            "aimAngleDeg": 0.0,
+            "occluded": false,
+            "blocker": null,
+            "evaluated": true
+          },
+          "pixelEvidence": {
+            "source": "PIL",
+            "maskId": 2,
+            "frame": 2,
+            "camera": "Camera",
+            "meshes": [
+              "Hero_ArmL",
+              "Hero_ArmR",
+              "Hero_Hair",
+              "Hero_Head",
+              "Hero_Hip",
+              "Hero_LegL",
+              "Hero_LegR",
+              "Hero_Torso"
+            ],
+            "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/kneel/blockout.camera/hero-mask.png",
+            "sha256": "b425825ce433b5d52569edde9e728a5332ead58d013abb47f1d9d755904e2425",
+            "width": 320,
+            "height": 180,
+            "pixelCount": 5280,
+            "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/kneel/blockout.camera/frame.png",
+            "frameSha256": "f258c1eb830b0cfd468f1abe28b6026aa0b99f6397921604eb0d64808d05de09"
+          },
+          "errors": []
+        },
+        "checks": [
+          {
+            "id": "camera_aimed_at_hero",
+            "ok": true,
+            "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+            "required": false
+          },
+          {
+            "id": "camera_occluded",
+            "ok": true,
+            "detail": "occluded=False; blocker=None",
+            "required": false
+          },
+          {
+            "id": "hero_on_screen",
+            "ok": true,
+            "detail": "PIL centroid=[0.502321259469697, 0.48003261784511786]; pixels=5280; centre region=(0.25, 0.75)",
+            "required": true
+          }
+        ],
+        "ok": true,
+        "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/kneel/blockout.mp4",
+        "tool": "render.animation"
+      },
+      "idempotent": true
+    },
+    "crouch": {
+      "c5_transform_parity": true,
+      "poses": {
+        "SH_crouch_\u963f\u6708_pivot": {
+          "location": [
+            0.1737326681613922,
+            2.656416654586792,
+            -0.2939999997615814
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            -1.6262948513031006
+          ],
+          "parts": {
+            "torso": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.75
+              ]
+            },
+            "legl": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.5
+              ]
+            },
+            "legr": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.5
+              ]
+            },
+            "arm0": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm1": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "head": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        },
+        "SH_crouch_\u963f\u8861_pivot": {
+          "location": [
+            1.1886465549468994,
+            2.6000325679779053,
+            -0.25760000944137573
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            -1.6262948513031006
+          ],
+          "parts": {
+            "torso": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.75
+              ]
+            },
+            "legl": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.5
+              ]
+            },
+            "legr": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                0.5
+              ]
+            },
+            "arm0": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm1": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "head": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        }
+      },
+      "runtime": {
+        "observation": {
+          "protocol": "astra.protocol.v2",
+          "blender": "5.1.2",
+          "frame": 2,
+          "hero": {
+            "name": "Hero",
+            "meshes": [
+              "Hero_ArmL",
+              "Hero_ArmR",
+              "Hero_Hair",
+              "Hero_Head",
+              "Hero_Hip",
+              "Hero_LegL",
+              "Hero_LegR",
+              "Hero_Torso"
+            ],
+            "maskId": 2,
+            "location": [
+              0.0,
+              0.0,
+              0.7775000333786011
+            ],
+            "bounds": {
+              "min": [
+                -0.4399999976158142,
+                -0.15000000596046448,
+                -0.10500000417232513
+              ],
+              "max": [
+                0.4399999976158142,
+                0.15000000596046448,
+                1.6600000858306885
+              ]
+            },
+            "screenPos": [
+              0.5021965926493108,
+              0.48317700357325166
+            ]
+          },
+          "camera": {
+            "name": "Camera",
+            "location": [
+              2.880000114440918,
+              -4.0,
+              2.697499990463257
+            ],
+            "forward": [
+              -0.5444555282592773,
+              0.7561882138252258,
+              -0.36297041177749634
+            ],
+            "aimAngleDeg": 0.0,
+            "occluded": false,
+            "blocker": null,
+            "evaluated": true
+          },
+          "pixelEvidence": {
+            "source": "PIL",
+            "maskId": 2,
+            "frame": 2,
+            "camera": "Camera",
+            "meshes": [
+              "Hero_ArmL",
+              "Hero_ArmR",
+              "Hero_Hair",
+              "Hero_Head",
+              "Hero_Hip",
+              "Hero_LegL",
+              "Hero_LegR",
+              "Hero_Torso"
+            ],
+            "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/crouch/blockout.camera/hero-mask.png",
+            "sha256": "aab947c9d6c9c4d5c5f2dd3108005f7510fda67014baeca7da89eddf20aeffcd",
+            "width": 320,
+            "height": 180,
+            "pixelCount": 5224,
+            "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/crouch/blockout.camera/frame.png",
+            "frameSha256": "271afa538015853dfa57dd4af0e26a293e315880cc4489aea65ffb7b8e8fb825"
+          },
+          "errors": []
+        },
+        "checks": [
+          {
+            "id": "camera_aimed_at_hero",
+            "ok": true,
+            "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+            "required": false
+          },
+          {
+            "id": "camera_occluded",
+            "ok": true,
+            "detail": "occluded=False; blocker=None",
+            "required": false
+          },
+          {
+            "id": "hero_on_screen",
+            "ok": true,
+            "detail": "PIL centroid=[0.5021965926493108, 0.48317700357325166]; pixels=5224; centre region=(0.25, 0.75)",
+            "required": true
+          }
+        ],
+        "ok": true,
+        "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/crouch/blockout.mp4",
+        "tool": "render.animation"
+      },
+      "idempotent": true
+    },
+    "lean": {
+      "c5_transform_parity": true,
+      "poses": {
+        "SH_lean_\u963f\u6708_pivot": {
+          "location": [
+            0.1737326681613922,
+            2.656416654586792,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            -1.6262948513031006
+          ],
+          "parts": {
+            "torso": {
+              "rotation": [
+                -0.4363323152065277,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "legl": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "legr": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm0": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm1": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "head": {
+              "rotation": [
+                -0.4363323152065277,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        },
+        "SH_lean_\u963f\u8861_pivot": {
+          "location": [
+            1.1886465549468994,
+            2.6000325679779053,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            -1.6262948513031006
+          ],
+          "parts": {
+            "torso": {
+              "rotation": [
+                -0.4363323152065277,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "legl": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "legr": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm0": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm1": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "head": {
+              "rotation": [
+                -0.4363323152065277,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        }
+      },
+      "runtime": {
+        "observation": {
+          "protocol": "astra.protocol.v2",
+          "blender": "5.1.2",
+          "frame": 2,
+          "hero": {
+            "name": "Hero",
+            "meshes": [
+              "Hero_ArmL",
+              "Hero_ArmR",
+              "Hero_Hair",
+              "Hero_Head",
+              "Hero_Hip",
+              "Hero_LegL",
+              "Hero_LegR",
+              "Hero_Torso"
+            ],
+            "maskId": 2,
+            "location": [
+              0.0,
+              0.0,
+              0.9750000238418579
+            ],
+            "bounds": {
+              "min": [
+                -0.4399999976158142,
+                -0.2796363830566406,
+                0.009999990463256836
+              ],
+              "max": [
+                0.4399999976158142,
+                0.2796363830566406,
+                1.940000057220459
+              ]
+            },
+            "screenPos": [
+              0.501284114315139,
+              0.4543073196780715
+            ]
+          },
+          "camera": {
+            "name": "Camera",
+            "location": [
+              2.880000114440918,
+              -4.0,
+              2.8949999809265137
+            ],
+            "forward": [
+              -0.5444555282592773,
+              0.7561882138252258,
+              -0.36297041177749634
+            ],
+            "aimAngleDeg": 0.0,
+            "occluded": false,
+            "blocker": null,
+            "evaluated": true
+          },
+          "pixelEvidence": {
+            "source": "PIL",
+            "maskId": 2,
+            "frame": 2,
+            "camera": "Camera",
+            "meshes": [
+              "Hero_ArmL",
+              "Hero_ArmR",
+              "Hero_Hair",
+              "Hero_Head",
+              "Hero_Hip",
+              "Hero_LegL",
+              "Hero_LegR",
+              "Hero_Torso"
+            ],
+            "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/lean/blockout.camera/hero-mask.png",
+            "sha256": "e9fd310c176104aa71ab973f7ea38b717d9b7a0c63d391802b069219c47310d0",
+            "width": 320,
+            "height": 180,
+            "pixelCount": 5826,
+            "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/lean/blockout.camera/frame.png",
+            "frameSha256": "d57b369d59ac02474e825ce0063b2a36d74c92e720b72805a1f0dec20a018432"
+          },
+          "errors": []
+        },
+        "checks": [
+          {
+            "id": "camera_aimed_at_hero",
+            "ok": true,
+            "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+            "required": false
+          },
+          {
+            "id": "camera_occluded",
+            "ok": true,
+            "detail": "occluded=False; blocker=None",
+            "required": false
+          },
+          {
+            "id": "hero_on_screen",
+            "ok": true,
+            "detail": "PIL centroid=[0.501284114315139, 0.4543073196780715]; pixels=5826; centre region=(0.25, 0.75)",
+            "required": true
+          }
+        ],
+        "ok": true,
+        "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/lean/blockout.mp4",
+        "tool": "render.animation"
+      },
+      "idempotent": true
+    },
+    "turn_away": {
+      "c5_transform_parity": true,
+      "poses": {
+        "SH_turn_away_\u963f\u6708_pivot": {
+          "location": [
+            0.1737326681613922,
+            2.656416654586792,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            1.5152978897094727
+          ],
+          "parts": {
+            "torso": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "legl": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "legr": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm0": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm1": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "head": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        },
+        "SH_turn_away_\u963f\u8861_pivot": {
+          "location": [
+            1.1886465549468994,
+            2.6000325679779053,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            1.5152978897094727
+          ],
+          "parts": {
+            "torso": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "legl": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "legr": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm0": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "arm1": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "head": {
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        }
+      },
+      "runtime": {
+        "observation": {
+          "protocol": "astra.protocol.v2",
+          "blender": "5.1.2",
+          "frame": 2,
+          "hero": {
+            "name": "Hero",
+            "meshes": [
+              "Hero_ArmL",
+              "Hero_ArmR",
+              "Hero_Hair",
+              "Hero_Head",
+              "Hero_Hip",
+              "Hero_LegL",
+              "Hero_LegR",
+              "Hero_Torso"
+            ],
+            "maskId": 2,
+            "location": [
+              0.0,
+              0.0,
+              0.9750000238418579
+            ],
+            "bounds": {
+              "min": [
+                -0.4399999976158142,
+                -0.15000003576278687,
+                0.009999990463256836
+              ],
+              "max": [
+                0.4399999976158142,
+                0.15000003576278687,
+                1.940000057220459
+              ]
+            },
+            "screenPos": [
+              0.5021813642518619,
+              0.4518449559918754
+            ]
+          },
+          "camera": {
+            "name": "Camera",
+            "location": [
+              2.880000114440918,
+              -4.0,
+              2.8949999809265137
+            ],
+            "forward": [
+              -0.5444555282592773,
+              0.7561882138252258,
+              -0.36297041177749634
+            ],
+            "aimAngleDeg": 0.0,
+            "occluded": false,
+            "blocker": null,
+            "evaluated": true
+          },
+          "pixelEvidence": {
+            "source": "PIL",
+            "maskId": 2,
+            "frame": 2,
+            "camera": "Camera",
+            "meshes": [
+              "Hero_ArmL",
+              "Hero_ArmR",
+              "Hero_Hair",
+              "Hero_Head",
+              "Hero_Hip",
+              "Hero_LegL",
+              "Hero_LegR",
+              "Hero_Torso"
+            ],
+            "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/turn_away/blockout.camera/hero-mask.png",
+            "sha256": "896f7141f102c0cbfb06517db486adb3a88973486854f37c3803a103cfb29083",
+            "width": 320,
+            "height": 180,
+            "pixelCount": 5908,
+            "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/turn_away/blockout.camera/frame.png",
+            "frameSha256": "156e824367e0f302fbf4c47fbfc8074c9feb79f70a57317fdbb8a16b02558d38"
+          },
+          "errors": []
+        },
+        "checks": [
+          {
+            "id": "camera_aimed_at_hero",
+            "ok": true,
+            "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+            "required": false
+          },
+          {
+            "id": "camera_occluded",
+            "ok": true,
+            "detail": "occluded=False; blocker=None",
+            "required": false
+          },
+          {
+            "id": "hero_on_screen",
+            "ok": true,
+            "detail": "PIL centroid=[0.5021813642518619, 0.4518449559918754]; pixels=5908; centre region=(0.25, 0.75)",
+            "required": true
+          }
+        ],
+        "ok": true,
+        "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/turn_away/blockout.mp4",
+        "tool": "render.animation"
+      },
+      "idempotent": true
+    }
+  },
+  "transition_checks": "PASS",
+  "receipt_kind": "live_headless_fixture",
+  "event_id": null,
+  "trace_id": null
+}
