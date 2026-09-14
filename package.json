@@ -11,6 +11,7 @@
     "produce": "tsx src/cli.ts produce",
     "tui": "tsx src/cli.ts tui",
     "doctor": "tsx src/cli.ts doctor",
+    "tap": "tsx src/run-tap.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/lib/studio/*.test.ts"
   },
