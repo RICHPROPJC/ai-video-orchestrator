@@ -1,0 +1,38 @@
+{
+  "verdict": "PASS",
+  "checks": [
+    "video_dimensions_fps_frames",
+    "nonempty_distinct_masks",
+    "mask_matches_material_color",
+    "foreground_occlusion",
+    "binary_masks",
+    "animated_hero_static_extras",
+    "artifact_hashes"
+  ],
+  "pixel_counts": [
+    {
+      "hero": 2447,
+      "extras": 2201
+    },
+    {
+      "hero": 2610,
+      "extras": 2201
+    },
+    {
+      "hero": 3010,
+      "extras": 2201
+    },
+    {
+      "hero": 3440,
+      "extras": 2201
+    },
+    {
+      "hero": 3504,
+      "extras": 2201
+    },
+    {
+      "hero": 3446,
+      "extras": 2201
+    }
+  ]
+}
