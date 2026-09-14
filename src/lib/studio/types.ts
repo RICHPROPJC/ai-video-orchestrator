@@ -21,7 +21,8 @@ export type AgentId =
   | "voice"
   | "soundQc"
   | "editor"
-  | "delivery";
+  | "delivery"
+  | "blender";
 
 export type Vec2 = { x: number; y: number };
 export type Vec3 = { x: number; y: number; z: number };
@@ -274,6 +275,7 @@ export const AGENT_META: Record<
   layout: { label: "走位", en: "Layout", desk: "Blender 手腳 IK" },
   stills: { label: "生圖", en: "Stills", desk: "SenseNova U1.5" },
   pictureQc: { label: "畫檢", en: "Picture QC", desk: "SenseNova MARS-8B" },
+  blender: { label: "建模", en: "Blender", desk: "Astra ToolCall engine" },
   motion: { label: "生片", en: "Motion", desk: "MiniMax H3" },
   voice: { label: "聲線", en: "Voice", desk: "TTS + clone" },
   soundQc: { label: "聲檢", en: "Sound QC", desk: "SenseVoice" },

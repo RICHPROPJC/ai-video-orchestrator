@@ -36,6 +36,11 @@ export const DEFAULT_CREW: CrewConfig = {
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
+/** Multimodal attachment for a one-call turn (A7/C9b): the U1.5 still and the
+ *  render frame travel next to the text as image_url parts on the FIRST user
+ *  message only — retries stay textual. Receipts record names, not pixels. */
+export type CrewImage = { name: string; dataUrl: string };
+
 export type CrewReceipt = {
   tool: "slatecrew.crew_llm";
   ts: string;
@@ -51,6 +56,8 @@ export type CrewReceipt = {
   errors: string[];
   /** deterministic repairs the desk made before zod — one `repair: field saw x became y` per coercion */
   repairs: string[];
+  /** attachment names when the turn was multimodal — pixels never enter a receipt */
+  images?: string[];
   elapsed_ms: number;
 };
 
@@ -104,8 +111,10 @@ function isJunkSeatReply(content: string): boolean {
   const keys = Object.keys(o);
   if (!keys.length || keys.every((k) => k === "" || /^[.,/]+$/.test(k))) return true;
   if (content.length >= 120) return false;
-  // "ops" is the Reflector's reply shape — an ops object is a schema attempt
-  return !("sceneId" in o || "thinking" in o || "beats" in o || "shots" in o || "title" in o || "ops" in o);
+  // seat reply shapes, all schema attempts: "ops" is the Reflector's,
+  // "calls"/"playbook" the blender planner's, "match" the observation eye's
+  return !("sceneId" in o || "thinking" in o || "beats" in o || "shots" in o || "title" in o || "ops" in o
+    || "calls" in o || "playbook" in o || "match" in o);
 }
 
 function issueLines(error: unknown): string[] {
@@ -172,6 +181,8 @@ export type ChatJsonOpts<T> = {
   fetchImpl?: typeof fetch;
   /** test clock: receives every backoff wait instead of really sleeping */
   sleepImpl?: (ms: number) => Promise<void>;
+  /** one-call multimodal attachments on the first user message (A7/C9b) */
+  images?: CrewImage[];
 };
 
 export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult<T>> {
@@ -192,6 +203,23 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
     { role: "system", content: opts.system },
     { role: "user", content: opts.user },
   ];
+  // multimodal one-call: image_url parts ride the first user turn; repair
+  // retries appended later stay textual so the model edits, not re-looks
+  type WireMessage = { role: string; content: string | { type: string; text?: string; image_url?: { url: string } }[] };
+  const toWire = (msgs: ChatMessage[]): WireMessage[] =>
+    opts.images?.length
+      ? msgs.map((m, i) =>
+          i === 1
+            ? {
+                role: m.role,
+                content: [
+                  { type: "text", text: m.content },
+                  ...opts.images!.map((img) => ({ type: "image_url", image_url: { url: img.dataUrl } })),
+                ],
+              }
+            : { role: m.role, content: m.content },
+        )
+      : msgs;
   const receipts: string[] = [];
   fs.mkdirSync(opts.receiptDir, { recursive: true });
 
@@ -232,7 +260,7 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
     const started = Date.now();
     const body = {
       model: opts.model,
-      messages,
+      messages: toWire(messages),
       response_format: { type: "json_object" },
       ...modelQuirks(opts.model),
     };
@@ -291,6 +319,7 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
       valid: errors.length === 0,
       errors,
       repairs,
+      ...(opts.images?.length ? { images: opts.images.map((i) => i.name) } : {}),
       elapsed_ms: Date.now() - started,
     };
     const file = path.join(opts.receiptDir, `${opts.seat}.${opts.unit}.${attempt}.json`);
