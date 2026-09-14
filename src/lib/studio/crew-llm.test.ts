@@ -6,6 +6,7 @@ import { z } from "zod";
 import * as nodeTest from "node:test";
 import {
   chatJson,
+  chatJsonWithFallback,
   DEFAULT_CREW,
   extractJsonObject,
   modelQuirks,
@@ -103,6 +104,8 @@ test("model quirks: kimi-k3 temperature 1, qwen thinking off, others bare", () =
   assert.deepEqual(modelQuirks("kimi-k3"), { temperature: 1 });
   assert.deepEqual(modelQuirks("qwen3.6-35b"), { chat_template_kwargs: { enable_thinking: false } });
   assert.deepEqual(modelQuirks("deepseek-v4-flash-sensenova"), {});
+  assert.deepEqual(modelQuirks("sensenova-v6.8-flash-lite"), { max_tokens: 65536 });
+  assert.deepEqual(modelQuirks("glm-5.3-flash"), { max_tokens: 32768 });
 });
 
 test("CREW_LLM_URL overrides the config endpoint and trailing slash goes", () => {
@@ -115,12 +118,17 @@ test("CREW_LLM_URL overrides the config endpoint and trailing slash goes", () =>
   }
 });
 
-test("default deny holds glm-5.3 and the defaults are not GLM", () => {
+test("C10 pins: boards glm-5.3-flash, blender flash-lite with GLM fallback, reflector 27B, writer kimi", () => {
   assert.deepEqual(DEFAULT_CREW.deny, ["glm-5.3"]);
   assert.equal(DEFAULT_CREW.endpoint, "");
-  for (const m of [DEFAULT_CREW.writerModel, DEFAULT_CREW.boardsModel]) {
-    assert.ok(!/glm/i.test(m), `${m} must not be a GLM model`);
-  }
+  assert.equal(DEFAULT_CREW.writerModel, "kimi-k3");
+  assert.equal(DEFAULT_CREW.boardsModel, "glm-5.3-flash");
+  assert.equal(DEFAULT_CREW.blenderModel, "sensenova-v6.8-flash-lite");
+  assert.equal(DEFAULT_CREW.blenderFallback, "glm-5.3-flash");
+  assert.equal(DEFAULT_CREW.reflectorModel, "qwen3.6-35b");
+  assert.ok(!DEFAULT_CREW.deny.includes(DEFAULT_CREW.boardsModel), "glm-5.3-flash is not denied");
+  assert.ok(!DEFAULT_CREW.deny.includes(DEFAULT_CREW.blenderFallback), "the blender fallback id is not denied");
+  assert.ok(!/glm/i.test(DEFAULT_CREW.writerModel), "writer stays off GLM");
 });
 
 test("unset endpoint fails loud before any request", async () => {
@@ -139,6 +147,94 @@ test("a denied model is refused before any request", async () => {
     /refused model glm-5\.3: listed in crew\.deny/,
   );
   assert.equal(sent.length, 0);
+});
+
+test("glm-5.3-flash is a different id and clears the deny gate", async () => {
+  const ok = JSON.stringify({ title: "門", beats: ["a", "b"] });
+  const { impl, sent } = fakeFetch([ok]);
+  const out = await call({ model: "glm-5.3-flash", replies: [], dir: tmpDir(), fetchImpl: impl });
+  assert.equal(out.model, "glm-5.3-flash");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.model, "glm-5.3-flash");
+  assert.equal(sent[0]!.max_tokens, 32768);
+});
+
+test("blender fallback: a hard Flash Lite miss hands the turn to glm-5.3-flash via chatJson", async () => {
+  const dir = tmpDir();
+  const ok = JSON.stringify({ title: "門", beats: ["a", "b"] });
+  const { impl, sent } = seqFetch([{ status: 502 }, { status: 200, content: ok }]);
+  const out = await chatJsonWithFallback({
+    seat: "blender",
+    unit: "draft",
+    model: DEFAULT_CREW.blenderModel,
+    fallbackModel: DEFAULT_CREW.blenderFallback,
+    crew,
+    system: "建模。",
+    user: "{}",
+    schema,
+    receiptDir: dir,
+    fetchImpl: impl,
+  });
+  assert.equal(out.fellBack, true);
+  assert.equal(out.model, "glm-5.3-flash");
+  assert.match(out.primaryError ?? "", /HTTP 502/);
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0]!.model, "sensenova-v6.8-flash-lite");
+  assert.equal(sent[0]!.max_tokens, 65536);
+  assert.equal(sent[1]!.model, "glm-5.3-flash");
+  // the fallback turn leaves its own receipt, never overwriting the primary unit
+  assert.deepEqual(out.receipts, ["blender.draft.fallback.1.json"]);
+  const receipt = JSON.parse(fs.readFileSync(path.join(dir, "blender.draft.fallback.1.json"), "utf8")) as CrewReceipt;
+  assert.equal(receipt.model, "glm-5.3-flash");
+});
+
+test("blender fallback: primary success never wakes the fallback model", async () => {
+  const dir = tmpDir();
+  const ok = JSON.stringify({ title: "門", beats: ["a", "b"] });
+  const { impl, sent } = fakeFetch([ok]);
+  const out = await chatJsonWithFallback({
+    seat: "blender",
+    unit: "draft",
+    model: DEFAULT_CREW.blenderModel,
+    fallbackModel: DEFAULT_CREW.blenderFallback,
+    crew,
+    system: "建模。",
+    user: "{}",
+    schema,
+    receiptDir: dir,
+    fetchImpl: impl,
+  });
+  assert.equal(out.fellBack, false);
+  assert.equal(out.model, "sensenova-v6.8-flash-lite");
+  assert.equal(out.primaryError, undefined);
+  assert.equal(sent.length, 1);
+});
+
+test("blender fallback gate: a denied id on either slot refuses before any request", async () => {
+  const ok = JSON.stringify({ title: "門", beats: ["a", "b"] });
+  const denied = (async () => new Response(JSON.stringify({ choices: [{ message: { content: ok } }] }), { status: 200 })) as unknown as typeof fetch;
+  const sentModels: string[] = [];
+  const recording = (async (_u: string | URL | Request, init?: RequestInit) => {
+    sentModels.push((JSON.parse(String(init?.body)) as { model: string }).model);
+    return new Response(JSON.stringify({ choices: [{ message: { content: ok } }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  // full glm-5.3 as the fallback id is a wiring error, not a miss to paper over
+  await assert.rejects(
+    () => chatJsonWithFallback({
+      seat: "blender", unit: "draft", model: DEFAULT_CREW.blenderModel, fallbackModel: "glm-5.3",
+      crew, system: "建模。", user: "{}", schema, receiptDir: tmpDir(), fetchImpl: denied,
+    }),
+    /refused model glm-5\.3: listed in crew\.deny/,
+  );
+  // and as the primary id it refuses even though the fallback is legal
+  await assert.rejects(
+    () => chatJsonWithFallback({
+      seat: "blender", unit: "draft", model: "glm-5.3", fallbackModel: DEFAULT_CREW.blenderFallback,
+      crew, system: "建模。", user: "{}", schema, receiptDir: tmpDir(), fetchImpl: recording,
+    }),
+    /refused model glm-5\.3: listed in crew\.deny/,
+  );
+  assert.deepEqual(sentModels, []);
 });
 
 test("first-pass success: quirks on the wire, JSON mode, one receipt", async () => {

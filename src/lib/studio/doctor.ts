@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { resolveCrewEndpoint } from "./crew-llm";
 import { loadConfig, legacyComfyUrl, type SlateConfig } from "./config";
 import { runCommand } from "./audio";
 
@@ -72,6 +73,9 @@ export function configWarns(cfg: SlateConfig): string[] {
   }
   const legacy = legacyComfyUrl();
   if (legacy) warns.push(`legacy top-level comfyUrl "${legacy}" ignored — config is two-host (stills.url + motion.comfyUrl)`);
+  if (!resolveCrewEndpoint(cfg.crew)) {
+    warns.push("crew.endpoint unset — seats fail loud; C10 pins LiteLLM :4000");
+  }
   if (process.env.NODE_USE_ENV_PROXY) {
     warns.push("NODE_USE_ENV_PROXY is set — node fetch would route tailnet hosts through HTTP_PROXY, which rejects them");
   }

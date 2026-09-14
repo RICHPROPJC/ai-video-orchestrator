@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { Agent } from "undici";
 import type { ZodType } from "zod";
 
 /** The seat lane: an OpenAI-compatible endpoint that serves the seat models.
@@ -8,19 +9,27 @@ export type CrewConfig = {
   endpoint: string;
   writerModel: string;
   boardsModel: string;
+  blenderModel: string;
+  /** Flash Lite miss → this GLM, not Hermes. */
+  blenderFallback: string;
+  /** Off-path 27B only. Hot-path boards may be GLM flash. */
+  reflectorModel: string;
   deny: string[];
   apiKey: string;
   timeoutMs: number;
 };
 
-// exact-match deny; composed so app source never spells the id out
-const DENIED_SEAT_MODEL = ["glm", "5.3"].join("-");
+// exact-match deny of full GLM; glm-5.3-flash is a different id and stays allowed
+const DENIED_FULL_GLM = ["glm", "5.3"].join("-");
 
 export const DEFAULT_CREW: CrewConfig = {
   endpoint: "",
   writerModel: "kimi-k3",
-  boardsModel: "qwen3.6-35b",
-  deny: [DENIED_SEAT_MODEL],
+  boardsModel: "glm-5.3-flash",
+  blenderModel: "sensenova-v6.8-flash-lite",
+  blenderFallback: "glm-5.3-flash",
+  reflectorModel: "qwen3.6-35b",
+  deny: [DENIED_FULL_GLM],
   apiKey: "",
   timeoutMs: 600_000,
 };
@@ -56,6 +65,10 @@ export function modelQuirks(model: string): Record<string, unknown> {
   const quirks: Record<string, unknown> = {};
   if (/^kimi-k3/i.test(model)) quirks.temperature = 1;
   if (/^qwen/i.test(model)) quirks.chat_template_kwargs = { enable_thinking: false };
+  // Neo-2 burns a short max_tokens budget on reasoning_content and returns empty content
+  if (/sensenova-v6\.8-flash-lite/i.test(model)) quirks.max_tokens = 65536;
+  if (/^glm-5\.3-flash/i.test(model)) quirks.max_tokens = 32768;
+  else if (/^glm-5\.3/i.test(model)) quirks.max_tokens = 65536;
   return quirks;
 }
 
@@ -145,7 +158,7 @@ const CALL_CEILING = 5;
 
 /** One seat turn: charter as system, sealed packet as the only user content,
  *  zod as the gate. Every attempt leaves a receipt, valid or not. */
-export async function chatJson<T>(opts: {
+export type ChatJsonOpts<T> = {
   seat: string;
   unit: string;
   model: string;
@@ -159,7 +172,9 @@ export async function chatJson<T>(opts: {
   fetchImpl?: typeof fetch;
   /** test clock: receives every backoff wait instead of really sleeping */
   sleepImpl?: (ms: number) => Promise<void>;
-}): Promise<ChatJsonResult<T>> {
+};
+
+export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult<T>> {
   const endpoint = resolveCrewEndpoint(opts.crew);
   if (!endpoint) {
     throw new Error("crew.endpoint unset — set crew.endpoint in slatecrew.config.json or CREW_LLM_URL");
@@ -167,6 +182,9 @@ export async function chatJson<T>(opts: {
   if (opts.crew.deny.includes(opts.model)) {
     throw new Error(`seat ${opts.seat} refused model ${opts.model}: listed in crew.deny`);
   }
+  const dispatcher = opts.fetchImpl
+    ? undefined
+    : new Agent({ headersTimeout: opts.crew.timeoutMs, bodyTimeout: opts.crew.timeoutMs });
   const doFetch = opts.fetchImpl ?? fetch;
   const sleep = opts.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const maxAttempts = opts.maxAttempts ?? 3;
@@ -186,7 +204,8 @@ export async function chatJson<T>(opts: {
         headers,
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(opts.crew.timeoutMs),
-      });
+        ...(dispatcher ? { dispatcher } : {}),
+      } as RequestInit);
       if (res.status !== 429) return res;
       const text = await res.text().catch(() => "");
       const waitMs = HTTP_429_BACKOFF_MS[throttled];
@@ -284,4 +303,35 @@ export async function chatJson<T>(opts: {
     messages.push({ role: "user", content: retryUserText(errors, content) });
   }
   throw new Error(`seat ${opts.seat} could not produce valid ${opts.unit} after ${maxAttempts} attempts`);
+}
+
+export type ChatJsonFallbackResult<T> = ChatJsonResult<T> & {
+  /** true when the primary model missed hard and the fallback model served the turn */
+  fellBack: boolean;
+  /** the primary model's error when fellBack, for the event trail */
+  primaryError?: string;
+};
+
+/** Blender draft lane (C10): Flash Lite first; a hard primary miss — model
+ *  absent on the endpoint, HTTP error, throttle or schema exhaustion — hands
+ *  the same sealed turn to the fallback model through this same chatJson /
+ *  LiteLLM door. Never the `blender-draft --model …` wrapper (it hangs), never
+ *  a non-chatJson escape. Both ids clear the deny gate up front: a wiring
+ *  refusal is loud, never papered over with a fallback. */
+export async function chatJsonWithFallback<T>(
+  opts: ChatJsonOpts<T> & { fallbackModel: string },
+): Promise<ChatJsonFallbackResult<T>> {
+  for (const m of [opts.model, opts.fallbackModel]) {
+    if (opts.crew.deny.includes(m)) {
+      throw new Error(`seat ${opts.seat} refused model ${m}: listed in crew.deny`);
+    }
+  }
+  try {
+    const out = await chatJson(opts);
+    return { ...out, fellBack: false };
+  } catch (err) {
+    const primaryError = err instanceof Error ? err.message : String(err);
+    const out = await chatJson({ ...opts, model: opts.fallbackModel, unit: `${opts.unit}.fallback` });
+    return { ...out, fellBack: true, primaryError };
+  }
 }
