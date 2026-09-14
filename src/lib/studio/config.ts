@@ -28,6 +28,8 @@ export type SlateConfig = {
   tts: { endpoint: string; model: string };
   pictureQc: { endpoint: string; model: string };
   soundQc: { endpoint: string; model: string };
+  /** A3: every sense is a provider. Empty = the stage that needs it FAILs loud. */
+  ocr: { endpoint: string; model: string };
   ssh: { user: string; motionInputDir: string; stillsRefsDir: string };
 };
 
@@ -57,6 +59,7 @@ const DEFAULTS: SlateConfig = {
   tts: { endpoint: "", model: "Fun-CosyVoice3-0.5B" },
   pictureQc: { endpoint: "http://127.0.0.1:8015", model: "mars-fa2" },
   soundQc: { endpoint: "", model: "FunAudioLLM/SenseVoiceSmall" },
+  ocr: { endpoint: "", model: "" },
   ssh: {
     user: "hojaiv3v",
     motionInputDir: "~/comfy/ComfyUI/input",
@@ -81,6 +84,7 @@ export function loadConfig(): SlateConfig {
     tts: { ...DEFAULTS.tts, ...raw.tts },
     pictureQc: { ...DEFAULTS.pictureQc, ...raw.pictureQc },
     soundQc: { ...DEFAULTS.soundQc, ...raw.soundQc },
+    ocr: { ...DEFAULTS.ocr, ...raw.ocr },
     ssh: { ...DEFAULTS.ssh, ...raw.ssh },
   };
   const h3 = process.env.H3_COMFY_URL?.trim();
