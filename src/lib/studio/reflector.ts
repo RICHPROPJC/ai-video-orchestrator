@@ -14,7 +14,7 @@ import {
 } from "./paths";
 
 /** The Reflector: the only place a failure becomes a lesson. It is 27B
- *  (`crew.boardsModel`, qwen3.6-35b) and it runs strictly off the hot path —
+ *  (`crew.reflectorModel`, qwen3.6-35b) and it runs strictly off the hot path —
  *  after the job is already marked failed, never inside a live stage. It may
  *  only propose ops; `curatePlaybook` (code) decides what lands on disk. */
 
@@ -170,10 +170,11 @@ export function buildReflectorUser(jobId: string, failure: SeatFailure, playbook
 }
 
 /** 27B only, and never the writer grading itself: kimi is the writer's quota,
- *  Flash too weak to name the rule, GLM never on this lane. */
+ *  Flash too weak to name the rule, GLM never on this lane. Hot-path boards
+ *  may be glm-5.3-flash; reflector stays on reflectorModel. */
 function assertReflectorModel(model: string) {
   if (/kimi|glm|flash/i.test(model)) {
-    throw new Error(`Reflector refuses model ${model}: not kimi, not Flash, not glm — crew.boardsModel (27B) only`);
+    throw new Error(`Reflector refuses model ${model}: not kimi, not Flash, not glm — crew.reflectorModel (27B) only`);
   }
 }
 
@@ -195,7 +196,7 @@ export async function runReflector(opts: {
   const dir = opts.jobDir ?? jobDir(opts.jobId);
   const failure = collectSeatFailure(dir);
   if (!failure) return []; // not a failed job (or nothing there): never reflect a live stage
-  assertReflectorModel(opts.crew.boardsModel);
+  assertReflectorModel(opts.crew.reflectorModel);
   const booksDir = opts.seatsDir ?? seatsDir();
   const proot = opts.projectsDir ?? projectsRootFromSeatsDir(booksDir);
   // one drama in play, or exactly one drama owning playbooks — two or more
@@ -219,7 +220,7 @@ export async function runReflector(opts: {
   const pass = await chatJson<ReflectorOps>({
     seat: "reflector",
     unit: opts.jobId,
-    model: opts.crew.boardsModel,
+    model: opts.crew.reflectorModel,
     crew: opts.crew,
     system: REFLECTOR_SYSTEM,
     user: userText,

@@ -124,7 +124,7 @@ test("Reflector refuses kimi, Flash and glm before any HTTP call", async () => {
   const { impl, sent } = fetchReturning('{"thinking":"x","ops":[]}');
   for (const model of ["kimi-k3", "glm-5.3-flash", "qwen3.6-35b-flash"]) {
     await assert.rejects(
-      () => runReflector({ jobId: "X", crew: { ...crew, boardsModel: model }, seatsDir: books, jobDir: dir, fetchImpl: impl }),
+      () => runReflector({ jobId: "X", crew: { ...crew, reflectorModel: model }, seatsDir: books, jobDir: dir, fetchImpl: impl }),
       /Reflector refuses model/,
     );
   }
@@ -164,7 +164,7 @@ test("full loop on fake fetch: 27B ops land as trial bullets with real field/saw
   const lines = await runReflector({ jobId: "SC-0912-YGTS", crew, seatsDir: books, jobDir: dir, fetchImpl: impl });
 
   assert.equal(sent.length, 1);
-  assert.equal(sent[0]!.model, "qwen3.6-35b", "27B via crew.boardsModel");
+  assert.equal(sent[0]!.model, "qwen3.6-35b", "27B via crew.reflectorModel");
   assert.match(sent[0]!.system, /場外/);
   assert.match(sent[0]!.user, /sceneId: Invalid input/);
   assert.match(sent[0]!.user, /84\.9s/);

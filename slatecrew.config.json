@@ -1,4 +1,11 @@
 {
+  "crew": {
+    "endpoint": "http://127.0.0.1:4000",
+    "boardsModel": "glm-5.3-flash",
+    "blenderModel": "sensenova-v6.8-flash-lite",
+    "blenderFallback": "glm-5.3-flash",
+    "reflectorModel": "qwen3.6-35b"
+  },
   "stills": {
     "url": "http://100.76.131.19:8097",
     "comfyUrl": "",
