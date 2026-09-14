@@ -74,6 +74,9 @@ export function keyframeRequire(shot: Shot): QcRequire {
   return {
     people_count: new Set(shot.marks.map((m) => m.characterId)).size,
     grey_blocks: false,
+    ...(shot.location ? { location: shot.location } : {}),
+    ...(shot.action ? { action: shot.action } : {}),
+    ...(shot.size ? { size: shot.size } : {}),
     ...(heldTool ? { tool: heldTool.name, tool_shape: heldTool.shape, tool_forbid: heldTool.forbid } : {}),
   };
 }

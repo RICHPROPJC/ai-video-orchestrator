@@ -7,11 +7,13 @@ import {
   blindDescribe,
   judge,
   probeVisionEndpoint,
+  sameRequire,
   summarize,
   type QcRequire,
   type QcSummary,
   type QcVerdict,
 } from "./photo-qc";
+import { machineGreyFailReason, measureWorkbenchGreyLeak } from "./workbench-grey-leak";
 
 export type VideoFrameQc = {
   frame: number;
@@ -88,15 +90,26 @@ async function qcOneFrame(
   try {
     const summary = await summarize(url, model, desc);
     const verdict = judge(desc, summary, require);
+    const checks = { ...verdict.checks };
+    let status = verdict.status;
+    if (require.grey_blocks === false) {
+      const leak = await measureWorkbenchGreyLeak(file);
+      checks.machine_grey = !leak.hit;
+      if (leak.hit) {
+        status = "FAIL";
+        checks.status = "FAIL";
+        checks.fail_reasons = [...(checks.fail_reasons ?? []), machineGreyFailReason(leak)];
+      }
+    }
     return {
       frame,
       t_s,
       file,
       sha256: frameDigest(file),
-      status: verdict.status,
+      status,
       blind: desc,
       summary,
-      checks: verdict.checks,
+      checks,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -128,7 +141,8 @@ export async function runVideoQc(opts: {
       if (
         existing.tool === "slatecrew.video_qc" &&
         existing.status === "GREEN" &&
-        existing.sha256 === digest
+        existing.sha256 === digest &&
+        sameRequire(existing.require, opts.require)
       ) {
         return existing;
       }
@@ -189,6 +203,11 @@ export function writeVideoQcFromRecordings(opts: {
   fs.mkdirSync(path.dirname(opts.outJson), { recursive: true });
   fs.writeFileSync(opts.outJson, JSON.stringify(record, null, 2));
   return record;
+}
+
+/** `--until motion` may stamp motion-ready only when every listed shot is GREEN on disk. */
+export function motionReadyAllowed(motionDir: string, shotIds: string[]): boolean {
+  return shotIds.length > 0 && shotIds.every((id) => pinVideoQcAccepted(motionDir, id));
 }
 
 /** Resume may keep an mp4 only when video_qc is GREEN and hash-matches the file on disk. */

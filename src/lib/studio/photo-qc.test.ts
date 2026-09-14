@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import * as nodeTest from "node:test";
-import { judge, pinQcAccepted } from "./photo-qc";
+import { judge, pinQcAccepted, sameRequire } from "./photo-qc";
 import { keyframeRequire } from "./keyframe-prompt";
 
 /** One file, three doors: bun's node:test shim only works under `bun test`,
@@ -52,6 +52,74 @@ test("matching write-up is GREEN", () => {
   const v = judge(DESC, { people_count: 2, grey_blocks: false }, { people_count: 2, grey_blocks: false });
   assert.equal(v.status, "GREEN");
   assert.deepEqual(v.checks.fail_reasons, []);
+});
+
+test("location / action / size from the sheet fail a street write-up", () => {
+  const street = "人数：一人。姿势：站立。手里的物件：无。地面：湿的。背景：夜晚城市街景，高楼，霓虹灯招牌。";
+  const v = judge(
+    street,
+    { people_count: 1, grey_blocks: false, pose_notes: "站立" },
+    { people_count: 1, grey_blocks: false, location: "茶餐廳卡位", action: "坐低飲茶", size: "closeup" },
+  );
+  assert.equal(v.status, "FAIL");
+  assert.ok(v.checks.fail_reasons.some((r) => r.startsWith("location:")), v.checks.fail_reasons.join(" | "));
+  assert.ok(v.checks.fail_reasons.some((r) => r.startsWith("action:")), v.checks.fail_reasons.join(" | "));
+  assert.ok(v.checks.fail_reasons.some((r) => r.startsWith("size:")), v.checks.fail_reasons.join(" | "));
+});
+
+test("matching location and action stay GREEN", () => {
+  const v = judge(DESC, { people_count: 2, grey_blocks: false }, {
+    people_count: 2,
+    grey_blocks: false,
+    location: "茶餐廳門口",
+    action: "企喺",
+    size: "medium",
+  });
+  assert.equal(v.status, "GREEN");
+  assert.deepEqual(v.checks.fail_reasons, []);
+});
+
+test("traditional location hits simplified morgue write-up", () => {
+  const morgue =
+    "一人。坐姿。双手拉着一块白布。地面有水渍。背景是地下停尸间，两侧金属床架，白色床单。";
+  const v = judge(
+    morgue,
+    { people_count: 1, grey_blocks: false, pose_notes: "坐姿", location_notes: "地下停尸间", size_notes: "medium" },
+    { people_count: 1, grey_blocks: false, location: "首都地下停屍間", action: "重生者喺鋼床掙扎坐起，扯下白布", size: "medium" },
+  );
+  assert.equal(v.status, "GREEN", v.checks.fail_reasons.join(" | "));
+});
+
+test("street write-up still fails 首都地下停屍間", () => {
+  const street = "人数：一人。姿势：站立。手里的物件：无。地面：湿的。背景：夜晚城市街景，高楼，霓虹灯招牌。";
+  const v = judge(
+    street,
+    { people_count: 1, grey_blocks: false, pose_notes: "站立" },
+    { people_count: 1, grey_blocks: false, location: "首都地下停屍間", action: "坐起", size: "medium" },
+  );
+  assert.equal(v.status, "FAIL");
+  assert.ok(v.checks.fail_reasons.some((r) => r.startsWith("location:")), v.checks.fail_reasons.join(" | "));
+});
+
+test("closeup with 胸口 and size_notes medium is GREEN", () => {
+  const desc = "一人。右手按在胸口。背景是室内金属走廊。";
+  const v = judge(
+    desc,
+    { people_count: 1, grey_blocks: false, size_notes: "medium" },
+    { people_count: 1, grey_blocks: false, size: "closeup" },
+  );
+  assert.equal(v.status, "GREEN", v.checks.fail_reasons.join(" | "));
+});
+
+test("consecutive stills that share the same write-up fail distinct", () => {
+  const v = judge(DESC, { people_count: 2, grey_blocks: false }, { people_count: 2, grey_blocks: false }, { prevDesc: DESC });
+  assert.equal(v.status, "FAIL");
+  assert.ok(v.checks.fail_reasons.some((r) => r.startsWith("distinct:")));
+});
+
+test("sameRequire is structural", () => {
+  assert.equal(sameRequire({ people_count: 1 }, { people_count: 1 }), true);
+  assert.equal(sameRequire({ people_count: 1 }, { people_count: 1, location: "x" }), false);
 });
 
 function qcDir(status: string, sha: string | null) {
@@ -134,6 +202,9 @@ test("keyframeRequire adds tool keys when the shot carries a prop", () => {
   const req = keyframeRequire(shot as unknown as Parameters<typeof keyframeRequire>[0]);
   assert.equal(req.people_count, 2);
   assert.equal(req.grey_blocks, false);
+  assert.equal(req.location, "x");
+  assert.equal(req.action, "a");
+  assert.equal(req.size, "medium");
   assert.equal(req.tool, "曲轅犁");
   assert.deepEqual(req.tool_shape, ["弯", "木", "插入"]);
   assert.deepEqual(req.tool_forbid, ["锹", "铲", "锄"]);
@@ -158,6 +229,9 @@ test("keyframeRequire has no tool keys without props", () => {
   } as const;
   const req = keyframeRequire(shot as unknown as Parameters<typeof keyframeRequire>[0]);
   assert.equal(req.people_count, 1);
+  assert.equal(req.location, "x");
+  assert.equal(req.action, "a");
+  assert.equal(req.size, "medium");
   assert.equal("tool" in req, false);
   assert.equal("tool_shape" in req, false);
   assert.equal("tool_forbid" in req, false);

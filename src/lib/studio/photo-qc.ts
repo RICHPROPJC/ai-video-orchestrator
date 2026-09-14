@@ -3,9 +3,14 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { loadConfig } from "./config";
 
-const BLIND_PROMPT =
-  "用中文只写看得见的东西：人数、衣服、姿势、手里的物件、地面、背景。" +
-  "叫不出物件名字就写形状（柄、刃、木、铁、弯不弯），不要编名字或故事。";
+const BLIND_PROMPT = [
+  "用中文写成连贯短句，只写看得见的东西：人数、衣服、姿势、手里的物件、地面、背景。",
+  "姿势写坐、站、跪、蹲、躺、转身；从床上坐起来就写坐起。手在做什么要写（按胸口、拉白布、握徽章）。",
+  "看得见的脸、眼、肩、胸口、白布、屏幕、徽章要写出来。",
+  "背景写场所类型（停尸间、茶餐厅、街道、仓库、走廊、地下室）；能判断在地下就写地下。不要写城市名或故事人名。",
+  "只写物件和结构，不要写清晰、良好、干净。",
+  "叫不出物件名字就写形状（柄、刃、木、铁、弯不弯），不要编故事。",
+].join("");
 
 const SUMMARIZE_PROMPT =
   "The following text is an eyewitness description of one still image. " +
@@ -15,7 +20,32 @@ const SUMMARIZE_PROMPT =
   "- pose_notes (short string)\n" +
   '- tool_as_written (verbatim clause about any held object, including shape words)\n' +
   "- grey_blocks (true/false/unknown): grey cubes, mannequin/i-mannequin placeholders, placards, or white silhouettes\n" +
+  "- location_notes (short string): place as written — indoor/outdoor, wet/dry, ground, walls, and place type if named\n" +
+  "- action_notes (short string): what the body is doing\n" +
+  "- size_notes (closeup|medium|wide|full|insert|unknown): how much of the body and set is in frame\n" +
   "Do not name characters. Do not decide whether an object is 'correct'.";
+
+/** Traditional → simplified for gram matching. Not a story lexicon. */
+const TRAD_SIMP: Record<string, string> = {
+  屍: "尸", 間: "间", 國: "国", 監: "监", 鋼: "钢", 掙: "挣", 動: "动", 氣: "气",
+  對: "对", 發: "发", 幾: "几", 號: "号", 傷: "伤", 數: "数", 圖: "图", 黃: "黄",
+  紅: "红", 藍: "蓝", 燈: "灯", 門: "门", 東: "东", 頭: "头", 臉: "脸", 頸: "颈",
+  髮: "发", 裏: "里", 裡: "里", 後: "后", 從: "从", 無: "无", 為: "为", 這: "这",
+  說: "说", 時: "时", 長: "长", 開: "开", 車: "车", 飛: "飞", 風: "风", 雲: "云",
+  電: "电", 視: "视", 螢: "荧", 與: "与", 於: "于", 並: "并", 個: "个", 們: "们",
+  條: "条", 來: "来", 過: "过", 還: "还", 進: "进", 點: "点", 將: "将", 單: "单",
+  齊: "齐", 張: "张", 塊: "块", 彎: "弯", 書: "书", 見: "见", 覺: "觉", 觀: "观",
+  顯: "显", 廳: "厅", 場: "场", 層: "层", 廣: "广", 庫: "库", 廠: "厂", 佔: "占",
+  捲: "卷", 掃: "扫", 擊: "击", 據: "据", 攝: "摄", 瞼: "睑", 顫: "颤", 麼: "么",
+  衛: "卫", 術: "术", 繪: "绘", 製: "制", 餘: "余", 雙: "双", 業: "业", 嚴: "严",
+  隱: "隐", 牀: "床", 佈: "布",
+};
+
+export function foldCjk(text: string): string {
+  let out = "";
+  for (const ch of text) out += TRAD_SIMP[ch] ?? ch;
+  return out;
+}
 
 export type QcRequire = {
   people_count?: number | null;
@@ -23,6 +53,9 @@ export type QcRequire = {
   tool?: string;
   tool_shape?: string[];
   tool_forbid?: string[];
+  location?: string;
+  action?: string;
+  size?: string;
 };
 
 export type QcSummary = {
@@ -30,7 +63,15 @@ export type QcSummary = {
   pose_notes?: string | null;
   tool_as_written?: string | null;
   grey_blocks?: boolean | string | null;
+  location_notes?: string | null;
+  action_notes?: string | null;
+  size_notes?: string | null;
 } & Record<string, unknown>;
+
+export type PhotoQcCtx = { prevDesc?: string };
+
+const FACE_RE = /脸|臉|头|頭|肩|胸口|眼|颈|頸|特写|特寫/;
+const WIDE_SET_RE = /背景|环境|環境|全身|一排|房间|房間|室内|室內/;
 
 export type QcVerdict = {
   status: "GREEN" | "FAIL";
@@ -85,9 +126,54 @@ export async function summarize(url: string, model: string, desc: string): Promi
   return JSON.parse(text.slice(a, b + 1)) as QcSummary;
 }
 
-export function judge(desc: string, summary: QcSummary, require: QcRequire): QcVerdict {
+/** CJK bigrams + latin words — sheet tokens, never hardcoded story nouns. */
+export function sceneGrams(text: string): string[] {
+  const folded = foldCjk(text);
+  const out: string[] = [];
+  const chars = [...folded];
+  for (let i = 0; i < chars.length - 1; i++) {
+    if (/[\u4e00-\u9fff]/.test(chars[i]!) && /[\u4e00-\u9fff]/.test(chars[i + 1]!)) {
+      out.push(chars[i]! + chars[i + 1]!);
+    }
+  }
+  for (const w of folded.match(/[A-Za-z]{4,}/g) ?? []) out.push(w.toLowerCase());
+  return out;
+}
+
+/** Generic pose/object aliases so Cantonese sheet tokens can hit Mandarin write-ups. */
+function requireGrams(need: string): string[] {
+  const grams = new Set(sceneGrams(need));
+  const folded = foldCjk(need);
+  if (/坐/.test(folded)) for (const x of ["坐起", "坐姿", "坐着", "坐在"]) grams.add(x);
+  if (/跪/.test(folded)) for (const x of ["跪下", "跪姿", "单跪", "屈膝"]) grams.add(x);
+  if (/屏/.test(folded)) for (const x of ["屏幕", "显示屏", "监察"]) grams.add(x);
+  return [...grams];
+}
+
+function gramHits(need: string, blob: string): number {
+  const grams = requireGrams(need);
+  if (grams.length === 0) return -1;
+  const hay = foldCjk(blob);
+  return grams.filter((g) => hay.includes(g)).length;
+}
+
+function jaccardGrams(a: string, b: string): number {
+  const A = new Set(sceneGrams(a));
+  const B = new Set(sceneGrams(b));
+  if (A.size === 0 || B.size === 0) return 0;
+  let inter = 0;
+  for (const g of A) if (B.has(g)) inter += 1;
+  return inter / (A.size + B.size - inter);
+}
+
+export function sameRequire(a: QcRequire, b: QcRequire): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export function judge(desc: string, summary: QcSummary, require: QcRequire, ctx: PhotoQcCtx = {}): QcVerdict {
   const reasons: string[] = [];
   const checks: Record<string, unknown> = {};
+  const blob = `${desc}\n${String(summary.location_notes ?? "")}\n${String(summary.action_notes ?? "")}\n${String(summary.pose_notes ?? "")}`;
 
   const wantN = require.people_count;
   const gotN = summary.people_count;
@@ -123,6 +209,41 @@ export function judge(desc: string, summary: QcSummary, require: QcRequire): QcV
     }
   }
 
+  if (require.location) {
+    const hits = gramHits(require.location, blob);
+    const ok = hits !== 0;
+    checks.location = ok;
+    if (!ok) reasons.push(`location: write-up misses tokens from ${JSON.stringify(require.location)}`);
+  }
+
+  if (require.action) {
+    const hits = gramHits(require.action, `${blob}\n${String(summary.action_notes ?? "")}`);
+    const ok = hits !== 0;
+    checks.action = ok;
+    if (!ok) reasons.push(`action: write-up misses tokens from ${JSON.stringify(require.action)}`);
+  }
+
+  if (require.size) {
+    const noted = String(summary.size_notes ?? "").toLowerCase();
+    const size = require.size;
+    let ok = true;
+    if (size === "closeup" || size === "insert") {
+      // MCU write-ups often say medium; face/chest tokens are the gate. Wide notes still fail.
+      ok = FACE_RE.test(blob) && noted !== "wide" && noted !== "full";
+    } else if (size === "wide" || size === "full") {
+      ok = WIDE_SET_RE.test(blob) || noted === "wide" || noted === "full";
+    }
+    checks.size = ok;
+    if (!ok) reasons.push(`size: require ${size}; write-up is not that scale`);
+  }
+
+  if (ctx.prevDesc) {
+    const sim = jaccardGrams(desc, ctx.prevDesc);
+    const ok = sim < 0.42;
+    checks.distinct = ok;
+    if (!ok) reasons.push(`distinct: still too close to previous (jaccard ${sim.toFixed(2)})`);
+  }
+
   let status: "GREEN" | "FAIL" = Object.keys(checks).length > 0 && reasons.length === 0 ? "GREEN" : "FAIL";
   if (Object.keys(require).length === 0) {
     status = "FAIL";
@@ -147,7 +268,12 @@ export type PhotoQcRecord = {
 
 /** blind write-up → summarize → judge vs require. HTTP failures throw (no local
  *  schema substitute); only a summary-parse failure records FAIL. */
-export async function runPhotoQc(pngFile: string, outJson: string, require: QcRequire): Promise<PhotoQcRecord> {
+export async function runPhotoQc(
+  pngFile: string,
+  outJson: string,
+  require: QcRequire,
+  ctx: PhotoQcCtx = {},
+): Promise<PhotoQcRecord> {
   const raw = fs.readFileSync(pngFile);
   const digest = crypto.createHash("sha256").update(raw).digest("hex");
   if (fs.existsSync(outJson)) {
@@ -156,7 +282,8 @@ export async function runPhotoQc(pngFile: string, outJson: string, require: QcRe
       if (
         existing.tool === "slatecrew.photo_qc" &&
         existing.status === "GREEN" &&
-        existing.sha256 === digest
+        existing.sha256 === digest &&
+        sameRequire(existing.require, require)
       ) {
         return existing;
       }
@@ -172,7 +299,7 @@ export async function runPhotoQc(pngFile: string, outJson: string, require: QcRe
   let verdict: QcVerdict;
   try {
     summary = await summarize(url, model, desc);
-    verdict = judge(desc, summary, require);
+    verdict = judge(desc, summary, require, ctx);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     summary = { parse_error: message, raw: desc.slice(0, 2000) };
