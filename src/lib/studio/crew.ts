@@ -21,16 +21,9 @@ export const FLOOR: AgentId[] = [
   "soundQc",
   "editor",
   "delivery",
-  "blender",
 ];
 
 export const CREW: Record<AgentId, CrewSeat> = {
-  blender: {
-    name: "Astra",
-    job: "建模",
-    en: "Blender",
-    thinking: "只揀 ToolCall／playbook id；bpy 永遠由 typed engine 行，模型唔掂字串",
-  },
   producer: {
     name: "何晴",
     job: "製片",

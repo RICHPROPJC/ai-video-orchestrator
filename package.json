@@ -12,7 +12,7 @@
     "tui": "tsx src/cli.ts tui",
     "doctor": "tsx src/cli.ts doctor",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/studio/*.test.ts src/lib/blender/*.test.ts"
+    "test": "tsx --test src/lib/studio/*.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
