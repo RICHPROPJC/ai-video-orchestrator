@@ -118,17 +118,27 @@ test("CREW_LLM_URL overrides the config endpoint and trailing slash goes", () =>
   }
 });
 
-test("C10 pins: boards glm-5.3-flash, blender flash-lite with GLM fallback, reflector 27B, writer kimi", () => {
+test("C10 pins: boards glm-5.3-flash, blender nex-n2.5 + GLM fallback, reflector qwen38, writer kimi", () => {
   assert.deepEqual(DEFAULT_CREW.deny, ["glm-5.3"]);
   assert.equal(DEFAULT_CREW.endpoint, "");
   assert.equal(DEFAULT_CREW.writerModel, "kimi-k3");
   assert.equal(DEFAULT_CREW.boardsModel, "glm-5.3-flash");
-  assert.equal(DEFAULT_CREW.blenderModel, "sensenova-v6.8-flash-lite");
+  assert.equal(DEFAULT_CREW.blenderModel, "nex-n2.5");
   assert.equal(DEFAULT_CREW.blenderFallback, "glm-5.3-flash");
-  assert.equal(DEFAULT_CREW.reflectorModel, "qwen3.6-35b");
+  assert.equal(DEFAULT_CREW.reflectorModel, "qwen38");
   assert.ok(!DEFAULT_CREW.deny.includes(DEFAULT_CREW.boardsModel), "glm-5.3-flash is not denied");
   assert.ok(!DEFAULT_CREW.deny.includes(DEFAULT_CREW.blenderFallback), "the blender fallback id is not denied");
+  assert.ok(!DEFAULT_CREW.deny.includes(DEFAULT_CREW.blenderModel), "nex blender primary is not denied");
   assert.ok(!/glm/i.test(DEFAULT_CREW.writerModel), "writer stays off GLM");
+  assert.deepEqual(modelQuirks("nex-n2.5"), {
+    temperature: 0.7,
+    top_p: 0.95,
+    top_k: 40,
+    reasoning_effort: "medium",
+  });
+  assert.deepEqual(modelQuirks("nex-n2.5", { reasoningEffort: "none" }).reasoning_effort, "none");
+  assert.deepEqual(modelQuirks("nex-n2.5", { reasoningEffort: "high" }).reasoning_effort, "high");
+  assert.equal(stripThink('\n\n</think>\n\n{"ok":true}'), '{"ok":true}');
 });
 
 test("unset endpoint fails loud before any request", async () => {
@@ -159,7 +169,7 @@ test("glm-5.3-flash is a different id and clears the deny gate", async () => {
   assert.equal(sent[0]!.max_tokens, 32768);
 });
 
-test("blender fallback: a hard Flash Lite miss hands the turn to glm-5.3-flash via chatJson", async () => {
+test("blender fallback: a hard Nex miss hands the turn to glm-5.3-flash via chatJson", async () => {
   const dir = tmpDir();
   const ok = JSON.stringify({ title: "門", beats: ["a", "b"] });
   const { impl, sent } = seqFetch([{ status: 502 }, { status: 200, content: ok }]);
@@ -179,8 +189,9 @@ test("blender fallback: a hard Flash Lite miss hands the turn to glm-5.3-flash v
   assert.equal(out.model, "glm-5.3-flash");
   assert.match(out.primaryError ?? "", /HTTP 502/);
   assert.equal(sent.length, 2);
-  assert.equal(sent[0]!.model, "sensenova-v6.8-flash-lite");
-  assert.equal(sent[0]!.max_tokens, 65536);
+  assert.equal(sent[0]!.model, "nex-n2.5");
+  assert.equal(sent[0]!.reasoning_effort, "medium");
+  assert.equal(sent[0]!.temperature, 0.7);
   assert.equal(sent[1]!.model, "glm-5.3-flash");
   // the fallback turn leaves its own receipt, never overwriting the primary unit
   assert.deepEqual(out.receipts, ["blender.draft.fallback.1.json"]);
@@ -205,9 +216,10 @@ test("blender fallback: primary success never wakes the fallback model", async (
     fetchImpl: impl,
   });
   assert.equal(out.fellBack, false);
-  assert.equal(out.model, "sensenova-v6.8-flash-lite");
+  assert.equal(out.model, "nex-n2.5");
   assert.equal(out.primaryError, undefined);
   assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.model, "nex-n2.5");
 });
 
 test("blender fallback gate: a denied id on either slot refuses before any request", async () => {

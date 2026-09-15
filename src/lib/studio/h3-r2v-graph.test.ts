@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { buildH3Graph, BINDINGS } from "./h3-r2v-graph";
+import { buildH3Graph, BINDINGS, COND_VISUAL } from "./h3-r2v-graph";
 import { defaultConfig } from "./config";
 
 const models = {
@@ -115,4 +115,11 @@ test("variant C: zero refs, start kfinject, no Video 1", () => {
   assert.equal("ref_images.ref_image_0" in g.r2v.inputs, false);
   assert.ok(g.kfinject);
   assert.deepEqual(g.guider_a.inputs.conditioning, ["kfinject", 0]);
+});
+
+test("C8b knob: visualStrength override does not change the 0.999 default", () => {
+  const def = buildH3Graph({ ...args, kfEndName: "__KF_END__" });
+  const low = buildH3Graph({ ...args, kfEndName: "__KF_END__", visualStrength: 0.4 });
+  assert.equal(def.cond_cs.inputs.visual_strength, COND_VISUAL);
+  assert.equal(low.cond_cs.inputs.visual_strength, 0.4);
 });

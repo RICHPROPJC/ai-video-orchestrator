@@ -252,7 +252,7 @@ export function judge(desc: string, summary: QcSummary, require: QcRequire, ctx:
   return { status, checks: { ...checks, status, fail_reasons: reasons } };
 }
 
-/** C10 second eye — glm-5.3-flash via LiteLLM :4000. MARS stays the first eye;
+/** C10 second eye — glm-5.3-flash via LiteLLM :4000. pictureQc (qwen38) stays the first eye;
  *  the second eye is one extra sequential pass, never fan-out. */
 export type SecondEyeConfig = { endpoint: string; model: string };
 

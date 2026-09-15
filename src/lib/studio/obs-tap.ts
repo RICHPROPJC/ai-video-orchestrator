@@ -17,6 +17,7 @@ import type { JobEvent } from "./types";
  * （append 成功先寫 cursor：crash 喺中間最多重複一行，投影器照食）。
  *
  * 只加檔案、唔改 produce：tap 係獨立 runner（src/run-tap.ts）。
+ * Pipeline SSOT 仍係 jobs/<slate>/events.jsonl（emit 寫）；tap 只鏡像，唔 resume WIST。
  * 預設 bus 落 repo 內 data/obs/；要接去邊條真 bus，用 --bus／OBS_TAP_BUS
  * 指定，路徑係 ops 層決定，唔入 src。
  */

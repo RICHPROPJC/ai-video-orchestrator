@@ -10,11 +10,11 @@ export const PORTRAIT_REQUIRE: QcRequire = { people_count: 1, grey_blocks: false
 /** The template is the desk's; every noun in it comes from the callsheet. */
 export function portraitPrompt(character: Character, sheet: CallSheet): string {
   return [
-    `Photoreal portrait, one person alone, head and shoulders, facing camera, neutral expression.`,
+      `Photoreal portrait, one person alone, head and shoulders, facing camera, neutral expression.`,
     `${character.role}: ${character.wardrobe}.`,
     `Palette ${character.palette.join(", ")}.`,
     `${sheet.location}, ${sheet.timeOfDay}, ${sheet.weather}. ${sheet.styleBible.grade}.`,
-    `Plain background. No other people, no text, no grey mannequins, no props held.`,
+    `Single frame only. Plain background. No collage, no split panels, no other people, no text, no captions, no grey mannequins, no props held.`,
   ].join(" ");
 }
 
@@ -40,6 +40,8 @@ export async function ensurePortraits(opts: {
   plugDir?: string;
   server?: string;
   seed?: number;
+  /** when set, only cast these ids (scene hop) */
+  onlyIds?: string[];
   lane?: PortraitLane;
   onEvent?: (message: string, data?: Record<string, unknown>) => void;
 }): Promise<PortraitResult> {
@@ -49,8 +51,11 @@ export async function ensurePortraits(opts: {
   const files: Record<string, string> = {};
   const made: string[] = [];
   const plugged: string[] = [];
+  const cast = opts.onlyIds?.length
+    ? opts.sheet.characters.filter((c) => opts.onlyIds!.includes(c.id))
+    : opts.sheet.characters;
 
-  for (const character of opts.sheet.characters) {
+  for (const character of cast) {
     const plug = opts.plugDir ? path.join(opts.plugDir, `${character.id}.png`) : "";
     if (plug && fs.existsSync(plug)) {
       files[character.id] = plug;

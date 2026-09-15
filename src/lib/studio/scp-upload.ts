@@ -4,32 +4,33 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { loadConfig } from "./config";
 
-const VIMAX_SECRETS_ENV = "/mnt/ssd/vimax_repo/.vimax/secrets.env";
+/** Read VIMAX_SSH_PASS from machine-local secrets.env — never copy into SlateCrew files. */
+function passwordFromVimaxSecrets(): string | null {
+  const secrets = "/mnt/ssd/vimax_repo/.vimax/secrets.env";
+  if (!fs.existsSync(secrets)) return null;
+  for (const line of fs.readFileSync(secrets, "utf8").split("\n")) {
+    if (!line.startsWith("VIMAX_SSH_PASS=")) continue;
+    const pw = line.slice("VIMAX_SSH_PASS=".length).trim();
+    return pw || null;
+  }
+  return null;
+}
 
-/** D12 chain (shotdag creds route): env SLATECREW_SSH_PASS → env VIMAX_SSH_PASS
- *  → read-only vimax secrets.env key VIMAX_SSH_PASS; else throw listing the
- *  sources tried. The password never enters any SlateCrew file. */
-export function sshPassword(): string {
-  const tried: string[] = [];
+/** D12: env SLATECREW_SSH_PASS → env VIMAX_SSH_PASS → vimax secrets.env.
+ *  node0/node1 同 user 同 pass → 直接 sshpass，唔 jump。 */
+export function sshPasswordOptional(): string | null {
   for (const varName of ["SLATECREW_SSH_PASS", "VIMAX_SSH_PASS"]) {
-    tried.push(`env $${varName}`);
     const pw = process.env[varName] ?? "";
     if (pw) return pw;
   }
-  tried.push(`file ${VIMAX_SECRETS_ENV} (key VIMAX_SSH_PASS)`);
-  if (fs.existsSync(VIMAX_SECRETS_ENV)) {
-    for (const line of fs.readFileSync(VIMAX_SECRETS_ENV, "utf8").split("\n")) {
-      const t = line.trim();
-      if (!t || t.startsWith("#") || !t.includes("=")) continue;
-      const eq = t.indexOf("=");
-      const key = t.slice(0, eq).trim();
-      const val = t.slice(eq + 1).trim();
-      if (key === "VIMAX_SSH_PASS" && val) return val;
-    }
-  }
+  return passwordFromVimaxSecrets();
+}
+
+export function sshPassword(): string {
+  const pw = sshPasswordOptional();
+  if (pw) return pw;
   throw new Error(
-    `no ssh password found — tried: ${tried.join("; ")}. ` +
-      "wav reaches ComfyUI input/ via sshpass scp (fork production route).",
+    "no ssh password — set $SLATECREW_SSH_PASS / $VIMAX_SSH_PASS，或 /mnt/ssd/vimax_repo/.vimax/secrets.env",
   );
 }
 
@@ -54,9 +55,14 @@ function runChecked(cmd: string[], timeoutMs: number): Promise<string> {
   });
 }
 
-/** sshpass mkdir -p + scp -q to <user>@<host>:<remoteDir>/<name> (fork upload route) */
-export async function scpToHost(host: string, user: string, local: string, remoteDir: string, name: string): Promise<void> {
-  const pw = sshPassword();
+async function scpWithPassword(
+  pw: string,
+  host: string,
+  user: string,
+  local: string,
+  remoteDir: string,
+  name: string,
+): Promise<void> {
   await runChecked(
     ["sshpass", "-p", pw, "ssh", "-o", "StrictHostKeyChecking=no", `${user}@${host}`, `mkdir -p ${remoteDir}`],
     60_000,
@@ -67,7 +73,11 @@ export async function scpToHost(host: string, user: string, local: string, remot
   );
 }
 
-/** content-hash node0 refs path — re-uploads of the same bytes overwrite themselves */
+/** Direct sshpass — same password both nodes. */
+export async function scpToHost(host: string, user: string, local: string, remoteDir: string, name: string): Promise<void> {
+  await scpWithPassword(sshPassword(), host, user, local, remoteDir, name);
+}
+
 export function u15RefPath(local: string): string {
   const digest = crypto.createHash("md5").update(fs.readFileSync(local)).digest("hex").slice(0, 12);
   const refsDir = loadConfig().ssh.stillsRefsDir;

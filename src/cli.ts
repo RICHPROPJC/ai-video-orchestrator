@@ -6,11 +6,12 @@ import { newSlateId, writeJob, readJob, listJobs, readEvents, readEpEvents, runn
 import { projectsDir } from "./lib/studio/paths";
 import { loadConfig, setConfigPath } from "./lib/studio/config";
 import { doctor, formatDoctor } from "./lib/studio/doctor";
+import { blockersForGate, formatFleet, gateReady, probeFleet, type FleetGate } from "./lib/studio/fleet";
 import { runTui } from "./lib/studio/tui";
 import type { JobRecord, ProduceInput } from "./lib/studio/types";
 import { SCENE_ID_RE } from "./lib/studio/script-contract";
 
-const UNTIL_GATES: NonNullable<ProduceInput["until"]>[] = ["boards", "stills", "motion"];
+const UNTIL_GATES: NonNullable<ProduceInput["until"]>[] = ["boards", "blockout", "stills", "motion"];
 const GRAPH_VARIANTS: NonNullable<ProduceInput["graphVariant"]>[] = ["a", "b", "bkf", "c"];
 
 function arg(name: string, fallback?: string) {
@@ -27,7 +28,8 @@ Commands
   produce "<brief>"          行 log 開工
   frames <job> <shot>        從 motion mp4 抽 QC 帧（首/中/尾 + 每 2s）→ jpg
   events [slate] [--follow]  睇 projects/<ep>/events.jsonl；--follow 點住尾
-  doctor                     探兩部機 / MARS / ffmpeg / Blender
+  doctor                     探兩部機 / ffmpeg / Blender / H3 nodes
+  fleet                      探每個 config endpoint（/health /v1/models /system_stats）；config ≠ live → RED
   models                     睇而家用緊邊個 checkpoint
   models set <dot.path> <v>  換模型，例：stills.checkpoint foo.safetensors
   status [slate]
@@ -46,7 +48,10 @@ Flags
   --dry-run             行到 prompt/receipt 為止，唔 POST 任何機
   --graph-variant a|b|bkf|c  H3 graph（默認 a）；b/bkf/c 唔餵 Video 1
   --steps <n>           測試用 H3 steps 覆寫（默認 4）
-  --until boards|stills|motion 早停閘：boards＝劇本同分鏡出齊即停（status boarded，唔使 wav）；
+  --drama <id>          劇目 id → projects/<id>/（例：guojia-lingdaoren）
+  --episode EP01        集號（EP01…EP10）
+  --until boards|blockout|stills|motion 早停閘：boards＝劇本同分鏡出齊即停（status boarded，唔使 wav）；
+                        blockout＝灰塊走位+f0 即停（唔使 pictureQc）；
                         stills＝photo QC GREEN 即停（stills-ready）；motion＝H3 落片即停
   --scene SCxx          淨係燒呢一場嘅 H3（一場一 hop）；唔加＝出齊全部鏡（原有行為）
   --resume <slate>      接返舊 slate：callsheet 照舊，過咗閘嘅 blockout／keyframe／片唔重做
@@ -54,7 +59,8 @@ Flags
 Rack（two-host truth）
   U1.5 /edit  <stills.url>        node0 :8097
   H3 R2V      <motion.comfyUrl>   node1 :8188
-  MARS        <pictureQc.endpoint>  photo QC 眼
+  pictureQc <pictureQc.endpoint>  photo QC 眼（qwen38 / Qwen 27B :8015）
+  Nex         <nex.endpoint>          3D/tool 腦（nex-n2.5 :8017）。DOWN 唔擋開工；pictureQc qwen38 27B 頂住
 `);
 }
 
@@ -77,6 +83,8 @@ async function makeJob(brief: string) {
     castRosterPath: arg("--cast-roster"),
     graphVariant: (arg("--graph-variant", "a") as ProduceInput["graphVariant"]) || "a",
     steps: process.argv.includes("--steps") ? Number(arg("--steps", "4")) : undefined,
+    drama: arg("--drama"),
+    episode: arg("--episode"),
   };
   if (input.graphVariant && !GRAPH_VARIANTS.includes(input.graphVariant)) {
     console.error(`--graph-variant 只接受 ${GRAPH_VARIANTS.join(" / ")}`);
@@ -97,6 +105,8 @@ async function makeJob(brief: string) {
     updatedAt: new Date().toISOString(),
     status: "queued",
     input,
+    ...(input.drama ? { drama: input.drama } : {}),
+    ...(input.episode ? { episode: input.episode } : {}),
     progress: 0,
     retries: { stills: 0, voice: 0, motion: 0 },
     outputs: { stills: [], shots: [], blockout: [], receipts: [] },
@@ -150,6 +160,19 @@ async function produce(brief: string, tui: boolean) {
     console.error('produce/tui 需要 --wav-dir <dir>（每鏡 SHxx.wav，可加 spine.wav）；只出分鏡用 --until boards');
     process.exit(1);
   }
+  const fleet = await probeFleet(loadConfig());
+  const gate: FleetGate =
+    arg("--until") === "boards" || arg("--until") === "blockout"
+      ? "boards"
+      : arg("--until") === "stills"
+        ? "stills"
+        : arg("--until") === "motion"
+          ? "motion"
+          : "full";
+  if (!gateReady(fleet, gate)) {
+    console.error(formatFleet({ ...fleet, ready: false, blockers: blockersForGate(fleet.rows, gate) }));
+    process.exit(1);
+  }
   // serial floor: refuse a second concurrent slate before any job is touched
   const resumeSlate = arg("--resume");
   const blocker = runningBlocker(resumeSlate);
@@ -158,6 +181,18 @@ async function produce(brief: string, tui: boolean) {
     process.exit(1);
   }
   const { id, input } = resumeSlate ? resumeJob(resumeSlate) : await makeJob(brief);
+  if (input.drama && input.until === "stills") {
+    console.error(`劇目 ${input.drama}：唔准 --until stills（stills-ready skip）`);
+    process.exit(1);
+  }
+  if (input.drama === "guojia-lingdaoren" && !input.until && !input.scene && !input.dryRun) {
+    console.error("guojia-lingdaoren：唔准一次 H3 全 slate。用 --scene SC01（一場一 hop）");
+    process.exit(1);
+  }
+  if (input.drama === "guojia-lingdaoren" && input.until === "stills") {
+    console.error("guojia-lingdaoren：唔准 --until stills（stills-ready skip）");
+    process.exit(1);
+  }
   const rack = loadConfig();
   if (!tui || !process.stdout.isTTY) {
     console.log(`\n  SLATE  ${id}`);
@@ -236,6 +271,13 @@ async function main() {
   }
   if (cmd === "doctor") {
     console.log(formatDoctor(await doctor()));
+    return;
+  }
+  if (cmd === "fleet") {
+    const fleet = await probeFleet(loadConfig());
+    if (process.argv.includes("--json")) console.log(JSON.stringify(fleet, null, 2));
+    else console.log(formatFleet(fleet));
+    if (!fleet.ready) process.exitCode = 1;
     return;
   }
   if (cmd === "models") {

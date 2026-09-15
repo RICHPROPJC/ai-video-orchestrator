@@ -103,3 +103,12 @@ test("tapJob: bus 寫唔到（路徑係目錄）→ fail-loud", () => {
   fs.mkdirSync(busAsDir);
   assert.throws(() => tapJob(root, "SC-E", busAsDir), /bus 寫唔到/);
 });
+
+test("tapJob: 唔改 pipeline events.jsonl（SSOT 仍係 job log）", () => {
+  const root = tmpDir();
+  writeJob(root, "SC-F", EVTS);
+  const eventsFile = path.join(root, "SC-F", "events.jsonl");
+  const before = fs.readFileSync(eventsFile, "utf-8");
+  tapJob(root, "SC-F", path.join(root, "bus-ssot.jsonl"));
+  assert.equal(fs.readFileSync(eventsFile, "utf-8"), before);
+});

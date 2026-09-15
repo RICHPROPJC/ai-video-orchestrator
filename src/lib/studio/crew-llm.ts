@@ -26,9 +26,10 @@ export const DEFAULT_CREW: CrewConfig = {
   endpoint: "",
   writerModel: "kimi-k3",
   boardsModel: "glm-5.3-flash",
-  blenderModel: "sensenova-v6.8-flash-lite",
+  // Nex-N2.5：Blender／CAD／tool 腦（案例七 Inkscape→Blender）；flash-lite content=null 半死唔再用做主
+  blenderModel: "nex-n2.5",
   blenderFallback: "glm-5.3-flash",
-  reflectorModel: "qwen3.6-35b",
+  reflectorModel: "qwen38",
   deny: [DENIED_FULL_GLM],
   apiKey: "",
   timeoutMs: 600_000,
@@ -60,8 +61,22 @@ export function resolveCrewEndpoint(crew: CrewConfig): string {
 }
 
 /** Quirks measured on this lane: kimi-k3 rejects any temperature but 1; qwen
- *  leaks its thoughts into content unless the chat template disables thinking. */
-export function modelQuirks(model: string): Record<string, unknown> {
+ *  leaks its thoughts into content unless the chat template disables thinking.
+ *  Nex official sample: temp 0.7 / top_p 0.95 / top_k 40（唔用 temp 0——會亂答）。
+ *  Call shape（Chau）：
+ *    - **Vision／OCR 位** → reasoning_effort **none**（B640：adaptive high hang 240s → none 6s）
+ *    - **Blender／工具 JSON 席** → **medium**（ABC：none/medium/high 都 PASS；高唔明顯靚，慢少少）
+ *    - 文字精讀 → **qwen38**，唔係 Nex
+ *  Default **medium**（工具席）；Vision 呼叫端要顯式傳 none。 */
+export type NexReasoningEffort = "none" | "medium" | "high";
+
+export function nexReasoningEffort(override?: string): NexReasoningEffort {
+  const raw = (override ?? process.env.NEX_REASONING_EFFORT ?? "medium").trim().toLowerCase();
+  if (raw === "medium" || raw === "high" || raw === "none") return raw;
+  return "medium";
+}
+
+export function modelQuirks(model: string, opts?: { reasoningEffort?: string }): Record<string, unknown> {
   const quirks: Record<string, unknown> = {};
   if (/^kimi-k3/i.test(model)) quirks.temperature = 1;
   if (/^qwen/i.test(model)) quirks.chat_template_kwargs = { enable_thinking: false };
@@ -69,11 +84,20 @@ export function modelQuirks(model: string): Record<string, unknown> {
   if (/sensenova-v6\.8-flash-lite/i.test(model)) quirks.max_tokens = 65536;
   if (/^glm-5\.3-flash/i.test(model)) quirks.max_tokens = 32768;
   else if (/^glm-5\.3/i.test(model)) quirks.max_tokens = 65536;
+  if (/^nex-n2/i.test(model)) {
+    quirks.temperature = 0.7;
+    quirks.top_p = 0.95;
+    quirks.top_k = 40;
+    quirks.reasoning_effort = nexReasoningEffort(opts?.reasoningEffort);
+  }
   return quirks;
 }
 
 export function stripThink(raw: string): string {
-  return raw.replace(/^\s*<think>[\s\S]*?<\/think>/i, "").trim();
+  return raw
+    .replace(/^\s*<think>[\s\S]*?<\/think>/i, "")
+    .replace(/^\s*<\/think>\s*/i, "")
+    .trim();
 }
 
 /** JSON mode still occasionally arrives fenced or with a thought preamble. */
@@ -172,6 +196,8 @@ export type ChatJsonOpts<T> = {
   fetchImpl?: typeof fetch;
   /** test clock: receives every backoff wait instead of really sleeping */
   sleepImpl?: (ms: number) => Promise<void>;
+  /** Nex only: none=fast pass · medium|high=深判斷。Default none（見 nexReasoningEffort）。 */
+  reasoningEffort?: NexReasoningEffort | string;
 };
 
 export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult<T>> {
@@ -234,7 +260,7 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
       model: opts.model,
       messages,
       response_format: { type: "json_object" },
-      ...modelQuirks(opts.model),
+      ...modelQuirks(opts.model, { reasoningEffort: opts.reasoningEffort }),
     };
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (opts.crew.apiKey) headers.Authorization = `Bearer ${opts.crew.apiKey}`;

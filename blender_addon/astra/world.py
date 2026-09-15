@@ -154,6 +154,17 @@ STANCE = {
     "turn_away": (0.0, 0.0, 1.0, 1.0),
 }
 CHARACTER_ACTIONS = {"idle", "walk", "wave", "sit", "look", "lie", "kneel", "crouch", "lean", "turn_away"}
+# Where the hands go in each stance (forearm pitch degrees, applied to ArmL/R
+# after the rest reset). A stance is not a T-pose with bent legs.
+STANCE_ARMS = {
+    "stand": (0.0, 0.0),
+    "lean": (12.0, 12.0),
+    "crouch": (38.0, 38.0),
+    "sit": (30.0, 30.0),
+    "kneel": (26.0, 26.0),
+    "lie": (6.0, 6.0),
+    "turn_away": (0.0, 0.0),
+}
 
 
 def _apply_stance(root, stance: str):
@@ -194,6 +205,10 @@ def _apply_stance(root, stance: str):
     parts["torso"].scale.z *= torso_z
     for bone in ("legl", "legr"):
         parts[bone].scale.z *= leg_z
+    arm_pitch = STANCE_ARMS.get(stance, (0.0, 0.0))
+    for bone, pitch in (("arml", arm_pitch[0]), ("armr", arm_pitch[1])):
+        if bone in parts and abs(rotation) < 45:
+            parts[bone].rotation_euler.x += math.radians(pitch)
 
 
 def character_action(args: dict[str, Any]) -> str:

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
@@ -20,12 +20,15 @@ import { type JobEvent, type JobRecord } from "@/lib/studio/types";
 import { CREW, FLOOR, whoLine } from "@/lib/studio/crew";
 import type { FloorTab } from "@/lib/studio/floor-tab";
 import type { DoctorReport } from "@/lib/studio/doctor";
+import type { FleetReport } from "@/lib/studio/fleet";
+import { FleetRack } from "@/components/fleet-rack";
+import { ShotTruth } from "@/components/shot-truth";
 import { Clapperboard, Film, Lock, Upload } from "lucide-react";
 
 const EXAMPLES = [
+  "重生得到系統做國家領導人。攻心計，軟硬手。坦克／飛機／槍／導彈／無人機。EP01 第一場 SC01，約 300 秒一集、一場一 hop。",
   "雨夜茶餐廳，阿月同阿衡重逢。阿月伸手擋門，阿衡行近，對白：「你仲記得個門口個燈？」交一支 12 秒片。",
   "Night rooftop in Mong Kok. Two people walk to the rail. Hands on wet metal. Line: stay.",
-  "產品特寫：銅壺放喺濕花崗岩，手入畫扶住壺嘴，腳唔好入鏡。",
 ];
 
 function media(id: string, rel?: string) {
@@ -51,17 +54,33 @@ export function StudioFloor({
   const [job, setJob] = useState<JobRecord | null>(initialJob);
   const [events, setEvents] = useState<JobEvent[]>(initialEvents);
   const [rack, setRack] = useState<DoctorReport | null>(null);
+  const [fleet, setFleet] = useState<FleetReport | null>(null);
+  const [probingFleet, setProbingFleet] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<{ id: string; modality: string; score: number; text: string; shotId?: string }[] | null>(null);
   const tab = initialTab;
   const logRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    void fetch("/api/rack")
-      .then((r) => r.json())
-      .then((d: DoctorReport) => setRack(d))
-      .catch(() => setRack(null));
+  const probeNow = useCallback(() => {
+    setProbingFleet(true);
+    void Promise.all([
+      fetch("/api/rack").then((r) => r.json() as Promise<DoctorReport>),
+      fetch("/api/fleet").then((r) => r.json() as Promise<FleetReport>),
+    ])
+      .then(([d, f]) => {
+        setRack(d);
+        setFleet(f);
+      })
+      .catch(() => {
+        setRack(null);
+        setFleet(null);
+      })
+      .finally(() => setProbingFleet(false));
   }, []);
+
+  useEffect(() => {
+    probeNow();
+  }, [probeNow]);
 
   useEffect(() => {
     if (!job?.id) return;
@@ -116,7 +135,7 @@ export function StudioFloor({
             <span className="text-primary">/</span>
             <span>H3</span>
             <span className="text-primary">/</span>
-            <span>MARS-8B</span>
+            <span>Qwen 27B</span>
             <span className="text-primary">/</span>
             <span>SenseVoice</span>
             <span className="text-primary">/</span>
@@ -201,9 +220,10 @@ export function StudioFloor({
                 </label>
                 <button
                   type="submit"
+                  disabled={!fleet?.ready}
                   className={cn(buttonVariants({ size: "lg" }), "w-full")}
                 >
-                  開工交片
+                  {fleet && !fleet.ready ? "機未齊 · 唔開工" : "開工交片"}
                 </button>
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
                   CLI 同等：<code className="text-primary">npm run slatecrew -- produce &quot;brief&quot;</code>
@@ -227,30 +247,15 @@ export function StudioFloor({
             </CardContent>
           </Card>
 
+          <FleetRack fleet={fleet} probing={probingFleet} onProbe={probeNow} />
+
           <Card>
             <CardHeader className="border-b">
-              <CardTitle>Rack · 兩部機真源</CardTitle>
+              <CardTitle>Rack · checkpoint</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-xs">
-              <p>
-                U1.5 /edit{" "}
-                <b className={rack?.stills.up ? "text-emerald-400" : "text-destructive"}>
-                  {rack?.stills.up ? "UP" : "DOWN"}
-                </b>{" "}
-                {rack?.stills.url ?? "—"}
-                {rack?.stills.error ? ` · ${rack.stills.error}` : ""}
-              </p>
-              <p>
-                H3 R2V{" "}
-                <b className={rack?.motion.up ? "text-emerald-400" : "text-destructive"}>
-                  {rack?.motion.up ? "UP" : "DOWN"}
-                </b>{" "}
-                {rack?.motion.url ?? "—"}
-                {rack?.motion.error ? ` · ${rack.motion.error}` : ""}
-              </p>
               <p className="text-muted-foreground">
-                ffmpeg {rack?.ffmpeg ? "UP" : "?"} · blender {rack?.blender ? "UP" : "script-only"} · TUI{" "}
-                <code>npm run slatecrew -- tui &quot;brief&quot;</code>
+                ffmpeg {rack?.ffmpeg ? "UP" : "?"} · blender {rack?.blender ? "UP" : "script-only"}
               </p>
               <form
                 key={rack?.config.stills.checkpoint ?? "rack"}
@@ -300,7 +305,7 @@ export function StudioFloor({
                 <li><b className="text-foreground">ViMax</b> dispatch 去分鏡專職 + narrative plan；RAG 只喺呢份 slate</li>
                 <li><b className="text-foreground">Montaj</b> CLI = TUI = Web 同一套 command</li>
                 <li><b className="text-foreground">MoneyPrinterTurbo</b> checkpoint / 分段閘口</li>
-                <li><b className="text-foreground">MARS-8B + SenseVoice</b> 你指定嘅聲畫 QC</li>
+                <li><b className="text-foreground">Qwen 27B + SenseVoice</b> 你指定嘅聲畫 QC</li>
                 <li><b className="text-foreground">Blender IK</b> 走位、手手腳腳</li>
               </ul>
             </CardContent>
@@ -489,10 +494,12 @@ export function StudioFloor({
                 </div>
               ) : null}
               {tab === "qc" ? (
-                <div className="mt-3 min-h-48 grid gap-3 md:grid-cols-2">
+                <div className="mt-3 min-h-48 space-y-3">
+                  <ShotTruth job={job} events={events} />
+                  <div className="grid gap-3 md:grid-cols-2">
                   <QcCard title="SenseVoice 聲檢" data={job?.soundQc} />
-                  <QcCard title="MARS-8B 畫檢（stills）" data={job?.pictureQcStills} />
-                  <QcCard title="MARS-8B 畫檢（video）" data={job?.pictureQcVideo} />
+                  <QcCard title="畫檢（stills）" data={job?.pictureQcStills} />
+                  <QcCard title="畫檢（video）" data={job?.pictureQcVideo} />
                   <Card>
                     <CardHeader>
                       <CardTitle>Providers</CardTitle>
@@ -507,6 +514,7 @@ export function StudioFloor({
                         : "未跑"}
                     </CardContent>
                   </Card>
+                  </div>
                 </div>
               ) : null}
               {tab === "lock" ? (

@@ -27,9 +27,12 @@ export type SlateConfig = {
   };
   tts: { endpoint: string; model: string; promptWav: string; seed: number };
   pictureQc: { endpoint: string; model: string };
+  /** Layout / 3D tool brain. Not pictureQc. Empty = fleet UNCONFIG, not a QC skip. */
+  nex: { endpoint: string; model: string };
   soundQc: { endpoint: string; model: string };
   /** A3: every sense is a provider. Empty = the stage that needs it FAILs loud. */
   ocr: { endpoint: string; model: string };
+  embed: { endpoint: string; model: string };
   ssh: { user: string; motionInputDir: string; stillsRefsDir: string };
 };
 
@@ -59,12 +62,14 @@ const DEFAULTS: SlateConfig = {
   tts: {
     endpoint: "http://127.0.0.1:9882",
     model: "auk-flash-1.5B",
-    promptWav: "/mnt/ssd/AuK/assets/demo-input-audio/zero-shot-tts/ref.wav",
+    promptWav: "",
     seed: 20260914,
   },
-  pictureQc: { endpoint: "http://127.0.0.1:8015", model: "mars-fa2" },
+  pictureQc: { endpoint: "http://127.0.0.1:8015", model: "qwen38" },
+  nex: { endpoint: "", model: "nex-n2.5" },
   soundQc: { endpoint: "", model: "FunAudioLLM/SenseVoiceSmall" },
   ocr: { endpoint: "", model: "" },
+  embed: { endpoint: "", model: "wemm-2b" },
   ssh: {
     user: "hojaiv3v",
     motionInputDir: "~/comfy/ComfyUI/input",
@@ -88,8 +93,10 @@ export function loadConfig(): SlateConfig {
     motion: { ...DEFAULTS.motion, ...raw.motion },
     tts: { ...DEFAULTS.tts, ...raw.tts },
     pictureQc: { ...DEFAULTS.pictureQc, ...raw.pictureQc },
+    nex: { ...DEFAULTS.nex, ...raw.nex },
     soundQc: { ...DEFAULTS.soundQc, ...raw.soundQc },
     ocr: { ...DEFAULTS.ocr, ...raw.ocr },
+    embed: { ...DEFAULTS.embed, ...raw.embed },
     ssh: { ...DEFAULTS.ssh, ...raw.ssh },
   };
   const h3 = process.env.H3_COMFY_URL?.trim();
@@ -98,6 +105,8 @@ export function loadConfig(): SlateConfig {
   if (u15) merged.stills.url = u15;
   const mars = process.env.MARS_URL?.trim();
   if (mars) merged.pictureQc.endpoint = mars;
+  const nex = process.env.NEX_URL?.trim();
+  if (nex) merged.nex.endpoint = nex;
   const crew = process.env.CREW_LLM_URL?.trim();
   if (crew) merged.crew.endpoint = crew;
   const auk = process.env.AUK_TTS_URL?.trim();

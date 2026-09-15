@@ -256,8 +256,8 @@ export function localPictureQc(opts: {
     artifacts,
     pass: video ? false : overall >= 0.72 && !issues.some((i) => i.severity === "block"),
     notes: video
-      ? "mark-geometry pre-check (marks/crop/feet). The delivery gate is blind MARS video QC per frame."
-      : "plan-geometry pre-check (marks/crop/feet). The delivery gate is blind MARS photo QC per still.",
+      ? "mark-geometry pre-check (marks/crop/feet). The delivery gate is blind pictureQc video QC per frame."
+      : "plan-geometry pre-check (marks/crop/feet). The delivery gate is blind pictureQc photo QC per still.",
     issues,
   };
 }

@@ -15,7 +15,7 @@ const FBC_THRESHOLD = 0.15;
 const FBC_START = 2;
 const FBC_END = 2;
 const FBC_SKIP = 2;
-const COND_VISUAL = 0.999;
+export const COND_VISUAL = 0.999;
 const COND_AUDIO = 1.0;
 const VOICE_MAX_SECONDS = 16.0; // covers the 17k+5 max (~15.1s)
 const BLOCKOUT_VHS = {
@@ -60,6 +60,8 @@ export type BuildH3GraphOpts = {
   variant?: H3GraphVariant;
   /** B/BKF: still first, then portrait upload names for ref_images.ref_image_N */
   refImageNames?: string[];
+  /** default COND_VISUAL 0.999. C8b probe may lower this; do not change the golden default. */
+  visualStrength?: number;
 };
 
 const KFINJECT_VARIANTS = new Set<H3GraphVariant>(["a", "bkf", "c"]);
@@ -147,7 +149,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   };
   g.cond_cs = {
     class_type: "H3ConditionStrength",
-    inputs: { conditioning: ["cond_evict", 0], visual_strength: COND_VISUAL, audio_strength: COND_AUDIO },
+    inputs: { conditioning: ["cond_evict", 0], visual_strength: opts.visualStrength ?? COND_VISUAL, audio_strength: COND_AUDIO },
   };
   let condOut: [string, number] = ["cond_cs", 0];
   if (KFINJECT_VARIANTS.has(variant)) {

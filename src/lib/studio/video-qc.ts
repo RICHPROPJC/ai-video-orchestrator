@@ -44,6 +44,10 @@ export type VideoQcRecord = {
   frames: VideoFrameQc[];
   checks: QcVerdict["checks"];
   second?: SecondEyeRecord & { frame: number };
+  memory?: {
+    character_drift?: { distance: number; fail: boolean };
+    blockout_copy?: { distance: number; fail: boolean };
+  };
 };
 
 function videoDigest(mp4: string): string {

@@ -1,10 +1,11 @@
 {
   "crew": {
     "endpoint": "http://127.0.0.1:4000",
+    "writerModel": "glm-5.3-flash",
     "boardsModel": "glm-5.3-flash",
-    "blenderModel": "sensenova-v6.8-flash-lite",
+    "blenderModel": "nex-n2.5",
     "blenderFallback": "glm-5.3-flash",
-    "reflectorModel": "qwen3.6-35b"
+    "reflectorModel": "qwen38"
   },
   "stills": {
     "url": "http://100.76.131.19:8097",
@@ -35,11 +36,19 @@
   },
   "pictureQc": {
     "endpoint": "http://127.0.0.1:8015",
-    "model": "mars-fa2"
+    "model": "qwen38"
+  },
+  "nex": {
+    "endpoint": "http://127.0.0.1:8017",
+    "model": "nex-n2.5"
   },
   "soundQc": {
     "endpoint": "http://127.0.0.1:9881",
     "model": "FunAudioLLM/SenseVoiceSmall"
+  },
+  "embed": {
+    "endpoint": "http://127.0.0.1:8016",
+    "model": "wemm-2b"
   },
   "ssh": {
     "user": "hojaiv3v",

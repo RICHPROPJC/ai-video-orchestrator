@@ -6,6 +6,7 @@ export type JobStatus =
   | "failed"
   | "dry-run"
   | "boarded"
+  | "blockout-ready"
   | "stills-ready"
   | "motion-ready";
 
@@ -45,8 +46,9 @@ export type ProduceInput = {
   gapSec?: number;
   dryRun?: boolean;
   /** stop early: boards = seats have written the callsheet (no wavs yet),
+   *  blockout = grey blockout + f0 done (no U1.5 / QC / H3),
    *  stills = after photo QC GREEN, motion = after H3 downloads (before mux) */
-  until?: "boards" | "stills" | "motion";
+  until?: "boards" | "blockout" | "stills" | "motion";
   /** C-scene-hop: burn H3 for ONE scene only (must match SCxx). Motion-lane
    *  filter — stills/QC/layout stay full-slate. Omitted = all shots. */
   scene?: string;
@@ -60,6 +62,10 @@ export type ProduceInput = {
   graphVariant?: "a" | "b" | "bkf" | "c";
   /** test-only H3 sampler steps override; live default stays config.motion.steps (4) */
   steps?: number;
+  /** L1b: drama id under projects/<drama>/ — seats write this film there, not Cursor folders */
+  drama?: string;
+  /** episode surface, e.g. EP01 — playbooks/events live under the drama dir */
+  episode?: string;
 };
 
 export type JobEvent = {
@@ -232,6 +238,10 @@ export type JobRecord = {
   updatedAt: string;
   status: JobStatus;
   input: ProduceInput;
+  /** set by producer from input.drama — projects/<drama>/ base layer */
+  drama?: string;
+  /** set by producer from input.episode — EP01…EP10 surface */
+  episode?: string;
   progress: number;
   currentAgent?: AgentId;
   callSheet?: CallSheet;
@@ -273,7 +283,7 @@ export const AGENT_META: Record<
   art: { label: "美術", en: "Art", desk: "Style bible" },
   layout: { label: "走位", en: "Layout", desk: "Blender 手腳 IK" },
   stills: { label: "生圖", en: "Stills", desk: "SenseNova U1.5" },
-  pictureQc: { label: "畫檢", en: "Picture QC", desk: "SenseNova MARS-8B" },
+  pictureQc: { label: "畫檢", en: "Picture QC", desk: "Qwen 27B qwen38" },
   motion: { label: "生片", en: "Motion", desk: "MiniMax H3" },
   voice: { label: "聲線", en: "Voice", desk: "TTS + clone" },
   soundQc: { label: "聲檢", en: "Sound QC", desk: "SenseVoice" },

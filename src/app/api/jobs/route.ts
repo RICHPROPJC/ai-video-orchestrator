@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs";
+import { loadConfig } from "@/lib/studio/config";
+import { blockersForGate, formatFleet, gateReady, probeFleet, type FleetGate } from "@/lib/studio/fleet";
 import { runPipeline } from "@/lib/studio/pipeline";
 import { jobFile } from "@/lib/studio/paths";
 import { newSlateId, writeJob, listJobs } from "@/lib/studio/store";
@@ -34,6 +36,10 @@ export async function POST(req: Request) {
       language: (String(form.get("language") ?? "auto") as ProduceInput["language"]) || "auto",
       voiceClonePath,
       wavDir: String(form.get("wavDir") ?? ""),
+      drama: String(form.get("drama") ?? "") || undefined,
+      episode: String(form.get("episode") ?? "") || undefined,
+      scene: String(form.get("scene") ?? "") || undefined,
+      until: (String(form.get("until") ?? "") as ProduceInput["until"]) || undefined,
     };
   } else {
     input = (await req.json()) as ProduceInput;
@@ -41,6 +47,32 @@ export async function POST(req: Request) {
 
   if (!input.brief?.trim()) {
     return NextResponse.json({ error: "brief required" }, { status: 400 });
+  }
+  if (input.drama && input.until === "stills") {
+    return NextResponse.json({ error: "stills-ready skip forbidden for drama runs" }, { status: 400 });
+  }
+  if (input.drama === "guojia-lingdaoren" && !input.until && !input.scene && !input.dryRun) {
+    return NextResponse.json(
+      { error: "guojia-lingdaoren requires --scene SCxx (one hop at a time)" },
+      { status: 400 },
+    );
+  }
+
+  const fleet = await probeFleet(loadConfig());
+  const gate: FleetGate =
+    input.until === "boards" || input.until === "blockout"
+      ? "boards"
+      : input.until === "stills"
+        ? "stills"
+        : input.until === "motion"
+          ? "motion"
+          : "full";
+  if (!gateReady(fleet, gate)) {
+    const blockers = blockersForGate(fleet.rows, gate);
+    return NextResponse.json(
+      { error: "fleet not ready", gate, fleet: { ...fleet, ready: false, blockers }, detail: formatFleet({ ...fleet, ready: false, blockers }) },
+      { status: 503 },
+    );
   }
 
   const job: JobRecord = {
@@ -50,6 +82,8 @@ export async function POST(req: Request) {
     updatedAt: new Date().toISOString(),
     status: "queued",
     input,
+    ...(input.drama ? { drama: input.drama } : {}),
+    ...(input.episode ? { episode: input.episode } : {}),
     progress: 0,
     retries: { stills: 0, voice: 0, motion: 0 },
     outputs: { stills: [], shots: [], blockout: [], receipts: [] },
