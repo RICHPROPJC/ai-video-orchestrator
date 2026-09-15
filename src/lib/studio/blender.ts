@@ -2,7 +2,7 @@ import type { CallSheet } from "./types";
 
 function sceneJson(sheet: CallSheet) {
   const chars = JSON.stringify(
-    sheet.characters.map((c) => ({ id: c.id, name: c.name, color: c.palette[0] })),
+    sheet.characters.map((c) => ({ id: c.id, name: c.name, heightM: c.heightM ?? 1.0 })),
     null,
     2,
   );
@@ -13,6 +13,7 @@ function sceneJson(sheet: CallSheet) {
       duration: s.durationSec,
       camera: s.camera,
       marks: s.marks,
+      props: s.props ?? [],
     })),
     null,
     2,
@@ -20,7 +21,8 @@ function sceneJson(sheet: CallSheet) {
   return { chars, shots };
 }
 
-// rig/marks python — shared verbatim by the blocking preview and the blockout render
+// mannequin python — shared verbatim by the blocking preview and the blockout render.
+// WORKBENCH renders meshes, never armatures — v32 proved the cube shape.
 const PY_HELPERS = `import json, math, sys
 import bpy
 from mathutils import Vector
@@ -29,76 +31,66 @@ def clear():
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
 
+def grey(name, v):
+    m = bpy.data.materials.new(name)
+    m.use_nodes = False
+    m.diffuse_color = (v, v, v, 1)
+    return m
+
 def make_ground():
     bpy.ops.mesh.primitive_plane_add(size=16, location=(0, 0, 0))
     ground = bpy.context.active_object
     ground.name = "Floor"
-    mat = bpy.data.materials.new("WetFloor")
-    mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get("Principled BSDF")
-    if bsdf:
-        bsdf.inputs["Base Color"].default_value = (0.07, 0.08, 0.09, 1)
-        bsdf.inputs["Roughness"].default_value = 0.18
-    ground.data.materials.append(mat)
+    ground.data.materials.append(grey("WetFloor", 0.62))
 
-def hex_color(h):
-    h = h.lstrip("#")
-    r, g, b = tuple(int(h[i:i+2], 16)/255.0 for i in (0, 2, 4))
-    return (r, g, b, 1)
+def cube(loc, scl, mat, rot=None):
+    kw = {"size": 1, "location": loc, "scale": scl}
+    if rot is not None:
+        kw["rotation"] = rot
+    bpy.ops.mesh.primitive_cube_add(**kw)
+    o = bpy.context.active_object
+    o.data.materials.append(mat)
+    return o
 
-def add_mark(name, x, y, color, z=0.02):
-    bpy.ops.mesh.primitive_cylinder_add(radius=0.18, depth=0.04, location=(x * 0.12, y * 0.12, z))
-    obj = bpy.context.active_object
-    obj.name = name
-    mat = bpy.data.materials.new(name + "Mat")
-    mat.diffuse_color = hex_color(color)
-    obj.data.materials.append(mat)
-    return obj
+# u,v in [0,1], v measured from the TOP of frame (painter convention: y% down)
+def unproject(cam, scene, u, v, z_plane):
+    fr = [cam.matrix_world @ p for p in cam.data.view_frame(scene=scene)]
+    # Blender view_frame order: [right-top, right-bottom, left-bottom, left-top]
+    top = fr[3].lerp(fr[0], u)
+    bot = fr[2].lerp(fr[1], u)
+    pt = top.lerp(bot, v)
+    o = cam.matrix_world.translation
+    d = pt - o
+    if d.z >= -1e-6:
+        raise SystemExit("mark ray does not hit the floor: u=%s v=%s" % (u, v))
+    t = (z_plane - o.z) / d.z
+    return o + d * t
 
-def make_rig(name, color):
-    bpy.ops.object.armature_add(enter_editmode=True, location=(0, 0, 1.0))
-    arm = bpy.context.active_object
-    arm.name = name
-    bpy.ops.object.mode_set(mode='EDIT')
-    eb = arm.data.edit_bones
-    root = eb[0]
-    root.name = "hips"
-    root.head, root.tail = (0, 0, 1.0), (0, 0, 1.15)
-    def bone(n, parent, head, tail):
-        b = eb.new(n)
-        b.head, b.tail = head, tail
-        b.parent = parent
-        return b
-    spine = bone("spine", root, (0,0,1.15), (0,0,1.45))
-    chest = bone("chest", spine, (0,0,1.45), (0,0,1.7))
-    bone("head", chest, (0,0,1.7), (0,0,1.95))
-    for side, sx in (("L", 1), ("R", -1)):
-        clav = bone(f"clav_{side}", chest, (0,0,1.68), (0.12*sx,0,1.68))
-        ua = bone(f"upper_arm_{side}", clav, (0.12*sx,0,1.68), (0.38*sx,0,1.42))
-        fa = bone(f"forearm_{side}", ua, (0.38*sx,0,1.42), (0.55*sx,0,1.18))
-        bone(f"hand_{side}", fa, (0.55*sx,0,1.18), (0.68*sx,0,1.12))
-        th = bone(f"thigh_{side}", root, (0.08*sx,0,1.0), (0.10*sx,0,0.55))
-        sh = bone(f"shin_{side}", th, (0.10*sx,0,0.55), (0.10*sx,0,0.12))
-        bone(f"foot_{side}", sh, (0.10*sx,0,0.12), (0.10*sx,0.18,0.04))
-    bpy.ops.object.mode_set(mode='POSE')
-    for side in ("L", "R"):
-        for chain, bone_name, length in (("HAND", f"forearm_{side}", 2), ("FOOT", f"shin_{side}", 2)):
-            pb = arm.pose.bones[bone_name]
-            ik = pb.constraints.new("IK")
-            ik.chain_count = length
-            empty = bpy.data.objects.new(f"{name}_{chain}_{side}", None)
-            empty.empty_display_size = 0.12
-            empty.empty_display_type = "SPHERE"
-            bpy.context.collection.objects.link(empty)
-            ik.target = empty
-    bpy.ops.object.mode_set(mode='OBJECT')
-    return arm
+def mannequin(name, h, mat):
+    torso = cube((0, 0, 0.75 * h), (0.55 * h, 0.35, 0.75 * h), mat)
+    head = cube((0, 0, 1.65 * h), (0.42 * h, 0.34, 0.42 * h), mat)
+    legs = [cube((sx * h, 0, 0.2 * h), (0.16, 0.3, 0.4 * h), mat) for sx in (-0.18, 0.18)]
+    pivot = bpy.data.objects.new(name + "_pivot", None)
+    bpy.context.collection.objects.link(pivot)
+    for p in [torso, head] + legs:
+        p.parent = pivot
+    return pivot, torso, head, legs
 
-def key_empty(obj, frame, loc):
-    obj.location = loc
-    obj.keyframe_insert("location", frame=frame)
+# (rot_x_deg, dz_factor, torso_z, legs_z) — dz_factor is multiplied by h
+STANCE = {
+    "stand": (0.0, 0.0, 1.0, 1.0),
+    "lean": (-25.0, 0.0, 1.0, 1.0),
+    "crouch": (0.0, -0.28, 0.75, 0.5),
+}
+
+def foot_mid(mark):
+    return (mark["footL"]["x"] + mark["footR"]["x"]) / 200.0, (mark["footL"]["y"] + mark["footR"]["y"]) / 200.0
+
+def char_height(ch):
+    return float(ch.get("heightM") or 1.0)
 
 def build_shot(shot, frame0, frames=None):
+    scene = bpy.context.scene
     cam_data = bpy.data.cameras.new(shot["id"] + "_cam")
     cam_data.lens = shot["camera"]["lensMm"]
     cam = bpy.data.objects.new(shot["id"] + "_Camera", cam_data)
@@ -108,46 +100,82 @@ def build_shot(shot, frame0, frames=None):
     cam.location = (p["x"], p["y"], p["z"])
     direction = Vector((look["x"]-p["x"], look["y"]-p["y"], look["z"]-p["z"]))
     cam.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
+    # matrix_world is stale in -b mode until the depsgraph runs — unproject
+    # would read an identity matrix and stack every figure at the origin
+    bpy.context.view_layer.update()
     fps = 24
     frames = int(frames if frames is not None else shot["duration"] * fps)
+    right = cam.matrix_world.to_3x3() @ Vector((1, 0, 0))
+    right = Vector((right.x, right.y, 0))
+    right.normalize()
+    body = grey(shot["id"] + "_body", 0.40)
     for mark in shot["marks"]:
-        ch = next((c for c in CHARS if c["id"] == mark["characterId"]), {"name": mark["characterId"], "color": "#e2b15c"})
-        add_mark(f"{shot['id']}_{ch['name']}_start", mark["start"]["x"], mark["start"]["y"], ch["color"])
-        add_mark(f"{shot['id']}_{ch['name']}_end", mark["end"]["x"], mark["end"]["y"], ch["color"])
-        rig = make_rig(f"{shot['id']}_{ch['name']}", ch["color"])
-        for side, hand, foot in (("L", mark["handL"], mark["footL"]), ("R", mark["handR"], mark["footR"])):
-            hand_empty = bpy.data.objects.get(f"{rig.name}_HAND_{side}")
-            foot_empty = bpy.data.objects.get(f"{rig.name}_FOOT_{side}")
-            gait = mark["gait"]
-            for f in range(frames + 1):
-                t = f / max(1, frames)
-                sx = mark["start"]["x"] * 0.12
-                sy = mark["start"]["y"] * 0.12
-                ex = mark["end"]["x"] * 0.12
-                ey = mark["end"]["y"] * 0.12
-                x = sx + (ex - sx) * t
-                y = sy + (ey - sy) * t
-                stride = math.sin(t * math.pi * 2) * (0.22 if gait == "walk" else 0.0)
-                if foot_empty:
-                    key_empty(foot_empty, frame0 + f, Vector((
-                        foot["x"] * 0.12 + (x - sx) + (stride if side == "L" else -stride),
-                        foot["y"] * 0.12 + (y - sy),
-                        0.04 if gait != "walk" or abs(math.sin(t * math.pi * 2)) > 0.15 else 0.12
-                    )))
-                if hand_empty:
-                    reach = t if gait == "reach" else 0.2
-                    key_empty(hand_empty, frame0 + f, Vector((
-                        hand["x"] * 0.12 * (0.4 + 0.6 * reach) + x,
-                        hand["y"] * 0.12 + y,
-                        1.12 + (0.15 if gait == "reach" else 0.0)
-                    )))
+        ch = next((c for c in CHARS if c["id"] == mark["characterId"]), None)
+        if ch is None:
+            raise SystemExit("mark references unknown character: " + mark["characterId"])
+        h = char_height(ch)
+        # feet decide depth (they touch the floor); start/end only give the travel vector
+        fu, fv = foot_mid(mark)
+        p_feet = unproject(cam, scene, fu, fv, 0.0)
+        a = unproject(cam, scene, mark["start"]["x"] / 100.0, fv, 0.0)
+        b = unproject(cam, scene, mark["end"]["x"] / 100.0, fv, 0.0)
+        delta = b - a
+        pivot, torso, head, legs = mannequin(shot["id"] + "_" + ch["name"], h, body)
+        # +y faces camera-right (facing >= 0) or camera-left
+        f = right if mark.get("facing", 0) >= 0 else -right
+        pivot.rotation_euler = (0, 0, math.atan2(-f.x, f.y))
+        s0 = STANCE[mark.get("stance") or "stand"]
+        s1 = STANCE[mark.get("stanceEnd")] if mark.get("stanceEnd") else s0
+        hold = max(1, int(0.4 * frames))
+        for f_i in range(frames + 1):
+            t = f_i / max(1, frames)
+            k = min(1.0, f_i / hold)
+            rot = s0[0] + (s1[0] - s0[0]) * k
+            dz = (s0[1] + (s1[1] - s0[1]) * k) * h
+            tz = s0[2] + (s1[2] - s0[2]) * k
+            lz = s0[3] + (s1[3] - s0[3]) * k
+            loc = p_feet + delta * t
+            pivot.location = (loc.x, loc.y, dz)
+            pivot.keyframe_insert("location", frame=frame0 + f_i)
+            for part in (torso, head):
+                part.rotation_euler = (math.radians(rot), 0, 0)
+                part.keyframe_insert("rotation_euler", frame=frame0 + f_i)
+            # ops scale= bakes into the mesh — keyframe only the stance multiplier
+            torso.scale = (1.0, 1.0, tz)
+            torso.keyframe_insert("scale", frame=frame0 + f_i)
+            for leg in legs:
+                leg.scale = (1.0, 1.0, lz)
+                leg.keyframe_insert("scale", frame=frame0 + f_i)
+    plow = next((pr for pr in (shot.get("props") or []) if "犁" in pr["name"]), None)
+    if plow is not None:
+        holder = next((m for m in shot["marks"] if m["characterId"] == plow.get("heldBy")), shot["marks"][0])
+        hch = next((c for c in CHARS if c["id"] == holder["characterId"]), None)
+        hh = char_height(hch) if hch else 1.0
+        hu = (holder["handL"]["x"] + holder["handR"]["x"]) / 200.0
+        hv = (holder["handL"]["y"] + holder["handR"]["y"]) / 200.0
+        A = unproject(cam, scene, hu, hv, 0.85 * hh)
+        pts = [unproject(cam, scene, *foot_mid(m), 0.0) for m in shot["marks"][:2]]
+        S = (pts[0] + pts[1]) / 2.0
+        o = cam.matrix_world.translation
+        toward = Vector((o.x - S.x, o.y - S.y, 0))
+        toward.normalize()
+        S = S + toward * 0.4
+        B = Vector((S.x, S.y, 0.0))
+        iron = grey(shot["id"] + "_plow", 0.22)
+        dx, dy, dz = B.x - A.x, B.y - A.y, B.z - A.z
+        L = math.sqrt(dx * dx + dy * dy + dz * dz)
+        mid = ((A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2)
+        cube(mid, (0.06, L, 0.12), iron,
+             rot=(math.atan2(dz, math.hypot(dx, dy)), 0, math.atan2(dx, dy)))
+        cube((B.x + 0.03, B.y + 0.02, 0.06), (0.26, 0.34, 0.05), iron,
+             rot=(0, 0, math.radians(20)))
     return frame0 + frames
 `;
 
 export function blenderBlockingScript(sheet: CallSheet) {
   const { chars, shots } = sceneJson(sheet);
   return `# SlateCrew layout agent — Blender 4.x
-# Fast blocking: scene marks, camera, humanoid IK (hands + feet).
+# Fast blocking: scene marks, camera, grey mesh mannequins (WORKBENCH-safe).
 # blender -b -P blocking.py
 ${PY_HELPERS}
 CHARS = json.loads(${JSON.stringify(chars)})
@@ -214,7 +242,9 @@ def main():
     scene.frame_start = 1
     scene.frame_end = frames
     scene.render.engine = "BLENDER_WORKBENCH"
-    scene.display.shading.light = "STUDIO"
+    # FLAT: STUDIO lighting flattens figure-vs-floor contrast to ~9 luma, which
+    # cannot pass the YMAX-YMIN>=40 figure gate; FLAT renders pure material greys
+    scene.display.shading.light = "FLAT"
     scene.display.shading.color_type = "MATERIAL"
     scene.render.fps = fps
     scene.render.resolution_x = width

@@ -1,0 +1,90 @@
+{
+  "observation": {
+    "protocol": "astra.protocol.v2",
+    "blender": "5.1.2",
+    "frame": 3,
+    "hero": {
+      "name": "HeroRig",
+      "meshes": [
+        "HeroMesh"
+      ],
+      "maskId": 2,
+      "location": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "bounds": {
+        "min": [
+          -0.5,
+          -0.5,
+          0.0
+        ],
+        "max": [
+          0.5,
+          0.5,
+          2.0
+        ]
+      },
+      "screenPos": [
+        0.49497118991215083,
+        0.48106444466379317
+      ]
+    },
+    "camera": {
+      "name": "Camera",
+      "location": [
+        2.880000114440918,
+        -4.0,
+        2.9200000762939453
+      ],
+      "forward": [
+        -0.5444555282592773,
+        0.7561882138252258,
+        -0.36297041177749634
+      ],
+      "aimAngleDeg": 0.0,
+      "occluded": false,
+      "blocker": null,
+      "evaluated": true
+    },
+    "pixelEvidence": {
+      "source": "PIL",
+      "maskId": 2,
+      "frame": 3,
+      "camera": "Camera",
+      "meshes": [
+        "HeroMesh"
+      ],
+      "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/shot4_fixed/blockout.camera/hero-mask.png",
+      "sha256": "17794cdfd9735d9894cf2c0989ca1a8e3ac52bdc187b7cfa3ed1af64eb8feea7",
+      "width": 320,
+      "height": 180,
+      "pixelCount": 20262,
+      "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/shot4_fixed/blockout.camera/frame.png",
+      "frameSha256": "0958c63aad78db31d82787c5a8df40cb9794233251be137e90396525af3bc97e"
+    },
+    "errors": []
+  },
+  "checks": [
+    {
+      "id": "camera_aimed_at_hero",
+      "ok": true,
+      "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+      "required": false
+    },
+    {
+      "id": "camera_occluded",
+      "ok": true,
+      "detail": "occluded=False; blocker=None",
+      "required": false
+    },
+    {
+      "id": "hero_on_screen",
+      "ok": true,
+      "detail": "PIL centroid=[0.49497118991215083, 0.48106444466379317]; pixels=20262; centre region=(0.25, 0.75)",
+      "required": true
+    }
+  ],
+  "ok": true
+}

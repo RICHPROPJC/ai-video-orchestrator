@@ -1,0 +1,30 @@
+[
+  {
+    "tool": "scene.clear",
+    "args": {}
+  },
+  {
+    "tool": "character.spawn",
+    "args": {
+      "name": "Hero",
+      "role": "hero"
+    }
+  },
+  {
+    "tool": "camera.frame",
+    "args": {
+      "follow": "Hero"
+    }
+  },
+  {
+    "tool": "render.animation",
+    "args": {
+      "path": "shots/fixtures/f4/blockout.mp4",
+      "width": 320,
+      "height": 180,
+      "frameStart": 1,
+      "frameEnd": 3,
+      "fps": 6
+    }
+  }
+]

@@ -1,0 +1,64 @@
+{
+  "brief": "兩個人喺一個房入面，為咗一個決定拉鋸，最後一個人行咗出去。",
+  "castRoster": [
+    "R1",
+    "R2",
+    "R3",
+    "R4"
+  ],
+  "targetSec": 90,
+  "ranges": {
+    "scenes": [
+      3,
+      3
+    ],
+    "totalBeats": [
+      12,
+      24
+    ]
+  },
+  "replies": [
+    {
+      "seat": "writer",
+      "unit": "outline",
+      "model": "kimi-k3",
+      "content": "{\"thinking\":\"上一版用咗中文時間同天氣詞，今次全部轉做 enum 值：清晨轉 dawn，陰天轉 clear（最貼近室內窗光場景）。其餘結構、角色、場次拆分維持不變。\",\"title\":\"門之後\",\"logline\":\"兩個人，一間房，一個決定——講唔攏，就只剩邊個先推門。\",\"mood\":\"膠著、壓抑、一觸即發\",\"language\":\"zh-Hant\",\"world\":{\"location\":\"舊式唐樓細房，一張檯兩張櫈，窗外係天井\",\"timeOfDay\":\"dawn\",\"weather\":\"clear\",\"grade\":\"灰藍低飽和，窗光偏冷\",\"refs\":[\"《婚姻故事》室內對峙\",\"《奪命金》唐樓質感\"]},\"characters\":[{\"id\":\"A\",\"name\":\"R1\",\"role\":\"想走嗰個\",\"wardrobe\":\"深色長袖恤衫，袖口摺起\",\"palette\":[\"#2e3440\",\"#5b6572\",\"#a3a8b0\"],\"voice\":{\"pitchHz\":140,\"gender\":\"m\"},\"heightM\":1.0,\"speaks\":true},{\"id\":\"B\",\"name\":\"R2\",\"role\":\"想留嗰個\",\"wardrobe\":\"淺色家居服，外套披喺膊頭\",\"palette\":[\"#7a6f63\",\"#c9c2b8\",\"#e8e2d6\"],\"voice\":{\"pitchHz\":220,\"gender\":\"f\"},\"heightM\":0.95,\"speaks\":true}],\"scenes\":[{\"id\":\"SC01\",\"heading\":\"內景 唐樓房 清晨\",\"location\":\"唐樓細房\",\"timeOfDay\":\"dawn\",\"weather\":\"clear\",\"summary\":\"兩人隔檯對坐，各自講出立場，語氣克制但寸步不讓。\",\"targetSec\":25},{\"id\":\"SC02\",\"heading\":\"內景 唐樓房 清晨\",\"location\":\"唐樓細房\",\"timeOfDay\":\"dawn\",\"weather\":\"clear\",\"summary\":\"拉鋸升溫，舊事被翻出，其中一方拍檯起身，另一方沉默。\",\"targetSec\":35},{\"id\":\"SC03\",\"heading\":\"內景 唐樓房 清晨\",\"location\":\"唐樓細房\",\"timeOfDay\":\"dawn\",\"weather\":\"clear\",\"summary\":\"沉默的一方講出最後一句，另一人望住佢，然後推門行咗出去；剩低嗰個冇追。\",\"targetSec\":30}],\"targetSec\":90}"
+    },
+    {
+      "seat": "writer",
+      "unit": "SC01",
+      "model": "kimi-k3",
+      "content": "{\"sceneId\":\"SC01\",\"thinking\":\"25秒最多4拍。兩人對峙，克制但寸土不讓，情緒要壓抑到位。\",\"beats\":[{\"id\":\"SC01.B01\",\"action\":\"兩人隔檯對坐，檯上放着一杯涼透的茶。R1目光低垂，手指輕敲桌面。\",\"emotion\":\"壓抑\"},{\"id\":\"SC01.B02\",\"action\":\"R1抬起眼，直視對方，聲音平穩但帶住火。\",\"dialogue\":\"我唔可以再留喺度。\",\"speaker\":\"R1\",\"emotion\":\"決絕\"},{\"id\":\"SC01.B03\",\"action\":\"R2身體前傾，雙手交握放檯面，語氣同樣冷靜。\",\"dialogue\":\"你出咗呢道門，就唔好返轉頭。\",\"speaker\":\"R2\",\"emotion\":\"隱忍\"},{\"id\":\"SC01.B04\",\"action\":\"R1站起身，椅腳刮地一聲響。R2坐直不動，兩人隔檯對望，窗外冷光照入。\",\"emotion\":\"一觸即發\"}]}"
+    },
+    {
+      "seat": "writer",
+      "unit": "SC02",
+      "model": "kimi-k3",
+      "content": "{\"sceneId\":\"SC02\",\"thinking\":\"35秒最多六拍，打算用五拍：拉鋸、翻舊事、升溫、拍檯起身、沉默。延續上一場R1已起身對望。對白要短，每句唔超過六十秒計時上限。拍大啲，唔好切碎。\",\"beats\":[{\"id\":\"SC02.B01\",\"action\":\"R1仍然企喺檯邊，手指敲檯面。R2慢慢斟一杯茶，推過去，R1冇接。\",\"dialogue\":\"坐低，飲啖茶先講。\",\"speaker\":\"R2\",\"emotion\":\"強壓耐性\"},{\"id\":\"SC02.B02\",\"action\":\"R1拉開窗，天井冷風灌入，佢背住R2望出面。\",\"dialogue\":\"三年前嗰晚，你都係咁講。結果呢？\",\"speaker\":\"R1\",\"emotion\":\"舊傷被揭\"},{\"id\":\"SC02.B03\",\"action\":\"R2握杯嘅手收緊，茶水濺出。佢放低杯，起身行近R1半步。\",\"dialogue\":\"你仲要攞嗰晚出嚟講幾多次？我留，係因為呢度係屋企。\",\"speaker\":\"R2\",\"emotion\":\"壓抑爆邊\"},{\"id\":\"SC02.B04\",\"action\":\"R1轉身一掌拍落檯面，茶杯跳起翻側，茶水流滿檯。\",\"dialogue\":\"屋企？呢度係竇！我走，係因為我唔想再焗死！\",\"speaker\":\"R1\",\"emotion\":\"爆發\"},{\"id\":\"SC02.B05\",\"action\":\"兩人隔住濕檯對峙，R2慢慢坐返低，拎布抹茶漬，唔再望R1。房入面淨返抹檯聲。\",\"emotion\":\"死寂膠著\"}]}"
+    },
+    {
+      "seat": "writer",
+      "unit": "SC03",
+      "model": "kimi-k3",
+      "content": "{\"sceneId\":\"SC03\",\"thinking\":\"30秒最多五拍，寧願拍大啲。沉默嘅一方講出最後一句，R2抹檯接住上場，應該係R2開口。之後R1望住佢、推門走，R2唔追。對白要短，先唔好超時。\",\"beats\":[{\"id\":\"SC03.B01\",\"action\":\"R2抹檯嘅手停低，布揸實喺檯角，眼望住濕漬，唔抬頭。\",\"emotion\":\"壓抑到盡頭\"},{\"id\":\"SC03.B02\",\"action\":\"R2緩緩抬眼望住R1，聲音好平，講出最後一句。\",\"dialogue\":\"你行出去，就唔好再返嚟。\",\"speaker\":\"R2\",\"emotion\":\"死心地決絕\"},{\"id\":\"SC03.B03\",\"action\":\"R1喺門邊停咗半秒，喉嚨鬱咗一下，冇答，眼神由佢塊面移去檯面。\",\"emotion\":\"哽住、唔敢回頭\"},{\"id\":\"SC03.B04\",\"action\":\"R1伸手拉開木門，門鉸吱一聲，冷光由門罅湧入，佢一步跨出去。\",\"emotion\":\"斷然\"},{\"id\":\"SC03.B05\",\"action\":\"R2坐喺原地，望住扇門慢慢彈返埋，手再攞起布，喺同一個位抹，冇追。\",\"emotion\":\"空洞死寂\"}]}"
+    },
+    {
+      "seat": "boards",
+      "unit": "SC01",
+      "model": "qwen3.6-35b",
+      "content": "{\"sceneId\": \"SC01\", \"thinking\": \"Beat B01 建立壓抑氛圍，用全景帶出環境與兩人關係。B02 與 B03 對話交鋒，採用正反打鏡頭展現張力，確保每句對白有獨立鏡頭以符合規則。B04 動作幅度大（起身），需獨立鏡頭並拉遠景別以容納動作空間，結尾留白。總時長控制在 25 秒內。\", \"shots\": [{\"beatId\": \"SC01.B01\", \"size\": \"wide\", \"angle\": \"high\", \"side\": \"frontal\", \"durationSec\": 5.5, \"action\": \"兩人隔檯對坐，檯上放着一杯涼透的茶。R1目光低垂，手指輕敲桌面。\", \"cast\": [{\"characterId\": \"A\", \"slot\": \"L\", \"depth\": \"mid\", \"facing\": 1, \"gait\": \"plant\", \"stance\": \"stand\"}, {\"characterId\": \"B\", \"slot\": \"R\", \"depth\": \"mid\", \"facing\": -1, \"gait\": \"plant\", \"stance\": \"stand\"}], \"props\": [{\"name\": \"茶杯\", \"heldBy\": null, \"shape\": [\"small\", \"cylindrical\", \"white\"], \"forbid\": [\"liquid\", \"steam\"]}]}, {\"beatId\": \"SC01.B02\", \"size\": \"closeup\", \"angle\": \"eye\", \"side\": \"leftQuarter\", \"durationSec\": 5.5, \"action\": \"R1抬起眼，直視對方。\", \"dialogue\": \"我唔可以再留喺度。\", \"speaker\": \"R1\", \"cast\": [{\"characterId\": \"A\", \"slot\": \"L\", \"depth\": \"near\", \"facing\": 1, \"gait\": \"plant\", \"stance\": \"stand\"}]}, {\"beatId\": \"SC01.B03\", \"size\": \"closeup\", \"angle\": \"eye\", \"side\": \"rightQuarter\", \"durationSec\": 5.5, \"action\": \"R2身體前傾，雙手交握放檯面。\", \"dialogue\": \"你出咗呢道門，就唔好返轉頭。\", \"speaker\": \"R2\", \"cast\": [{\"characterId\": \"B\", \"slot\": \"R\", \"depth\": \"near\", \"facing\": -1, \"gait\": \"plant\", \"stance\": \"crouch\"}]}, {\"beatId\": \"SC01.B04\", \"size\": \"medium\", \"angle\": \"eye\", \"side\": \"frontal\", \"durationSec\": 8.5, \"action\": \"R1站起身，椅腳刮地。R2坐直不動，兩人隔檯對望。\", \"cast\": [{\"characterId\": \"A\", \"slot\": \"L\", \"depth\": \"mid\", \"facing\": 1, \"gait\": \"walk\", \"stance\": \"stand\", \"stanceEnd\": \"stand\", \"travelTo\": \"L\"}, {\"characterId\": \"B\", \"slot\": \"R\", \"depth\": \"mid\", \"facing\": -1, \"gait\": \"plant\", \"stance\": \"stand\"}]}]}"
+    },
+    {
+      "seat": "boards",
+      "unit": "SC02",
+      "model": "qwen3.6-35b",
+      "content": "{\"sceneId\": \"SC02\", \"thinking\": \"開場用中景建立兩人對峙關係，R1 在檯邊，R2 斟茶。R1 轉身望窗外時切特寫強調情緒，R2 起身逼近時用低角度製造壓迫感。最後 R1 拍檯爆發用插入鏡頭強調動作細節，結尾給回全景展現僵局。\", \"shots\": [{\"beatId\": \"SC02.B01\", \"size\": \"medium\", \"angle\": \"eye\", \"side\": \"frontal\", \"durationSec\": 6.5, \"action\": \"R1 站喺檯邊手指敲檯，R2 斟茶推過去。\", \"dialogue\": \"坐低，飲啖茶先講。\", \"speaker\": \"R2\", \"cast\": [{\"characterId\": \"A\", \"slot\": \"L\", \"depth\": \"mid\", \"facing\": 1, \"gait\": \"plant\", \"stance\": \"stand\"}, {\"characterId\": \"B\", \"slot\": \"R\", \"depth\": \"mid\", \"facing\": -1, \"gait\": \"walk\", \"stance\": \"stand\"}], \"props\": [{\"name\": \"茶杯\", \"heldBy\": \"B\", \"shape\": [\"cylindrical\", \"transparent\"], \"forbid\": []}]}, {\"beatId\": \"SC02.B02\", \"size\": \"closeup\", \"angle\": \"high\", \"side\": \"leftQuarter\", \"durationSec\": 7.5, \"action\": \"R1 背住鏡頭望窗外，R2 喺前景模糊。\", \"dialogue\": \"三年前嗰晚，你都係咁講。結果呢？\", \"speaker\": \"R1\", \"cast\": [{\"characterId\": \"A\", \"slot\": \"C\", \"depth\": \"mid\", \"facing\": -1, \"gait\": \"plant\", \"stance\": \"stand\"}]}, {\"beatId\": \"SC02.B03\", \"size\": \"medium\", \"angle\": \"low\", \"side\": \"rightQuarter\", \"durationSec\": 8.5, \"action\": \"R2 放低茶杯，起身行近 R1。\", \"dialogue\": \"你仲要攞嗰晚出嚟講幾多次？我留，係因為呢度係屋企。\", \"speaker\": \"R2\", \"cast\": [{\"characterId\": \"B\", \"slot\": \"C\", \"depth\": \"mid\", \"facing\": 1, \"gait\": \"walk\", \"stance\": \"stand\", \"stanceEnd\": \"lean\", \"travelTo\": \"L\"}]}, {\"beatId\": \"SC02.B04\", \"size\": \"insert\", \"angle\": \"eye\", \"side\": \"frontal\", \"durationSec\": 6.0, \"action\": \"手掌拍落檯面，茶杯翻側，茶水流出。\", \"dialogue\": \"屋企？呢度係竇！我走，係因為我唔想再焗死！\", \"speaker\": \"R1\", \"cast\": [{\"characterId\": \"A\", \"slot\": \"L\", \"depth\": \"mid\", \"facing\": 1, \"gait\": \"plant\", \"stance\": \"stand\"}], \"props\": [{\"name\": \"茶杯\", \"heldBy\": null, \"shape\": [\"cylindrical\", \"tipping\"], \"forbid\": []}]}, {\"beatId\": \"SC02.B05\", \"size\": \"full\", \"angle\": \"eye\", \"side\": \"frontal\", \"durationSec\": 8.0, \"action\": \"R2 坐低抹檯，R1 站喺遠處沉默。\", \"cast\": [{\"characterId\": \"A\", \"slot\": \"L\", \"depth\": \"far\", \"facing\": 1, \"gait\": \"plant\", \"stance\": \"stand\"}, {\"characterId\": \"B\", \"slot\": \"C\", \"depth\": \"mid\", \"facing\": -1, \"gait\": \"plant\", \"stance\": \"crouch\", \"stanceEnd\": \"lean\"}]}]}"
+    },
+    {
+      "seat": "boards",
+      "unit": "SC03",
+      "model": "qwen3.6-35b",
+      "content": "{\"sceneId\": \"SC03\", \"thinking\": \"修正 travelTo 和 stanceEnd 的無效值。travelTo 必須是 slot 位置（L/C/R）而非位置描述，stanceEnd 必須是預定義姿態。R1 離開時，他的最終位置在畫外，但仍需佔用一個 slot 以便於幾何邏輯，故設為 R，並標記為站姿結束。\", \"shots\": [{\"beatId\": \"SC03.B01\", \"size\": \"insert\", \"angle\": \"high\", \"side\": \"frontal\", \"durationSec\": 5.5, \"action\": \"濕漬旁邊，手指用力攥緊抹布，骨節泛白。\", \"cast\": [{\"characterId\": \"B\", \"slot\": \"C\", \"depth\": \"mid\", \"facing\": 1, \"gait\": \"plant\", \"stance\": \"crouch\"}], \"props\": [{\"name\": \"抹布\", \"heldBy\": \"B\", \"shape\": [\"cloth\", \"soft\"], \"forbid\": [\"food\", \"weapon\"]}]}, {\"beatId\": \"SC03.B02\", \"size\": \"closeup\", \"angle\": \"eye\", \"side\": \"leftQuarter\", \"durationSec\": 6.8, \"action\": \"鏡頭從濕漬緩緩上搖至 R2 的臉，眼神平靜卻死寂，看著前方。\", \"cast\": [{\"characterId\": \"B\", \"slot\": \"C\", \"depth\": \"near\", \"facing\": -1, \"gait\": \"plant\", \"stance\": \"stand\"}], \"dialogue\": \"你行出去，就唔好再返嚟。\", \"speaker\": \"R2\"}, {\"beatId\": \"SC03.B03\", \"size\": \"medium\", \"angle\": \"eye\", \"side\": \"rightQuarter\", \"durationSec\": 6.2, \"action\": \"R1 站在門邊側影，喉結滾動，眼神避開 R2 看向地板方向。\", \"cast\": [{\"characterId\": \"A\", \"slot\": \"R\", \"depth\": \"mid\", \"facing\": -1, \"gait\": \"plant\", \"stance\": \"stand\"}]}, {\"beatId\": \"SC03.B04\", \"size\": \"wide\", \"angle\": \"eye\", \"side\": \"frontal\", \"durationSec\": 7.5, \"action\": \"R1 伸手打開木門，冷光涌入，R1 跨步走出門外，身影消失。\", \"cast\": [{\"characterId\": \"A\", \"slot\": \"R\", \"depth\": \"far\", \"facing\": -1, \"gait\": \"walk\", \"stance\": \"stand\", \"stanceEnd\": \"stand\", \"travelTo\": \"R\"}]}, {\"beatId\": \"SC03.B05\", \"size\": \"full\", \"angle\": \"eye\", \"side\": \"frontal\", \"durationSec\": 6.0, \"action\": \"門彈回關上。R2 坐在原位，拿起抹布繼續擦拭同一個位置，動作機械。\", \"cast\": [{\"characterId\": \"B\", \"slot\": \"C\", \"depth\": \"mid\", \"facing\": 1, \"gait\": \"plant\", \"stance\": \"stand\"}], \"props\": [{\"name\": \"抹布\", \"heldBy\": \"B\", \"shape\": [\"cloth\", \"soft\"], \"forbid\": []}]}]}"
+    }
+  ]
+}

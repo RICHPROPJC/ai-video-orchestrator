@@ -1,0 +1,436 @@
+{
+  "three_point_lighting": [
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "Key",
+        "type": "AREA",
+        "location": [
+          4.2,
+          -3.4,
+          5.6
+        ],
+        "energy": 420,
+        "color": "#fff3dd"
+      }
+    },
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "Fill",
+        "type": "AREA",
+        "location": [
+          -3.8,
+          -2.2,
+          3.4
+        ],
+        "energy": 140,
+        "color": "#d7e7ff"
+      }
+    },
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "Rim",
+        "type": "AREA",
+        "location": [
+          0.2,
+          4.6,
+          4.8
+        ],
+        "energy": 220,
+        "color": "#fff7f0"
+      }
+    }
+  ],
+  "studio_soft": [
+    {
+      "tool": "scene.set_world",
+      "args": {
+        "mood": "studio",
+        "color": "#0c0d12",
+        "strength": 0.18
+      }
+    },
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "SoftKey",
+        "type": "AREA",
+        "location": [
+          3.6,
+          -4.2,
+          6.2
+        ],
+        "energy": 380,
+        "color": "#fff7ea"
+      }
+    },
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "SoftFill",
+        "type": "AREA",
+        "location": [
+          -4.4,
+          -1.4,
+          3.8
+        ],
+        "energy": 110,
+        "color": "#e8f0ff"
+      }
+    },
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "Top",
+        "type": "AREA",
+        "location": [
+          0,
+          0,
+          7.5
+        ],
+        "energy": 90,
+        "color": "#ffffff"
+      }
+    }
+  ],
+  "overcast": [
+    {
+      "tool": "scene.set_world",
+      "args": {
+        "mood": "overcast",
+        "color": "#9eb0c6",
+        "strength": 0.55
+      }
+    },
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "Sky",
+        "type": "SUN",
+        "location": [
+          2,
+          -4,
+          8
+        ],
+        "energy": 2.2,
+        "color": "#e9f1ff"
+      }
+    }
+  ],
+  "night_neon": [
+    {
+      "tool": "scene.set_world",
+      "args": {
+        "mood": "night",
+        "color": "#05060c",
+        "strength": 0.08
+      }
+    },
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "Cyan",
+        "type": "AREA",
+        "location": [
+          -3.2,
+          -2,
+          2.4
+        ],
+        "energy": 260,
+        "color": "#3ec6e0"
+      }
+    },
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "Magenta",
+        "type": "AREA",
+        "location": [
+          3.4,
+          1.6,
+          2.2
+        ],
+        "energy": 240,
+        "color": "#d946ef"
+      }
+    },
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "Moon",
+        "type": "SUN",
+        "location": [
+          -6,
+          3,
+          9
+        ],
+        "energy": 1.1,
+        "color": "#9bb7ff"
+      }
+    }
+  ],
+  "sunset_rim": [
+    {
+      "tool": "scene.set_world",
+      "args": {
+        "mood": "sunset",
+        "color": "#24160e",
+        "strength": 0.22
+      }
+    },
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "SunKey",
+        "type": "SUN",
+        "location": [
+          6,
+          -2,
+          4
+        ],
+        "energy": 4.2,
+        "color": "#ffb067"
+      }
+    },
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "CoolFill",
+        "type": "AREA",
+        "location": [
+          -4,
+          -3,
+          2.4
+        ],
+        "energy": 80,
+        "color": "#8fb4ff"
+      }
+    },
+    {
+      "tool": "light.create",
+      "args": {
+        "name": "Rim",
+        "type": "AREA",
+        "location": [
+          1,
+          5,
+          3.2
+        ],
+        "energy": 180,
+        "color": "#ffd0a0"
+      }
+    }
+  ],
+  "cinematic_camera": [
+    {
+      "tool": "camera.create",
+      "args": {
+        "location": [
+          6.4,
+          -7.8,
+          2.6
+        ],
+        "lookAt": [
+          0,
+          0,
+          0.9
+        ],
+        "fov": 35
+      }
+    }
+  ],
+  "product_camera": [
+    {
+      "tool": "camera.create",
+      "args": {
+        "location": [
+          5.6,
+          -5.8,
+          4.2
+        ],
+        "lookAt": [
+          0,
+          0,
+          0.7
+        ],
+        "fov": 40
+      }
+    },
+    {
+      "tool": "camera.frame",
+      "args": {}
+    }
+  ],
+  "turntable": [
+    {
+      "tool": "animation.turntable",
+      "args": {
+        "mode": "turntable"
+      }
+    }
+  ],
+  "clay_preview": [
+    {
+      "tool": "object.set_material",
+      "args": {
+        "material": "clay",
+        "color": "#d5c4ae"
+      }
+    }
+  ],
+  "studio_ground": [
+    {
+      "tool": "object.create",
+      "args": {
+        "primitive": "plane",
+        "name": "StudioGround",
+        "location": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          14,
+          14,
+          1
+        ],
+        "material": "matte",
+        "color": "#1a1c22"
+      }
+    }
+  ],
+  "marble_plinth": [
+    {
+      "tool": "object.create",
+      "args": {
+        "primitive": "cylinder",
+        "name": "Plinth",
+        "location": [
+          0,
+          0,
+          0.28
+        ],
+        "scale": [
+          1.1,
+          1.1,
+          0.56
+        ],
+        "material": "marble"
+      }
+    }
+  ],
+  "truman_world": [
+    {
+      "tool": "world.build",
+      "args": {
+        "preset": "truman"
+      }
+    }
+  ],
+  "town_plaza": [
+    {
+      "tool": "world.build",
+      "args": {
+        "preset": "plaza"
+      }
+    }
+  ],
+  "interior_room": [
+    {
+      "tool": "world.build",
+      "args": {
+        "preset": "interior"
+      }
+    }
+  ],
+  "first_person": [
+    {
+      "tool": "camera.mode",
+      "args": {
+        "mode": "first_person"
+      }
+    }
+  ],
+  "third_person": [
+    {
+      "tool": "camera.mode",
+      "args": {
+        "mode": "third_person"
+      }
+    }
+  ],
+  "hidden_cameras": [
+    {
+      "tool": "camera.mode",
+      "args": {
+        "mode": "hidden"
+      }
+    }
+  ],
+  "walk_cycle": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "walk"
+      }
+    }
+  ],
+  "wave_action": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "wave"
+      }
+    }
+  ],
+  "sit_stance": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "sit"
+      }
+    }
+  ],
+  "lie_stance": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "lie"
+      }
+    }
+  ],
+  "kneel_stance": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "kneel"
+      }
+    }
+  ],
+  "crouch_stance": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "crouch"
+      }
+    }
+  ],
+  "lean_stance": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "lean"
+      }
+    }
+  ],
+  "turn_away_stance": [
+    {
+      "tool": "character.action",
+      "args": {
+        "action": "turn_away"
+      }
+    }
+  ]
+}

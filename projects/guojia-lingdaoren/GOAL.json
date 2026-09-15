@@ -1,0 +1,7 @@
+{
+  "drama": "guojia-lingdaoren",
+  "episodes": ["EP01","EP02","EP03","EP04","EP05","EP06","EP07","EP08","EP09","EP10"],
+  "durationSecPerEp": 300,
+  "hop": "one --scene SCxx at a time",
+  "forbid": ["--until stills", "full-slate H3", "stills-ready skip", "Cursor folder as writers room"]
+}

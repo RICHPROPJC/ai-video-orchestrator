@@ -1,4 +1,4 @@
-import fs from "node:fs";
+import { resolveCrewEndpoint } from "./crew-llm";
 import { loadConfig, legacyComfyUrl, type SlateConfig } from "./config";
 import { runCommand } from "./audio";
 
@@ -19,8 +19,6 @@ const H3_NODES = [
   "VHS_LoadVideo",
   "H3LastFrame",
 ];
-
-const VIMAX_SECRETS_ENV = "/mnt/ssd/vimax_repo/.vimax/secrets.env";
 
 export type MotionProbe = {
   up: boolean;
@@ -72,6 +70,9 @@ export function configWarns(cfg: SlateConfig): string[] {
   }
   const legacy = legacyComfyUrl();
   if (legacy) warns.push(`legacy top-level comfyUrl "${legacy}" ignored — config is two-host (stills.url + motion.comfyUrl)`);
+  if (!resolveCrewEndpoint(cfg.crew)) {
+    warns.push("crew.endpoint unset — seats fail loud; C10 pins LiteLLM :4000");
+  }
   if (process.env.NODE_USE_ENV_PROXY) {
     warns.push("NODE_USE_ENV_PROXY is set — node fetch would route tailnet hosts through HTTP_PROXY, which rejects them");
   }
@@ -81,14 +82,6 @@ export function configWarns(cfg: SlateConfig): string[] {
 export function sshPassSourceName(): string | null {
   if (process.env.SLATECREW_SSH_PASS) return "env SLATECREW_SSH_PASS";
   if (process.env.VIMAX_SSH_PASS) return "env VIMAX_SSH_PASS";
-  try {
-    if (fs.existsSync(VIMAX_SECRETS_ENV)) {
-      const text = fs.readFileSync(VIMAX_SECRETS_ENV, "utf8");
-      if (/^\s*VIMAX_SSH_PASS\s*=\s*\S/m.test(text)) return `file ${VIMAX_SECRETS_ENV} (key VIMAX_SSH_PASS)`;
-    }
-  } catch {
-    return null; // unreadable secrets file = no source
-  }
   return null;
 }
 
@@ -170,7 +163,7 @@ export function formatDoctor(report: DoctorReport) {
     `stills     ${report.stills.up ? `UP ${report.stills.url}` : `DOWN ${report.stills.url}  ${report.stills.error ?? ""}`.trim()}`,
     `  /edit    model ${report.stills.model ?? "?"}  multi_image ${report.stills.multiImage ?? "?"}  defaults ${JSON.stringify(report.stills.defaults ?? {})}`,
     `pictureqc  ${report.pictureQc.up ? `UP ${report.pictureQc.url}` : `DOWN ${report.pictureQc.url}  ${report.pictureQc.error ?? ""}`.trim()}`,
-    `  mars     ${report.pictureQc.modelPresent ? `${report.config.pictureQc.model} present` : `${report.config.pictureQc.model} NOT listed (host has ${report.pictureQc.models.length} models)`}`,
+    `  model    ${report.pictureQc.modelPresent ? `${report.config.pictureQc.model} present` : `${report.config.pictureQc.model} NOT listed (host has ${report.pictureQc.models.length} models)`}`,
   ];
   for (const warn of report.warns) lines.push(`WARN  ${warn}`);
   return lines.join("\n");

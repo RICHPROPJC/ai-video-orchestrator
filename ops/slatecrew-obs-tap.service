@@ -1,0 +1,14 @@
+[Unit]
+Description=SlateCrew obs tap (crew data/jobs events.jsonl -> obs bus; cursor idempotent, watch loop)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/ssd/ai-video-orchestrator-crew
+Environment=OBS_TAP_BUS=/mnt/ssd/whitebox/eventbus/eventbus.jsonl
+ExecStart=/usr/bin/npx tsx src/run-tap.ts --watch 60
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=default.target

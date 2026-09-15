@@ -1,0 +1,308 @@
+{
+  "verdict": "PASS",
+  "malformed": {
+    "count": 10,
+    "executorCalls": 0,
+    "blenderProcesses": 0,
+    "bpyCalls": 0,
+    "verdict": "PASS",
+    "cases": [
+      {
+        "id": "invalid_json",
+        "ok": false,
+        "status": "FAIL",
+        "error": "plan_invalid",
+        "detail": "invalid JSON",
+        "executorCalls": 0
+      },
+      {
+        "id": "wrong_envelope",
+        "ok": false,
+        "status": "FAIL",
+        "error": "plan_invalid",
+        "detail": ": Invalid input: expected object, received array",
+        "executorCalls": 0
+      },
+      {
+        "id": "unknown_tool",
+        "ok": false,
+        "status": "FAIL",
+        "error": "plan_invalid",
+        "detail": "calls.0.tool: Invalid discriminator value. Expected 'character.spawn' | 'scene.clear' | 'scene.set_world' | 'object.delete' | 'object.rename' | 'object.set_material' | 'camera.frame' | 'camera.mode' | 'world.build' | 'character.appear' | 'character.action' | 'physics.set' | 'mask.set' | 'skill.run' | 'object.place_on' | 'object.place_against_wall' | 'object.place_beside' | 'camera.frame_subject' | 'camera.search' | 'render.frame' | 'render.animation' | 'render.matte'",
+        "executorCalls": 0
+      },
+      {
+        "id": "extra_code_argument",
+        "ok": false,
+        "status": "FAIL",
+        "error": "plan_invalid",
+        "detail": "calls.0.tool: Invalid discriminator value. Expected 'character.spawn' | 'scene.clear' | 'scene.set_world' | 'object.delete' | 'object.rename' | 'object.set_material' | 'camera.frame' | 'camera.mode' | 'world.build' | 'character.appear' | 'character.action' | 'physics.set' | 'mask.set' | 'skill.run' | 'object.place_on' | 'object.place_against_wall' | 'object.place_beside' | 'camera.frame_subject' | 'camera.search' | 'render.frame' | 'render.animation' | 'render.matte'",
+        "executorCalls": 0
+      },
+      {
+        "id": "wrong_vector_type",
+        "ok": false,
+        "status": "FAIL",
+        "error": "plan_invalid",
+        "detail": "calls.0.tool: Invalid discriminator value. Expected 'character.spawn' | 'scene.clear' | 'scene.set_world' | 'object.delete' | 'object.rename' | 'object.set_material' | 'camera.frame' | 'camera.mode' | 'world.build' | 'character.appear' | 'character.action' | 'physics.set' | 'mask.set' | 'skill.run' | 'object.place_on' | 'object.place_against_wall' | 'object.place_beside' | 'camera.frame_subject' | 'camera.search' | 'render.frame' | 'render.animation' | 'render.matte'",
+        "executorCalls": 0
+      },
+      {
+        "id": "invented_action",
+        "ok": false,
+        "status": "FAIL",
+        "error": "plan_invalid",
+        "detail": "calls.0.args.action: Invalid option: expected one of \"idle\"|\"walk\"|\"wave\"|\"sit\"|\"look\"|\"lie\"|\"kneel\"|\"crouch\"|\"lean\"|\"turn_away\"",
+        "executorCalls": 0
+      },
+      {
+        "id": "unknown_intent",
+        "ok": false,
+        "status": "FAIL",
+        "error": "no_playbook",
+        "detail": "intent is outside the authored vocabulary",
+        "executorCalls": 0
+      },
+      {
+        "id": "next_allowed_top_level",
+        "ok": false,
+        "status": "FAIL",
+        "error": "plan_invalid",
+        "detail": "nextAllowed forbids world.build",
+        "executorCalls": 0
+      },
+      {
+        "id": "next_allowed_skill_expansion",
+        "ok": false,
+        "status": "FAIL",
+        "error": "plan_invalid",
+        "detail": "nextAllowed forbids expanded scene.set_world",
+        "executorCalls": 0
+      },
+      {
+        "id": "invalid_tail_after_valid_prefix",
+        "ok": false,
+        "status": "FAIL",
+        "error": "plan_invalid",
+        "detail": "calls.1.args.id: Invalid input",
+        "executorCalls": 0
+      }
+    ]
+  },
+  "positiveControl": {
+    "ok": true,
+    "playbookId": "pb.plaza.v2",
+    "executorCalls": 1,
+    "result": {
+      "ok": true,
+      "blender": "5.1.2",
+      "bpyCalls": 4,
+      "results": [
+        {
+          "ok": true,
+          "tool": "scene.clear",
+          "message": "Scene cleared"
+        },
+        {
+          "ok": true,
+          "tool": "character.spawn",
+          "message": "Spawned Hero"
+        },
+        {
+          "ok": true,
+          "message": "Camera framed to evaluated hero meshes",
+          "observation": {
+            "protocol": "astra.protocol.v2",
+            "blender": "5.1.2",
+            "frame": 1,
+            "hero": {
+              "name": "Hero",
+              "meshes": [
+                "Hero_ArmL",
+                "Hero_ArmR",
+                "Hero_Hair",
+                "Hero_Head",
+                "Hero_Hip",
+                "Hero_LegL",
+                "Hero_LegR",
+                "Hero_Torso"
+              ],
+              "maskId": 2,
+              "location": [
+                0,
+                0,
+                0.9750000238418579
+              ],
+              "bounds": {
+                "min": [
+                  -0.4399999976158142,
+                  -0.15000000596046448,
+                  0.009999990463256836
+                ],
+                "max": [
+                  0.4399999976158142,
+                  0.15000000596046448,
+                  1.940000057220459
+                ]
+              },
+              "screenPos": null
+            },
+            "camera": {
+              "name": "Camera",
+              "location": [
+                2.880000114440918,
+                -4,
+                2.8949999809265137
+              ],
+              "forward": [
+                -0.5444555282592773,
+                0.7561882138252258,
+                -0.36297041177749634
+              ],
+              "aimAngleDeg": 0,
+              "occluded": false,
+              "blocker": null,
+              "evaluated": true
+            },
+            "pixelEvidence": null,
+            "errors": []
+          },
+          "checks": [
+            {
+              "id": "camera_aimed_at_hero",
+              "ok": true,
+              "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+              "required": false
+            },
+            {
+              "id": "camera_occluded",
+              "ok": true,
+              "detail": "occluded=False; blocker=None",
+              "required": false
+            }
+          ],
+          "tool": "camera.frame"
+        },
+        {
+          "observation": {
+            "protocol": "astra.protocol.v2",
+            "blender": "5.1.2",
+            "frame": 2,
+            "hero": {
+              "name": "Hero",
+              "meshes": [
+                "Hero_ArmL",
+                "Hero_ArmR",
+                "Hero_Hair",
+                "Hero_Head",
+                "Hero_Hip",
+                "Hero_LegL",
+                "Hero_LegR",
+                "Hero_Torso"
+              ],
+              "maskId": 2,
+              "location": [
+                0,
+                0,
+                0.9750000238418579
+              ],
+              "bounds": {
+                "min": [
+                  -0.4399999976158142,
+                  -0.15000000596046448,
+                  0.009999990463256836
+                ],
+                "max": [
+                  0.4399999976158142,
+                  0.15000000596046448,
+                  1.940000057220459
+                ]
+              },
+              "screenPos": [
+                0.5021813642518619,
+                0.4518449559918754
+              ]
+            },
+            "camera": {
+              "name": "Camera",
+              "location": [
+                2.880000114440918,
+                -4,
+                2.8949999809265137
+              ],
+              "forward": [
+                -0.5444555282592773,
+                0.7561882138252258,
+                -0.36297041177749634
+              ],
+              "aimAngleDeg": 0,
+              "occluded": false,
+              "blocker": null,
+              "evaluated": true
+            },
+            "pixelEvidence": {
+              "source": "PIL",
+              "maskId": 2,
+              "frame": 2,
+              "camera": "Camera",
+              "meshes": [
+                "Hero_ArmL",
+                "Hero_ArmR",
+                "Hero_Hair",
+                "Hero_Head",
+                "Hero_Hip",
+                "Hero_LegL",
+                "Hero_LegR",
+                "Hero_Torso"
+              ],
+              "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f4/blockout.camera/hero-mask.png",
+              "sha256": "27e00d1e2f179c77fbe912fdcb79a85bbe681736dc5fb80cd9657ce3905a5455",
+              "width": 320,
+              "height": 180,
+              "pixelCount": 5908,
+              "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f4/blockout.camera/frame.png",
+              "frameSha256": "8b72c471d54fa8c336c30a0c441dd5c56d5baa1f24d26687cd5eb84d861fae61"
+            },
+            "errors": []
+          },
+          "checks": [
+            {
+              "id": "camera_aimed_at_hero",
+              "ok": true,
+              "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+              "required": false
+            },
+            {
+              "id": "camera_occluded",
+              "ok": true,
+              "detail": "occluded=False; blocker=None",
+              "required": false
+            },
+            {
+              "id": "hero_on_screen",
+              "ok": true,
+              "detail": "PIL centroid=[0.5021813642518619, 0.4518449559918754]; pixels=5908; centre region=(0.25, 0.75)",
+              "required": true
+            }
+          ],
+          "ok": true,
+          "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f4/blockout.mp4",
+          "tool": "render.animation"
+        }
+      ],
+      "receipt_kind": "live_headless_positive_control"
+    }
+  },
+  "artifacts": {
+    "malformed.json": "310ac8c62311247beafa9bd524b1d9c817979d6172a85990c0fc004d63a8c962",
+    "spec.json": "01130e3bdd0f266719839be35b3d5731958cba0ef47e90ce29c6cb3fd302432f",
+    "valid-calls.json": "cd5bd49988bac55fe0d8dc14e770ccde4cf6def92ffb9aec3c491da6e9ba6d5b",
+    "headless.json": "161dfec9594f77817f234b5703db4e7874115b83f91403051ded10b43989a643",
+    "blockout.mp4": "2c6fd2617e248a50aa196e6ae2a95b095956f01b7b4bcf22105323a822e9669d",
+    "blockout.camera/observation.json": "4e2672408821368924e17f735c5b8f035c79cce524cbce4a56eedf41972e6d7f",
+    "blockout.camera/frame.png": "8b72c471d54fa8c336c30a0c441dd5c56d5baa1f24d26687cd5eb84d861fae61",
+    "blockout.camera/hero-mask.png": "27e00d1e2f179c77fbe912fdcb79a85bbe681736dc5fb80cd9657ce3905a5455"
+  },
+  "event_id": null,
+  "trace_id": null
+}

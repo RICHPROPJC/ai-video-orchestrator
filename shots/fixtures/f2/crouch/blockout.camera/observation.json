@@ -1,0 +1,104 @@
+{
+  "observation": {
+    "protocol": "astra.protocol.v2",
+    "blender": "5.1.2",
+    "frame": 2,
+    "hero": {
+      "name": "Hero",
+      "meshes": [
+        "Hero_ArmL",
+        "Hero_ArmR",
+        "Hero_Hair",
+        "Hero_Head",
+        "Hero_Hip",
+        "Hero_LegL",
+        "Hero_LegR",
+        "Hero_Torso"
+      ],
+      "maskId": 2,
+      "location": [
+        0.0,
+        0.0,
+        0.7775000333786011
+      ],
+      "bounds": {
+        "min": [
+          -0.4399999976158142,
+          -0.15000000596046448,
+          -0.10500000417232513
+        ],
+        "max": [
+          0.4399999976158142,
+          0.15000000596046448,
+          1.6600000858306885
+        ]
+      },
+      "screenPos": [
+        0.5021965926493108,
+        0.48317700357325166
+      ]
+    },
+    "camera": {
+      "name": "Camera",
+      "location": [
+        2.880000114440918,
+        -4.0,
+        2.697499990463257
+      ],
+      "forward": [
+        -0.5444555282592773,
+        0.7561882138252258,
+        -0.36297041177749634
+      ],
+      "aimAngleDeg": 0.0,
+      "occluded": false,
+      "blocker": null,
+      "evaluated": true
+    },
+    "pixelEvidence": {
+      "source": "PIL",
+      "maskId": 2,
+      "frame": 2,
+      "camera": "Camera",
+      "meshes": [
+        "Hero_ArmL",
+        "Hero_ArmR",
+        "Hero_Hair",
+        "Hero_Head",
+        "Hero_Hip",
+        "Hero_LegL",
+        "Hero_LegR",
+        "Hero_Torso"
+      ],
+      "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/crouch/blockout.camera/hero-mask.png",
+      "sha256": "aab947c9d6c9c4d5c5f2dd3108005f7510fda67014baeca7da89eddf20aeffcd",
+      "width": 320,
+      "height": 180,
+      "pixelCount": 5224,
+      "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f2/crouch/blockout.camera/frame.png",
+      "frameSha256": "271afa538015853dfa57dd4af0e26a293e315880cc4489aea65ffb7b8e8fb825"
+    },
+    "errors": []
+  },
+  "checks": [
+    {
+      "id": "camera_aimed_at_hero",
+      "ok": true,
+      "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+      "required": false
+    },
+    {
+      "id": "camera_occluded",
+      "ok": true,
+      "detail": "occluded=False; blocker=None",
+      "required": false
+    },
+    {
+      "id": "hero_on_screen",
+      "ok": true,
+      "detail": "PIL centroid=[0.5021965926493108, 0.48317700357325166]; pixels=5224; centre region=(0.25, 0.75)",
+      "required": true
+    }
+  ],
+  "ok": true
+}

@@ -1,0 +1,34 @@
+{
+  "observation": {
+    "protocol": "astra.protocol.v2",
+    "blender": "5.1.2",
+    "frame": 3,
+    "hero": null,
+    "camera": null,
+    "pixelEvidence": null,
+    "errors": [
+      "hero_missing: no pass_index=2 mesh under the selected rig"
+    ]
+  },
+  "checks": [
+    {
+      "id": "camera_aimed_at_hero",
+      "ok": false,
+      "detail": "evaluated hero bbox aim angle=None; maximum=15.0 degrees",
+      "required": false
+    },
+    {
+      "id": "camera_occluded",
+      "ok": false,
+      "detail": "occluded=None; blocker=None",
+      "required": false
+    },
+    {
+      "id": "hero_on_screen",
+      "ok": false,
+      "detail": "PIL centroid=None; pixels=0; centre region=(0.25, 0.75)",
+      "required": true
+    }
+  ],
+  "ok": false
+}

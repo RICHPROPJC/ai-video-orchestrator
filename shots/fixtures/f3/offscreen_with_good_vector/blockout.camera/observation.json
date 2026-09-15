@@ -1,0 +1,87 @@
+{
+  "observation": {
+    "protocol": "astra.protocol.v2",
+    "blender": "5.1.2",
+    "frame": 3,
+    "hero": {
+      "name": "HeroRig",
+      "meshes": [
+        "HeroMesh"
+      ],
+      "maskId": 2,
+      "location": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "bounds": {
+        "min": [
+          -0.5,
+          -0.5,
+          0.0
+        ],
+        "max": [
+          0.5,
+          0.5,
+          2.0
+        ]
+      },
+      "screenPos": null
+    },
+    "camera": {
+      "name": "Camera",
+      "location": [
+        0.0,
+        -8.0,
+        2.0
+      ],
+      "forward": [
+        0.0,
+        0.9922779202461243,
+        -0.1240348070859909
+      ],
+      "aimAngleDeg": 0.0,
+      "occluded": false,
+      "blocker": null,
+      "evaluated": true
+    },
+    "pixelEvidence": {
+      "source": "PIL",
+      "maskId": 2,
+      "frame": 3,
+      "camera": "Camera",
+      "meshes": [
+        "HeroMesh"
+      ],
+      "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/offscreen_with_good_vector/blockout.camera/hero-mask.png",
+      "sha256": "c0e3d6de39394b30b2191571295370672373585e1b9bef916201bb0d8d588adb",
+      "width": 320,
+      "height": 180,
+      "pixelCount": 0,
+      "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/offscreen_with_good_vector/blockout.camera/frame.png",
+      "frameSha256": "3973ed35a5fe58684b8609ab9dfabd65f67dedc162f4b83cce6a2f4dafb682b8"
+    },
+    "errors": []
+  },
+  "checks": [
+    {
+      "id": "camera_aimed_at_hero",
+      "ok": true,
+      "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+      "required": false
+    },
+    {
+      "id": "camera_occluded",
+      "ok": true,
+      "detail": "occluded=False; blocker=None",
+      "required": false
+    },
+    {
+      "id": "hero_on_screen",
+      "ok": false,
+      "detail": "PIL centroid=None; pixels=0; centre region=(0.25, 0.75)",
+      "required": true
+    }
+  ],
+  "ok": false
+}

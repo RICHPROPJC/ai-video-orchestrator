@@ -1,0 +1,5 @@
+{
+  "drama": "_d1a",
+  "note": "D1a stub of the WIST story nouns for the noun-lint: sheet proper names live here (and in frozen trace fixtures), never in src/ or seats/ code. Real callsheets stay in data/jobs, which src never reads.",
+  "nouns": ["死將軍外套", "赦免令", "死將軍"]
+}

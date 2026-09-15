@@ -1,11 +1,18 @@
 #!/usr/bin/env tsx
+import fs from "node:fs";
 import path from "node:path";
 import { runPipeline, describeFloor } from "./lib/studio/pipeline";
-import { newSlateId, writeJob, readJob, listJobs, readEvents } from "./lib/studio/store";
+import { newSlateId, writeJob, readJob, listJobs, readEvents, readEpEvents, runningBlocker } from "./lib/studio/store";
+import { projectsDir } from "./lib/studio/paths";
 import { loadConfig, setConfigPath } from "./lib/studio/config";
 import { doctor, formatDoctor } from "./lib/studio/doctor";
+import { blockersForGate, formatFleet, gateReady, probeFleet, type FleetGate } from "./lib/studio/fleet";
 import { runTui } from "./lib/studio/tui";
 import type { JobRecord, ProduceInput } from "./lib/studio/types";
+import { SCENE_ID_RE } from "./lib/studio/script-contract";
+
+const UNTIL_GATES: NonNullable<ProduceInput["until"]>[] = ["boards", "blockout", "stills", "motion"];
+const GRAPH_VARIANTS: NonNullable<ProduceInput["graphVariant"]>[] = ["a", "b", "bkf", "c"];
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(name);
@@ -19,7 +26,10 @@ function help() {
 Commands
   tui "<brief>"              全螢幕 TUI 開工（Montaj 式 CLIP）
   produce "<brief>"          行 log 開工
-  doctor                     探兩部機 / MARS / ffmpeg / Blender
+  frames <job> <shot>        從 motion mp4 抽 QC 帧（首/中/尾 + 每 2s）→ jpg
+  events [slate] [--follow]  睇 projects/<ep>/events.jsonl；--follow 點住尾
+  doctor                     探兩部機 / ffmpeg / Blender / H3 nodes
+  fleet                      探每個 config endpoint（/health /v1/models /system_stats）；config ≠ live → RED
   models                     睇而家用緊邊個 checkpoint
   models set <dot.path> <v>  換模型，例：stills.checkpoint foo.safetensors
   status [slate]
@@ -29,17 +39,28 @@ Commands
 
 Flags
   --duration 12  --aspect 16:9|9:16|1:1  --clone ref.wav  --lang yue
-  --wav-dir <dir>       必需：每鏡 SHxx.wav（可加 spine.wav 全片聲軌）
+  --wav-dir <dir>       每鏡 SHxx.wav（可加 spine.wav 全片聲軌）；除 --until boards 外必需
   --portraits <dir>     角色肖像 A.png/B.png（首次出場 /edit 參考圖）
   --blockout-dir <dir>  預渲染 blockout SHxx.mp4（864x480 24fps，frames=wav snap）
-  --callsheet <json>    載入現成 callsheet，跳過編劇 draft（結構唔齊即刻 fail）
+  --callsheet <json>    載入現成 callsheet，跳過兩張檯（結構唔齊即刻 fail）
+  --cast-roster <json>  可出聲角色名單（有聲音檔嘅名），編劇檯只准用呢批名
   --gap <sec>           鏡與鏡之間靜音（默許 0）
   --dry-run             行到 prompt/receipt 為止，唔 POST 任何機
+  --graph-variant a|b|bkf|c  H3 graph（默認 a）；b/bkf/c 唔餵 Video 1
+  --steps <n>           測試用 H3 steps 覆寫（默認 4）
+  --drama <id>          劇目 id → projects/<id>/（例：guojia-lingdaoren）
+  --episode EP01        集號（EP01…EP10）
+  --until boards|blockout|stills|motion 早停閘：boards＝劇本同分鏡出齊即停（status boarded，唔使 wav）；
+                        blockout＝灰塊走位+f0 即停（唔使 pictureQc）；
+                        stills＝photo QC GREEN 即停（stills-ready）；motion＝H3 落片即停
+  --scene SCxx          淨係燒呢一場嘅 H3（一場一 hop）；唔加＝出齊全部鏡（原有行為）
+  --resume <slate>      接返舊 slate：callsheet 照舊，過咗閘嘅 blockout／keyframe／片唔重做
 
 Rack（two-host truth）
   U1.5 /edit  <stills.url>        node0 :8097
   H3 R2V      <motion.comfyUrl>   node1 :8188
-  MARS        <pictureQc.endpoint>  photo QC 眼
+  pictureQc <pictureQc.endpoint>  photo QC 眼（qwen38 / Qwen 27B :8015）
+  Nex         <nex.endpoint>          3D/tool 腦（nex-n2.5 :8017）。DOWN 唔擋開工；pictureQc qwen38 27B 頂住
 `);
 }
 
@@ -56,8 +77,27 @@ async function makeJob(brief: string) {
     blockoutDir: arg("--blockout-dir"),
     gapSec: Number(arg("--gap", "0")),
     dryRun: process.argv.includes("--dry-run"),
+    until: arg("--until") as ProduceInput["until"],
+    scene: arg("--scene"),
     callSheetPath: arg("--callsheet"),
+    castRosterPath: arg("--cast-roster"),
+    graphVariant: (arg("--graph-variant", "a") as ProduceInput["graphVariant"]) || "a",
+    steps: process.argv.includes("--steps") ? Number(arg("--steps", "4")) : undefined,
+    drama: arg("--drama"),
+    episode: arg("--episode"),
   };
+  if (input.graphVariant && !GRAPH_VARIANTS.includes(input.graphVariant)) {
+    console.error(`--graph-variant 只接受 ${GRAPH_VARIANTS.join(" / ")}`);
+    process.exit(1);
+  }
+  if (input.until && !UNTIL_GATES.includes(input.until)) {
+    console.error(`--until 只接受 ${UNTIL_GATES.join(" / ")}`);
+    process.exit(1);
+  }
+  if (input.scene && !SCENE_ID_RE.test(input.scene)) {
+    console.error("--scene 只接受 SCxx（例：--scene SC01）");
+    process.exit(1);
+  }
   const job: JobRecord = {
     id,
     slate: id,
@@ -65,6 +105,8 @@ async function makeJob(brief: string) {
     updatedAt: new Date().toISOString(),
     status: "queued",
     input,
+    ...(input.drama ? { drama: input.drama } : {}),
+    ...(input.episode ? { episode: input.episode } : {}),
     progress: 0,
     retries: { stills: 0, voice: 0, motion: 0 },
     outputs: { stills: [], shots: [], blockout: [], receipts: [] },
@@ -73,12 +115,84 @@ async function makeJob(brief: string) {
   return { id, input };
 }
 
-async function produce(brief: string, tui: boolean) {
-  if (!arg("--wav-dir")) {
-    console.error('produce/tui 需要 --wav-dir <dir>（每鏡 SHxx.wav，可加 spine.wav）');
+/** Resume keeps the slate's own brief and clock — only the plug paths and the
+ *  stop gate come from this command line. */
+function resumeJob(slate: string) {
+  const job = readJob(slate);
+  if (!job) {
+    console.error(`--resume ${slate}：搵唔到呢份 slate`);
     process.exit(1);
   }
-  const { id, input } = await makeJob(brief);
+  const input: ProduceInput = {
+    ...job.input,
+    resume: true,
+    wavDir: arg("--wav-dir") ?? job.input.wavDir,
+    portraitsDir: arg("--portraits") ?? job.input.portraitsDir,
+    blockoutDir: arg("--blockout-dir") ?? job.input.blockoutDir,
+    gapSec: process.argv.includes("--gap") ? Number(arg("--gap", "0")) : job.input.gapSec,
+    dryRun: process.argv.includes("--dry-run"),
+    until: (arg("--until") as ProduceInput["until"]) ?? undefined,
+    scene: arg("--scene") ?? undefined,
+    graphVariant: arg("--graph-variant")
+      ? (arg("--graph-variant") as ProduceInput["graphVariant"])
+      : job.input.graphVariant,
+    steps: process.argv.includes("--steps") ? Number(arg("--steps", "4")) : job.input.steps,
+  };
+  if (input.graphVariant && !GRAPH_VARIANTS.includes(input.graphVariant)) {
+    console.error(`--graph-variant 只接受 ${GRAPH_VARIANTS.join(" / ")}`);
+    process.exit(1);
+  }
+  if (input.until && !UNTIL_GATES.includes(input.until)) {
+    console.error(`--until 只接受 ${UNTIL_GATES.join(" / ")}`);
+    process.exit(1);
+  }
+  if (input.scene && !SCENE_ID_RE.test(input.scene)) {
+    console.error("--scene 只接受 SCxx（例：--scene SC01）");
+    process.exit(1);
+  }
+  writeJob({ ...job, input, status: "queued", error: undefined, updatedAt: new Date().toISOString() });
+  return { id: job.id, input };
+}
+
+async function produce(brief: string, tui: boolean) {
+  // boards stops before the wav is the clock, so it is the one gate that runs dry
+  if (!arg("--wav-dir") && arg("--until") !== "boards") {
+    console.error('produce/tui 需要 --wav-dir <dir>（每鏡 SHxx.wav，可加 spine.wav）；只出分鏡用 --until boards');
+    process.exit(1);
+  }
+  const fleet = await probeFleet(loadConfig());
+  const gate: FleetGate =
+    arg("--until") === "boards" || arg("--until") === "blockout"
+      ? "boards"
+      : arg("--until") === "stills"
+        ? "stills"
+        : arg("--until") === "motion"
+          ? "motion"
+          : "full";
+  if (!gateReady(fleet, gate)) {
+    console.error(formatFleet({ ...fleet, ready: false, blockers: blockersForGate(fleet.rows, gate) }));
+    process.exit(1);
+  }
+  // serial floor: refuse a second concurrent slate before any job is touched
+  const resumeSlate = arg("--resume");
+  const blocker = runningBlocker(resumeSlate);
+  if (blocker) {
+    console.error(`一次一份：slate ${blocker.id} 仲行緊（running）。等佢完先開新工，或者 --resume ${blocker.id} 接返呢份。`);
+    process.exit(1);
+  }
+  const { id, input } = resumeSlate ? resumeJob(resumeSlate) : await makeJob(brief);
+  if (input.drama && input.until === "stills") {
+    console.error(`劇目 ${input.drama}：唔准 --until stills（stills-ready skip）`);
+    process.exit(1);
+  }
+  if (input.drama === "guojia-lingdaoren" && !input.until && !input.scene && !input.dryRun) {
+    console.error("guojia-lingdaoren：唔准一次 H3 全 slate。用 --scene SC01（一場一 hop）");
+    process.exit(1);
+  }
+  if (input.drama === "guojia-lingdaoren" && input.until === "stills") {
+    console.error("guojia-lingdaoren：唔准 --until stills（stills-ready skip）");
+    process.exit(1);
+  }
   const rack = loadConfig();
   if (!tui || !process.stdout.isTTY) {
     console.log(`\n  SLATE  ${id}`);
@@ -100,6 +214,13 @@ async function produce(brief: string, tui: boolean) {
   console.log(`\n  STATUS ${done?.status}  ${done?.progress}%`);
   if (done?.outputs.pictureLock) {
     console.log(`  LOCK   ${path.join(process.cwd(), "data/jobs", id, done.outputs.pictureLock)}`);
+  }
+  if (done?.status === "boarded") {
+    console.log(`  SHEET  ${path.join(process.cwd(), "data/jobs", id, "callsheet.json")}`);
+    console.log(`  NEXT   落好 wav 之後：produce "" --resume ${id} --wav-dir <dir>`);
+  }
+  if (done?.status === "stills-ready") {
+    console.log(`  STILLS ${path.join(process.cwd(), "data/jobs", id, "stills")}`);
   }
   if (done?.error) process.exitCode = 1;
 }
@@ -132,8 +253,31 @@ async function main() {
     console.log("npm run dev   →  http://127.0.0.1:43127");
     return;
   }
+  if (cmd === "frames") {
+    const job = process.argv[3];
+    const shot = process.argv[4];
+    if (!job || !shot) {
+      console.error("frames <job> <shot>");
+      process.exitCode = 1;
+      return;
+    }
+    const { dataRoot } = await import("./lib/studio/paths");
+    const { extractMotionFrames } = await import("./lib/studio/motion-frames");
+    const mp4 = path.join(dataRoot(), job, "motion", `${shot}.mp4`);
+    const outDir = path.join(dataRoot(), job, "motion", `${shot}.frames`);
+    const frames = await extractMotionFrames(mp4, outDir, shot);
+    console.log(JSON.stringify({ job, shot, mp4, outDir, frames }, null, 2));
+    return;
+  }
   if (cmd === "doctor") {
     console.log(formatDoctor(await doctor()));
+    return;
+  }
+  if (cmd === "fleet") {
+    const fleet = await probeFleet(loadConfig());
+    if (process.argv.includes("--json")) console.log(JSON.stringify(fleet, null, 2));
+    else console.log(formatFleet(fleet));
+    if (!fleet.ready) process.exitCode = 1;
     return;
   }
   if (cmd === "models") {
@@ -151,6 +295,50 @@ async function main() {
     }
     console.log(JSON.stringify(loadConfig(), null, 2));
     return;
+  }
+  if (cmd === "events") {
+    // A4: the ep events file is the one source Chau/Grok/Vera read — not a PTY
+    const positional = process.argv.slice(3).filter((a) => !a.startsWith("--"));
+    const slate = positional[0] ?? listJobs()[0]?.slate ?? listJobs()[0]?.id;
+    if (!slate) {
+      console.error("冇 slate：events [slate] 或先開一個 produce");
+      process.exitCode = 1;
+      return;
+    }
+    const file = path.join(projectsDir(), slate, "events.jsonl");
+    const printEvent = (e: import("./lib/studio/types").JobEvent) => {
+      const d = e.data as Record<string, unknown> | undefined;
+      const stage = d?.shot !== undefined
+        ? `  [${d.shot} ${d.stage ?? "?"} ${d.eye ?? e.agent} ${d.verdict ?? e.level}${d.proof ? ` proof=${d.proof}` : ""}${d.ms !== undefined ? ` ${d.ms}ms` : ""}]`
+        : "";
+      console.log(e.ts, e.agent, e.message + stage);
+    };
+    let history = readEpEvents(slate);
+    if (!history.length) {
+      // jobs older than the alias fall back to their per-job log
+      const job = readJob(slate);
+      if (job) history = readEvents(job.id);
+    }
+    for (const e of history) printEvent(e);
+    if (!process.argv.includes("--follow")) return;
+    console.log(`-- follow ${file}（Ctrl-C 離開）`);
+    let offset = fs.existsSync(file) ? fs.statSync(file).size : 0;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 500));
+      const size = fs.existsSync(file) ? fs.statSync(file).size : 0;
+      if (size <= offset) continue;
+      const buf = Buffer.alloc(size - offset);
+      const fh = fs.openSync(file, "r");
+      try {
+        fs.readSync(fh, buf, 0, buf.length, offset);
+      } finally {
+        fs.closeSync(fh);
+      }
+      offset = size;
+      for (const line of buf.toString("utf8").split("\n").filter(Boolean)) {
+        printEvent(JSON.parse(line) as import("./lib/studio/types").JobEvent);
+      }
+    }
   }
   if (cmd === "status") {
     const id = process.argv[3];
@@ -172,8 +360,8 @@ async function main() {
   }
   if (cmd === "tui") {
     const brief = process.argv[3] || "";
-    if (!brief) {
-      console.error("tui needs a brief");
+    if (!brief && !arg("--resume")) {
+      console.error("tui needs a brief（或 --resume <slate>）");
       process.exitCode = 1;
       return;
     }
@@ -182,8 +370,8 @@ async function main() {
   }
   if (cmd === "produce") {
     const brief = process.argv[3] || "";
-    if (!brief) {
-      console.error("produce needs a brief");
+    if (!brief && !arg("--resume")) {
+      console.error("produce needs a brief（或 --resume <slate>）");
       process.exitCode = 1;
       return;
     }

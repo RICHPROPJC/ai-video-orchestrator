@@ -1,0 +1,139 @@
+{
+  "protocol": "astra.protocol.v2",
+  "blender": "5.1.2",
+  "render": {
+    "engine": "BLENDER_WORKBENCH",
+    "light": "FLAT",
+    "color_type": "MATERIAL"
+  },
+  "observation": {
+    "objects": [
+      {
+        "name": "Camera",
+        "kind": "camera",
+        "location": [
+          0.0,
+          -8.0,
+          2.5
+        ],
+        "rotation": [
+          79.3803424206723,
+          -0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      {
+        "name": "Extras",
+        "kind": "mesh",
+        "location": [
+          1.0,
+          0.0,
+          1.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      {
+        "name": "Hero",
+        "kind": "mesh",
+        "location": [
+          -1.0,
+          0.0,
+          1.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      {
+        "name": "Occluder",
+        "kind": "mesh",
+        "location": [
+          -1.2999999523162842,
+          -1.0,
+          1.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.4000000059604645,
+          0.30000001192092896,
+          1.5
+        ],
+        "visible": true
+      }
+    ],
+    "camera": "Camera"
+  },
+  "checks": [
+    {
+      "id": "source_restored",
+      "ok": true
+    },
+    {
+      "id": "mask_indices",
+      "ok": true
+    },
+    {
+      "id": "invalid_arguments_rejected",
+      "ok": true
+    }
+  ],
+  "results": [
+    {
+      "ok": true,
+      "tool": "render.frame",
+      "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f1/frame.png"
+    },
+    {
+      "ok": true,
+      "tool": "render.animation",
+      "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f1/blockout.mp4"
+    },
+    {
+      "ok": true,
+      "tool": "render.matte",
+      "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f1/hero-matte.mp4"
+    },
+    {
+      "ok": true,
+      "tool": "render.matte",
+      "message": "/mnt/ssd/crew-wt/forge/shots/fixtures/f1/extras-matte.mp4"
+    }
+  ],
+  "artifacts": {
+    "frame.png": "229b033105fe68a73bf7d1d3e0053be84e843ef864a37b9a8a4ab70ab90c0a7a",
+    "blockout.mp4": "6ec4bd70b50afb7717c0eda6633816e4fabfd81d65ce0c1c92e55b155a373fbc",
+    "hero-matte.mp4": "082971abeba3749d021dbe6c4cc16d62d7d787403d91727274a5da071310afd6",
+    "extras-matte.mp4": "2c1b59d2d66a9288f10493adeb8a4f27af4570c4b215b9c0deac3699880bed2e"
+  },
+  "receipt_kind": "live_headless_fixture",
+  "event_id": null,
+  "trace_id": null
+}

@@ -64,7 +64,7 @@ export const CREW: Record<AgentId, CrewSeat> = {
     name: "阿察",
     job: "畫檢",
     en: "Picture QC",
-    thinking: "MARS 只問：係咪同一個人、手腳入畫、有冇同 continuity 打架。",
+    thinking: "Qwen 27B 只問：係咪同一個人、手腳入畫、有冇同 continuity 打架。",
   },
   motion: {
     name: "阿動",

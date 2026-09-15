@@ -1,0 +1,34 @@
+{
+  "label": "T5MM",
+  "frozen": true,
+  "kind": "boards-gait-omitted",
+  "note": "Frozen event slice for D1b (D1a records, does not judge): the boards sheet omitted marks[].gait on one mark, zod refused the sheet before the pipeline could default it (fixed later by defaulting a missing gait to plant before zod sees it). Events are frozen excerpts, not a re-run.",
+  "context": {
+    "shot": "SH04",
+    "field": "shots[].marks[].gait",
+    "saw": "undefined",
+    "expected": "\"plant\" | \"walk\" | \"reach\" | \"turn\""
+  },
+  "events": [
+    {
+      "ts": "2026-09-11T15:02:31.000Z",
+      "agent": "boards",
+      "level": "info",
+      "message": "拆鏡完成，交 zod 驗表。",
+      "step_id": "boards",
+      "parent_steps": [],
+      "seat": "boards",
+      "constraints_checked": ["marks-gait"]
+    },
+    {
+      "ts": "2026-09-11T15:02:33.000Z",
+      "agent": "system",
+      "level": "error",
+      "message": "[zod] shots[3].marks[1].gait: Required — expected \"plant\" | \"walk\" | \"reach\" | \"turn\", saw undefined",
+      "step_id": "callsheet",
+      "parent_steps": ["boards"],
+      "seat": "boards",
+      "constraints_checked": ["zod"]
+    }
+  ]
+}

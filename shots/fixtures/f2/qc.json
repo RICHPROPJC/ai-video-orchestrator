@@ -1,0 +1,80 @@
+{
+  "verdict": "BLOCKED_MISSING_HISTORICAL_REFERENCES",
+  "threshold": 4,
+  "availableHistoricalParity": "PASS",
+  "regeneratedC5Parity": "PASS",
+  "liveAstraBlockouts": "PASS",
+  "rows": [
+    {
+      "action": "lie",
+      "regenerationDistance": 0,
+      "historicalDistance": 2
+    },
+    {
+      "action": "kneel",
+      "regenerationDistance": 0,
+      "historicalDistance": 1
+    },
+    {
+      "action": "crouch",
+      "regenerationDistance": 0,
+      "historicalDistance": null
+    },
+    {
+      "action": "lean",
+      "regenerationDistance": 0,
+      "historicalDistance": null
+    },
+    {
+      "action": "turn_away",
+      "regenerationDistance": 0,
+      "historicalDistance": null
+    }
+  ],
+  "missingHistoricalReferences": [
+    "crouch.f0.png",
+    "lean.f0.png",
+    "turn_away.f0.png"
+  ],
+  "artifacts": {
+    "reference-manifest.json": "ccd066b04b7a0b31f8fb762f0d3e51661ee07543306aa772d8ae1206197059c3",
+    "results.json": "a8a97f40b6b8d972b987e3e3e1647de622ad29fd4eda23406e44e51eb882beef",
+    "turn_away/blockout.mp4": "2c6fd2617e248a50aa196e6ae2a95b095956f01b7b4bcf22105323a822e9669d",
+    "turn_away/blockout.camera/frame.png": "156e824367e0f302fbf4c47fbfc8074c9feb79f70a57317fdbb8a16b02558d38",
+    "turn_away/blockout.camera/hero-mask.png": "896f7141f102c0cbfb06517db486adb3a88973486854f37c3803a103cfb29083",
+    "turn_away/blockout.camera/observation.json": "1d9f4c989d46a18764e4c49a9a33d83b4b1126652b1272f5cdda80ebb9fa3c1e",
+    "regenerated-c5/crouch.png": "5ed74d4983a1d5351b89be1009eb2db537c9b78a37e1bfe847922eb901145270",
+    "regenerated-c5/kneel.png": "e23e78f3139c3d41ae03b709e9b61441b354e28e2230f35db4d089aa29421531",
+    "regenerated-c5/lean.png": "6f11eb31c1aebdc718b0c13d6dc137281018f7a3b1f4b6f34a3961a032e0ea5b",
+    "regenerated-c5/lie.png": "a708eef3d69dc7cce2b560040f2f04b85e7e7b69859eb43e6164098314601d51",
+    "regenerated-c5/turn_away.png": "3c486d01f7a8332a2fa4acf1ca23951056f9fb8deee23844977e20862946aeba",
+    "reference/hamming.json": "103acc3046ced6b1f2da2f57834997a11ae657eb13f5e9f8f9ad8d40564b9e11",
+    "reference/kneel.f0.png": "0e9bfe6be5c059d134d58366fc751d57026c3cf8ee002f3fe9e3aea4fba25ae8",
+    "reference/lie.f0.png": "b9d736c55c931f33343b248b5d80f7f8efa3f88c33407ad6a6a6e9948fc22d73",
+    "reference/receipt.json": "0757d4a343526315f9ed834c346485c77c20b8f45d20078968423901396d68b7",
+    "reference/sit.f0.png": "c69647539da2dcae5fd3f5af46aae1cd2bd7199dd4d89d31de0314dfbfd7268a",
+    "ported-c5/crouch.png": "f1eca7b0d3dd2fc61828dcdd4f8237ecd650c23429144cb965b075256c17c663",
+    "ported-c5/kneel.png": "1624329ed80c370b8ad784c09baa93b7e0cfc208390398fbf5a34f13ea453a8b",
+    "ported-c5/lean.png": "de5405ea236bbbf131dbb4a31686368a9d8c4ceb90aa2fa7d7e6e9d1c362190a",
+    "ported-c5/lie.png": "6f03ac3add55b599e589667f0e479ca7b97319cbcbb8f8d9fa1a1556ebd73ba7",
+    "ported-c5/turn_away.png": "39140f6f86ee15a993ecd6aa6287f7787ca63235932fba2277fbac9d297360a1",
+    "lie/blockout.mp4": "f71dbb782295ced5edbe857f9a26077d447763b917515a58869ac015e729bae8",
+    "lie/blockout.camera/frame.png": "0b9f50039845f806bf92661027dbd5887ac84177f0cf4d7ba926757d32596077",
+    "lie/blockout.camera/hero-mask.png": "2d7f5c9508fe9e20c150ef81fb39045a9f5e925f27fd085b7409af9b6d8edec8",
+    "lie/blockout.camera/observation.json": "bbda84e9444d24dbe88538ffc437bee82890814ffced52ba530a1e42c9291741",
+    "lean/blockout.mp4": "85d64347e737303e6e38f80aa5cb5a91a97bf489426c4a8e2c796495dbe15fb2",
+    "lean/blockout.camera/frame.png": "d57b369d59ac02474e825ce0063b2a36d74c92e720b72805a1f0dec20a018432",
+    "lean/blockout.camera/hero-mask.png": "e9fd310c176104aa71ab973f7ea38b717d9b7a0c63d391802b069219c47310d0",
+    "lean/blockout.camera/observation.json": "43b7deb0a43572938cc7475607dba84d9852fbdfc41edc228cbed51fda511e55",
+    "kneel/blockout.mp4": "6e206f1910f7ee66368a857261ce3d3b9c9623329812a1937aafee088071229d",
+    "kneel/blockout.camera/frame.png": "f258c1eb830b0cfd468f1abe28b6026aa0b99f6397921604eb0d64808d05de09",
+    "kneel/blockout.camera/hero-mask.png": "b425825ce433b5d52569edde9e728a5332ead58d013abb47f1d9d755904e2425",
+    "kneel/blockout.camera/observation.json": "2aad89f099f8500adbba34fb383fc6c9b3ef0c0bd4917fa30b1cf779e9f155fd",
+    "crouch/blockout.mp4": "5313aa52c7999e6c282dce0d0826876f2b012920ed15fab31e56764a805d5ce3",
+    "crouch/blockout.camera/frame.png": "271afa538015853dfa57dd4af0e26a293e315880cc4489aea65ffb7b8e8fb825",
+    "crouch/blockout.camera/hero-mask.png": "aab947c9d6c9c4d5c5f2dd3108005f7510fda67014baeca7da89eddf20aeffcd",
+    "crouch/blockout.camera/observation.json": "c788bd4b4da22d9da81f65877d2c246e5ad2658d4bff88e8a6e4e07de04b3df0"
+  },
+  "event_id": null,
+  "trace_id": null
+}

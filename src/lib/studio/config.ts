@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { DEFAULT_CREW, type CrewConfig } from "./crew-llm";
 
 export type SlateConfig = {
+  crew: CrewConfig;
   stills: {
     url: string;
     comfyUrl: string;
@@ -23,13 +25,19 @@ export type SlateConfig = {
     steps: number;
     seed: number;
   };
-  tts: { endpoint: string; model: string };
+  tts: { endpoint: string; model: string; promptWav: string; seed: number };
   pictureQc: { endpoint: string; model: string };
+  /** Layout / 3D tool brain. Not pictureQc. Empty = fleet UNCONFIG, not a QC skip. */
+  nex: { endpoint: string; model: string };
   soundQc: { endpoint: string; model: string };
+  /** A3: every sense is a provider. Empty = the stage that needs it FAILs loud. */
+  ocr: { endpoint: string; model: string };
+  embed: { endpoint: string; model: string };
   ssh: { user: string; motionInputDir: string; stillsRefsDir: string };
 };
 
 const DEFAULTS: SlateConfig = {
+  crew: DEFAULT_CREW,
   stills: {
     url: "http://100.76.131.19:8097",
     comfyUrl: "",
@@ -51,9 +59,17 @@ const DEFAULTS: SlateConfig = {
     steps: 4,
     seed: 42,
   },
-  tts: { endpoint: "", model: "Fun-CosyVoice3-0.5B" },
-  pictureQc: { endpoint: "http://172.17.0.2:8015", model: "mars-fa2" },
+  tts: {
+    endpoint: "http://127.0.0.1:9882",
+    model: "auk-flash-1.5B",
+    promptWav: "",
+    seed: 20260914,
+  },
+  pictureQc: { endpoint: "http://127.0.0.1:8015", model: "qwen38" },
+  nex: { endpoint: "", model: "nex-n2.5" },
   soundQc: { endpoint: "", model: "FunAudioLLM/SenseVoiceSmall" },
+  ocr: { endpoint: "", model: "" },
+  embed: { endpoint: "", model: "wemm-2b" },
   ssh: {
     user: "hojaiv3v",
     motionInputDir: "~/comfy/ComfyUI/input",
@@ -72,11 +88,15 @@ export function loadConfig(): SlateConfig {
   const merged: SlateConfig = {
     ...DEFAULTS,
     ...raw,
+    crew: { ...DEFAULTS.crew, ...raw.crew },
     stills: { ...DEFAULTS.stills, ...raw.stills },
     motion: { ...DEFAULTS.motion, ...raw.motion },
     tts: { ...DEFAULTS.tts, ...raw.tts },
     pictureQc: { ...DEFAULTS.pictureQc, ...raw.pictureQc },
+    nex: { ...DEFAULTS.nex, ...raw.nex },
     soundQc: { ...DEFAULTS.soundQc, ...raw.soundQc },
+    ocr: { ...DEFAULTS.ocr, ...raw.ocr },
+    embed: { ...DEFAULTS.embed, ...raw.embed },
     ssh: { ...DEFAULTS.ssh, ...raw.ssh },
   };
   const h3 = process.env.H3_COMFY_URL?.trim();
@@ -85,6 +105,14 @@ export function loadConfig(): SlateConfig {
   if (u15) merged.stills.url = u15;
   const mars = process.env.MARS_URL?.trim();
   if (mars) merged.pictureQc.endpoint = mars;
+  const nex = process.env.NEX_URL?.trim();
+  if (nex) merged.nex.endpoint = nex;
+  const crew = process.env.CREW_LLM_URL?.trim();
+  if (crew) merged.crew.endpoint = crew;
+  const auk = process.env.AUK_TTS_URL?.trim();
+  if (auk) merged.tts.endpoint = auk;
+  const aukRef = process.env.AUK_REF_WAV?.trim();
+  if (aukRef) merged.tts.promptWav = aukRef;
   return merged;
 }
 

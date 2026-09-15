@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import type { CallSheet, Shot } from "./types";
 import { blenderBlockoutScript } from "./blender";
 import { runCommand } from "./audio";
@@ -54,6 +55,7 @@ export async function renderBlockout(opts: {
     "-s", `${BLOCKOUT_WIDTH}x${BLOCKOUT_HEIGHT}`,
     opts.outMp4,
   ]);
+  await assertFiguresVisible(path.join(framesDir, "frame_0001.png"), opts.shot);
   fs.rmSync(framesDir, { recursive: true, force: true });
   return { scriptFile, framesDir, frames: opts.frames };
 }
@@ -79,8 +81,49 @@ export async function blockoutFromPlug(
   return mp4;
 }
 
-/** frame 0 of a blockout = the base image for a first-appearance /edit */
-export async function extractFrame0(mp4: string, png: string): Promise<void> {
+/** frame 0 of a blockout = the base image for a first-appearance /edit.
+ *  A stanceEnd shot's keyframe is the pose held after the transition (its f0
+ *  must differ from the previous shot — the C3KJ lesson), so frame 1 by default,
+ *  end-of-lerp frame when any mark animates its stance. */
+export function stillFrameFor(shot: Shot, frames: number): number {
+  const animated = shot.marks.some((m) => m.stanceEnd && m.stanceEnd !== m.stance);
+  return animated ? Math.min(frames, Math.round(0.4 * frames) + 1) : 1;
+}
+
+export async function extractFrame0(mp4: string, png: string, frame = 1): Promise<void> {
   fs.mkdirSync(path.dirname(png), { recursive: true });
-  await ffmpeg(["-i", mp4, "-frames:v", "1", png]);
+  await ffmpeg(["-i", mp4, "-vf", `select='eq(n,${frame - 1})'`, "-frames:v", "1", png]);
+}
+
+/** every mark's crop box must show a figure: real renders span ≥106 luma
+ *  (figure 170 vs bg 64 / floor 207); the empty-floor regression fixture's
+ *  worst crop spans 57 (STUDIO gradient + mark disc), so 70 separates both. */
+const FIGURE_LUMA_SPAN_MIN = 70;
+export async function assertFiguresVisible(f0png: string, shot: Shot): Promise<void> {
+  const meta = await sharp(f0png).metadata();
+  const width = meta.width ?? 0;
+  const height = meta.height ?? 0;
+  if (!width || !height) throw new Error(`${f0png}: cannot read dimensions for figure check`);
+  for (const mark of shot.marks) {
+    const w = Math.round(width * 0.16);
+    const h = Math.round(height * 0.4);
+    const x = Math.max(0, Math.min(width - w, Math.round((width * mark.start.x) / 100 - w / 2)));
+    const y = Math.max(0, Math.min(height - h, Math.round((height * mark.start.y) / 100 - h / 2)));
+    const r = await runCommand("ffprobe", [
+      "-v", "error",
+      "-f", "lavfi", "-i", `movie='${f0png.replaceAll("'", "\\'")}',format=gray,crop=${w}:${h}:${x}:${y},signalstats`,
+      "-show_entries", "frame_tags=lavfi.signalstats.YMIN,lavfi.signalstats.YMAX",
+      "-of", "json",
+    ]);
+    if (r.code !== 0) throw new Error(`${shot.id} figure check ffprobe failed: ${r.stderr}`);
+    const frames = (JSON.parse(r.stdout).frames ?? []) as { tags?: Record<string, string> }[];
+    const tags = frames[0]?.tags ?? {};
+    const ymin = Number(tags["lavfi.signalstats.YMIN"]);
+    const ymax = Number(tags["lavfi.signalstats.YMAX"]);
+    if (!Number.isFinite(ymin) || !Number.isFinite(ymax) || ymax - ymin < FIGURE_LUMA_SPAN_MIN) {
+      throw new Error(
+        `${shot.id} blockout has no figure at mark ${mark.characterId} (Ymin=${tags["lavfi.signalstats.YMIN"]} Ymax=${tags["lavfi.signalstats.YMAX"]})`,
+      );
+    }
+  }
 }

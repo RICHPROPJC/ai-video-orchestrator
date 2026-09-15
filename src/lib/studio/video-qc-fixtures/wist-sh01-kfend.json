@@ -1,0 +1,31 @@
+{
+  "job": "SC-0913-WIST",
+  "shot": "SH01",
+  "require": { "people_count": 1, "grey_blocks": false },
+  "frames": [
+    {
+      "label": "first",
+      "file": "verify/SH01_kfend_first.jpg",
+      "frame": 0,
+      "t_s": 0,
+      "blind": "一個人企喺室內，面前有塊白色標牌/placard 立喺畫面中央，背景有窗。",
+      "summary": { "people_count": 1, "grey_blocks": true, "pose_notes": "企立", "tool_as_written": null }
+    },
+    {
+      "label": "mid",
+      "file": "verify/SH01_kfend_mid.jpg",
+      "frame": 62,
+      "t_s": 2.5833,
+      "blind": "畫面係兩個白色人形剪影，唔似真人皮膚同衣服。",
+      "summary": { "people_count": 1, "grey_blocks": true, "pose_notes": "剪影", "tool_as_written": null }
+    },
+    {
+      "label": "last",
+      "file": "verify/SH01_kfend_last.jpg",
+      "frame": 123,
+      "t_s": 5.125,
+      "blind": "一個灰色 Blender i-mannequin 占位人偶，冇真實面孔同布料。",
+      "summary": { "people_count": 1, "grey_blocks": true, "pose_notes": "占位", "tool_as_written": null }
+    }
+  ]
+}

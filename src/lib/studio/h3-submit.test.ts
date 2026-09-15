@@ -8,10 +8,10 @@ import { submitH3Shot } from "./h3-submit";
 
 function validProse() {
   return [
-    "Photoreal. 茶餐廳門口，night，rain。兩人企喺燈下相認 2 people. No one else.",
-    "The grey placeholders in <Video 1> carry motion only — follow their positions and timing; replace their look entirely.",
-    "Faces and clothes stay as the start and end keyframe images. Do not add people.",
-    '阿月: "你仲記得個門口個燈？"',
+    "Photoreal. 茶餐廳門口, night.",
+    "Have the 2 people act following the movements of the grey placeholders in <Video 1> — they carry motion only; replace their look entirely.",
+    "Faces, clothes, the props and the field continue exactly from the start keyframe image. Do not add people.",
+    '阿月 (left) speaks the line in Audio 1: "你仲記得個門口個燈？". 阿衡 listens.',
   ].join("\n\n");
 }
 
@@ -37,9 +37,11 @@ test("dry run writes a 124-frame receipt and touches no socket", async () => {
     shot: "SH01",
   });
   assert.equal(receipt.dry_run, true);
+  assert.equal(receipt.graph_variant, "a");
   assert.equal(receipt.frames, 124);
   assert.equal(receipt.prompt_id, null);
   assert.equal(receipt.uploads.kf_end, null);
+  assert.deepEqual(receipt.uploads.ref_images, []);
   assert.ok(receipt.graph && typeof receipt.graph === "object");
   assert.equal(receiptFile, receiptJson);
   const onDisk = JSON.parse(fs.readFileSync(receiptFile, "utf8"));
@@ -47,6 +49,25 @@ test("dry run writes a 124-frame receipt and touches no socket", async () => {
   assert.ok(onDisk.prompt.startsWith("# produced_by: slatecrew_h3_submit"));
   // no motion mp4 materialised in dry run
   assert.equal(fs.existsSync(path.join(dir, "motion", "SH01.mp4")), false);
+});
+
+test("dry run with kfEnd wires end_image on kfinject", async () => {
+  const dir = shotDir();
+  const kf = path.join(dir, "SH01.png");
+  const { receipt } = await submitH3Shot({
+    prose: validProse(),
+    wavFile: path.join(dir, "SH01.wav"),
+    blockoutMp4: path.join(dir, "SH01.mp4"),
+    kfStart: kf,
+    kfEnd: kf,
+    outMp4: path.join(dir, "motion", "SH01.mp4"),
+    receiptJson: path.join(dir, "motion", "SH01.h3_submit_dryrun.json"),
+    dryRun: true,
+    shot: "SH01",
+  });
+  assert.ok(receipt.uploads.kf_end);
+  const graph = receipt.graph as { kfinject: { inputs: Record<string, unknown> } };
+  assert.deepEqual(graph.kfinject.inputs.end_image, ["kf_end_in", 0]);
 });
 
 test("dry run never clobbers a real receipt", async () => {

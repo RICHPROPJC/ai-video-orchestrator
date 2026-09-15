@@ -1,0 +1,37 @@
+{
+  "card": "C5-blender-stances",
+  "who": "Ivo (glm-5.3 worker, hookaudit session T2b term_1e42d184 / jsonl 92fb2908 — corrected 05:4x per board Eye 05:16; earlier value term_7cf3ca0c was the stuck parent, wrong)",
+  "when": "2026-09-14T04:59+08:00",
+  "blender": "/home/c/applications/blender-5.1.2-linux-x64/blender 5.1.2 (llvmpipe, headless -b -P)",
+  "a1_stance_keys_in_emitted_scripts": {
+    "files": ["lie.blender.py", "sit.blender.py", "kneel.blender.py"],
+    "sit": [18.0, 0.7, 0.55, 0.38],
+    "kneel": [6.0, -0.22, 1.0, 0.18],
+    "lie": [90.0, 0.22, 1.0, 0.4],
+    "wist_resume": false
+  },
+  "a2_pairwise_hamming_dhash": {
+    "lie_sit": 15,
+    "lie_kneel": 23,
+    "sit_kneel": 16,
+    "threshold": 8,
+    "helper": "frameHashes/hamming (dhash-anchors.ts, same as blockout.test.ts test d)"
+  },
+  "a3_f0": {
+    "lie.f0.png": {"md5": "3206c625b41bde4f0cb04c1cf9600f5f", "size": "864x480"},
+    "sit.f0.png": {"md5": "f8d57c1f3801be34ef52c27d2671381e", "size": "864x480"},
+    "kneel.f0.png": {"md5": "4c7cba7dcb15a9581fa00a52e74c971b", "size": "864x480"}
+  },
+  "tests": "tsx --test src/lib/studio/blockout.test.ts → 6/6 pass (incl. C5 pairwise test added by Composer)",
+  "repo_changes_uncommitted": {
+    "src/lib/studio/blender.ts": [
+      "plow single-mark IndexError fix (S midpoint guard)",
+      "view_transform=Standard in blenderBlockoutScript (AgX compressed greys below figure gate)",
+      "grey rebalance: body 0.10, SetIron/SetInk/plow 0.55, rain floor 0.45 — figure sole luma outlier",
+      "STANCE sit/kneel/lie + pivot-tilt lie: Composer concurrent edits, PRESERVED per Chau 09-14 order"
+    ],
+    "src/lib/studio/blockout.ts": ["figure-gate calibration comment updated to new luma world"],
+    "src/lib/studio/blockout.test.ts": ["C5 pairwise test (Composer)"]
+  },
+  "not_done": ["git commit (forbidden by card)", "H3/Comfy submit", "WIST resume", "service stops", "vimax_repo"]
+}

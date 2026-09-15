@@ -5,8 +5,8 @@ import { blenderBlockingScript } from "./blender";
 import { readWavMono, runCommand } from "./audio";
 import { emit, readJob, writeJob } from "./store";
 import { renderBlockingSvg, sceneSize } from "./painter";
-import { localPictureQc, localSoundQc, senseVoiceHttp } from "./providers";
-import { loadConfig } from "./config";
+import { localPictureQc, senseVoiceHttp, soundQcFromRemote, soundQcUnconfigured, wavPrecheck } from "./providers";
+import { loadConfig, type SlateConfig } from "./config";
 import type { AgentId, CallSheet, JobRecord, ProduceInput, ProviderTrace, Shot } from "./types";
 import { floorLine, seat } from "./crew";
 import { assertSameCanon, continuityMarkdown, lockContinuity } from "./continuity";
@@ -14,24 +14,65 @@ import { open, packetLine, seal } from "./dispatch";
 import { buildNarrativePlan, planMarkdown } from "./narrative";
 import { indexPlanTexts, recall, upsertDoc, vaultStats } from "./vault";
 import { relInJob } from "./isolate";
-import { draftCallSheet, loadCallSheet } from "./writer";
-import { ensureDir, jobDir, jobFile } from "./paths";
+import { loadCallSheet } from "./writer";
+import { runWriter } from "./seat-writer";
+import { runBoards } from "./seat-boards";
+import { ensurePortraits } from "./portraits";
+import { ensureDir, jobDir, jobFile, projectsDir, seatsDir } from "./paths";
+import { runReflector } from "./reflector";
 import { snapDurationToFrames, wavSeconds } from "./frame-grid";
 import { buildCutPlan, type CutPlan } from "./cut-plan";
 import { checkGate } from "./concat-gate";
 import { writeAnchors } from "./dhash-anchors";
-import { blockoutFromPlug, extractFrame0, renderBlockout } from "./blockout";
+import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "./blockout";
 import { keyframeEditPrompt, keyframeRequire } from "./keyframe-prompt";
-import { buildProse, validateProse, SCRIPT_HEADER } from "./h3-prose";
+import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
-import { checkHealth, buildEditPayload, u15Edit, type U15EditRecord } from "./u15-edit";
+import type { H3GraphVariant } from "./h3-r2v-graph";
+import { checkHealth, buildEditPayload, u15Edit, MAX_IMAGES, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
 import { runPhotoQc, pinQcAccepted, type QcRequire } from "./photo-qc";
+import { pinVideoQcAccepted, runVideoQc } from "./video-qc";
+import { attachMemoryDistances, ingestStill, queryRefs } from "./memory";
+import { appendViolation, checkBoardsToKeyframe, checkKeyframeToStills, hardErrorRow, hardPhotoQcRow } from "./trace";
+import { rangesFor } from "./script-contract";
 
 function patch(job: JobRecord, partial: Partial<JobRecord>) {
   const next = { ...job, ...partial };
   writeJob(next);
   return next;
+}
+
+function h3GraphVariant(input: ProduceInput): H3GraphVariant {
+  return input.graphVariant ?? "a";
+}
+
+function h3MotionPack(
+  timed: CallSheet,
+  shot: Shot,
+  variant: H3GraphVariant,
+  stillPng: string,
+  portraitFiles: Record<string, string>,
+) {
+  if (variant === "a") {
+    return { prose: buildProse(timed, shot), refImageFiles: undefined as string[] | undefined, kfEnd: stillPng };
+  }
+  const ids = [...new Set(shot.marks.map((m) => m.characterId))];
+  const portraits = ids
+    .map((id) => {
+      const c = timed.characters.find((ch) => ch.id === id);
+      return c ? { id, name: c.name } : null;
+    })
+    .filter((p): p is { id: string; name: string } => Boolean(p));
+  const refImageFiles =
+    variant === "b" || variant === "bkf"
+      ? [stillPng, ...ids.map((id) => portraitFiles[id]).filter((p) => p && fs.existsSync(p))]
+      : undefined;
+  return {
+    prose: buildProsePositive(timed, shot, { motionOnly: variant === "c", portraits }),
+    refImageFiles,
+    kfEnd: undefined as string | undefined,
+  };
 }
 
 async function raster(svg: string, outFile: string) {
@@ -58,19 +99,154 @@ async function ffmpeg(args: string[]) {
   }
 }
 
+/** Runtime of a delivered file as the container reports it. */
+async function mediaSeconds(file: string): Promise<number> {
+  const r = await runCommand("ffprobe", [
+    "-v", "error", "-show_entries", "format=duration", "-of", "json", file,
+  ]);
+  if (r.code !== 0) throw new Error(r.stderr || `ffprobe failed on ${file}`);
+  const d = Number((JSON.parse(r.stdout).format ?? {}).duration);
+  if (!Number.isFinite(d)) throw new Error(`ffprobe: no duration for ${file}`);
+  return Number(d.toFixed(3));
+}
+
+/** H3's ref-audio clock must equal the video clock: pad the wav with trailing
+ *  silence to the snapped frame length; the same file feeds the mux. */
+export async function padH3Wav(src: string, dst: string, frames: number): Promise<number> {
+  const seconds = frames / 24;
+  await ffmpeg(["-i", src, "-af", `apad=whole_dur=${seconds.toFixed(6)}`, "-c:a", "pcm_s16le", dst]);
+  const got = await wavSeconds(dst);
+  if (Math.abs(got - seconds) > 1 / 48) {
+    throw new Error(`${dst}: padded to ${got.toFixed(4)}s, wanted ${seconds.toFixed(4)}s (${frames}f/24)`);
+  }
+  return got;
+}
+
+/** per-shot mux: own padded wav, level-matched; H3's own audio is dropped */
+export function muxArgs(mp4: string, h3Wav: string, out: string): string[] {
+  return [
+    "-i", mp4,
+    "-i", h3Wav,
+    "-map", "0:v", "-map", "1:a",
+    "-af", "loudnorm=I=-18:TP=-1.5:LRA=11",
+    "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+    "-shortest",
+    out,
+  ];
+}
+
+/** C-scene-hop: `--scene SCxx` narrows ONLY the H3 lane to one scene's shots
+ *  (scene field, else beatId prefix `SCxx.`). Omitted = every shot, the
+ *  existing whole-slate path. Zero matches throws — never silently fall back
+ *  to burning the full slate's H3. */
+export function shotsForScene(shots: Shot[], scene?: string): Shot[] {
+  if (!scene) return shots;
+  const kept = shots.filter(
+    (s) => s.scene === scene || (s.beatId ?? "").startsWith(`${scene}.`),
+  );
+  if (!kept.length) {
+    throw new Error(`--scene ${scene}：一鏡都對唔上（冇 shot 嘅 scene／beatId 係 ${scene}）— 唔靜靜哋燒成個 slate`);
+  }
+  return kept;
+}
+
+/** Speaking parts must be castable, so the roster is read from a data file the
+ *  operator points at — never from a list living in src. */
+function readCastRoster(file?: string): string[] {
+  if (!file) return [];
+  const raw = JSON.parse(fs.readFileSync(file, "utf8")) as { cast?: { name?: string }[] };
+  const names = (raw.cast ?? []).map((c) => c.name).filter((n): n is string => Boolean(n));
+  if (!names.length) throw new Error(`--cast-roster ${file} lists no names`);
+  return names;
+}
+
+type SeatVoice = {
+  speak: (agent: AgentId, message: string, level?: "info" | "warn" | "pass" | "fail") => Promise<void>;
+  think: (agent: AgentId) => Promise<void>;
+};
+
+/** Where the callsheet comes from: a resumed slate, the plug (factory tests
+ *  only), or — by default now — 阿文 and 阿圖 actually writing it. */
+async function authorCallSheet(
+  jobId: string,
+  input: ProduceInput,
+  cfg: SlateConfig,
+  io: SeatVoice,
+): Promise<CallSheet> {
+  const existing = path.join(jobDir(jobId), "callsheet.json");
+  if (input.resume && fs.existsSync(existing)) {
+    const sheet = loadCallSheet(existing);
+    await io.speak("producer", `resume：照返 callsheet.json（${sheet.shots.length} 鏡），唔重開檯。`);
+    return sheet;
+  }
+  if (input.callSheetPath) {
+    const sheet = loadCallSheet(input.callSheetPath);
+    await io.speak("producer", `callsheet plug 載入：${sheet.shots.length} 鏡。`);
+    return sheet;
+  }
+  const targetSec = input.durationSec ?? 600;
+  const receiptDir = path.join(jobDir(jobId), "seats");
+  const index = (doc: { id: string; text: string; shotId?: string }) => {
+    upsertDoc({ id: doc.id, slate: jobId, modality: "text", shotId: doc.shotId, text: doc.text });
+  };
+
+  await io.think("writer");
+  await io.speak("writer", `寫故事同對白。${cfg.crew.writerModel} · 目標 ${targetSec}s。`);
+  const writer = await runWriter(
+    {
+      brief: input.brief,
+      targetSec,
+      language: input.language,
+      castRoster: readCastRoster(input.castRosterPath),
+    },
+    {
+      crew: cfg.crew,
+      model: cfg.crew.writerModel,
+      receiptDir,
+      speak: (thinking) => io.speak("writer", thinking),
+      index,
+      playbookDir: seatsDir(),
+    },
+    rangesFor(targetSec),
+  );
+
+  await io.think("boards");
+  await io.speak("boards", `拆鏡。${cfg.crew.boardsModel} · ${writer.script.outline.scenes.length} 場。`);
+  const boards = await runBoards(
+    {
+      script: writer.script,
+      targetSec,
+      aspect: input.aspect,
+      writer: { model: writer.model, receipts: writer.receipts },
+    },
+    {
+      crew: cfg.crew,
+      model: cfg.crew.boardsModel,
+      receiptDir,
+      speak: (thinking) => io.speak("boards", thinking),
+      index,
+      playbookDir: seatsDir(),
+    },
+  );
+  return boards.sheet;
+}
+
 export async function runPipeline(jobId: string, input: ProduceInput) {
   const initial = readJob(jobId);
   if (!initial) throw new Error("missing job");
-  if (!input.wavDir) throw new Error("--wav-dir <dir> is required (one SHxx.wav per shot)");
+  if (!input.wavDir && input.until !== "boards") {
+    throw new Error("--wav-dir <dir> is required (one SHxx.wav per shot)");
+  }
   let job: JobRecord = initial;
   const cfg = loadConfig();
   const trace: ProviderTrace = {
     stills: `U1.5 /edit ${cfg.stills.url}`,
     motion: `H3 R2V ${cfg.motion.comfyUrl}`,
     tts: "wav plug",
-    senseVoice: cfg.soundQc.endpoint ? "SenseVoice HTTP" : "SenseVoice schema (local)",
-    mars: `MARS ${cfg.pictureQc.endpoint}`,
+    senseVoice: cfg.soundQc.endpoint ? "SenseVoice HTTP" : "SenseVoice unconfigured",
+    mars: `qwen38 ${cfg.pictureQc.endpoint}`,
     blender: "pending",
+    lipSync: "none — H3 audio dropped; own wav muxed",
   };
 
   const speak = async (agent: AgentId, message: string, level: "info" | "warn" | "pass" | "fail" = "info") => {
@@ -96,8 +272,20 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
 
   try {
     await think("producer");
-    await speak("producer", "收 brief。開呢份 slate 嘅信封。舊 project 唔入袋。");
-    const sheet = input.callSheetPath ? loadCallSheet(input.callSheetPath) : draftCallSheet(input);
+    // L1b: the producer is the only writer of the lifetime ids — a job that
+    // names its drama runs in that drama's base layer, its episode's surface
+    // playbooks, and its base cast wardrobe facts
+    if (input.drama || input.episode) {
+      job = patch(job, {
+        ...(input.drama ? { drama: input.drama } : {}),
+        ...(input.episode ? { episode: input.episode } : {}),
+      });
+    }
+    await speak(
+      "producer",
+      `收 brief。開呢份 slate 嘅信封。舊 project 唔入袋。${input.drama ? `劇目 ${input.drama}${input.episode ? `・${input.episode}` : ""}。` : ""}`,
+    );
+    const sheet = await authorCallSheet(jobId, input, cfg, { speak, think });
     fs.writeFileSync(jobFile(jobId, "callsheet.json"), JSON.stringify(sheet, null, 2));
     job = patch(job, {
       callSheet: sheet,
@@ -107,11 +295,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     });
     await speak(
       "producer",
-      `${input.callSheetPath ? "callsheet plug 載入：" : ""}${sheet.title} · ${sheet.durationSec}s · ${sheet.shots.length} shots · ${sheet.location}`,
+      `${sheet.title} · ${sheet.durationSec.toFixed(1)}s · ${sheet.shots.length} shots · ${sheet.location}`,
     );
 
-    await think("writer");
-    await speak("writer", "故事同對白寫死。Shot ID 終身。");
     const toBoards = seal({
       slate: jobId,
       from: "writer",
@@ -120,7 +306,6 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     });
     await speak("producer", packetLine(toBoards));
 
-    await think("boards");
     const boarded = open(toBoards, { slate: jobId, to: "boards" });
     const continuity = assertSameCanon(lockContinuity(boarded.sheet));
     const locked: CallSheet = { ...boarded.sheet, shots: continuity.boards };
@@ -149,7 +334,62 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         vault: "vault.json",
       },
     });
-    await speak("boards", `分鏡專職鎖咗 ${continuity.cut.join(" → ")}。故事＝分鏡＝剪接。Vault 只得 ${jobId}。`);
+    await speak("boards", `分鏡專職鎖咗 ${continuity.cut.length} 鏡。故事＝分鏡＝剪接。Vault 只得 ${jobId}。`);
+
+    if (input.until === "boards") {
+      job = patch(job, {
+        status: "boarded",
+        progress: 20,
+        currentAgent: "boards",
+        providers: trace,
+        outputs: { ...job.outputs, callSheet: "callsheet.json" },
+      });
+      emit(jobId, {
+        agent: "boards",
+        level: "pass",
+        message: `--until boards：${continuity.boards.length} 鏡、${locked.durationSec.toFixed(1)}s 已寫好。落 wav 之後 --resume ${jobId}。`,
+        data: { shots: continuity.boards.length, durationSec: locked.durationSec, provenance: locked.provenance },
+      });
+      return;
+    }
+
+    // portraits before any keyframe: a first appearance needs a face to anchor on
+    // --until blockout stops before U1.5/QC — skip the eye (pictureQc may be DOWN)
+    const stillDir = path.join(jobDir(jobId), "stills");
+    const skipPortraits =
+      input.until === "blockout" ||
+      (input.resume && continuity.boards.every((shot) => pinQcAccepted(stillDir, shot.id)));
+    let portraits: Awaited<ReturnType<typeof ensurePortraits>>;
+    if (skipPortraits) {
+      emit(jobId, {
+        agent: "stills",
+        level: "info",
+        message:
+          input.until === "blockout"
+            ? "blockout gate: skip portraits (no pictureQc eye this hop)"
+            : "repair: portraits saw ensurePortraits became skip (all stills pinned GREEN on resume)",
+      });
+      await speak(
+        "stills",
+        input.until === "blockout" ? "肖像跳過：--until blockout，唔叫畫檢眼" : "肖像跳過：stills 已全 GREEN，肖像唔再守門",
+      );
+      portraits = { files: {}, made: [], plugged: [], kept: [] };
+    } else {
+      await think("stills");
+      const hopCast = input.scene
+        ? [...new Set(shotsForScene(locked.shots, input.scene).flatMap((s) => s.marks.map((m) => m.characterId)))]
+        : undefined;
+      portraits = await ensurePortraits({
+        sheet: locked,
+        outDir: path.join(jobDir(jobId), "portraits"),
+        plugDir: input.portraitsDir,
+        server: cfg.stills.url,
+        seed: cfg.motion.seed,
+        onlyIds: hopCast,
+        onEvent: (message, data) => emit(jobId, { agent: "stills", level: "info", message, data }),
+      });
+      await speak("stills", `肖像齊：plug ${portraits.plugged.length}、新做 ${portraits.made.length}${hopCast ? `（hop ${hopCast.join(",")}）` : ""}。`);
+    }
 
     await think("art");
     await speak("art", `Grade: ${locked.styleBible.grade}. 只描述已有 ${continuity.boards.length} 鏡，唔另開世界。`);
@@ -169,12 +409,19 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const audioDir = path.join(jobDir(jobId), "audio");
     ensureDir(audioDir);
     const wavByShot = new Map<string, string>();
+    const h3WavByShot = new Map<string, string>();
+    const gapDelivered = new Map<string, number>();
     for (const shot of continuity.boards) {
       const src = path.join(input.wavDir, `${shot.id}.wav`);
       if (!fs.existsSync(src)) throw new Error(`--wav-dir 缺 ${shot.id}.wav（${src}）`);
       const dst = path.join(audioDir, `${shot.id}.wav`);
       fs.copyFileSync(src, dst);
       wavByShot.set(shot.id, dst);
+      const frames = snapDurationToFrames(await wavSeconds(dst));
+      const h3Wav = path.join(audioDir, `${shot.id}.h3.wav`);
+      await padH3Wav(dst, h3Wav, frames);
+      h3WavByShot.set(shot.id, h3Wav);
+      gapDelivered.set(shot.id, Math.round((frames / 24 - (await wavSeconds(dst))) * 1e4) / 1e4);
     }
     const spineGiven = path.join(input.wavDir, "spine.wav");
     const spineWav = fs.existsSync(spineGiven) ? path.join(audioDir, "spine.wav") : undefined;
@@ -186,6 +433,14 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       spineWav,
       outFile: jobFile(jobId, "cut_plan.json"),
     });
+    // h3_clock_s is data for the report (the gate still snaps the ORIGINAL wav)
+    const cutPlanFile = jobFile(jobId, "cut_plan.json");
+    const cutPlanOnDisk = JSON.parse(fs.readFileSync(cutPlanFile, "utf8")) as { shots: { id: string; h3_clock_s?: number }[] };
+    for (const s of cutPlanOnDisk.shots ?? []) {
+      const h3 = h3WavByShot.get(s.id);
+      if (h3) s.h3_clock_s = Math.round((await wavSeconds(h3)) * 1e4) / 1e4;
+    }
+    fs.writeFileSync(cutPlanFile, JSON.stringify(cutPlanOnDisk, null, 2));
     const timed: CallSheet = {
       ...locked,
       durationSec: cutPlan.shots.reduce((a, s) => a + s.duration_s, 0) + gapSec * Math.max(0, cutPlan.shots.length - 1),
@@ -196,13 +451,24 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     };
 
     // per-shot grey blockout (plug or WORKBENCH render), frame 0, dHash anchors
+    // --scene hop: only render that scene's blockouts (rest wait for their hop)
     const blockoutDir = path.join(jobDir(jobId), "blockout");
     ensureDir(blockoutDir);
     const blockouts: string[] = [];
-    for (const shot of continuity.boards) {
+    const hopBoards = shotsForScene(continuity.boards, input.scene);
+    if (input.scene) {
+      await speak("layout", `--scene ${input.scene} hop：blockout ${hopBoards.length}/${continuity.boards.length} 鏡。`);
+    }
+    for (const shot of hopBoards) {
       const outMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
       const wav = wavByShot.get(shot.id)!;
-      if (input.blockoutDir) {
+      const frames = snapDurationToFrames(await wavSeconds(wav));
+      const kept = input.resume && fs.existsSync(outMp4)
+        && Math.round((await mediaSeconds(outMp4)) * 24) === frames;
+      if (kept) {
+        trace.blender = "resume (kept)";
+        await speak("layout", `${shot.id} blockout 照舊 ${frames}f，唔重 render。`);
+      } else if (input.blockoutDir) {
         const plugged = await blockoutFromPlug(input.blockoutDir, shot.id, wav);
         fs.copyFileSync(plugged, outMp4);
         trace.blender = "blockout plug";
@@ -210,15 +476,17 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         const done = await renderBlockout({
           sheet: timed,
           shot,
-          frames: snapDurationToFrames(await wavSeconds(wav)),
+          frames,
           outMp4,
         });
         trace.blender = `blender-workbench ${done.frames}f`;
       }
-      await extractFrame0(outMp4, path.join(blockoutDir, `${shot.id}.f0.png`));
+      const f0png = path.join(blockoutDir, `${shot.id}.f0.png`);
+      await extractFrame0(outMp4, f0png, stillFrameFor(shot, frames));
+      await assertFiguresVisible(f0png, shot);
       await writeAnchors(outMp4, path.join(blockoutDir, `${shot.id}.anchors.json`));
       blockouts.push(outMp4);
-      await speak("layout", `${shot.id} blockout ${snapDurationToFrames(await wavSeconds(wav))}f（wav 時鐘）`);
+      if (!kept) await speak("layout", `${shot.id} blockout ${frames}f（wav 時鐘）`);
     }
     job = patch(job, {
       providers: trace,
@@ -233,8 +501,23 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     });
     await speak("layout", `cut_plan ${cutPlan.shots.length} 鏡 · gap ${gapSec}s · 走位稿已出。`);
 
+    if (input.until === "blockout") {
+      job = patch(job, {
+        status: "blockout-ready",
+        progress: 30,
+        currentAgent: "layout",
+        providers: trace,
+      });
+      emit(jobId, {
+        agent: "layout",
+        level: "pass",
+        message: `--until blockout：${blockouts.length} 鏡灰塊+f0 已出。pictureQc UP 之後 --resume ${jobId} --scene ${input.scene ?? "SCxx"}。`,
+        data: { blockouts: blockouts.length, scene: input.scene ?? null },
+      });
+      return;
+    }
+
     // stills lane prompts + require (built in both live and dry run)
-    const stillDir = path.join(jobDir(jobId), "stills");
     ensureDir(stillDir);
     const stillPlans = continuity.boards.map((boardShot, i) => {
       const shot = timed.shots.find((s) => s.id === boardShot.id)!;
@@ -244,24 +527,35 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       const first = i === 0 || (prev ? prev.size !== shot.size : false) || newChar;
       const prompt = keyframeEditPrompt(timed, shot, { first });
       const require = keyframeRequire(shot);
+      // D1a trace: soft edge invariants (boards→keyframe, keyframe→stills),
+      // written for pass and fail alike, always before any QC gate can fail
+      const softRows = [...checkBoardsToKeyframe(timed.characters, shot, prompt), ...checkKeyframeToStills(shot, require)];
+      for (const row of softRows) appendViolation(jobDir(jobId), row);
       fs.writeFileSync(path.join(stillDir, `${shot.id}.require.json`), JSON.stringify(require, null, 2));
       return { shot, first, prompt, require };
     });
 
     if (input.dryRun) {
+      const variant = h3GraphVariant(input);
       const receipts: string[] = [];
       for (const { shot } of stillPlans) {
-        const prose = buildProse(timed, shot);
+        const stillPng = path.join(stillDir, `${shot.id}.png`);
+        const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files);
         const { receiptFile } = await submitH3Shot({
-          prose,
-          wavFile: wavByShot.get(shot.id)!,
+          prose: pack.prose,
+          wavFile: h3WavByShot.get(shot.id)!,
           blockoutMp4: path.join(blockoutDir, `${shot.id}.mp4`),
-          kfStart: path.join(stillDir, `${shot.id}.png`),
+          kfStart: stillPng,
+          kfEnd: pack.kfEnd,
+          refImageFiles: pack.refImageFiles,
           outMp4: path.join(jobDir(jobId), "motion", `${shot.id}.mp4`),
           receiptJson: jobFile(jobId, "motion", `${shot.id}.h3_submit_dryrun.json`),
           dryRun: true,
           shot: shot.id,
           requireQuote: Boolean(shot.dialogue.trim()),
+          wardrobe: wardrobeClauses(timed),
+          graphVariant: variant,
+          stepsOverride: input.steps,
         });
         receipts.push(relInJob(jobId, receiptFile));
       }
@@ -293,24 +587,92 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     await think("stills");
     const stillWork = open(toStills, { slate: jobId, to: "stills" });
     await speak("stills", packetLine(toStills));
-    await speak("stills", `U1.5 /edit ${cfg.stills.url} · ${cfg.stills.width}×${cfg.stills.height} · base=blockout/前一張，refs 只限首次出場。`);
+    await speak("stills", `U1.5 /edit ${cfg.stills.url} · ${cfg.stills.width}×${cfg.stills.height} · Image-1＝自己 f0，Image-2＋＝肖像（首次）或上一鏡定格。`);
+    const hopStillIds = new Set(shotsForScene(timed.shots, input.scene).map((s) => s.id));
+    const hopStillPlans = input.scene ? stillPlans.filter((p) => hopStillIds.has(p.shot.id)) : stillPlans;
+    if (input.scene) {
+      await speak("stills", `--scene ${input.scene} hop：stills/QC ${hopStillPlans.length}/${stillPlans.length} 鏡。`);
+    }
     let prevKeyframe: string | null = null;
-    for (const { shot, first, prompt, require } of stillPlans) {
+    const editInputs = new Map<string, { prompt: string; nodePaths: string[]; base: string; refs: string[]; first: boolean }>();
+    const greenAlready = new Set<string>();
+    for (const { shot, first, prompt, require } of hopStillPlans) {
       const out = path.join(stillDir, `${shot.id}.png`);
       const recordJson = path.join(stillDir, `${shot.id}.u15_edit.json`);
-      const base = first ? path.join(blockoutDir, `${shot.id}.f0.png`) : prevKeyframe;
-      if (!base) throw new Error(`${shot.id}: no base for /edit (first=${first}, no previous keyframe)`);
+      const base = path.join(blockoutDir, `${shot.id}.f0.png`);
       const refIds = [...new Set(shot.marks.map((m) => m.characterId))];
+      const memHits = queryRefs(job.slate, { characters: refIds, scene: shot.location || timed.location, k: 3 });
+      emit(jobId, {
+        agent: "stills",
+        level: "info",
+        message: `${shot.id} memory ${memHits.length} hits${memHits.length ? "" : " — no prior stills"}`,
+        data: {
+          shot: shot.id,
+          stage: "memory",
+          eye: "memory",
+          verdict: memHits.length ? "pass" : "info",
+          memoryHits: memHits,
+          reason: memHits.length ? "character/scene stills" : "no prior stills",
+        },
+      });
+      // a hash-matched GREEN keyframe is finished work; resume chains from it
+      if (input.resume && pinQcAccepted(stillDir, shot.id)) {
+        prevKeyframe = out;
+        stills.push(out);
+        greenAlready.add(shot.id);
+        await speak("stills", `${shot.id} keyframe 照舊（QC 已 GREEN），唔重出。`);
+        continue;
+      }
+      // resume：已有 png 但未 QC — 照用，唔重 /edit（唔再 scp node0）
+      if (input.resume && fs.existsSync(out) && fs.statSync(out).size >= 8_000) {
+        prevKeyframe = out;
+        stills.push(out);
+        if (fs.existsSync(recordJson)) {
+          const rec = JSON.parse(fs.readFileSync(recordJson, "utf8")) as {
+            prompt?: string;
+            nodePaths?: string[];
+            node_paths?: string[];
+            base?: string;
+            refs?: string[];
+            first?: boolean;
+          };
+          const nodePaths = rec.nodePaths ?? rec.node_paths ?? [];
+          if ((rec.prompt || prompt) && nodePaths.length) {
+            editInputs.set(shot.id, {
+              prompt: rec.prompt || prompt,
+              nodePaths,
+              base: rec.base ?? base,
+              refs: rec.refs ?? [],
+              first: Boolean(rec.first ?? first),
+            });
+          }
+        }
+        // record 缺 node_paths：仍然照用 png，QC fail 時下面會 rebuild + /edit
+        if (!editInputs.has(shot.id)) {
+          editInputs.set(shot.id, {
+            prompt,
+            nodePaths: [],
+            base,
+            refs: [],
+            first,
+          });
+        }
+        await speak("stills", `${shot.id} keyframe 照舊（未 QC），唔重 /edit。`);
+        continue;
+      }
+      const stillStarted = Date.now();
+      const memFiles = memHits
+        .map((h) => path.join(jobDir(jobId), h.rel))
+        .filter((p) => fs.existsSync(p) && p !== prevKeyframe);
       const refFiles = first
         ? refIds.map((id) => {
-            const p = input.portraitsDir ? path.join(input.portraitsDir, `${id}.png`) : "";
-            if (!p || !fs.existsSync(p)) {
-              throw new Error(`${shot.id}: 首次出場要 --portraits <dir>（缺 ${id}.png）`);
-            }
+            const p = portraits.files[id];
+            if (!p || !fs.existsSync(p)) throw new Error(`${shot.id}: 首次出場冇肖像（${id}）`);
             return p;
           })
-        : [];
-      const images = [base, ...refFiles];
+        : [prevKeyframe!, ...memFiles];
+      if (refFiles.some((r) => !r)) throw new Error(`${shot.id}: no ref for /edit (first=${first}, no previous keyframe)`);
+      const images = [base, ...refFiles].slice(0, MAX_IMAGES);
       const health = await checkHealth(cfg.stills.url, images.length);
       const nodePaths: string[] = [];
       for (const img of images) {
@@ -345,6 +707,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           refs: refFiles,
         },
       });
+      editInputs.set(shot.id, { prompt, nodePaths, base, refs: refFiles, first });
       prevKeyframe = out;
       stills.push(out);
       upsertDoc({
@@ -355,7 +718,20 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         text: prompt,
         absPath: out,
       });
-      emit(jobId, { agent: "stills", level: "info", message: `${shot.id} keyframe /edit 完成`, data: { file: `stills/${shot.id}.png` } });
+      emit(jobId, {
+        agent: "stills",
+        level: "info",
+        message: `${shot.id} keyframe /edit 完成`,
+        data: {
+          file: `stills/${shot.id}.png`,
+          shot: shot.id, stage: "keyframe", eye: "stills", verdict: "pass",
+          proof: `stills/${shot.id}.png`, ms: Date.now() - stillStarted,
+        },
+        step_id: "keyframe-prompt",
+        parent_steps: ["boards"],
+        seat: "stills",
+        constraints_checked: ["prop-drift", "cast-drift", "require-keys"],
+      });
     }
     job = patch(job, {
       providers: trace,
@@ -364,24 +740,161 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       outputs: { ...job.outputs, stills: stills.map((f) => relInJob(jobId, f)) },
     });
 
-    // picture QC: plan geometry pre-check, then blind MARS per still — GREEN or fail
+    // picture QC: plan geometry pre-check, then blind Qwen 27B per still — GREEN or fail
     await think("pictureQc");
-    await speak("pictureQc", "MARS 盲測：人數、灰模、物件。本地 schema 只做走位預檢。");
-    const geometry = localPictureQc({ stills, sheet: timed, target: "stills" });
+    await speak("pictureQc", "Qwen 27B 盲測：人數、灰模、物件。本地 schema 只做走位預檢。");
+    // --scene hop: geometry vs hop stills only (full slate stills land across hops)
+    const qcSheet = input.scene
+      ? { ...timed, shots: shotsForScene(timed.shots, input.scene) }
+      : timed;
+    const geometry = localPictureQc({ stills, sheet: qcSheet, target: "stills" });
     if (!geometry.pass) {
       const detail = geometry.issues.map((i) => i.detail).join("; ");
+      // D1a: a hard QC fail is also a violation row, upstream soft rows already on disk
+      appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc-geometry", geometry.issues.map((i) => i.detail)));
       throw new Error(`picture QC plan-geometry pre-check failed: ${detail}`);
     }
-    for (const { shot, require } of stillPlans) {
+    for (const { shot, require } of hopStillPlans) {
+      if (greenAlready.has(shot.id)) continue;
       const png = path.join(stillDir, `${shot.id}.png`);
-      const result = await runPhotoQc(png, path.join(stillDir, `${shot.id}.photo_qc.json`), require);
+      const qcStarted = Date.now();
+      const qcJson = path.join(stillDir, `${shot.id}.photo_qc.json`);
+      let result = await runPhotoQc(png, qcJson, require);
       if (result.status !== "GREEN") {
-        throw new Error(`picture QC ${shot.id}: ${result.checks.fail_reasons.join("; ") || "not GREEN"}`);
+        const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
+        appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
+        await speak("pictureQc", `${shot.id} 唔過（${reasons}）— 補一句 prompt 再 /edit 一次。`, "warn");
+        let inputs = editInputs.get(shot.id);
+        const plan = hopStillPlans.find((p) => p.shot.id === shot.id);
+        if (!inputs || !inputs.nodePaths.length) {
+          // resume keep 冇 remote paths → 重新 scp base+refs 再 /edit
+          const base = path.join(blockoutDir, `${shot.id}.f0.png`);
+          const refIds = [...new Set(shot.marks.map((m) => m.characterId))];
+          const first = Boolean(plan?.first);
+          const refFiles = first
+            ? refIds.map((id) => {
+                const p = portraits.files[id];
+                if (!p || !fs.existsSync(p)) throw new Error(`${shot.id}: retry 冇肖像（${id}）`);
+                return p;
+              })
+            : [path.join(stillDir, `${shot.id}.png`)];
+          const images = [base, ...refFiles].slice(0, MAX_IMAGES);
+          const nodePaths: string[] = [];
+          for (const img of images) {
+            const rpath = u15RefPath(img);
+            await scpToHost(stillsHost, cfg.ssh.user, img, path.dirname(rpath), path.basename(rpath));
+            nodePaths.push(rpath);
+          }
+          inputs = {
+            prompt: inputs?.prompt || plan?.prompt || "",
+            nodePaths,
+            base,
+            refs: refFiles,
+            first,
+          };
+          editInputs.set(shot.id, inputs);
+        }
+        if (!inputs.prompt) throw new Error(`picture QC ${shot.id}: no /edit prompt to retry with`);
+        // retry changes only the prompt: same base, same refs, same lane settings
+        const retryPrompt = `${inputs.prompt} Fix these: ${reasons}.`;
+        const payload = buildEditPayload({
+          prompt: retryPrompt,
+          images: inputs.nodePaths,
+          width: cfg.stills.width || size.width,
+          height: cfg.stills.height || size.height,
+        });
+        await u15Edit({
+          server: cfg.stills.url,
+          payload,
+          nodePaths: inputs.nodePaths,
+          outFile: png,
+          recordJson: path.join(stillDir, `${shot.id}.u15_edit.retry.json`),
+          health: await checkHealth(cfg.stills.url, inputs.nodePaths.length),
+          record: {
+            ts: new Date().toISOString(),
+            prompt: retryPrompt,
+            img_cfg: payload.img_cfg_scale,
+            cfg: payload.cfg_scale,
+            steps: payload.num_steps,
+            use_edit_pe: payload.use_edit_pe,
+            width: payload.width,
+            height: payload.height,
+            first: inputs.first,
+            base: inputs.base,
+            refs: inputs.refs,
+          },
+        });
+        result = await runPhotoQc(png, qcJson, require);
+      }
+      if (result.status !== "GREEN") {
+        const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
+        appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
+        job = patch(job, {
+          status: "blocked",
+          currentAgent: "pictureQc",
+          providers: trace,
+          error: `picture QC ${shot.id} 連續兩次唔過：${reasons}`,
+        });
+        emit(jobId, {
+          agent: "pictureQc",
+          level: "fail",
+          message: `${shot.id} 兩次都唔過（${reasons}）。停手，唔硬出。修 prompt 或者換 plug 之後 --resume ${jobId}。`,
+          data: {
+            shot: shot.id, require, fail_reasons: result.checks.fail_reasons,
+            stage: "require", eye: "pictureQc", verdict: "fail",
+            proof: `stills/${shot.id}.photo_qc.json`, ms: Date.now() - qcStarted,
+          },
+          step_id: "require",
+          parent_steps: ["keyframe-prompt"],
+          seat: "pictureQc",
+          constraints_checked: ["photo-qc"],
+        });
+        return;
       }
       await speak("pictureQc", `${shot.id} GREEN（人數 ${require.people_count}）`, "pass");
+      emit(jobId, {
+        agent: "pictureQc",
+        level: "pass",
+        message: `${shot.id} photo QC GREEN（人數 ${require.people_count}）`,
+        data: {
+          shot: shot.id, stage: "require", eye: "pictureQc", verdict: "pass",
+          proof: `stills/${shot.id}.photo_qc.json`, ms: Date.now() - qcStarted,
+        },
+        step_id: "require",
+        parent_steps: ["keyframe-prompt"],
+        seat: "pictureQc",
+        constraints_checked: ["photo-qc"],
+      });
+      if (cfg.embed.endpoint.trim()) {
+        await ingestStill({
+          ep: job.slate,
+          shot: shot.id,
+          character: shot.marks[0]?.characterId ?? "",
+          scene: shot.location || timed.location,
+          file: png,
+          rel: `stills/${shot.id}.png`,
+        });
+      }
     }
-    trace.mars = `MARS ${cfg.pictureQc.endpoint} (${cfg.pictureQc.model})`;
+    trace.mars = `qwen38 ${cfg.pictureQc.endpoint} (${cfg.pictureQc.model})`;
     job = patch(job, { pictureQcStills: geometry, providers: trace, progress: 55 });
+    if (input.until === "stills") {
+      job = patch(job, {
+        status: "stills-ready",
+        currentAgent: "pictureQc",
+        outputs: {
+          ...job.outputs,
+          stills: stills.map((f) => relInJob(jobId, f)),
+          blockout: blockouts.map((f) => relInJob(jobId, f)),
+        },
+      });
+      emit(jobId, {
+        agent: "pictureQc",
+        level: "pass",
+        message: "--until stills：photo QC 全 GREEN，H3 未燒。stills + f0 + require 已出。",
+      });
+      return;
+    }
 
     // motion: H3 R2V per shot — photo QC pin must be accepted before submit
     const motionDir = path.join(jobDir(jobId), "motion");
@@ -398,22 +911,72 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     open(toMotion, { slate: jobId, to: "motion" });
     await speak("motion", packetLine(toMotion));
     await speak("motion", `H3 R2V ${cfg.motion.comfyUrl} · <Video 1> motion only · 零 ref_images · 一鏡一 submit。`);
-    for (const { shot } of stillPlans) {
+    // C-scene-hop: the scene flag crops ONLY this loop — stills/QC/layout above
+    // ran full-slate; a no-match scene throws before any H3 is burned
+    const motionShots = shotsForScene(stillPlans.map((p) => p.shot), input.scene);
+    if (input.scene) {
+      await speak("motion", `--scene ${input.scene} hop：燒 ${motionShots.length}/${stillPlans.length} 鏡，其餘唔郁。`);
+    }
+    for (const shot of motionShots) {
       if (!pinQcAccepted(stillDir, shot.id)) {
         throw new Error(`${shot.id}: photo_qc 未 GREEN（sha 或 schema 唔吻合）— 唔准燒 H3`);
       }
-      const prose = buildProse(timed, shot);
-      validateProse(`${SCRIPT_HEADER}\n${prose}`, { requireQuote: Boolean(shot.dialogue.trim()) });
+      const variant = h3GraphVariant(input);
+      const stillPng = path.join(stillDir, `${shot.id}.png`);
+      const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files);
+      const prose = pack.prose;
+      if (variant === "a") {
+        validateProse(`${SCRIPT_HEADER}\n${prose}`, {
+          requireQuote: Boolean(shot.dialogue.trim()),
+          wardrobe: wardrobeClauses(timed),
+        });
+      }
+      const doneMp4 = path.join(motionDir, `${shot.id}.mp4`);
+      const doneReceipt = path.join(motionDir, `${shot.id}.h3_submit.json`);
+      const requirePath = path.join(stillDir, `${shot.id}.require.json`);
+      const require = JSON.parse(fs.readFileSync(requirePath, "utf8")) as QcRequire;
+      const videoQcJson = path.join(motionDir, `${shot.id}.video_qc.json`);
+      const wantFrames = Math.round(
+        (cutPlan.shots.find((c) => c.id === shot.id)?.duration_s ?? -1) * 24,
+      );
+      const frameSnap = fs.existsSync(doneMp4)
+        && Math.round((await mediaSeconds(doneMp4)) * 24) === wantFrames;
+      // resume keeps an mp4 only when frame clock matches AND blind MARS video_qc is GREEN
+      const kept =
+        input.resume
+        && fs.existsSync(doneMp4)
+        && fs.existsSync(doneReceipt)
+        && frameSnap
+        && pinVideoQcAccepted(motionDir, shot.id);
+      if (kept) {
+        shotVideos.push(doneMp4);
+        receipts.push(relInJob(jobId, doneReceipt));
+        await speak("motion", `${shot.id} 照舊，唔重燒 H3（video_qc GREEN）。`);
+        continue;
+      }
+      if (input.resume && fs.existsSync(doneMp4) && fs.existsSync(doneReceipt) && frameSnap) {
+        await speak(
+          "motion",
+          `${shot.id} mp4 時鐘啱但 video_qc 未 GREEN — 下一跳重燒。`,
+          "warn",
+        );
+      }
+      const motionStarted = Date.now();
       const { receiptFile } = await submitH3Shot({
         prose,
-        wavFile: wavByShot.get(shot.id)!,
+        wavFile: h3WavByShot.get(shot.id)!,
         blockoutMp4: path.join(blockoutDir, `${shot.id}.mp4`),
-        kfStart: path.join(stillDir, `${shot.id}.png`),
+        kfStart: stillPng,
+        kfEnd: pack.kfEnd,
+        refImageFiles: pack.refImageFiles,
         outMp4: path.join(motionDir, `${shot.id}.mp4`),
         receiptJson: path.join(motionDir, `${shot.id}.h3_submit.json`),
         dryRun: false,
         shot: shot.id,
         requireQuote: Boolean(shot.dialogue.trim()),
+        wardrobe: wardrobeClauses(timed),
+        graphVariant: variant,
+        stepsOverride: input.steps,
       });
       const mp4 = path.join(motionDir, `${shot.id}.mp4`);
       shotVideos.push(mp4);
@@ -426,7 +989,41 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         text: prose,
         absPath: mp4,
       });
-      emit(jobId, { agent: "motion", level: "info", message: `${shot.id} motion 完成` });
+      await think("pictureQc");
+      let videoQc = await runVideoQc({
+        mp4,
+        outJson: videoQcJson,
+        require,
+        shotId: shot.id,
+      });
+      const prevShot = stillPlans.map((p) => p.shot).find((s, i, arr) => arr[i + 1]?.id === shot.id);
+      videoQc = await attachMemoryDistances(videoQc, {
+        ep: job.slate,
+        shot: shot.id,
+        outJson: videoQcJson,
+        character: shot.marks[0]?.characterId,
+        prevStill: prevShot ? path.join(stillDir, `${prevShot.id}.png`) : undefined,
+        blockoutF0: path.join(blockoutDir, `${shot.id}.f0.png`),
+        midFrame: videoQc.frames[Math.floor(videoQc.frames.length / 2)]?.file,
+      });
+      if (videoQc.status !== "GREEN") {
+        const reasons = videoQc.checks.fail_reasons.join("; ") || "not GREEN";
+        await speak("motion", `${shot.id} motion 眼 FAIL（${reasons}）— clip 留低。`, "fail");
+      } else {
+        await speak("motion", `${shot.id} motion 眼 GREEN`, "pass");
+      }
+      emit(jobId, {
+        agent: "motion",
+        level: "info",
+        message: `${shot.id} motion 完成`,
+        data: {
+          shot: shot.id, stage: "motion", eye: "motion", verdict: videoQc.status === "GREEN" ? "pass" : "fail",
+          proof: `motion/${shot.id}.mp4`, ms: Date.now() - motionStarted,
+        },
+        step_id: "motion",
+        parent_steps: ["require"],
+        seat: "motion",
+      });
     }
     job = patch(job, {
       providers: trace,
@@ -438,6 +1035,50 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         receipts,
       },
     });
+    if (input.until === "motion") {
+      job = patch(job, { status: "motion-ready", currentAgent: "motion" });
+      emit(jobId, {
+        agent: "motion",
+        level: "pass",
+        message: "--until motion：H3 片已落，mux 之前停（stills/motion 閘已過）。",
+      });
+      return;
+    }
+    // --scene hop: mux this scene only → preview/SCxx.preview.mp4；唔走全 slate concat
+    if (input.scene) {
+      const previewDir = path.join(jobDir(jobId), "preview");
+      ensureDir(previewDir);
+      const muxed: string[] = [];
+      for (const shot of motionShots) {
+        const mp4 = shotVideos.find((v) => path.basename(v, ".mp4") === shot.id);
+        if (!mp4) throw new Error(`--scene ${input.scene}: motion 缺 ${shot.id}`);
+        const out = path.join(motionDir, `${shot.id}.muxed.mp4`);
+        await ffmpeg(muxArgs(mp4, h3WavByShot.get(shot.id)!, out));
+        muxed.push(out);
+      }
+      const muxList = path.join(previewDir, "mux-list.txt");
+      fs.writeFileSync(muxList, muxed.map((v) => `file '${v.replaceAll("'", "'\\''")}'`).join("\n"));
+      const previewMp4 = path.join(previewDir, `${input.scene}.preview.mp4`);
+      await ffmpeg(["-f", "concat", "-safe", "0", "-i", muxList, "-c", "copy", previewMp4]);
+      job = patch(job, {
+        status: "motion-ready",
+        currentAgent: "motion",
+        progress: 75,
+        outputs: {
+          ...job.outputs,
+          shots: shotVideos.map((f) => relInJob(jobId, f)),
+          receipts,
+          scenePreview: relInJob(jobId, previewMp4),
+        },
+      });
+      emit(jobId, {
+        agent: "motion",
+        level: "pass",
+        message: `--scene ${input.scene} hop 完：${motionShots.length} 鏡已 mux → preview/${input.scene}.preview.mp4。下一場再 --scene。`,
+        data: { scene: input.scene, shots: motionShots.map((s) => s.id), preview: `preview/${input.scene}.preview.mp4` },
+      });
+      return;
+    }
 
     // voice: wav plug only — spine given, or concat slices with gap silence
     await think("voice");
@@ -469,7 +1110,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         await ffmpeg(["-f", "concat", "-safe", "0", "-i", concatList, "-c", "copy", spineFile]);
       }
     }
-    trace.tts = "wav plug";
+    trace.tts = fs.existsSync(path.join(input.wavDir, "sentences.json"))
+      ? "wav plug (AuK slices, natural pace)"
+      : "wav plug";
     job = patch(job, { providers: trace, progress: 76, outputs: { ...job.outputs, voice: "audio/spine.wav" } });
     upsertDoc({
       id: "audio:vo",
@@ -479,20 +1122,34 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       absPath: spineFile,
     });
 
-    // sound QC unchanged (runs on the spine)
+    // sound QC on the DELIVERED audio: concat of the padded per-shot wavs —
+    // this is the track actually muxed into the lock, spine only feeds the gate
+    const lockAudio = jobFile(jobId, "delivery", "lock-audio.wav");
+    const lockList = path.join(audioDir, "lock-list.txt");
+    fs.writeFileSync(
+      lockList,
+      cutPlan.shots.map((s) => `file '${h3WavByShot.get(s.id)!.replaceAll("'", "'\\''")}'`).join("\n"),
+    );
+    await ffmpeg(["-f", "concat", "-safe", "0", "-i", lockList, "-c:a", "pcm_s16le", lockAudio]);
     await think("soundQc");
-    await speak("soundQc", "SenseVoice 對稿：ASR、情緒、事件、WER、Clipping。");
-    let sound = localSoundQc({
-      audioFile: spineFile,
-      expectedText: timed.voiceover,
-      expectedEmotion: "NEUTRAL",
-      cloneSimilarity: 1,
-    });
-    const remoteSv = await senseVoiceHttp(spineFile).catch(() => null);
-    if (remoteSv) {
-      sound = { ...sound, ...remoteSv, provider: remoteSv.provider ?? "SenseVoice" };
-      trace.senseVoice = "SenseVoice HTTP";
-    }
+    await speak("soundQc", "SenseVoice 對稿（delivery/lock-audio.wav）：ASR、情緒、事件、WER、Clipping。");
+    // A3 fail-loud: no endpoint, or an unreachable ear = FAIL "unconfigured".
+    // Never a schema stand-in for the SenseVoice verdict.
+    const earConfigured = cfg.soundQc.endpoint.trim().length > 0;
+    const wavCheck = earConfigured ? wavPrecheck({ audioFile: lockAudio }) : null;
+    const remoteSv = earConfigured ? await senseVoiceHttp(lockAudio).catch(() => null) : null;
+    const sound = !earConfigured
+      ? soundQcUnconfigured()
+      : remoteSv && wavCheck
+        ? soundQcFromRemote({
+            remote: remoteSv,
+            expectedText: timed.voiceover,
+            expectedEmotion: "NEUTRAL",
+            cloneSimilarity: 1,
+            wav: wavCheck,
+          })
+        : soundQcUnconfigured(`sensevoice ${cfg.soundQc.endpoint} unreachable or unparseable`);
+    trace.senseVoice = earConfigured && remoteSv ? "SenseVoice HTTP" : "SenseVoice FAIL (unconfigured)";
     job = patch(job, { soundQc: sound, providers: trace, progress: 82 });
     await speak("soundQc", `Sound QC ${sound.pass ? "PASS" : "FAIL"}  peak ${sound.peak.toFixed(2)}  silence ${sound.silenceRatio.toFixed(2)}`, sound.pass ? "pass" : "fail");
 
@@ -519,17 +1176,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     for (const shotId of cut) {
       const mp4 = shotVideos.find((v) => path.basename(v, ".mp4") === shotId);
       if (!mp4) throw new Error(`cut ${shotId} missing from motion`);
-      const wav = wavByShot.get(shotId)!;
       const out = path.join(motionDir, `${shotId}.muxed.mp4`);
-      await ffmpeg([
-        "-i", mp4,
-        "-i", wav,
-        "-map", "0:v", "-map", "1:a",
-        "-af", "apad",
-        "-c:v", "copy", "-c:a", "aac",
-        "-shortest",
-        out,
-      ]);
+      await ffmpeg(muxArgs(mp4, h3WavByShot.get(shotId)!, out));
       muxed.push(out);
     }
     const muxList = jobFile(jobId, "motion", "mux-list.txt");
@@ -537,24 +1185,36 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const pictureLock = jobFile(jobId, "delivery", "picture-lock.mp4");
     await ffmpeg(["-f", "concat", "-safe", "0", "-i", muxList, "-c", "copy", pictureLock]);
 
-    const pictureVideo = localPictureQc({ stills, sheet: timed, target: "video" });
+    const markGeometry = localPictureQc({
+      stills,
+      sheet: input.scene ? { ...timed, shots: shotsForScene(timed.shots, input.scene) } : timed,
+      target: "video",
+    });
+    const videoQcPass = cut.every((id) => pinVideoQcAccepted(motionDir, id));
     job = patch(job, {
-      pictureQcVideo: pictureVideo,
+      pictureQcVideo: markGeometry,
       progress: 92,
       outputs: { ...job.outputs, concatGate: "concat_gate.json", pictureLock: "delivery/picture-lock.mp4" },
     });
 
     await think("delivery");
     await speak("delivery", "交片包：mp4 + continuity + QC + Blender。故事＝分鏡＝剪接。");
+    const deliveredSec = await mediaSeconds(pictureLock);
     const report = {
       slate: job.slate,
       title: timed.title,
       cut: continuity.cut,
       providers: trace,
+      // measured off the delivered mp4, not the planned sum
+      delivered_s: deliveredSec,
+      planned_s: timed.durationSec,
+      provenance: timed.provenance,
       soundQc: sound,
       pictureQcStills: geometry,
-      pictureQcVideo: pictureVideo,
-      locked: Boolean(sound.pass && pictureVideo.pass),
+      markGeometry,
+      // the padded tail per shot IS the delivered speech gap
+      gap_delivered_s: Object.fromEntries(gapDelivered),
+      locked: Boolean(sound.pass && videoQcPass),
     };
     fs.writeFileSync(jobFile(jobId, "delivery", "qc.json"), JSON.stringify(report, null, 2));
     fs.writeFileSync(jobFile(jobId, "delivery", "callsheet.md"), markdownCallSheet(timed, job.slate));
@@ -584,7 +1244,22 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     job = patch(job, { status: "failed", error: message });
+    // D1a: the throw site also lands a hard row (zod / pipeline) — the soft
+    // rows written earlier in topological order already sit above it
+    appendViolation(jobDir(jobId), hardErrorRow(error));
     emit(jobId, { agent: "system", level: "error", message });
+    // reflector: strictly after the job is marked failed, never inside a live
+    // stage — the 27B reads this grave and curatePlaybook (code) writes lessons
+    try {
+      const lessons = await runReflector({ jobId, crew: cfg.crew });
+      for (const line of lessons) emit(jobId, { agent: "system", level: "warn", message: line });
+    } catch (err) {
+      emit(jobId, {
+        agent: "system",
+        level: "warn",
+        message: `Reflector 未行到：${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   }
 }
 

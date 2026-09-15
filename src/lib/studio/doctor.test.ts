@@ -30,9 +30,19 @@ test("localhost motion URL produces a loopback WARN", () => {
   assert.ok(configWarns(cfg).some((w) => w.includes("loopback") && w.includes("localhost")));
 });
 
-test("tailnet and docker-bridge fleet URLs produce no loopback WARN", () => {
+test("tailnet stills/motion produce no loopback WARN; a local MARS :8015 may warn", () => {
   const warns = configWarns(structuredClone(defaultConfig));
-  assert.ok(!warns.some((w) => w.includes("loopback")));
+  assert.ok(!warns.some((w) => w.includes("stills.url") && w.includes("loopback")));
+  assert.ok(!warns.some((w) => w.includes("motion.comfyUrl") && w.includes("loopback")));
+});
+
+test("C10: unset crew.endpoint warns; a pinned LiteLLM :4000 endpoint does not", () => {
+  const unset = structuredClone(defaultConfig);
+  unset.crew.endpoint = "";
+  assert.ok(configWarns(unset).some((w) => w.includes("crew.endpoint unset")));
+  const pinned = structuredClone(defaultConfig);
+  pinned.crew.endpoint = "http://127.0.0.1:4000";
+  assert.ok(!configWarns(pinned).some((w) => w.includes("crew.endpoint unset")));
 });
 
 test("formatDoctor prints report.warns as WARN lines", () => {

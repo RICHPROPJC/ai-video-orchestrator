@@ -1,0 +1,90 @@
+{
+  "observation": {
+    "protocol": "astra.protocol.v2",
+    "blender": "5.1.2",
+    "frame": 3,
+    "hero": {
+      "name": "HeroRig",
+      "meshes": [
+        "HeroMesh"
+      ],
+      "maskId": 2,
+      "location": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "bounds": {
+        "min": [
+          -0.5,
+          -0.5,
+          0.0
+        ],
+        "max": [
+          0.5,
+          0.5,
+          2.0
+        ]
+      },
+      "screenPos": [
+        0.49916553828461196,
+        0.5123662429308667
+      ]
+    },
+    "camera": {
+      "name": "Camera",
+      "location": [
+        0.0,
+        -8.0,
+        2.0
+      ],
+      "forward": [
+        0.0,
+        0.9922779202461243,
+        -0.1240348070859909
+      ],
+      "aimAngleDeg": 0.0,
+      "occluded": false,
+      "blocker": null,
+      "evaluated": true
+    },
+    "pixelEvidence": {
+      "source": "PIL",
+      "maskId": 2,
+      "frame": 3,
+      "camera": "Camera",
+      "meshes": [
+        "HeroMesh"
+      ],
+      "path": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/occluded_fixed/blockout.camera/hero-mask.png",
+      "sha256": "6be356cac213d75bdef8b3da88f79d70b966ad7d55354e54a56d083416d54f54",
+      "width": 320,
+      "height": 180,
+      "pixelCount": 6739,
+      "framePath": "/mnt/ssd/crew-wt/forge/shots/fixtures/f3/occluded_fixed/blockout.camera/frame.png",
+      "frameSha256": "bf898ad726c348af933fd65e67a25e08393572c0bd4b6c3de70359c7e4867169"
+    },
+    "errors": []
+  },
+  "checks": [
+    {
+      "id": "camera_aimed_at_hero",
+      "ok": true,
+      "detail": "evaluated hero bbox aim angle=0.0; maximum=15.0 degrees",
+      "required": false
+    },
+    {
+      "id": "camera_occluded",
+      "ok": true,
+      "detail": "occluded=False; blocker=None",
+      "required": false
+    },
+    {
+      "id": "hero_on_screen",
+      "ok": true,
+      "detail": "PIL centroid=[0.49916553828461196, 0.5123662429308667]; pixels=6739; centre region=(0.25, 0.75)",
+      "required": true
+    }
+  ],
+  "ok": true
+}

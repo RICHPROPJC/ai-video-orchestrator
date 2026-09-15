@@ -1,0 +1,22 @@
+{
+  "verified_at": "2026-09-14T18:06+08:00",
+  "verified_by": "SlateLead stop-gate (hook QwenClaimVerify A1/A2/A3)",
+  "tests": "tsx verify/c5/hamming_check.ts (frameHashes/hamming from /mnt/ssd/crew-wt/front/src/lib/studio/dhash-anchors.ts — same helper as blockout.test.ts SH01-vs-SH02 test (d))",
+  "a1_stance_keys": ["sit", "kneel", "lie"],
+  "a1_evidence": "verify/c5/{lie,sit,kneel}.blender.py lines 76-78: \"sit\": (18.0, 0.70, 0.55, 0.38), \"kneel\": (6.0, -0.22, 1.0, 0.18), \"lie\": (90.0, 0.22, 1.0, 0.40)",
+  "rows": [
+    { "a": "lie", "b": "sit", "d": 27 },
+    { "a": "lie", "b": "kneel", "d": 26 },
+    { "a": "sit", "b": "kneel", "d": 21 }
+  ],
+  "threshold": 8,
+  "pass": true,
+  "a3_f0_md5": {
+    "lie.f0.png": "367ea10971502b6b9f3cd5db892cf9c7",
+    "sit.f0.png": "beaa265618b7381b72d3457e85d0eca7",
+    "kneel.f0.png": "d0aca7fef699cb80d1ef1b4214a725cb"
+  },
+  "a3_note": "f0 PNGs (864x480) live at verify/c5/{lie,sit,kneel}.f0.png — written there directly by the C5 test (extractFrame0 targets the proof dir), so no separate cp source exists; md5+dims+mtime recorded instead. Front lane re-rendered at 18:05:13/30/47 during first hash pass; numbers re-verified on settled batch, md5s unchanged across the run.",
+  "no_h3": true,
+  "no_wist_resume": true
+}

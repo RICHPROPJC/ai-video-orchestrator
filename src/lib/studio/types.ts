@@ -4,7 +4,11 @@ export type JobStatus =
   | "blocked"
   | "locked"
   | "failed"
-  | "dry-run";
+  | "dry-run"
+  | "boarded"
+  | "blockout-ready"
+  | "stills-ready"
+  | "motion-ready";
 
 export type AgentId =
   | "producer"
@@ -41,8 +45,27 @@ export type ProduceInput = {
   blockoutDir?: string;
   gapSec?: number;
   dryRun?: boolean;
-  /** load this callsheet JSON instead of drafting one from the brief */
+  /** stop early: boards = seats have written the callsheet (no wavs yet),
+   *  blockout = grey blockout + f0 done (no U1.5 / QC / H3),
+   *  stills = after photo QC GREEN, motion = after H3 downloads (before mux) */
+  until?: "boards" | "blockout" | "stills" | "motion";
+  /** C-scene-hop: burn H3 for ONE scene only (must match SCxx). Motion-lane
+   *  filter — stills/QC/layout stay full-slate. Omitted = all shots. */
+  scene?: string;
+  /** reuse this slate's callsheet and finished artefacts instead of starting over */
+  resume?: boolean;
+  /** names the writer may cast speaking parts from (data file, never in src) */
+  castRosterPath?: string;
+  /** load this callsheet JSON instead of letting the seats author one */
   callSheetPath?: string;
+  /** H3 graph shape: default A (Video 1 + kfinject); B/BKF/C for verify/ab experiments */
+  graphVariant?: "a" | "b" | "bkf" | "c";
+  /** test-only H3 sampler steps override; live default stays config.motion.steps (4) */
+  steps?: number;
+  /** L1b: drama id under projects/<drama>/ — seats write this film there, not Cursor folders */
+  drama?: string;
+  /** episode surface, e.g. EP01 — playbooks/events live under the drama dir */
+  episode?: string;
 };
 
 export type JobEvent = {
@@ -51,6 +74,28 @@ export type JobEvent = {
   level: "info" | "warn" | "error" | "pass" | "fail";
   message: string;
   data?: Record<string, unknown>;
+  /** D1a topology: which pipeline step emitted this event, its upstream steps
+   *  (boards → keyframe-prompt → require), the seat that wrote it, and which
+   *  trace constraint ids were checked at that step. emit passes them through
+   *  when present; think/speak text is never rewritten. */
+  step_id?: string;
+  parent_steps?: string[];
+  seat?: string;
+  constraints_checked?: string[];
+};
+
+/** A4 events law: a per-stage line carries these keys inside JobEvent.data —
+ *  shot, stage, eye, verdict, proof (repo-relative artefact path; absent when
+ *  the stage proves nothing on disk) and ms (the stage's own wall clock).
+ *  Stage events land in data verbatim; emit dual-writes them to
+ *  projects/<ep>/events.jsonl. Tests lock all six. */
+export type StageFacts = {
+  shot: string;
+  stage: string;
+  eye: string;
+  verdict: "pass" | "fail" | "info";
+  proof?: string;
+  ms?: number;
 };
 
 export type Character = {
@@ -60,6 +105,18 @@ export type Character = {
   wardrobe: string;
   palette: [string, string, string];
   voice: { pitchHz: number; gender: "f" | "m" | "n" };
+  /** blockout mannequin height in metres — data decides, src has no per-name constants */
+  heightM?: number;
+};
+
+export type Stance = "stand" | "lean" | "crouch";
+
+export type ShotProp = {
+  name: string;
+  /** characterId of the mark whose hands hold it */
+  heldBy?: string;
+  shape: string[];
+  forbid: string[];
 };
 
 export type Shot = {
@@ -87,9 +144,22 @@ export type Shot = {
     footL: Vec2;
     footR: Vec2;
     gait: "plant" | "walk" | "reach" | "turn";
+    stance?: Stance;
+    stanceEnd?: Stance;
   }[];
+  props?: ShotProp[];
   stillPrompt: string;
   motionPrompt: string;
+  /** which scene and beat the seats cut this shot from */
+  scene?: string;
+  beatId?: string;
+};
+
+/** Which seat wrote the sheet, on which model, with the receipts to prove it. */
+export type Provenance = {
+  writer: { model: string; receipts: string[] };
+  boards: { model: string; receipts: string[] };
+  sha256: string;
 };
 
 export type CallSheet = {
@@ -111,6 +181,8 @@ export type CallSheet = {
   };
   shots: Shot[];
   voiceover: string;
+  scenes?: { id: string; heading: string; summary: string; targetSec: number }[];
+  provenance?: Provenance;
 };
 
 export type QcIssue = {
@@ -156,6 +228,7 @@ export type ProviderTrace = {
   senseVoice: string;
   mars: string;
   blender: string;
+  lipSync: string;
 };
 
 export type JobRecord = {
@@ -165,6 +238,10 @@ export type JobRecord = {
   updatedAt: string;
   status: JobStatus;
   input: ProduceInput;
+  /** set by producer from input.drama — projects/<drama>/ base layer */
+  drama?: string;
+  /** set by producer from input.episode — EP01…EP10 surface */
+  episode?: string;
   progress: number;
   currentAgent?: AgentId;
   callSheet?: CallSheet;
@@ -206,7 +283,7 @@ export const AGENT_META: Record<
   art: { label: "美術", en: "Art", desk: "Style bible" },
   layout: { label: "走位", en: "Layout", desk: "Blender 手腳 IK" },
   stills: { label: "生圖", en: "Stills", desk: "SenseNova U1.5" },
-  pictureQc: { label: "畫檢", en: "Picture QC", desk: "SenseNova MARS-8B" },
+  pictureQc: { label: "畫檢", en: "Picture QC", desk: "Qwen 27B qwen38" },
   motion: { label: "生片", en: "Motion", desk: "MiniMax H3" },
   voice: { label: "聲線", en: "Voice", desk: "TTS + clone" },
   soundQc: { label: "聲檢", en: "Sound QC", desk: "SenseVoice" },

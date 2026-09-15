@@ -1,0 +1,34 @@
+{
+  "label": "07JZ",
+  "frozen": true,
+  "kind": "zod-scene-clock",
+  "note": "Frozen event slice for D1b (D1a records, does not judge): scene SC06's beats summed to 49.1s against the schema hi of 49.05s — over budget by 0.05s, zod refused the sheet (fixed later by cutting scene clocks a hair inside the hi). Events are frozen excerpts, not a re-run.",
+  "context": {
+    "scene": "SC06",
+    "sum_s": 49.1,
+    "hi_s": 49.05,
+    "schema": "scenes[].targetSec hi"
+  },
+  "events": [
+    {
+      "ts": "2026-09-12T09:41:07.000Z",
+      "agent": "boards",
+      "level": "info",
+      "message": "分鏡專職鎖咗 12 鏡。",
+      "step_id": "boards",
+      "parent_steps": [],
+      "seat": "boards",
+      "constraints_checked": ["scene-clock"]
+    },
+    {
+      "ts": "2026-09-12T09:41:09.000Z",
+      "agent": "system",
+      "level": "error",
+      "message": "[zod] scenes[5].targetSec: sum 49.1 exceeds hi 49.05 by 0.05 — expected sum ≤ hi",
+      "step_id": "callsheet",
+      "parent_steps": ["boards"],
+      "seat": "boards",
+      "constraints_checked": ["zod"]
+    }
+  ]
+}
