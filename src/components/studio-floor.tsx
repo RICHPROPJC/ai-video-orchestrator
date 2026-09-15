@@ -23,6 +23,8 @@ import type { DoctorReport } from "@/lib/studio/doctor";
 import type { FleetReport } from "@/lib/studio/fleet";
 import { FleetRack } from "@/components/fleet-rack";
 import { ShotTruth } from "@/components/shot-truth";
+import { H3PlanCard } from "@/components/h3-plan-card";
+import { clinicH3Plans } from "@/lib/studio/h3-slots";
 import { Clapperboard, Film, Lock, Upload } from "lucide-react";
 
 const EXAMPLES = [
@@ -376,6 +378,7 @@ export function StudioFloor({
                     ["board", "分鏡"],
                     ["plan", "計劃"],
                     ["block", "走位"],
+                    ["h3", "H3"],
                     ["qc", "QC"],
                     ["lock", "成片"],
                   ] as const
@@ -515,6 +518,25 @@ export function StudioFloor({
                     </CardContent>
                   </Card>
                   </div>
+                </div>
+              ) : null}
+              {tab === "h3" ? (
+                <div className="mt-3 min-h-48 space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    一鏡一 generate · 0%/100% = 呢鏡 U1.5 still · miss kf 只改視覺 wiring，唔調 TTS ·{" "}
+                    <a className="text-primary underline" href="/h3">
+                      /h3
+                    </a>
+                  </p>
+                  {(() => {
+                    const { hold, hop } = clinicH3Plans();
+                    return (
+                      <div className="grid gap-3 lg:grid-cols-2">
+                        <H3PlanCard title="Hold · same world" plan={hold} />
+                        <H3PlanCard title="Hop · prev last forbidden" plan={hop} />
+                      </div>
+                    );
+                  })()}
                 </div>
               ) : null}
               {tab === "lock" ? (

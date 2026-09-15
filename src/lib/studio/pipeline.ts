@@ -29,6 +29,8 @@ import { keyframeEditPrompt, keyframeRequire } from "./keyframe-prompt";
 import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
 import type { H3GraphVariant } from "./h3-r2v-graph";
+import { assertH3Plan, assertH3SubmitWiring, planH3Shot } from "./h3-slots";
+import { assertNativeFfmpeg, concatCopyArgs } from "./native-cut";
 import { checkHealth, buildEditPayload, u15Edit, MAX_IMAGES, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
 import { runPhotoQc, pinQcAccepted, type QcRequire } from "./photo-qc";
@@ -47,15 +49,53 @@ function h3GraphVariant(input: ProduceInput): H3GraphVariant {
   return input.graphVariant ?? "a";
 }
 
+function prevShotOf(sheet: CallSheet, shot: Shot): Shot | undefined {
+  const i = sheet.shots.findIndex((s) => s.id === shot.id);
+  return i > 0 ? sheet.shots[i - 1] : undefined;
+}
+
+function writeH3Plan(
+  jobId: string,
+  timed: CallSheet,
+  shot: Shot,
+  wiring: { wav: string; blockout: string; still: string; kfStart: string; kfEnd?: string; refImageFiles?: string[] },
+) {
+  const prev = prevShotOf(timed, shot);
+  const plan = planH3Shot({
+    shot,
+    prev,
+    wav: relInJob(jobId, wiring.wav),
+    blockout: relInJob(jobId, wiring.blockout),
+    ourStill: relInJob(jobId, wiring.still),
+  });
+  assertH3Plan(plan);
+  assertH3SubmitWiring(plan, {
+    kfStart: wiring.kfStart,
+    kfEnd: wiring.kfEnd,
+    wav: wiring.wav,
+    blockout: wiring.blockout,
+    refImageFiles: wiring.refImageFiles,
+    prevShotId: prev?.id,
+  });
+  fs.mkdirSync(path.dirname(jobFile(jobId, "motion", `${shot.id}.h3_plan.json`)), { recursive: true });
+  fs.writeFileSync(jobFile(jobId, "motion", `${shot.id}.h3_plan.json`), JSON.stringify(plan, null, 2));
+  return plan;
+}
+
 function h3MotionPack(
   timed: CallSheet,
   shot: Shot,
   variant: H3GraphVariant,
   stillPng: string,
   portraitFiles: Record<string, string>,
+  prev?: Shot,
 ) {
   if (variant === "a") {
-    return { prose: buildProse(timed, shot), refImageFiles: undefined as string[] | undefined, kfEnd: stillPng };
+    return {
+      prose: buildProse(timed, shot, { prevLocation: prev?.location }),
+      refImageFiles: undefined as string[] | undefined,
+      kfEnd: stillPng,
+    };
   }
   const ids = [...new Set(shot.marks.map((m) => m.characterId))];
   const portraits = ids
@@ -124,7 +164,7 @@ export async function padH3Wav(src: string, dst: string, frames: number): Promis
 
 /** per-shot mux: own padded wav, level-matched; H3's own audio is dropped */
 export function muxArgs(mp4: string, h3Wav: string, out: string): string[] {
-  return [
+  const args = [
     "-i", mp4,
     "-i", h3Wav,
     "-map", "0:v", "-map", "1:a",
@@ -133,6 +173,8 @@ export function muxArgs(mp4: string, h3Wav: string, out: string): string[] {
     "-shortest",
     out,
   ];
+  assertNativeFfmpeg(args);
+  return args;
 }
 
 /** C-scene-hop: `--scene SCxx` narrows ONLY the H3 lane to one scene's shots
@@ -540,11 +582,21 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       const receipts: string[] = [];
       for (const { shot } of stillPlans) {
         const stillPng = path.join(stillDir, `${shot.id}.png`);
-        const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files);
+        const prev = prevShotOf(timed, shot);
+        const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files, prev);
+        const blockoutMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
+        writeH3Plan(jobId, timed, shot, {
+          wav: h3WavByShot.get(shot.id)!,
+          blockout: blockoutMp4,
+          still: stillPng,
+          kfStart: stillPng,
+          kfEnd: pack.kfEnd,
+          refImageFiles: pack.refImageFiles,
+        });
         const { receiptFile } = await submitH3Shot({
           prose: pack.prose,
           wavFile: h3WavByShot.get(shot.id)!,
-          blockoutMp4: path.join(blockoutDir, `${shot.id}.mp4`),
+          blockoutMp4,
           kfStart: stillPng,
           kfEnd: pack.kfEnd,
           refImageFiles: pack.refImageFiles,
@@ -923,7 +975,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       }
       const variant = h3GraphVariant(input);
       const stillPng = path.join(stillDir, `${shot.id}.png`);
-      const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files);
+      const prev = prevShotOf(timed, shot);
+      const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files, prev);
       const prose = pack.prose;
       if (variant === "a") {
         validateProse(`${SCRIPT_HEADER}\n${prose}`, {
@@ -962,10 +1015,19 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         );
       }
       const motionStarted = Date.now();
+      const blockoutMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
+      writeH3Plan(jobId, timed, shot, {
+        wav: h3WavByShot.get(shot.id)!,
+        blockout: blockoutMp4,
+        still: stillPng,
+        kfStart: stillPng,
+        kfEnd: pack.kfEnd,
+        refImageFiles: pack.refImageFiles,
+      });
       const { receiptFile } = await submitH3Shot({
         prose,
         wavFile: h3WavByShot.get(shot.id)!,
-        blockoutMp4: path.join(blockoutDir, `${shot.id}.mp4`),
+        blockoutMp4,
         kfStart: stillPng,
         kfEnd: pack.kfEnd,
         refImageFiles: pack.refImageFiles,
@@ -1059,7 +1121,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       const muxList = path.join(previewDir, "mux-list.txt");
       fs.writeFileSync(muxList, muxed.map((v) => `file '${v.replaceAll("'", "'\\''")}'`).join("\n"));
       const previewMp4 = path.join(previewDir, `${input.scene}.preview.mp4`);
-      await ffmpeg(["-f", "concat", "-safe", "0", "-i", muxList, "-c", "copy", previewMp4]);
+      await ffmpeg(concatCopyArgs(muxList, previewMp4));
       job = patch(job, {
         status: "motion-ready",
         currentAgent: "motion",
@@ -1183,7 +1245,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const muxList = jobFile(jobId, "motion", "mux-list.txt");
     fs.writeFileSync(muxList, muxed.map((v) => `file '${v.replaceAll("'", "'\\''")}'`).join("\n"));
     const pictureLock = jobFile(jobId, "delivery", "picture-lock.mp4");
-    await ffmpeg(["-f", "concat", "-safe", "0", "-i", muxList, "-c", "copy", pictureLock]);
+    await ffmpeg(concatCopyArgs(muxList, pictureLock));
 
     const markGeometry = localPictureQc({
       stills,

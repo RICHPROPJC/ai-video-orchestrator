@@ -59,21 +59,22 @@ Variant **A**（而家工廠預設）：photos 空（身份靠 kfinject）、fl2
 
 ## 本倉 `crew-seats` 對照（誠實）
 
-| 定案 | 碼現況（`h3-r2v-graph.ts` / `h3-submit.ts`） |
+| 定案 | 碼現況（`h3-r2v-graph.ts` / `h3-submit.ts` / `h3-slots.ts`） |
 |---|---|
 | Video 1 = blockout | ✅ variant A `ref_videos.ref_video_0` |
 | kf 0%/100% = still | ✅ `H3KeyframeInject` start + optional end |
 | 1 鏡 1 wav | ✅ `ref_audios.ref_audio_0` ← 呢鏡 wav |
-| H3LastFrame orphan | ✅ 註明 v6 orphan |
-| 一鏡一 generate + concat | ✅ 設計如此；mux 另層 |
-| fail-loud 若 kf_start＝舊場 | ❌ **未做** |
-| `h3_plan.json` 每鏡 | ❌ **未做**（或未齊） |
-| `/h3` floor tab clinic | ❌ 雲端 328 檔 session 有；**未入呢個 remote** |
+| H3LastFrame orphan | ✅ 註明 orphan；唔做下一鏡 kf_start |
+| 一鏡一 generate + concat | ✅；mux／preview／picture-lock 禁 xfade（`native-cut`） |
+| fail-loud 若 kf_start＝舊場 | ✅ `assertH3SubmitWiring`（exact stem，唔用 startsWith） |
+| `h3_plan.json` 每鏡 | ✅ `motion/SHxx.h3_plan.json` via `writeH3Plan` |
+| `/h3` floor tab clinic | ✅ `/h3` + floor `h3` tab（未接 spatial gate） |
 | mid 50% H3Keyframes | ❌ v6 graph 未接 |
-| `h3-slots.ts` 槽位診所 | ❌ 未在 `crew-seats`／`main` |
+| `spatial-lock` / mesh dry-run | ❌ **故意未入** — 無真 job spatial／無 Tripo config |
 
-雲端 Cursor session（`cursor/h3-four-lane-plan-*`、328 files）＝**另一個工程副本**，未 merge 入 `RICHPROPJC/ai-video-orchestrator`。  
-`github/main` 已 merge 舊 `crew-seats` PR#1；**四線 lock 碼化仍欠**。
+外倉 `chau-ch/refill` 只係參考；**好料已搬入本倉 `crew-seats`**，唔再餵肥外面。  
+`assertNoOuterGap` **未接** pipeline（LD0F `gap_s=0` 但 spine gap 路徑仍保留）。  
+prose：`buildProse` 會寫 Hold + not-a-morph；`validateProse` **唔強制**舊 WIST receipt 啲字 —— resume 安全。
 
 ---
 
@@ -87,7 +88,7 @@ Variant **A**（而家工廠預設）：photos 空（身份靠 kfinject）、fl2
 
 ## 下一步（Fable 對齊前）
 
-1. 認呢份為 **H3 臨時定案**。  
-2. 碼化欠項：`h3_plan.json` + kf_start≠prev still fail-loud +（可選）slots clinic／`/h3` tab。  
-3. 雲端 328 檔若要入：cherry-pick **H3 四線相關**，唔好整 repo 蓋過 `crew-seats`。  
-4. Mid-% keyframe = 另卡（Mo），唔當而家 variant A 已有。
+1. 本倉已有四線 plan／fail-loud／`/h3` — 用真 job dry-run 驗 `h3_plan.json`。  
+2. **唔入** spatial-lock／mesh dry-run，直到 LD0F 有 `spatial` 欄 + Tripo config。  
+3. `gapSec` spine：要廢先廢；未廢就唔接 `assertNoOuterGap`。  
+4. Mid-% keyframe = 另卡（Mo）。
