@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import * as nodeTest from "node:test";
-import { keyframeEditPrompt, keyframeRequire, propNounClass } from "./keyframe-prompt";
-import type { CallSheet, Shot, ShotProp } from "./types";
+import { isIndoorLocation, keyframeEditPrompt, keyframeRequire, propNounClass } from "./keyframe-prompt";
+import { loadTraceFixture } from "./trace";
+import type { CallSheet, Character, Shot, ShotProp } from "./types";
 
 /** One file, three doors: bun's node:test shim only works under `bun test`,
  *  so bare `bun <this file>` self-drives the collected cases; `bun test` and
@@ -14,7 +15,7 @@ const test = bareBun
   ? (name: string, fn: () => void | Promise<void>) => cases.push({ name, fn })
   : nodeTest.test;
 
-const sheet: CallSheet = {
+const baseSheet: CallSheet = {
   title: "t",
   logline: "l",
   language: "zh-Hant",
@@ -58,7 +59,7 @@ const coat: ShotProp = { name: "軍大衣", heldBy: "A", shape: ["披", "肩"], 
 const decree: ShotProp = { name: "通緝令", heldBy: "A", shape: ["紙", "字"], forbid: ["木犁", "鋤頭"] };
 
 test("garment prop: prompt names the coat as clothing, never a plow (SH07 class)", () => {
-  const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: false });
+  const text = keyframeEditPrompt(baseSheet,shotWithProp(coat), { first: false });
   assert.ok(text.includes("軍大衣"), "prop name from sheet");
   assert.ok(text.includes("係一件衣物"), "card: garment-class sentence present");
   assert.ok(!text.includes("木犁"), "card: no 木犁");
@@ -67,7 +68,7 @@ test("garment prop: prompt names the coat as clothing, never a plow (SH07 class)
 });
 
 test("garment prop: later-shot continuity carries the coat, not the 犁", () => {
-  const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: false });
+  const text = keyframeEditPrompt(baseSheet,shotWithProp(coat), { first: false });
   assert.ok(text.includes("Image-2 係上一鏡嘅定格"), "continuity line present");
   assert.ok(text.includes("軍大衣、光線同色調"), "the garment is the carried prop");
   assert.ok(!text.includes("犁"), "no plow in the carry-over list");
@@ -83,7 +84,7 @@ test("garment prop: require keeps people_count + grey_blocks, no tool gate", () 
 });
 
 test("paper prop (SH09 class): flat document sentence — no 木犁 in prompt, require has no tool", () => {
-  const text = keyframeEditPrompt(sheet, shotWithProp(decree), { first: false });
+  const text = keyframeEditPrompt(baseSheet,shotWithProp(decree), { first: false });
   assert.ok(text.includes("通緝令"), "prop name from sheet");
   assert.ok(text.includes("紙本文書"), "described as a flat paper document");
   assert.ok(!text.includes("木犁"), "card: paper-prop fixture ⇒ no 木犁 in prompt");
@@ -99,7 +100,7 @@ test("paper prop (SH09 class): flat document sentence — no 木犁 in prompt, r
 
 test("tool prop (犁): plow sentence + tool gate unchanged", () => {
   const plow: ShotProp = { name: "曲轅犁", heldBy: "A", shape: ["弯", "木", "插入"], forbid: ["锹", "铲", "锄"] };
-  const text = keyframeEditPrompt(sheet, shotWithProp(plow), { first: false });
+  const text = keyframeEditPrompt(baseSheet,shotWithProp(plow), { first: false });
   assert.ok(text.includes("曲轅犁"), "prop name from sheet");
   assert.ok(text.includes("一件完整木犁"), "plow sentence kept for real tools");
   assert.ok(text.includes("唔係锹、铲、锄"), "forbid list from sheet");
@@ -111,7 +112,7 @@ test("tool prop (犁): plow sentence + tool gate unchanged", () => {
 
 test("tool prop (槍): not a garment or document, keeps the tool gate", () => {
   const spear: ShotProp = { name: "長槍", heldBy: "B", shape: ["长", "杆", "尖"], forbid: ["剑", "戟"] };
-  const text = keyframeEditPrompt(sheet, shotWithProp(spear), { first: true });
+  const text = keyframeEditPrompt(baseSheet,shotWithProp(spear), { first: true });
   assert.ok(text.includes("長槍"), "prop name from sheet");
   assert.ok(text.includes("犁"), "one-tool gate vocabulary present");
   assert.equal(keyframeRequire(shotWithProp(spear)).tool, "長槍");
@@ -130,6 +131,68 @@ test("noun classes: garments and documents never take the held-tool gate; 犁/�
     assert.equal(propNounClass(name), "tool", `${name} is a held tool`);
     assert.equal(keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })).tool, name);
   }
+});
+
+/** T32 frozen LD0F excerpt (SH01–SH05, one indoor set, sheet tail night/neon).
+ * Story nouns stay inside the fixture — the noun-lint holds that line. */
+type LdFixture = {
+  frozen: boolean;
+  sheet: Pick<CallSheet, "location" | "timeOfDay" | "weather">;
+  characters: Character[];
+  shots: Shot[];
+};
+
+const POISON = ["neon", "霓虹", "night"] as const;
+
+function ldSheet(): { fx: LdFixture; sheet: CallSheet } {
+  const fx = loadTraceFixture("ld0f-sh01") as unknown as LdFixture;
+  const sheet = {
+    ...baseSheet,
+    location: fx.sheet.location,
+    timeOfDay: fx.sheet.timeOfDay,
+    weather: fx.sheet.weather,
+    characters: fx.characters,
+    shots: fx.shots,
+  } satisfies CallSheet;
+  return { fx, sheet };
+}
+
+test("T32 A1: indoor shot scene line names the shot's own set — sheet neon tail never leaks", () => {
+  const { fx, sheet } = ldSheet();
+  const shot = fx.shots[0]!;
+  const text = keyframeEditPrompt(sheet, shot, { first: true });
+  assert.ok(text.includes(shot.location), "scene line names the shot's own location");
+  assert.ok(text.includes("室內"), "indoor marker present");
+  for (const poison of POISON) {
+    assert.ok(!text.includes(poison), `no "${poison}" anywhere — sheet tail must not leak into an indoor prompt`);
+  }
+  assert.ok(!text.includes(fx.sheet.location), "the sheet-wide location is gone too");
+});
+
+test("T32 A2: same-set later shots SH02–SH05 drop the neon tail identically", () => {
+  const { fx, sheet } = ldSheet();
+  for (const shot of fx.shots.slice(1)) {
+    const text = keyframeEditPrompt(sheet, shot, { first: false });
+    assert.ok(text.includes(shot.location), `${shot.id} names its own location`);
+    assert.ok(text.includes("室內"), `${shot.id} indoor marker`);
+    for (const poison of POISON) {
+      assert.ok(!text.includes(poison), `${shot.id} has no "${poison}"`);
+    }
+  }
+});
+
+test("T32: outdoor shot keeps the sheet tail (暫保留) — pre-T32 prompt unchanged", () => {
+  const text = keyframeEditPrompt(baseSheet, shotWithProp(), { first: false });
+  assert.ok(text.includes("亂葬崗，dusk，wind"), "sheet tail intact for an outdoor/unknown set");
+  assert.equal(isIndoorLocation("亂葬崗"), false, "unknown location defaults outdoor, keeps today's behaviour");
+});
+
+test("T32 classifier: fixture sets are indoor; outdoor markers override indoor-looking chars", () => {
+  const { fx } = ldSheet();
+  for (const s of fx.shots) assert.equal(isIndoorLocation(s.location), true, `${s.id} location is a closed set`);
+  assert.equal(isIndoorLocation(fx.sheet.location), false, "the sheet-wide open-country line is not indoor");
+  assert.equal(isIndoorLocation("室外走廊"), false, "室外 outranks the 室 hit");
+  assert.equal(isIndoorLocation("野外射擊場邊"), false, "野外 outranks any indoor char");
 });
 
 if (bareBun) {

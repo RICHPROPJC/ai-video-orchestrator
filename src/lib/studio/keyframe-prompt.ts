@@ -19,6 +19,21 @@ export function propNounClass(name: string): PropNounClass {
   return "tool";
 }
 
+/** T32 scene slot. The sheet tail (`sheet.location, timeOfDay, weather`) is the
+ * whole slate's weather, not this shot's — an indoor shot stamped with the
+ * sheet's night/neon tokens renders as a street (negative-token poisoning).
+ * Outdoor markers are tested FIRST: 室外／野外 themselves contain 室／野,
+ * which the indoor RE alone would misread as a closed set. Unknown ⇒ outdoor:
+ * the sheet tail is the pre-T32 behaviour, so an unrecognised location keeps
+ * today's prompt, never a guessed indoor line. Generic set vocabulary only. */
+const OUTDOOR_RE = /戶外|室外|野外|露天|街|大道|跑道|廣場|岸|橋|門口|崗/;
+const INDOOR_RE = /室|房|廳|宿舍|禮堂|館|公寓|中心|停屍間/;
+
+export function isIndoorLocation(location: string): boolean {
+  if (OUTDOOR_RE.test(location)) return false;
+  return INDOOR_RE.test(location);
+}
+
 /** /edit prompt for one shot keyframe, naming images by slot. Under img_cfg 1.0
  *  the image branches only exist via Image-N tokens — the prompt must name them.
  *  Nothing scene-specific lives here; every name/wardrobe/prop comes from the sheet. */
@@ -59,7 +74,12 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
       ? "Image-2…Image-N 係上述角色嘅正面肖像，只借樣貌。"
       : `Image-2 係上一鏡嘅定格：兩人樣貌、衣服、${prop ? prop.name : "犁"}、光線同色調全部跟 Image-2，唯獨姿勢跟 Image-1。`,
   );
-  lines.push(`${sheet.location}，${sheet.timeOfDay}，${sheet.weather}。唔好加人。`);
+  // T32: 室內鏡場景句跟鏡。霓虹/neon/night 連「禁止」句都唔寫 — 負面詞毒畫面，禁令寫做「招牌燈箱」。
+  lines.push(
+    isIndoorLocation(shot.location)
+      ? `${shot.location}：室內、冇窗、頂光；禁止街道、路燈、招牌燈箱、濕地反光；夜只由室內燈表達。唔好加人。`
+      : `${sheet.location}，${sheet.timeOfDay}，${sheet.weather}。唔好加人。`,
+  );
   return lines.join("\n");
 }
 
