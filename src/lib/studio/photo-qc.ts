@@ -389,7 +389,8 @@ export async function runPhotoQc(
   const record: PhotoQcRecord = {
     tool: "slatecrew.photo_qc",
     ts: new Date().toISOString(),
-    image: pngFile,
+    // T36: bare filename — zero absolute paths inside job JSON records
+    image: path.basename(pngFile),
     sha256: digest,
     endpoint: url,
     model,

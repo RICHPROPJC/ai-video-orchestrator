@@ -35,7 +35,7 @@ import { submitH3Shot } from "./h3-submit";
 import type { H3GraphVariant } from "./h3-r2v-graph";
 import { assertH3Plan, assertH3SubmitWiring, planH3Shot } from "./h3-slots";
 import { assertNativeFfmpeg, concatCopyArgs } from "./native-cut";
-import { checkHealth, buildEditPayload, u15Edit, MAX_IMAGES, type U15EditRecord } from "./u15-edit";
+import { checkHealth, buildEditPayload, u15Edit, MAX_IMAGES, type EditPayload, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
 import { runPhotoQc, pinQcAccepted, type QcRequire } from "./photo-qc";
 import { pinVideoQcAccepted, runVideoQc } from "./video-qc";
@@ -194,6 +194,36 @@ export function shotsForScene(shots: Shot[], scene?: string): Shot[] {
     throw new Error(`--scene ${scene}：一鏡都對唔上（冇 shot 嘅 scene／beatId 係 ${scene}）— 唔靜靜哋燒成個 slate`);
   }
   return kept;
+}
+
+/** g6 hop geometry: a `--scene` hop's stills + picture-QC lanes only make the
+ *  hop's shots, so the plan-geometry pre-check must score the hop's shots —
+ *  never the full slate's list, which cried "Missing stills vs shot list" on a
+ *  healthy SC01 hop (LD0F). Same no-match throw as the H3 crop. */
+export function hopGeometrySheet(sheet: CallSheet, scene?: string): CallSheet {
+  return scene ? { ...sheet, shots: shotsForScene(sheet.shots, scene) } : sheet;
+}
+
+/** T36 law, both stills /edit records go through here: base／refs land in the
+ *  JSON as bare filenames — zero absolute paths inside job records — and the
+ *  prompt is whatever 阿圖's packet said, verbatim. */
+export function sealEditRecord(
+  inputs: { prompt: string; first: boolean; base: string; refs: string[] },
+  payload: EditPayload,
+): Pick<U15EditRecord, "ts" | "prompt" | "img_cfg" | "cfg" | "steps" | "use_edit_pe" | "width" | "height" | "first" | "base" | "refs"> {
+  return {
+    ts: new Date().toISOString(),
+    prompt: payload.prompt,
+    img_cfg: payload.img_cfg_scale,
+    cfg: payload.cfg_scale,
+    steps: payload.num_steps,
+    use_edit_pe: payload.use_edit_pe,
+    width: payload.width,
+    height: payload.height,
+    first: inputs.first,
+    base: path.basename(inputs.base),
+    refs: inputs.refs.map((f) => path.basename(f)),
+  };
 }
 
 /** Speaking parts must be castable, so the roster is read from a data file the
@@ -749,19 +779,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         outFile: out,
         recordJson,
         health,
-        record: {
-          ts: new Date().toISOString(),
-          prompt,
-          img_cfg: payload.img_cfg_scale,
-          cfg: payload.cfg_scale,
-          steps: payload.num_steps,
-          use_edit_pe: payload.use_edit_pe,
-          width: payload.width,
-          height: payload.height,
-          first,
-          base,
-          refs: refFiles,
-        },
+        record: sealEditRecord({ prompt, first, base, refs: refFiles }, payload),
       });
       editInputs.set(shot.id, { prompt, nodePaths, base, refs: refFiles, first });
       prevKeyframe = out;
@@ -877,11 +895,24 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       if (result.status !== "GREEN") {
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
         appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
-        await speak("pictureQc", `${shot.id} 唔過（${reasons}）— 補一句 prompt 再 /edit 一次。`, "warn");
+        emit(jobId, {
+          agent: "pictureQc",
+          level: "warn",
+          message: `${shot.id} 唔過（fail_reasons 只入 events，唔入 prompt）`,
+          data: {
+            shot: shot.id, require, fail_reasons: result.checks.fail_reasons,
+            stage: "require", eye: "pictureQc", verdict: "fail",
+            proof: `stills/${shot.id}.photo_qc.json`, ms: Date.now() - qcStarted,
+          },
+          step_id: "require",
+          parent_steps: ["keyframe-prompt"],
+          seat: "pictureQc",
+          constraints_checked: ["photo-qc"],
+        });
+        await speak("pictureQc", `${shot.id} 唔過（${reasons}）— 原封重出同一 packet 一次。`, "warn");
         let inputs = editInputs.get(shot.id);
         const plan = hopStillPlans.find((p) => p.shot.id === shot.id);
         if (!inputs || !inputs.nodePaths.length) {
-          // resume keep 冇 remote paths → 重新 scp base+refs 再 /edit
           const base = path.join(blockoutDir, `${shot.id}.f0.png`);
           const refIds = [...new Set(shot.marks.map((m) => m.characterId))];
           const firstAppearance = Boolean(plan?.first);
@@ -909,10 +940,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           editInputs.set(shot.id, inputs);
         }
         if (!inputs.prompt) throw new Error(`picture QC ${shot.id}: no /edit prompt to retry with`);
-        // T32 rev2: 阿圖 rewrite already rebuilt the prompt — don't re-poison with fail_reasons.
-        const retryPrompt = promptShot !== shot ? inputs.prompt : `${inputs.prompt} Fix these: ${reasons}.`;
         const payload = buildEditPayload({
-          prompt: retryPrompt,
+          prompt: inputs.prompt,
           images: inputs.nodePaths,
           width: cfg.stills.width || size.width,
           height: cfg.stills.height || size.height,
@@ -924,19 +953,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           outFile: png,
           recordJson: path.join(stillDir, `${shot.id}.u15_edit.retry.json`),
           health: await checkHealth(cfg.stills.url, inputs.nodePaths.length),
-          record: {
-            ts: new Date().toISOString(),
-            prompt: retryPrompt,
-            img_cfg: payload.img_cfg_scale,
-            cfg: payload.cfg_scale,
-            steps: payload.num_steps,
-            use_edit_pe: payload.use_edit_pe,
-            width: payload.width,
-            height: payload.height,
-            first: inputs.first,
-            base: inputs.base,
-            refs: inputs.refs,
-          },
+          record: sealEditRecord(inputs, payload),
         });
         result = await runPhotoQc(png, qcJson, require);
       }

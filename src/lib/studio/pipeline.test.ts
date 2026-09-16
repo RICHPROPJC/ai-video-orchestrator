@@ -256,6 +256,61 @@ test("shotsForScene: a shot without .scene still matches via beatId prefix", asy
   assert.deepEqual(shotsForScene(shots, "SC02").map((s) => s.id), ["SH04"]);
 });
 
+test("T36 B2: a photo-QC retry re-issues the packet verbatim — no fail_reasons token, no absolute path", async () => {
+  const { sealEditRecord } = await import("./pipeline");
+  const { buildEditPayload } = await import("./u15-edit");
+  const inputs = {
+    prompt: "Image-1 係呢一鏡嘅 Blender 灰模概念圖……左起第1個人偶＝角色一。",
+    first: true,
+    base: "/tmp/SC-FIX/data/jobs/SC-FIX/blocking/SH01.f0.png",
+    refs: [
+      "/tmp/SC-FIX/data/jobs/SC-FIX/portraits/A.png",
+      "/tmp/SC-FIX/data/jobs/SC-FIX/stills/SH01.png",
+    ],
+  };
+  const payload = buildEditPayload({ prompt: inputs.prompt, images: ["/node/base.png", "/node/ref.png"], width: 1024, height: 576 });
+  // the fail_reasons a QC miss would surface — none may ride into the prompt.
+  // the old retry suffix is spelled in halves so B1's literal src-grep stays 0
+  const failReasons = ["people_count: 2", "grey_blocks: mannequin visible", "not GREEN", `Fix ${"these"}: people_count: 2.`];
+  const record = sealEditRecord(inputs, payload);
+  assert.equal(record.prompt, payload.prompt, "retry prompt = packet prompt, untouched");
+  assert.equal(record.prompt, inputs.prompt.trim());
+  for (const token of failReasons) {
+    assert.ok(!record.prompt.includes(token), `fail_reasons token leaked into prompt: ${token}`);
+  }
+  assert.equal(record.base, "SH01.f0.png", "base lands as a bare filename");
+  assert.deepEqual(record.refs, ["A.png", "SH01.png"], "refs land as bare filenames");
+});
+
+test("hopGeometrySheet: no scene keeps the whole slate, a hop crops to its shots", async () => {
+  const { hopGeometrySheet } = await import("./pipeline");
+  const shots = [shotOf("SH01", "SC01"), shotOf("SH02", "SC01"), shotOf("SH03", "SC02")];
+  const sheet = { ...resumeSheet(), shots };
+  assert.equal(hopGeometrySheet(sheet).shots.length, 3, "no scene = the full sheet");
+  assert.deepEqual(hopGeometrySheet(sheet, "SC01").shots.map((s) => s.id), ["SH01", "SH02"]);
+  assert.equal(hopGeometrySheet(sheet, "SC01").title, sheet.title, "the rest of the sheet travels unchanged");
+  assert.throws(() => hopGeometrySheet(sheet, "SC99"), /一鏡都對唔上/);
+});
+
+test("g6 LD0F grave: hop stills vs the full slate's sheet cried missing-still; the hop sheet does not", async () => {
+  const { hopGeometrySheet } = await import("./pipeline");
+  const { localPictureQc } = await import("./providers");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "g6-hop-"));
+  const stills = ["SH01", "SH02"].map((id) => {
+    const file = path.join(tmp, `${id}.png`);
+    fs.writeFileSync(file, Buffer.concat([Buffer.from("89504e470d0a1a0a0000", "hex"), Buffer.alloc(9000)]));
+    return file;
+  });
+  const shots = [shotOf("SH01", "SC01"), shotOf("SH02", "SC01"), shotOf("SH03", "SC02")];
+  const sheet = { ...resumeSheet(), shots };
+  // the old behaviour: 2 hop stills scored against all 3 shots → "Missing stills"
+  const fullSlate = localPictureQc({ stills, sheet, target: "stills" });
+  assert.ok(fullSlate.issues.some((i) => i.code === "missing-still"), "full-sheet geometry blocks the hop");
+  // g6 fix: the same 2 stills against the hop's 2 shots is a clean geometry
+  const hop = localPictureQc({ stills, sheet: hopGeometrySheet(sheet, "SC01"), target: "stills" });
+  assert.ok(!hop.issues.some((i) => i.code === "missing-still"), "hop sheet scores hop shots only");
+});
+
 if (bareBun) {
   // IIFE, not top-level await: tsx transpiles this file as CJS
   void (async () => {

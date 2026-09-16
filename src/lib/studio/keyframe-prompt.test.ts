@@ -118,6 +118,15 @@ test("tool prop (槍): not a garment or document, keeps the tool gate", () => {
   assert.equal(keyframeRequire(shotWithProp(spear)).tool, "長槍");
 });
 
+test("T36 lock: prompts carry character names but never a refs filename", () => {
+  // the stills lane's refs are runtime files (portraits/SH f0/prev keyframe);
+  // their filenames must never leak into the prompt — character names stay
+  const prompt = keyframeEditPrompt(sheet, shotWithProp(coat), { first: true });
+  assert.ok(prompt.includes("角色一") && prompt.includes("角色二"), "sheet-internal names stay");
+  assert.ok(!/\.(png|jpe?g|webp)/i.test(prompt), `image filename leaked: ${prompt}`);
+  assert.ok(!/(portraits|blockout|stills)\//.test(prompt), `lane path leaked: ${prompt}`);
+});
+
 test("noun classes: garments and documents never take the held-tool gate; 犁/槍/鋤 do", () => {
   for (const name of ["軍大衣", "蓑衣", "斗篷 cloak", "leather jacket", "silk robe"]) {
     assert.equal(propNounClass(name), "garment", `${name} is a garment`);
