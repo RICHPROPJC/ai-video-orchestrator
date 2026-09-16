@@ -7,12 +7,14 @@
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 43127",
     "lint": "eslint",
+    "photo-qc": "bun src/lib/studio/photo-qc-cli.ts",
     "slatecrew": "tsx src/cli.ts",
     "produce": "tsx src/cli.ts produce",
     "tui": "tsx src/cli.ts tui",
     "doctor": "tsx src/cli.ts doctor",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/studio/*.test.ts"
+    "test": "tsx --test src/lib/studio/*.test.ts",
+    "photo-qc": "bun src/lib/studio/photo-qc-cli.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
