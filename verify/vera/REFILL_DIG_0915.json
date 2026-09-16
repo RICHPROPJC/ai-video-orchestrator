@@ -1,0 +1,101 @@
+{
+  "verdict": "MERGE_HOLD",
+  "date": "2026-09-15",
+  "verifier": "Vera",
+  "refs": {
+    "refill": "39e2f68839941151e9e45d6ef93008d90996a339",
+    "crew": "d7b3c3835dbbe14f248de6de99871980a59ac588",
+    "crew_branch": "crew-seats"
+  },
+  "summary": "Refill is most-good not full-good: h3-slots + pipeline h3_plan wiring are real wins; spatial/mesh/assets are clinic or dry-run; histories diverge — no wholesale merge.",
+  "acceptance": {
+    "refill_tip_read": "PASS",
+    "crew_tip_read": "PASS",
+    "targeted_tests_refill": { "run": "npx tsx --test 9 files", "pass": 66, "fail": 0, "note": "synthetic only" },
+    "pipeline_h3_plan_crew": "FAIL",
+    "pipeline_h3_plan_refill": "PASS",
+    "live_job_spatial_SC-0915-LD0F": "UNPROVEN",
+    "blender_fixtures_vs_spatial_lock": "UNPROVEN",
+    "mesh_live_post": "DRY_RUN_ONLY",
+    "auk_run_in_pipeline": "NOT_WIRED",
+    "gapSec_compat": "CONFLICT"
+  },
+  "paths": {
+    "USE": [
+      "src/lib/studio/h3-slots.ts",
+      "src/lib/studio/h3-slots.test.ts",
+      "src/lib/studio/native-cut.ts",
+      "src/lib/studio/native-cut.test.ts",
+      "src/lib/studio/h3-r2v-graph.ts (comment hunk only)",
+      "pipeline.ts: writeH3Plan + prevShotOf + assertNativeFfmpeg mux + concatCopyArgs"
+    ],
+    "USE_WITH_CARE": [
+      "src/lib/studio/h3-prose.ts",
+      "src/lib/studio/h3-prose.test.ts",
+      "src/lib/studio/auk-tts.ts",
+      "src/lib/studio/auk-tts.test.ts",
+      "src/lib/studio/spatial-lock.ts",
+      "src/lib/studio/spatial-lock.test.ts",
+      "src/lib/studio/floor-tab.ts",
+      "src/lib/studio/floor-tab.test.ts",
+      "src/components/studio-floor.tsx",
+      "src/lib/studio/pipeline.ts (spatial gate + assertNoOuterGap)",
+      "src/lib/studio/types.ts (spatial block)",
+      "src/lib/studio/config.ts (tripo/trellis)",
+      "src/lib/studio/plates.ts",
+      "src/lib/studio/plates.test.ts",
+      "src/components/h3-plan-card.tsx",
+      "src/app/h3/page.tsx",
+      "src/app/api/h3/route.ts"
+    ],
+    "DO_NOT_MERGE": [
+      "whole refill tree -> crew-seats",
+      "src/lib/studio/assets.ts",
+      "src/lib/studio/mesh-provider.ts",
+      "src/lib/studio/assets.test.ts",
+      "src/app/spatial/page.tsx",
+      "src/components/spatial-receipt.tsx",
+      "src/app/api/spatial/route.ts",
+      "shots/fixtures/f1|f2|f3 as spatial proof (unlinked to spatial-lock tests)"
+    ]
+  },
+  "risks": [
+    {
+      "id": "prevId_heuristic",
+      "severity": "medium",
+      "detail": "assertH3SubmitWiring uses basename.startsWith(prevShotId) — prefix collision and rename blind spots"
+    },
+    {
+      "id": "forced_hold_morph_prose",
+      "severity": "high",
+      "detail": "validateProse requires hold+morph — breaks existing crew slates until prose regenerated"
+    },
+    {
+      "id": "spatial_unproven",
+      "severity": "high",
+      "detail": "spatial-lock tested on clinic desk only; f1/f2/f3 blender fixtures not wired; SC-0915 has no spatial fields"
+    },
+    {
+      "id": "dry_run_mesh",
+      "severity": "medium",
+      "detail": "planAssetShell/mesh-provider write JSON only; not in pipeline"
+    },
+    {
+      "id": "auk_run_unwired",
+      "severity": "low",
+      "detail": "runAukRun matches serve-auk.py but pipeline still uses /tts only"
+    },
+    {
+      "id": "gapSec_conflict",
+      "severity": "high",
+      "detail": "assertNoOuterGap forbids gapSec>0; crew spine concat uses gapSec"
+    }
+  ],
+  "parent_bullets": [
+    "MERGE_HOLD wholesale — cherry-pick h3-slots + native-cut + pipeline writeH3Plan first",
+    "Crew d7b3c38 is docs-only; refill 39e2f68 has the code crew SSOT says is missing",
+    "66/66 refill unit tests pass but all synthetic — no SC-0915-LD0F integration",
+    "DO-NOT-MERGE assets/mesh (dry-run, unwired) and demo /spatial UI",
+    "Blockers: gapSec vs assertNoOuterGap; forced hold/morph prose on live slates; prevId prefix heuristic"
+  ]
+}

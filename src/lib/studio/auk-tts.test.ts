@@ -9,6 +9,7 @@ import {
   aukTtsUrl,
   ensureAudibleShotWav,
   genSecondsForText,
+  oneAukTake,
   runAukTts,
   wavIsAudible,
 } from "./auk-tts";
@@ -24,6 +25,12 @@ test("aukTtsUrl rejects CosyVoice :9880 and empty", () => {
   assert.throws(() => aukTtsUrl("http://127.0.0.1:9880"), /CosyVoice/);
   assert.equal(aukTtsUrl("http://127.0.0.1:9882"), "http://127.0.0.1:9882/tts");
   assert.equal(aukTtsUrl("http://127.0.0.1:9882/tts"), "http://127.0.0.1:9882/tts");
+});
+
+test("oneAukTake refuses emotion markup that would be read aloud", () => {
+  assert.equal(oneAukTake("行啦"), "行啦");
+  assert.throws(() => oneAukTake("[sad]行啦"), /emotion/);
+  assert.throws(() => oneAukTake("(whisper)行啦"), /emotion/);
 });
 
 test("assertAukTtsPin rejects CosyVoice model", () => {

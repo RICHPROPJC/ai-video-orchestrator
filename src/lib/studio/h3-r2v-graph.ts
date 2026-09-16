@@ -188,7 +188,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   };
   g.dec_v = { class_type: "VAEDecode", inputs: { samples: ["samp_a", 0], vae: ["vvae", 0] } };
   g.dec_a = { class_type: "VAEDecodeAudio", inputs: { samples: ["samp_a", 0], vae: ["avae", 0] } };
-  g.lastf = { class_type: "H3LastFrame", inputs: { images: ["dec_v", 0] } }; // v6 keeps this orphan
+  g.lastf = { class_type: "H3LastFrame", inputs: { images: ["dec_v", 0] } }; // orphan: inspect after render, never next kf_start
   g.cv = { class_type: "CreateVideo", inputs: { images: ["dec_v", 0], fps: 24, audio: ["dec_a", 0] } };
   g.save = {
     class_type: "SaveVideo",

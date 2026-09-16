@@ -73,10 +73,11 @@ test("buildProse is exactly 4 paragraphs in the 40-sample shape", () => {
   assert.match(paras[0]!, /^Photoreal\. 茶餐廳門口, night\.$/);
   assert.ok(paras[1]!.includes("<Video 1>"), "motion paragraph");
   assert.ok(paras[2]!.includes("start keyframe image"), "pin paragraph");
+  assert.match(paras[2]!, /^Hold /);
   assert.match(paras[3]!, /^阿月 \(left\) speaks the line in Audio 1: "你仲記得個門口個燈\？"\. 阿衡 listens\.$/);
   validateProse(wrap(body), { requireQuote: true });
   assert.ok(body.includes(VIDEO_SENTENCE.replace("{{N}}", "2")));
-  assert.ok(body.includes(PIN_SENTENCE.replace("{{PROP}}", "props")));
+  assert.ok(body.includes(PIN_SENTENCE.replaceAll("{{PROP}}", "props")));
 });
 
 test("prop name lands in the pin sentence", () => {

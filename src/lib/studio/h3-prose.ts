@@ -6,7 +6,7 @@ export const SCRIPT_HEADER = "# produced_by: slatecrew_h3_submit";
 // competes with the motion copy
 export const VIDEO_SENTENCE = `Have the {{N}} people act following the movements of the grey placeholders in <Video 1> — they carry motion only; replace their look entirely.`;
 
-export const PIN_SENTENCE = `Faces, clothes, the {{PROP}} and the field continue exactly from the start keyframe image. Do not add people.`;
+export const PIN_SENTENCE = `Faces, clothes, the {{PROP}} and the field continue exactly from the start keyframe image and <Video 1>. Same {{PROP}}, not a morph. Do not add people.`;
 
 const BANNED_LABELS = [
   "subject_definitions:",
@@ -190,7 +190,12 @@ export function validateProsePositive(script: string, opts: ValidateProseOpts & 
   }
 }
 
-export function buildProse(sheet: CallSheet, shot: Shot): string {
+export type BuildProseOpts = {
+  /** previous shot location — when it differs, pin the same SKU/faces on return */
+  prevLocation?: string;
+};
+
+export function buildProse(sheet: CallSheet, shot: Shot, opts: BuildProseOpts = {}): string {
   const ids = [...new Set(shot.marks.map((m) => m.characterId))];
   const chars = ids.map((id) => {
     const hit = sheet.characters.find((c) => c.id === id);
@@ -199,10 +204,18 @@ export function buildProse(sheet: CallSheet, shot: Shot): string {
   });
   const location = sheet.location.split(/[,，]/)[0]!.trim();
   const prop = shot.props?.[0]?.name ?? "props";
+  const duration = Math.round(shot.durationSec * 10) / 10;
+  const pin = PIN_SENTENCE.replaceAll("{{PROP}}", prop);
+  const returnPin =
+    opts.prevLocation && opts.prevLocation !== shot.location
+      ? ` Same ${prop} on return, not a substitute.`
+      : "";
   const parts = [
     `Photoreal. ${location}, ${sheet.timeOfDay}.`,
     VIDEO_SENTENCE.replace("{{N}}", String(chars.length)),
-    PIN_SENTENCE.replace("{{PROP}}", prop),
+    // Hold lives in H3 prose for NEW generates. validateProse does NOT require
+    // the word — old WIST receipts stay resume-safe.
+    `Hold ${duration}s. ${pin}${returnPin}`,
   ];
   const dialogue = shot.dialogue.trim();
   if (dialogue) {

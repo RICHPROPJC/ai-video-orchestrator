@@ -5,12 +5,29 @@ import { loadConfig } from "./config";
 
 const POISON_SEED = 20260911;
 const PEAK_FLOOR = 0.08;
+const EMOTION_TAG =
+  /\[(?:sad|happy|angry|whisper|shout|soft|loud|emotion)[^\]]*\]|\((?:sad|angry|whisper|soft|loud)\)|【[^】]{1,12}】|<emotion\b[^>]*>/i;
 
 export function aukTtsUrl(endpoint: string): string {
   const base = endpoint.replace(/\/$/, "");
   if (!base) throw new Error("tts.endpoint empty — set http://127.0.0.1:9882");
   if (/9880|cosyvoice/i.test(base)) throw new Error("CosyVoice :9880 is dead — use AuK :9882");
   return base.endsWith("/tts") ? base : `${base}/tts`;
+}
+
+/** `/tts` is verbatim clone. Emotion markup gets read aloud — refuse it. */
+export function assertVerbatimTtsText(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("AuK /tts text empty");
+  if (EMOTION_TAG.test(trimmed)) {
+    throw new Error("AuK /tts is verbatim clone — do not stuff emotion tags (they get read aloud)");
+  }
+  return trimmed;
+}
+
+/** One shot = one take. Never split a line into N `/tts` calls and splice. */
+export function oneAukTake(dialogue: string): string {
+  return assertVerbatimTtsText(dialogue);
 }
 
 export function assertAukTtsPin(tts: { endpoint: string; model: string }): void {
@@ -47,9 +64,10 @@ export async function runAukTts(opts: RunAukTtsOpts): Promise<{ provider: "auk-9
   if (!promptWav || !fs.existsSync(promptWav)) throw new Error(`tts.promptWav missing: ${promptWav ?? ""}`);
   const seed = opts.seed ?? cfg.tts.seed;
   if (seed === POISON_SEED) throw new Error("seed 20260911 is poison");
+  const text = oneAukTake(opts.text);
   const url = aukTtsUrl(cfg.tts.endpoint);
   const form = new FormData();
-  form.append("tts_text", opts.text);
+  form.append("tts_text", text);
   form.append("gen_seconds", String(opts.genSeconds));
   form.append("seed", String(seed));
   form.append("prompt_wav", new File([new Uint8Array(fs.readFileSync(promptWav))], "ref.wav", { type: "audio/wav" }));
