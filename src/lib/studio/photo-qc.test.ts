@@ -342,7 +342,7 @@ test("T35 A2: street write-up vs 總統府地下審判室 fails with hit counts"
   );
   assert.equal(v.status, "FAIL");
   assert.ok(
-    v.checks.fail_reasons.some((r) => r.startsWith("location: hits 0/4")),
+    v.checks.fail_reasons.some((r) => r.startsWith("location: hits 0/3")),
     v.checks.fail_reasons.join(" | "),
   );
 });
@@ -393,7 +393,7 @@ test("T35 A1: empty grey still fails grey_leak through runPhotoQc", async () => 
       const content = (JSON.parse(body) as { messages: { content: unknown }[] }).messages[0]!.content;
       const reply = Array.isArray(content)
         ? "一个人企喺房中间。"
-        : '{"people_count":1,"grey_blocks":false,"size_notes":"medium"}';
+        : '{"people_count":1,"grey_blocks":true,"size_notes":"medium"}';
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
     });
@@ -482,6 +482,133 @@ test("T35 item5: un-armed second eye caps GREEN at PASS_UNCONFIRMED; arming upgr
     else process.env.SLATECREW_SECOND_MODEL = prevM;
     eye.close();
     second.close();
+  }
+});
+
+test("T35b A6: SH01 long require passes on key nouns, not paraphrase ratio", () => {
+  const location = "總統府地下審判室";
+  const action = "白慎行提筆蘸紅墨，喺判決書上緩緩畫上一勾；鏡前沈孟舟被按住肩膀，強行押跪落水泥地。";
+  const blind =
+    "两人跪在总统府地下的审判室里。白慎行提笔蘸红墨，在判决书上画上一勾；沈孟舟被按住肩膀，跪在水泥地上。";
+  const v = judge(
+    blind,
+    { people_count: 2, grey_blocks: false, location_notes: "总统府地下审判室", action_notes: "提笔蘸红墨画判决书；被按住肩膀跪在水泥地", pose_notes: "跪" },
+    { people_count: 2, grey_blocks: false, location, action, size: "wide" },
+  );
+  assert.equal(v.checks.location, true, v.checks.fail_reasons.join(" | "));
+  assert.equal(v.checks.action, true, v.checks.fail_reasons.join(" | "));
+});
+
+test("T35b A7: plain-studio portrait warns instead of grey-failing", async () => {
+  const http = await import("node:http");
+  const sharp = (await import("sharp")).default;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t35b-a7-"));
+  const png = path.join(dir, "PA.png");
+  // 70% flat-studio background + 30% noisy subject: machine coverage >= 0.6, eye says clean
+  const W = 640, H = 360, CUT = Math.floor(H * 0.7);
+  const buf = Buffer.alloc(W * H * 3);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const o = (y * W + x) * 3;
+      if (y < CUT) {
+        buf[o] = 122; buf[o + 1] = 122; buf[o + 2] = 122;
+      } else {
+        buf[o] = Math.floor(Math.random() * 256);
+        buf[o + 1] = Math.floor(Math.random() * 256);
+        buf[o + 2] = Math.random() < 0.5 ? 20 : 240; // keep subject noisy in all channels
+      }
+    }
+  }
+  await sharp(buf, { raw: { width: W, height: H, channels: 3 } }).png().toFile(png);
+  const server = http.createServer((_req, res) => {
+    let body = "";
+    _req.on("data", (c) => (body += c));
+    _req.on("end", () => {
+      if ((_req.url ?? "").includes("/v1/models")) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ data: [{ id: "fixture-eye" }] }));
+        return;
+      }
+      const content = (JSON.parse(body) as { messages: { content: unknown }[] }).messages[0]!.content;
+      const reply = Array.isArray(content)
+        ? "一个人企喺净色背景前。"
+        : '{"people_count":1,"grey_blocks":false,"size_notes":"medium"}';
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
+  delete process.env.SLATECREW_SECOND_ENDPOINT;
+  try {
+    const rec = await runPhotoQc(
+      png,
+      path.join(dir, "PA.photo_qc.json"),
+      { people_count: 1, grey_blocks: false, size: "medium" },
+      {},
+      { first: { url: `http://127.0.0.1:${port}`, model: "fixture-eye" } },
+    );
+    assert.equal(rec.status, "PASS_WITH_WARN", `${rec.status} ${rec.checks.fail_reasons.join("|")}`);
+    const warns = rec.checks.warns as string[];
+    assert.ok(Array.isArray(warns) && warns.some((w) => w.includes("grey_watch")), JSON.stringify(warns));
+  } finally {
+    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
+    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
+    server.close();
+  }
+});
+
+test("T35b A8: all-black and all-white frames fail empty_frame", async () => {
+  const http = await import("node:http");
+  const sharp = (await import("sharp")).default;
+  const mkPng = async (rgb: number[]) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t35b-a8-"));
+    const png = path.join(dir, "SH09.png");
+    await sharp({ create: { width: 640, height: 360, channels: 3, background: { r: rgb[0]!, g: rgb[1]!, b: rgb[2]! } } }).png().toFile(png);
+    return png;
+  };
+  const server = http.createServer((_req, res) => {
+    let body = "";
+    _req.on("data", (c) => (body += c));
+    _req.on("end", () => {
+      if ((_req.url ?? "").includes("/v1/models")) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ data: [{ id: "fixture-eye" }] }));
+        return;
+      }
+      const content = (JSON.parse(body) as { messages: { content: unknown }[] }).messages[0]!.content;
+      const reply = Array.isArray(content)
+        ? "一个人企喺房中间。"
+        : '{"people_count":1,"grey_blocks":false,"size_notes":"medium"}';
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
+  delete process.env.SLATECREW_SECOND_ENDPOINT;
+  try {
+    for (const rgb of [[10, 10, 10], [245, 245, 245]]) {
+      const png = await mkPng(rgb);
+      const rec = await runPhotoQc(
+        png,
+        png.replace(".png", ".photo_qc.json"),
+        { people_count: 1, grey_blocks: false, size: "medium" },
+        {},
+        { first: { url: `http://127.0.0.1:${port}`, model: "fixture-eye" } },
+      );
+      assert.equal(rec.status, "FAIL", String(rgb));
+      assert.ok(
+        rec.checks.fail_reasons.some((r) => r.startsWith("empty_frame:")),
+        String(rgb) + " " + rec.checks.fail_reasons.join("|"),
+      );
+    }
+  } finally {
+    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
+    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
+    server.close();
   }
 });
 
