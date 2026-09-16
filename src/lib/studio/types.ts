@@ -149,8 +149,9 @@ export type Shot = {
   }[];
   props?: ShotProp[];
   /** T32 rev2: 阿圖 packet 場景 slot — boards author this per shot (sealed+zod);
-   * the stills scene sentence reads it, sheet tail is only the fallback. */
-  require?: { location: string; angle?: "eye" | "high" | "low" };
+   * the stills scene sentence reads it, sheet tail is only the fallback.
+   * Chau 17:48: negatives are packet data (bans authored per 道具/場景類別). */
+  require?: { location: string; angle?: "eye" | "high" | "low"; negatives?: string[] };
   stillPrompt: string;
   motionPrompt: string;
   /** which scene and beat the seats cut this shot from */

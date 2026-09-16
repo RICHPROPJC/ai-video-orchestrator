@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BEAT_ID_RE, CHARACTER_ID_RE, SCENE_ID_RE, dialogueSeconds, omittable, type Beat } from "./script-contract";
+import { negativePoison } from "./keyframe-prompt";
 
 /** One shot is one H3 submit: the frame grid (17k+5, k 7–21) cannot render
  *  anything shorter or longer, so boards may not ask for it. */
@@ -42,11 +43,16 @@ const boardShotShape = z.object({
   cast: z.array(castSchema).min(1).max(CAST_PER_SHOT_MAX),
   props: omittable(z.array(propSchema).max(3)),
   /** T32 rev2: per-shot scene slot the boards seat authors — location (and
-   * optionally its own light angle) the stills prompt must follow. */
+   * optionally its own light angle) the stills prompt must follow. Chau 17:48:
+   * negatives 阿圖按道具/場景類別填；毒詞（霓虹/neon/night）連 negative 都落閘。 */
   require: omittable(
     z.object({
       location: z.string().min(1).max(60),
       angle: omittable(z.enum(["eye", "high", "low"])),
+      negatives: omittable(z.array(z.string().min(1).max(12)).min(1).max(6)),
+    }).refine((req) => !negativePoison(req.negatives ?? []), {
+      message: "negatives 唔可以有霓虹/neon/night — 負面詞毒畫面（T29 法）",
+      path: ["negatives"],
     }),
   ),
 });

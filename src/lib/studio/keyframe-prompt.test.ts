@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import * as nodeTest from "node:test";
-import { isIndoorLocation, isLocationFail, keyframeEditPrompt, keyframeRequire, propNounClass, sceneLine } from "./keyframe-prompt";
+import { isIndoorLocation, isLocationFail, keyframeEditPrompt, keyframeRequire, negativePoison, propNounClass, sceneLine } from "./keyframe-prompt";
 import { loadTraceFixture } from "./trace";
 import type { CallSheet, Character, Shot, ShotProp } from "./types";
 
@@ -157,9 +157,12 @@ function ldSheet(): { fx: LdFixture; sheet: CallSheet } {
   return { fx, sheet };
 }
 
-/** rev2 口徑: 阿圖 packet 載入 require.location（值由 fixture 數據出，唔入 src） */
+/** rev2 口徑: 阿圖 packet 載入 require.location（值由 fixture 數據出，唔入 src）。
+ * Chau 17:48: negatives 同由 packet 出（呢度模擬阿圖按場景類別填嘅通用禁令）。 */
+const PACKET_NEGS = ["街道", "路燈", "招牌燈箱", "濕地反光"];
+
 function packetShots(fx: LdFixture): Shot[] {
-  return fx.shots.map((s) => ({ ...s, require: { location: s.location, angle: "high" as const } }));
+  return fx.shots.map((s) => ({ ...s, require: { location: s.location, angle: "high" as const, negatives: PACKET_NEGS } }));
 }
 
 test("T32 rev2 A1: packet require.location writes the scene line — prompt carries no sheet tail", () => {
@@ -167,9 +170,38 @@ test("T32 rev2 A1: packet require.location writes the scene line — prompt carr
   const shots = packetShots(fx);
   const text = keyframeEditPrompt({ ...sheet, shots }, shots[0]!, { first: true });
   assert.ok(text.includes(shots[0]!.require!.location), "scene line names the packet location");
+  assert.ok(text.includes(`；禁止${PACKET_NEGS.join("、")}`), "packet negatives assembled verbatim (Chau 17:48)");
   assert.ok(!text.includes(`，${fx.sheet.timeOfDay}，${fx.sheet.weather}`), "sheet 公版尾（timeOfDay，weather）absent");
   assert.ok(!text.includes(fx.sheet.location), "the sheet-wide location is gone too");
   for (const poison of POISON) assert.ok(!text.includes(poison), `no "${poison}"`);
+});
+
+test("T32 Chau 17:48: 錨段 anchors background structure, walls and interior/exterior to Image-1", () => {
+  const { fx, sheet } = ldSheet();
+  const text = keyframeEditPrompt(sheet, fx.shots[0]!, { first: true });
+  assert.ok(
+    text.includes("人偶位置、姿勢、比例、鏡位、地平線、背景結構、牆面、室內外完全照 Image-1"),
+    "anchor line carries 背景結構、牆面、室內外",
+  );
+});
+
+test("T32 Chau 17:48: sceneLine assembles packet negatives only — no packet negatives, no 禁止 clause", () => {
+  const { fx, sheet } = ldSheet();
+  const base = { ...sheet, shots: [] };
+  const shot = fx.shots[0]!;
+  const withNegs = sceneLine(base, { ...shot, require: { location: shot.location, negatives: ["街道", "濕地反光"] } });
+  assert.ok(withNegs.includes("；禁止街道、濕地反光"), "negatives joined verbatim");
+  const noNegs = sceneLine(base, { ...shot, require: { location: shot.location } });
+  assert.ok(!noNegs.includes("禁止"), "no packet negatives ⇒ no 禁止 clause — code authors no ban list");
+  const outdoorNegs = sceneLine(base, { ...shot, require: { location: "北岸跑道，黃昏大風", negatives: ["路人"] } });
+  assert.ok(outdoorNegs.includes("；禁止路人。"), "outdoor packet line assembles the same way");
+});
+
+test("T32 Chau 17:48: negativePoison flags the T29 poison tokens anywhere in a packet negative", () => {
+  assert.equal(negativePoison(["霓虹招牌"]), "霓虹招牌");
+  assert.equal(negativePoison(["clean", "NEON glow"]), "NEON glow");
+  assert.equal(negativePoison(["night street"]), "night street");
+  assert.equal(negativePoison(["招牌燈箱", "濕地反光"]), null, "de-poisoned vocabulary passes");
 });
 
 test("T32 rev2 A2: same-set later shots SH02–SH05 also drop the sheet tail", () => {

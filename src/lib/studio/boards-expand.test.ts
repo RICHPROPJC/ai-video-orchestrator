@@ -223,6 +223,40 @@ test("the beats schema binds speakers to speaking cast and ids to their scene", 
   assert.match(JSON.stringify(schema.safeParse(mute).error!.issues), /drop the speaker or write the line/);
 });
 
+test("T32 Chau 17:48: require.negatives are packet data — poison gated at zod, carried through expand", () => {
+  const script = scriptOf(SCENES, BEATS, TARGET);
+  const boards = boardsOf(script);
+  const schema = boardsSceneSchema({
+    sceneId: "SC01",
+    beats: script.scenes[0]!.beats,
+    characters: script.outline.characters.map((c) => ({ id: c.id, name: c.name })),
+    budgetSec: BEATS * SHOT_SEC,
+  });
+
+  const clean = structuredClone(boards[0]!);
+  clean.shots[0]!.require = { location: "a sealed room", angle: "high", negatives: ["street", "lamp glare"] };
+  assert.equal(schema.safeParse(clean).success, true, "clean packet negatives parse");
+
+  const poisoned = structuredClone(boards[0]!);
+  poisoned.shots[0]!.require = { location: "a sealed room", negatives: ["neon signs"] };
+  assert.match(JSON.stringify(schema.safeParse(poisoned).error!.issues), /negatives/, "poison token rejected at the contract");
+
+  const withReq = boards.map((b, i) =>
+    i === 0
+      ? {
+          ...b,
+          shots: b.shots.map((s, j) =>
+            j === 0 ? { ...s, require: { location: "a sealed room", angle: "high" as const, negatives: ["street", "lamp glare"] } } : s,
+          ),
+        }
+      : b,
+  );
+  const carried = expandBoards({ script, boards: withReq, targetSec: TARGET, aspect: "16:9" });
+  assert.equal(carried.shots[0]!.require?.location, "a sealed room");
+  assert.equal(carried.shots[0]!.require?.angle, "high", "angle defaults from shot.angle when packet omits it");
+  assert.deepEqual(carried.shots[0]!.require?.negatives, ["street", "lamp glare"], "negatives ride the packet into the Shot");
+});
+
 test("the boards schema covers every beat, quotes the line verbatim and seats the speaker", () => {
   const script = scriptOf(SCENES, BEATS, TARGET);
   const boards = boardsOf(script);

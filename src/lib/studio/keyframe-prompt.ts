@@ -40,19 +40,31 @@ export function isLocationFail(failReasons: string[]): boolean {
   return failReasons.some((r) => /location/i.test(r));
 }
 
+/** Chau 17:48 law: negatives are 阿圖-packet data, never a code template —
+ * but the de-poison rule survives authorship moving seats: a negative naming
+ * the very token that poisoned T29 re-plants it. Returns the offending item. */
+const NEG_POISON_RE = /霓虹|neon|night/i;
+export function negativePoison(negatives: string[]): string | null {
+  return negatives.find((n) => NEG_POISON_RE.test(n)) ?? null;
+}
+
 /** T32 rev2 scene slot: the boards packet's require.location writes the scene
  * sentence (阿圖 authorial slot, sealed+zod upstream). The sheet 公版尾
  * (`location, timeOfDay, weather`) is ONLY the fallback when the packet has no
  * location — a packet never carries the sheet tail. Light angle from the packet:
- * high ⇒ 頂光, low ⇒ 低位光, else eye ⇒ 均勻光. */
+ * high ⇒ 頂光, low ⇒ 低位光, else eye ⇒ 均勻光.
+ * Chau 17:48: negatives are packet data too (require.negatives, authored per
+ * 道具/場景類別) — this function ONLY assembles, never authors a ban list. */
 export function sceneLine(sheet: CallSheet, shot: Shot): string {
   const loc = shot.require?.location?.trim();
   if (!loc) return `${sheet.location}，${sheet.timeOfDay}，${sheet.weather}。唔好加人。`;
+  const negs = shot.require?.negatives ?? [];
+  const ban = negs.length ? `；禁止${negs.join("、")}` : "";
   if (isIndoorLocation(loc)) {
     const light = shot.require?.angle === "low" ? "低位室內光" : shot.require?.angle === "eye" ? "均勻室內光" : "頂光";
-    return `${loc}：室內、冇窗、${light}；禁止街道、路燈、招牌燈箱、濕地反光；夜只由室內燈表達。唔好加人。`;
+    return `${loc}：室內、冇窗、${light}${ban}；夜只由室內燈表達。唔好加人。`;
   }
-  return `${loc}。唔好加人。`;
+  return `${loc}${ban}。唔好加人。`;
 }
 
 /** /edit prompt for one shot keyframe, naming images by slot. Under img_cfg 1.0
@@ -67,7 +79,7 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
   });
   const lines = [
     "Image-1 係呢一鏡嘅 Blender 灰模概念圖：灰色人偶係角色佔位，唔係道具、唔係石頭。將呢張概念圖轉成 photoreal 實拍一格，",
-    "人偶位置、姿勢、比例、鏡位、地平線完全照 Image-1。",
+    "人偶位置、姿勢、比例、鏡位、地平線、背景結構、牆面、室內外完全照 Image-1。",
   ];
   chars.forEach((c, i) => {
     lines.push(`左起第${i + 1}個人偶＝${c.name}（${c.role}）：${c.wardrobe}。`);

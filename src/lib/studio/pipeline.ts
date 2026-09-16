@@ -29,7 +29,7 @@ import { buildCutPlan, type CutPlan } from "./cut-plan";
 import { checkGate } from "./concat-gate";
 import { writeAnchors } from "./dhash-anchors";
 import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "./blockout";
-import { isLocationFail, keyframeEditPrompt, keyframeRequire } from "./keyframe-prompt";
+import { isLocationFail, keyframeEditPrompt, keyframeRequire, negativePoison } from "./keyframe-prompt";
 import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
 import type { H3GraphVariant } from "./h3-r2v-graph";
@@ -845,11 +845,22 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
             thinking: z.string().min(1).max(400),
             location: z.string().min(1).max(60),
             angle: omittable(z.enum(["eye", "high", "low"])),
+            negatives: omittable(z.array(z.string().min(1).max(12)).min(1).max(6)),
+          }).refine((r) => !negativePoison(r.negatives ?? []), {
+            message: "negatives 唔可以有霓虹/neon/night — 負面詞毒畫面（T29 法）",
+            path: ["negatives"],
           }),
           receiptDir: path.join(jobDir(jobId), "seats"),
         });
         const next = rewrite.value;
-        promptShot = { ...shot, require: { location: next.location, angle: next.angle ?? shot.require?.angle } };
+        promptShot = {
+          ...shot,
+          require: {
+            location: next.location,
+            angle: next.angle ?? shot.require?.angle,
+            ...(next.negatives?.length ? { negatives: next.negatives } : {}),
+          },
+        };
         emit(jobId, {
           agent: "pictureQc",
           level: "warn",
