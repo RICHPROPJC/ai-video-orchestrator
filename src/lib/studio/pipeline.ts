@@ -32,6 +32,7 @@ import type { H3GraphVariant } from "./h3-r2v-graph";
 import { checkHealth, buildEditPayload, u15Edit, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
 import { runPhotoQc, pinQcAccepted, photoQcEyesFromEnv, type QcRequire } from "./photo-qc";
+import { buildQcSheet, buildQcSheetHtml, readQcReceipt } from "./qc-sheet";
 import { pinVideoQcAccepted, runVideoQc } from "./video-qc";
 import { appendViolation, checkBoardsToKeyframe, checkKeyframeToStills, hardErrorRow, hardPhotoQcRow } from "./trace";
 import { rangesFor } from "./script-contract";
@@ -655,8 +656,50 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc-geometry", geometry.issues.map((i) => i.detail)));
       throw new Error(`picture QC plan-geometry pre-check failed: ${detail}`);
     }
+    // T37 眼板: every shot gets stills/SHxx.qc-sheet.png + one SCxx.qc-sheet.html.
+    // Built from the receipt (fresh or resumed), never an LLM, no absolute paths.
+    const qcSheetRows: { shotId: string; status: string; failReasons: string[]; sheetBasename: string }[] = [];
+    const buildShotSheet = async (shotId: string, require_: QcRequire, prompt: string) => {
+      try {
+        const receipt = readQcReceipt(path.join(stillDir, `${shotId}.photo_qc.json`));
+        const f0File = path.join(blockoutDir, `${shotId}.f0.png`);
+        await buildQcSheet(
+          {
+            shotId,
+            f0File: fs.existsSync(f0File) ? f0File : path.join(stillDir, `${shotId}.png`),
+            stillFile: path.join(stillDir, `${shotId}.png`),
+            status: receipt.status,
+            failReasons: receipt.failReasons,
+            requireLocation: require_.location,
+            blind: receipt.blind,
+            prompt,
+          },
+          path.join(stillDir, `${shotId}.qc-sheet.png`),
+        );
+        qcSheetRows.push({
+          shotId,
+          status: receipt.status,
+          failReasons: receipt.failReasons,
+          sheetBasename: `${shotId}.qc-sheet.png`,
+        });
+      } catch (error) {
+        await speak("pictureQc", `${shotId} qc-sheet 出唔到（${error instanceof Error ? error.message : error}）— QC 本身唔受影響。`, "warn");
+      }
+    };
+    const writeSceneSheetHtml = () => {
+      if (qcSheetRows.length === 0) return;
+      try {
+        buildQcSheetHtml(qcSheetRows, path.join(stillDir, `${jobId}.qc-sheet.html`));
+      } catch (error) {
+        void (error instanceof Error ? error.message : error);
+      }
+    };
+
     for (const { shot, require } of stillPlans) {
-      if (greenAlready.has(shot.id)) continue;
+      if (greenAlready.has(shot.id)) {
+        await buildShotSheet(shot.id, require, shot.stillPrompt ?? "");
+        continue;
+      }
       const png = path.join(stillDir, `${shot.id}.png`);
       const qcJson = path.join(stillDir, `${shot.id}.photo_qc.json`);
       let result = await runPhotoQc(png, qcJson, require, {}, photoQcEyesFromEnv());
@@ -700,6 +743,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       if (result.status === "FAIL") {
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
         appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
+        await buildShotSheet(shot.id, require, inputs?.prompt ?? shot.stillPrompt ?? "");
+        writeSceneSheetHtml();
         job = patch(job, {
           status: "blocked",
           currentAgent: "pictureQc",
@@ -737,6 +782,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       } else {
         await speak("pictureQc", `${shot.id} GREEN（人數 ${require.people_count}）`, "pass");
       }
+      await buildShotSheet(shot.id, require, inputs?.prompt ?? shot.stillPrompt ?? "");
+    }
+    writeSceneSheetHtml();
     }
     trace.mars = `MARS ${cfg.pictureQc.endpoint} (${cfg.pictureQc.model})`;
     job = patch(job, { pictureQcStills: geometry, providers: trace, progress: 55 });
