@@ -743,7 +743,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       if (result.status === "FAIL") {
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
         appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
-        await buildShotSheet(shot.id, require, inputs?.prompt ?? shot.stillPrompt ?? "");
+        await buildShotSheet(shot.id, require, editInputs.get(shot.id)?.prompt ?? shot.stillPrompt ?? "");
         writeSceneSheetHtml();
         job = patch(job, {
           status: "blocked",
