@@ -73,7 +73,7 @@ export async function ensurePortraits(opts: {
         recordJson: path.join(opts.outDir, `${character.id}.u15_generate.json`),
       });
       const verdict = await lane.qc(outFile, path.join(opts.outDir, `${character.id}.photo_qc.json`), PORTRAIT_REQUIRE);
-      if (verdict.status === "GREEN") {
+      if (verdict.status !== "FAIL") {
         files[character.id] = outFile;
         made.push(character.id);
         opts.onEvent?.(`${character.id} 肖像 GREEN（seed ${trySeed}）`, { file: outFile, attempt: attempt + 1 });

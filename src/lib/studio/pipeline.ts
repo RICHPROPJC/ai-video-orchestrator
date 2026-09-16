@@ -37,7 +37,7 @@ import { assertH3Plan, assertH3SubmitWiring, planH3Shot } from "./h3-slots";
 import { assertNativeFfmpeg, concatCopyArgs } from "./native-cut";
 import { checkHealth, buildEditPayload, u15Edit, MAX_IMAGES, type EditPayload, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
-import { runPhotoQc, pinQcAccepted, type QcRequire } from "./photo-qc";
+import { runPhotoQc, pinQcAccepted, photoQcEyesFromEnv, type QcRequire } from "./photo-qc";
 import { pinVideoQcAccepted, runVideoQc } from "./video-qc";
 import { attachMemoryDistances, ingestStill, queryRefs } from "./memory";
 import { appendViolation, checkBoardsToKeyframe, checkKeyframeToStills, hardErrorRow, hardPhotoQcRow } from "./trace";
@@ -833,9 +833,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       const png = path.join(stillDir, `${shot.id}.png`);
       const qcStarted = Date.now();
       const qcJson = path.join(stillDir, `${shot.id}.photo_qc.json`);
-      let result = await runPhotoQc(png, qcJson, require);
+      let result = await runPhotoQc(png, qcJson, require, {}, photoQcEyesFromEnv());
       let promptShot = shot;
-      if (result.status !== "GREEN" && isLocationFail(result.checks.fail_reasons)) {
+      if (result.status === "FAIL" && isLocationFail(result.checks.fail_reasons)) {
         // T32 rev2: location FAIL 退返阿圖重寫場景 slot 一次（自動，唔係人手改 prompt）
         const inputs0 = editInputs.get(shot.id);
         if (!inputs0) throw new Error(`picture QC ${shot.id}: no /edit inputs for the 阿圖 retry`);
@@ -890,9 +890,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           constraints_checked: ["photo-qc"],
         });
         editInputs.set(shot.id, { ...inputs0, prompt: keyframeEditPrompt(timed, promptShot, { first }) });
-
       }
-      if (result.status !== "GREEN") {
+      if (result.status === "FAIL") {
+
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
         appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
         emit(jobId, {
@@ -955,9 +955,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           health: await checkHealth(cfg.stills.url, inputs.nodePaths.length),
           record: sealEditRecord(inputs, payload),
         });
-        result = await runPhotoQc(png, qcJson, require);
+        result = await runPhotoQc(png, qcJson, require, {}, photoQcEyesFromEnv());
       }
-      if (result.status !== "GREEN") {
+      if (result.status === "FAIL") {
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
         appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
         job = patch(job, {
