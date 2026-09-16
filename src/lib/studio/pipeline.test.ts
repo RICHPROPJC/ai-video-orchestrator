@@ -256,6 +256,35 @@ test("shotsForScene: a shot without .scene still matches via beatId prefix", asy
   assert.deepEqual(shotsForScene(shots, "SC02").map((s) => s.id), ["SH04"]);
 });
 
+test("hopGeometrySheet: no scene keeps the whole slate, a hop crops to its shots", async () => {
+  const { hopGeometrySheet } = await import("./pipeline");
+  const shots = [shotOf("SH01", "SC01"), shotOf("SH02", "SC01"), shotOf("SH03", "SC02")];
+  const sheet = { ...resumeSheet(), shots };
+  assert.equal(hopGeometrySheet(sheet).shots.length, 3, "no scene = the full sheet");
+  assert.deepEqual(hopGeometrySheet(sheet, "SC01").shots.map((s) => s.id), ["SH01", "SH02"]);
+  assert.equal(hopGeometrySheet(sheet, "SC01").title, sheet.title, "the rest of the sheet travels unchanged");
+  assert.throws(() => hopGeometrySheet(sheet, "SC99"), /一鏡都對唔上/);
+});
+
+test("g6 LD0F grave: hop stills vs the full slate's sheet cried missing-still; the hop sheet does not", async () => {
+  const { hopGeometrySheet } = await import("./pipeline");
+  const { localPictureQc } = await import("./providers");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "g6-hop-"));
+  const stills = ["SH01", "SH02"].map((id) => {
+    const file = path.join(tmp, `${id}.png`);
+    fs.writeFileSync(file, Buffer.concat([Buffer.from("89504e470d0a1a0a0000", "hex"), Buffer.alloc(9000)]));
+    return file;
+  });
+  const shots = [shotOf("SH01", "SC01"), shotOf("SH02", "SC01"), shotOf("SH03", "SC02")];
+  const sheet = { ...resumeSheet(), shots };
+  // the old behaviour: 2 hop stills scored against all 3 shots → "Missing stills"
+  const fullSlate = localPictureQc({ stills, sheet, target: "stills" });
+  assert.ok(fullSlate.issues.some((i) => i.code === "missing-still"), "full-sheet geometry blocks the hop");
+  // g6 fix: the same 2 stills against the hop's 2 shots is a clean geometry
+  const hop = localPictureQc({ stills, sheet: hopGeometrySheet(sheet, "SC01"), target: "stills" });
+  assert.ok(!hop.issues.some((i) => i.code === "missing-still"), "hop sheet scores hop shots only");
+});
+
 if (bareBun) {
   // IIFE, not top-level await: tsx transpiles this file as CJS
   void (async () => {

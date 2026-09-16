@@ -134,10 +134,10 @@ export function muxArgs(mp4: string, h3Wav: string, out: string): string[] {
   ];
 }
 
-/** C-scene-hop: `--scene SCxx` narrows ONLY the H3 lane to one scene's shots
- *  (scene field, else beatId prefix `SCxx.`). Omitted = every shot, the
- *  existing whole-slate path. Zero matches throws — never silently fall back
- *  to burning the full slate's H3. */
+/** C-scene-hop: `--scene SCxx` narrows the stills/picture-QC lanes and the H3
+ *  lane to one scene's shots (scene field, else beatId prefix `SCxx.`).
+ *  Omitted = every shot, the existing whole-slate path. Zero matches throws —
+ *  never silently fall back to burning the full slate. */
 export function shotsForScene(shots: Shot[], scene?: string): Shot[] {
   if (!scene) return shots;
   const kept = shots.filter(
@@ -147,6 +147,14 @@ export function shotsForScene(shots: Shot[], scene?: string): Shot[] {
     throw new Error(`--scene ${scene}：一鏡都對唔上（冇 shot 嘅 scene／beatId 係 ${scene}）— 唔靜靜哋燒成個 slate`);
   }
   return kept;
+}
+
+/** g6 hop geometry: a `--scene` hop's stills + picture-QC lanes only make the
+ *  hop's shots, so the plan-geometry pre-check must score the hop's shots —
+ *  never the full slate's list, which cried "Missing stills vs shot list" on a
+ *  healthy SC01 hop (LD0F). Same no-match throw as the H3 crop. */
+export function hopGeometrySheet(sheet: CallSheet, scene?: string): CallSheet {
+  return scene ? { ...sheet, shots: shotsForScene(sheet.shots, scene) } : sheet;
 }
 
 /** Speaking parts must be castable, so the roster is read from a data file the
@@ -560,7 +568,14 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     let prevKeyframe: string | null = null;
     const editInputs = new Map<string, { prompt: string; nodePaths: string[]; base: string; refs: string[]; first: boolean }>();
     const greenAlready = new Set<string>();
-    for (const { shot, first, prompt, require } of stillPlans) {
+    // g6 hop geometry: stills + picture QC run only the hop's shots; the rest
+    // of the slate's stills land in other hops, so both lanes crop to the hop
+    const hopStillIds = new Set(shotsForScene(timed.shots, input.scene).map((s) => s.id));
+    const hopStillPlans = input.scene ? stillPlans.filter((p) => hopStillIds.has(p.shot.id)) : stillPlans;
+    if (input.scene) {
+      await speak("stills", `--scene ${input.scene} hop：stills/QC ${hopStillPlans.length}/${stillPlans.length} 鏡。`);
+    }
+    for (const { shot, first, prompt, require } of hopStillPlans) {
       const out = path.join(stillDir, `${shot.id}.png`);
       const recordJson = path.join(stillDir, `${shot.id}.u15_edit.json`);
       const base = path.join(blockoutDir, `${shot.id}.f0.png`);
@@ -653,14 +668,15 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // picture QC: plan geometry pre-check, then blind MARS per still — GREEN or fail
     await think("pictureQc");
     await speak("pictureQc", "MARS 盲測：人數、灰模、物件。本地 schema 只做走位預檢。");
-    const geometry = localPictureQc({ stills, sheet: timed, target: "stills" });
+    // --scene hop: geometry vs hop stills only (full slate stills land across hops)
+    const geometry = localPictureQc({ stills, sheet: hopGeometrySheet(timed, input.scene), target: "stills" });
     if (!geometry.pass) {
       const detail = geometry.issues.map((i) => i.detail).join("; ");
       // D1a: a hard QC fail is also a violation row, upstream soft rows already on disk
       appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc-geometry", geometry.issues.map((i) => i.detail)));
       throw new Error(`picture QC plan-geometry pre-check failed: ${detail}`);
     }
-    for (const { shot, require } of stillPlans) {
+    for (const { shot, require } of hopStillPlans) {
       if (greenAlready.has(shot.id)) continue;
       const png = path.join(stillDir, `${shot.id}.png`);
       const qcStarted = Date.now();
@@ -778,8 +794,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     open(toMotion, { slate: jobId, to: "motion" });
     await speak("motion", packetLine(toMotion));
     await speak("motion", `H3 R2V ${cfg.motion.comfyUrl} · <Video 1> motion only · 零 ref_images · 一鏡一 submit。`);
-    // C-scene-hop: the scene flag crops ONLY this loop — stills/QC/layout above
-    // ran full-slate; a no-match scene throws before any H3 is burned
+    // C-scene-hop: the scene flag crops the stills/QC lanes above and this
+    // motion loop; a no-match scene throws before any H3 is burned
     const motionShots = shotsForScene(stillPlans.map((p) => p.shot), input.scene);
     if (input.scene) {
       await speak("motion", `--scene ${input.scene} hop：燒 ${motionShots.length}/${stillPlans.length} 鏡，其餘唔郁。`);
@@ -1001,7 +1017,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const pictureLock = jobFile(jobId, "delivery", "picture-lock.mp4");
     await ffmpeg(["-f", "concat", "-safe", "0", "-i", muxList, "-c", "copy", pictureLock]);
 
-    const markGeometry = localPictureQc({ stills, sheet: timed, target: "video" });
+    const markGeometry = localPictureQc({ stills, sheet: hopGeometrySheet(timed, input.scene), target: "video" });
     const videoQcPass = cut.every((id) => pinVideoQcAccepted(motionDir, id));
     job = patch(job, {
       pictureQcVideo: markGeometry,
