@@ -17,6 +17,10 @@ import { relInJob } from "./isolate";
 import { loadCallSheet } from "./writer";
 import { runWriter } from "./seat-writer";
 import { runBoards } from "./seat-boards";
+import { chatJson } from "./crew-llm";
+import { BOARDS_CHARTER } from "./seat-charters";
+import { omittable } from "./script-contract";
+import { z } from "zod";
 import { ensurePortraits } from "./portraits";
 import { ensureDir, jobDir, jobFile, projectsDir, seatsDir } from "./paths";
 import { runReflector } from "./reflector";
@@ -25,7 +29,7 @@ import { buildCutPlan, type CutPlan } from "./cut-plan";
 import { checkGate } from "./concat-gate";
 import { writeAnchors } from "./dhash-anchors";
 import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "./blockout";
-import { keyframeEditPrompt, keyframeRequire } from "./keyframe-prompt";
+import { isLocationFail, keyframeEditPrompt, keyframeRequire } from "./keyframe-prompt";
 import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
 import type { H3GraphVariant } from "./h3-r2v-graph";
@@ -806,12 +810,59 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc-geometry", geometry.issues.map((i) => i.detail)));
       throw new Error(`picture QC plan-geometry pre-check failed: ${detail}`);
     }
-    for (const { shot, require } of hopStillPlans) {
+    for (const { shot, first, require } of hopStillPlans) {
       if (greenAlready.has(shot.id)) continue;
       const png = path.join(stillDir, `${shot.id}.png`);
       const qcStarted = Date.now();
       const qcJson = path.join(stillDir, `${shot.id}.photo_qc.json`);
       let result = await runPhotoQc(png, qcJson, require);
+      let promptShot = shot;
+      if (result.status !== "GREEN" && isLocationFail(result.checks.fail_reasons)) {
+        // T32 rev2: location FAIL 退返阿圖重寫場景 slot 一次（自動，唔係人手改 prompt）
+        const inputs0 = editInputs.get(shot.id);
+        if (!inputs0) throw new Error(`picture QC ${shot.id}: no /edit inputs for the 阿圖 retry`);
+        const backToBoards = seal({
+          slate: jobId,
+          from: "pictureQc",
+          to: "boards",
+          payload: { shotId: shot.id, failReasons: result.checks.fail_reasons, current: shot.require?.location ?? shot.location },
+        });
+        const rewrite = await chatJson({
+          seat: "boards",
+          unit: `${shot.id}.scene-retry`,
+          model: cfg.crew.boardsModel,
+          crew: cfg.crew,
+          system: BOARDS_CHARTER,
+          user: JSON.stringify({
+            task: "rewrite this shot's scene slot only",
+            shot: shot.id,
+            action: shot.action,
+            failReasons: result.checks.fail_reasons,
+            currentLocation: shot.require?.location ?? shot.location,
+            rule: "location 係阿圖嘅 authorial slot：寫返真場景（室內就寫室內場所名，唔好抄 sheet 外景）；天氣光線寫入 location 字串內，唔靠 sheet 尾。",
+          }),
+          schema: z.object({
+            thinking: z.string().min(1).max(400),
+            location: z.string().min(1).max(60),
+            angle: omittable(z.enum(["eye", "high", "low"])),
+          }),
+          receiptDir: path.join(jobDir(jobId), "seats"),
+        });
+        const next = rewrite.value;
+        promptShot = { ...shot, require: { location: next.location, angle: next.angle ?? shot.require?.angle } };
+        emit(jobId, {
+          agent: "pictureQc",
+          level: "warn",
+          message: `${shot.id} location FAIL — 退返阿圖重寫場景 slot（${next.location}），重出一次。`,
+          data: { stage: "retry", seat: "阿圖", shot: shot.id, packet: open(backToBoards, { slate: jobId, to: "boards" }) },
+          step_id: "require",
+          parent_steps: ["keyframe-prompt"],
+          seat: "pictureQc",
+          constraints_checked: ["photo-qc"],
+        });
+        editInputs.set(shot.id, { ...inputs0, prompt: keyframeEditPrompt(timed, promptShot, { first }) });
+
+      }
       if (result.status !== "GREEN") {
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
         appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
@@ -822,8 +873,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           // resume keep 冇 remote paths → 重新 scp base+refs 再 /edit
           const base = path.join(blockoutDir, `${shot.id}.f0.png`);
           const refIds = [...new Set(shot.marks.map((m) => m.characterId))];
-          const first = Boolean(plan?.first);
-          const refFiles = first
+          const firstAppearance = Boolean(plan?.first);
+          const refFiles = firstAppearance
             ? refIds.map((id) => {
                 const p = portraits.files[id];
                 if (!p || !fs.existsSync(p)) throw new Error(`${shot.id}: retry 冇肖像（${id}）`);
@@ -842,13 +893,13 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
             nodePaths,
             base,
             refs: refFiles,
-            first,
+            first: firstAppearance,
           };
           editInputs.set(shot.id, inputs);
         }
         if (!inputs.prompt) throw new Error(`picture QC ${shot.id}: no /edit prompt to retry with`);
-        // retry changes only the prompt: same base, same refs, same lane settings
-        const retryPrompt = `${inputs.prompt} Fix these: ${reasons}.`;
+        // T32 rev2: 阿圖 rewrite already rebuilt the prompt — don't re-poison with fail_reasons.
+        const retryPrompt = promptShot !== shot ? inputs.prompt : `${inputs.prompt} Fix these: ${reasons}.`;
         const payload = buildEditPayload({
           prompt: retryPrompt,
           images: inputs.nodePaths,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import * as nodeTest from "node:test";
-import { isIndoorLocation, keyframeEditPrompt, keyframeRequire, propNounClass } from "./keyframe-prompt";
+import { isIndoorLocation, isLocationFail, keyframeEditPrompt, keyframeRequire, propNounClass, sceneLine } from "./keyframe-prompt";
 import { loadTraceFixture } from "./trace";
 import type { CallSheet, Character, Shot, ShotProp } from "./types";
 
@@ -157,34 +157,60 @@ function ldSheet(): { fx: LdFixture; sheet: CallSheet } {
   return { fx, sheet };
 }
 
-test("T32 A1: indoor shot scene line names the shot's own set — sheet neon tail never leaks", () => {
+/** rev2 口徑: 阿圖 packet 載入 require.location（值由 fixture 數據出，唔入 src） */
+function packetShots(fx: LdFixture): Shot[] {
+  return fx.shots.map((s) => ({ ...s, require: { location: s.location, angle: "high" as const } }));
+}
+
+test("T32 rev2 A1: packet require.location writes the scene line — prompt carries no sheet tail", () => {
   const { fx, sheet } = ldSheet();
-  const shot = fx.shots[0]!;
-  const text = keyframeEditPrompt(sheet, shot, { first: true });
-  assert.ok(text.includes(shot.location), "scene line names the shot's own location");
-  assert.ok(text.includes("室內"), "indoor marker present");
-  for (const poison of POISON) {
-    assert.ok(!text.includes(poison), `no "${poison}" anywhere — sheet tail must not leak into an indoor prompt`);
-  }
+  const shots = packetShots(fx);
+  const text = keyframeEditPrompt({ ...sheet, shots }, shots[0]!, { first: true });
+  assert.ok(text.includes(shots[0]!.require!.location), "scene line names the packet location");
+  assert.ok(!text.includes(`，${fx.sheet.timeOfDay}，${fx.sheet.weather}`), "sheet 公版尾（timeOfDay，weather）absent");
   assert.ok(!text.includes(fx.sheet.location), "the sheet-wide location is gone too");
+  for (const poison of POISON) assert.ok(!text.includes(poison), `no "${poison}"`);
 });
 
-test("T32 A2: same-set later shots SH02–SH05 drop the neon tail identically", () => {
+test("T32 rev2 A2: same-set later shots SH02–SH05 also drop the sheet tail", () => {
   const { fx, sheet } = ldSheet();
-  for (const shot of fx.shots.slice(1)) {
-    const text = keyframeEditPrompt(sheet, shot, { first: false });
-    assert.ok(text.includes(shot.location), `${shot.id} names its own location`);
-    assert.ok(text.includes("室內"), `${shot.id} indoor marker`);
-    for (const poison of POISON) {
-      assert.ok(!text.includes(poison), `${shot.id} has no "${poison}"`);
-    }
+  const shots = packetShots(fx);
+  for (const shot of shots.slice(1)) {
+    const text = keyframeEditPrompt({ ...sheet, shots }, shot, { first: false });
+    assert.ok(text.includes(shot.require!.location), `${shot.id} names the packet location`);
+    assert.ok(!text.includes(`，${fx.sheet.timeOfDay}，${fx.sheet.weather}`), `${shot.id} no sheet tail`);
   }
 });
 
-test("T32: outdoor shot keeps the sheet tail (暫保留) — pre-T32 prompt unchanged", () => {
-  const text = keyframeEditPrompt(baseSheet, shotWithProp(), { first: false });
-  assert.ok(text.includes("亂葬崗，dusk，wind"), "sheet tail intact for an outdoor/unknown set");
-  assert.equal(isIndoorLocation("亂葬崗"), false, "unknown location defaults outdoor, keeps today's behaviour");
+test("T32 rev2: no packet ⇒ sheet tail fallback (pre-T32 behaviour intact)", () => {
+  const { fx, sheet } = ldSheet();
+  const text = keyframeEditPrompt(sheet, fx.shots[0]!, { first: true });
+  assert.ok(
+    text.includes(`${fx.sheet.location}，${fx.sheet.timeOfDay}，${fx.sheet.weather}`),
+    "without require.location the sheet tail is the fallback",
+  );
+  const outdoor = keyframeEditPrompt(baseSheet, shotWithProp(), { first: false });
+  assert.ok(outdoor.includes("亂葬崗，dusk，wind"), "sheet tail intact for an outdoor/unknown set");
+  assert.equal(isIndoorLocation("亂葬崗"), false, "unknown location defaults outdoor");
+});
+
+test("T32 rev2 sceneLine: angle picks the light word; outdoor packet drops the tail entirely", () => {
+  const { fx, sheet } = ldSheet();
+  const loc = fx.shots[0]!.location;
+  const base = { ...sheet, shots: [] };
+  assert.ok(sceneLine(base, { ...fx.shots[0]!, require: { location: loc, angle: "high" } }).includes("頂光"), "high ⇒ 頂光");
+  assert.ok(sceneLine(base, { ...fx.shots[0]!, require: { location: loc, angle: "eye" } }).includes("均勻室內光"), "eye ⇒ 均勻光");
+  assert.ok(sceneLine(base, { ...fx.shots[0]!, require: { location: loc, angle: "low" } }).includes("低位室內光"), "low ⇒ 低位光");
+  const outdoorLine = sceneLine(base, { ...fx.shots[0]!, require: { location: "北岸跑道，黃昏大風" } });
+  assert.ok(outdoorLine.startsWith("北岸跑道，黃昏大風"), "outdoor packet line starts with the packet location");
+  assert.ok(!outdoorLine.includes(fx.sheet.timeOfDay) && !outdoorLine.includes(fx.sheet.weather), "no sheet tokens");
+});
+
+test("T32 rev2 isLocationFail: only location-flavoured fail reasons route back to 阿圖", () => {
+  assert.equal(isLocationFail(["location: require \"室內\"; blind=street"]), true, "location reason matches");
+  assert.equal(isLocationFail(["people_count: require 2, saw 3"]), false, "people fail is not a location fail");
+  assert.equal(isLocationFail(["tool: named=false"]), false, "tool fail is not a location fail");
+  assert.equal(isLocationFail([]), false, "no reasons ⇒ no route");
 });
 
 test("T32 classifier: fixture sets are indoor; outdoor markers override indoor-looking chars", () => {

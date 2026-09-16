@@ -70,6 +70,7 @@ export function expandBoards(opts: {
         camera,
         marks: marksFor(shot, heightById),
         ...(shot.props?.length ? { props: shot.props } : {}),
+        ...(shot.require ? { require: { location: shot.require.location, angle: shot.require.angle ?? shot.angle } } : {}),
         stillPrompt: shot.action,
         motionPrompt: shot.action,
         scene: scene.id,

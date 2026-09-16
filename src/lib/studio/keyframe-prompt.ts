@@ -34,6 +34,27 @@ export function isIndoorLocation(location: string): boolean {
   return INDOOR_RE.test(location);
 }
 
+/** T32 rev2: photo-qc fail_reasons that mean "wrong place" — the pipeline
+ * returns these to 阿圖 to rewrite the scene slot, not to a prompt patch. */
+export function isLocationFail(failReasons: string[]): boolean {
+  return failReasons.some((r) => /location/i.test(r));
+}
+
+/** T32 rev2 scene slot: the boards packet's require.location writes the scene
+ * sentence (阿圖 authorial slot, sealed+zod upstream). The sheet 公版尾
+ * (`location, timeOfDay, weather`) is ONLY the fallback when the packet has no
+ * location — a packet never carries the sheet tail. Light angle from the packet:
+ * high ⇒ 頂光, low ⇒ 低位光, else eye ⇒ 均勻光. */
+export function sceneLine(sheet: CallSheet, shot: Shot): string {
+  const loc = shot.require?.location?.trim();
+  if (!loc) return `${sheet.location}，${sheet.timeOfDay}，${sheet.weather}。唔好加人。`;
+  if (isIndoorLocation(loc)) {
+    const light = shot.require?.angle === "low" ? "低位室內光" : shot.require?.angle === "eye" ? "均勻室內光" : "頂光";
+    return `${loc}：室內、冇窗、${light}；禁止街道、路燈、招牌燈箱、濕地反光；夜只由室內燈表達。唔好加人。`;
+  }
+  return `${loc}。唔好加人。`;
+}
+
 /** /edit prompt for one shot keyframe, naming images by slot. Under img_cfg 1.0
  *  the image branches only exist via Image-N tokens — the prompt must name them.
  *  Nothing scene-specific lives here; every name/wardrobe/prop comes from the sheet. */
@@ -74,12 +95,8 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
       ? "Image-2…Image-N 係上述角色嘅正面肖像，只借樣貌。"
       : `Image-2 係上一鏡嘅定格：兩人樣貌、衣服、${prop ? prop.name : "犁"}、光線同色調全部跟 Image-2，唯獨姿勢跟 Image-1。`,
   );
-  // T32: 室內鏡場景句跟鏡。霓虹/neon/night 連「禁止」句都唔寫 — 負面詞毒畫面，禁令寫做「招牌燈箱」。
-  lines.push(
-    isIndoorLocation(shot.location)
-      ? `${shot.location}：室內、冇窗、頂光；禁止街道、路燈、招牌燈箱、濕地反光；夜只由室內燈表達。唔好加人。`
-      : `${sheet.location}，${sheet.timeOfDay}，${sheet.weather}。唔好加人。`,
-  );
+  // T32 rev2: 場景句由阿圖 packet（shot.require）出；sheet 公版尾只 fallback。
+  lines.push(sceneLine(sheet, shot));
   return lines.join("\n");
 }
 

@@ -41,6 +41,14 @@ const boardShotShape = z.object({
   speaker: omittable(z.string().min(1).max(12)),
   cast: z.array(castSchema).min(1).max(CAST_PER_SHOT_MAX),
   props: omittable(z.array(propSchema).max(3)),
+  /** T32 rev2: per-shot scene slot the boards seat authors — location (and
+   * optionally its own light angle) the stills prompt must follow. */
+  require: omittable(
+    z.object({
+      location: z.string().min(1).max(60),
+      angle: omittable(z.enum(["eye", "high", "low"])),
+    }),
+  ),
 });
 
 const boardsSceneShape = z.object({
