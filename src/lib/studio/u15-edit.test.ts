@@ -149,8 +149,8 @@ test("first-appearance prompt names Image-1 (own f0) and Image-2.. (portraits)",
   const text = keyframeEditPrompt(promptSheet(), promptShot(true), { first: true });
   assert.ok(text.includes("Image-1"), "names Image-1");
   assert.ok(text.includes("Image-2…Image-N 係上述角色嘅正面肖像"), "portrait refs line");
-  assert.ok(text.includes("左起第1個人偶＝阿月"), "marks sorted by start.x — A (x30) is first");
-  assert.ok(text.includes("左起第2個人偶＝阿衡"), "B (x70) is second");
+  assert.ok(text.includes("左起第1個人偶＝Image-2 嘅臉（阿月）"), "marks sorted by start.x — A (x30) is first");
+  assert.ok(text.includes("左起第2個人偶＝Image-3 嘅臉（阿衡）"), "B (x70) is second");
   assert.ok(text.includes("深藍乾濕褸"), "wardrobe from sheet");
   assert.ok(text.includes("曲轅犁"), "prop name from sheet");
   assert.ok(text.includes("唔係锹、铲、锄"), "forbid list from sheet");

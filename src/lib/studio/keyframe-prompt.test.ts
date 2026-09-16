@@ -1,6 +1,23 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import * as nodeTest from "node:test";
-import { isIndoorLocation, isLocationFail, keyframeEditPrompt, keyframeRequire, negativePoison, propNounClass, sceneLine } from "./keyframe-prompt";
+import {
+  cjkCount,
+  isIndoorLocation,
+  isLocationFail,
+  isRoomNoun,
+  keyframeEditPrompt,
+  keyframeRequire,
+  negativePoison,
+  propNounClass,
+  sceneLine,
+  sceneRetryNormalize,
+  sceneRetrySchema,
+  sceneRetryUser,
+} from "./keyframe-prompt";
+import { chatJson, DEFAULT_CREW, SchemaMismatchError, type CrewConfig } from "./crew-llm";
 import { loadTraceFixture } from "./trace";
 import type { CallSheet, Character, Shot, ShotProp } from "./types";
 
@@ -57,6 +74,54 @@ function shotWithProp(prop?: ShotProp): Shot {
 
 const coat: ShotProp = { name: "軍大衣", heldBy: "A", shape: ["披", "肩"], forbid: ["木犁", "鐵犁鏵"] };
 const decree: ShotProp = { name: "通緝令", heldBy: "A", shape: ["紙", "字"], forbid: ["木犁", "鋤頭"] };
+
+test("T41 E1: fixture SH01 packet → /edit 150–300 中文字, require.location 原句, Image-1 錨", () => {
+  const { fx, sheet } = ldSheet();
+  const shot: Shot = { ...fx.shots[0]!, require: { location: "地下室", angle: "high", negatives: PACKET_NEGS } };
+  const text = keyframeEditPrompt({ ...sheet, shots: [shot] }, shot, { first: true });
+  const n = cjkCount(text);
+  assert.ok(n >= 150, `≥150 中文字，got ${n}`);
+  assert.ok(n <= 300, `≤300 中文字，got ${n}`);
+  assert.ok(text.includes("地下室"), "require.location 原句全文");
+  assert.ok(text.includes("完全照 Image-1"), "Image-1 錨句");
+  assert.ok(text.includes(`；禁止${PACKET_NEGS.join("、")}`), "packet negatives 組裝");
+});
+
+test("T41 E2: 六行電報薄 packet → 生成器拒出 prompt_too_thin", () => {
+  const thin: Shot = {
+    ...shotWithProp(),
+    marks: [shotWithProp().marks[0]!],
+    props: undefined,
+    stillPrompt: "",
+  };
+  const thinSheet: CallSheet = {
+    ...baseSheet,
+    characters: [{ ...baseSheet.characters[0]!, wardrobe: "衫" }],
+  };
+  assert.throws(() => keyframeEditPrompt(thinSheet, thin, { first: true }), /prompt_too_thin/, "薄 packet 拒出，唔交電報");
+});
+
+test("T32b C5: isRoomNoun 收場所名詞、拒機構全名；zod 同判", () => {
+  assert.equal(isRoomNoun("地下室"), true);
+  assert.equal(isRoomNoun("宿舍"), true);
+  assert.equal(isRoomNoun("走廊"), true);
+  assert.equal(isRoomNoun("總統府地下審判室"), false, "機構全名（府）拒");
+  assert.equal(isRoomNoun("滄瀾軍校男生宿舍"), false, "機構全名（軍校＋超 8 字）拒");
+  assert.equal(sceneRetrySchema.safeParse({ thinking: "改", location: "地下室" }).success, true);
+  const bad = sceneRetrySchema.safeParse({ thinking: "改", location: "總統府地下審判室" });
+  assert.equal(bad.success, false, "zod 拒機構全名");
+  assert.match(JSON.stringify(bad.error!.issues), /場所名詞/);
+});
+
+test("T32b C3: scene-retry 請求自帶 output_schema，例子用地下室", () => {
+  const { fx } = ldSheet();
+  const user = sceneRetryUser(fx.shots[0]!, ["location: 0/3"]);
+  assert.ok(user.includes("output_schema"), "packet 明文 output_schema");
+  assert.ok(user.includes("例：地下室"), "output_schema location 例用地下室");
+  assert.ok(!/"location": "[^"]*府/.test(user.replace(/currentLocation[^,]*,/, "")), "schema 例唔用劇名");
+  assert.ok(user.includes("灰模概念圖"), "Image-1 係灰模一句");
+  assert.ok(user.includes(fx.shots[0]!.location), "currentLocation 原句照抄畀阿圖判斷（輸出先受 C5 管制）");
+});
 
 test("garment prop: prompt names the coat as clothing, never a plow (SH07 class)", () => {
   const text = keyframeEditPrompt(baseSheet,shotWithProp(coat), { first: false });
@@ -166,13 +231,80 @@ function ldSheet(): { fx: LdFixture; sheet: CallSheet } {
   return { fx, sheet };
 }
 
-/** rev2 口徑: 阿圖 packet 載入 require.location（值由 fixture 數據出，唔入 src）。
- * Chau 17:48: negatives 同由 packet 出（呢度模擬阿圖按場景類別填嘅通用禁令）。 */
+/** rev2 口徑: 阿圖 packet 載入 require.location（Chau 22:24 後 packet 一律房間名詞）。 */
 const PACKET_NEGS = ["街道", "路燈", "招牌燈箱", "濕地反光"];
 
 function packetShots(fx: LdFixture): Shot[] {
-  return fx.shots.map((s) => ({ ...s, require: { location: s.location, angle: "high" as const, negatives: PACKET_NEGS } }));
+  return fx.shots.map((s) => ({ ...s, require: { location: "地下室", angle: "high" as const, negatives: PACKET_NEGS } }));
 }
+
+/** Injected fetch: replies in call order, one per call. No socket. */
+function fakeFetch(replies: string[]) {
+  let n = 0;
+  const impl = (async () => {
+    const content = replies[Math.min(n, replies.length - 1)]!;
+    n += 1;
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content, reasoning_content: "" } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }) as unknown as typeof fetch;
+  return impl;
+}
+
+const crewCfg: CrewConfig = { ...DEFAULT_CREW, endpoint: "http://crew.invalid:4000" };
+
+test("T32b C1: 阿圖回 charter 形 → sceneRetryNormalize map 後 valid=true", async () => {
+  const charterReply = JSON.stringify({
+    sceneId: "SC01",
+    thinking: "呢鏡係室內，改做地下室。",
+    shots: [
+      { beatId: "SC01.B01", size: "wide", angle: "high", require: { location: "地下室", angle: "high" } },
+    ],
+  });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "t32b-c1-"));
+  const out = await chatJson({
+    seat: "boards",
+    unit: "SH01.scene-retry",
+    model: "qwen-test",
+    crew: crewCfg,
+    system: "charter",
+    user: sceneRetryUser({ ...shotWithProp(), id: "SH01" }, ["location: 0/3"]),
+    schema: sceneRetrySchema,
+    normalize: sceneRetryNormalize,
+    receiptDir: dir,
+    fetchImpl: fakeFetch([charterReply]),
+  });
+  assert.equal(out.value.location, "地下室", "charter 形 shots[].require.location map 到頂層");
+});
+
+test("T32b C2: 垃圾 shape 三次 → SchemaMismatchError（schema_mismatch，attempt 0）", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "t32b-c2-"));
+  await assert.rejects(
+    chatJson({
+      seat: "boards",
+      unit: "SH01.scene-retry",
+      model: "qwen-test",
+      crew: crewCfg,
+      system: "charter",
+      user: sceneRetryUser({ ...shotWithProp(), id: "SH01" }, ["location: 0/3"]),
+      schema: sceneRetrySchema,
+      normalize: sceneRetryNormalize,
+      schemaJunkCeiling: 3,
+      receiptDir: dir,
+      sleepImpl: async () => {},
+      fetchImpl: fakeFetch([JSON.stringify({ nope: 1 }), JSON.stringify({ wrong: "shape" }), JSON.stringify({ shots: "not-an-array" })]),
+    }),
+    (err: unknown) => {
+      assert.ok(err instanceof SchemaMismatchError, "SchemaMismatchError");
+      assert.equal(err.reason, "schema_mismatch");
+      assert.equal(err.attemptsBurned, 0, "junk 唔燒 attempt");
+      assert.equal(err.receipts.length, 3, "三次垃圾各留收據");
+      return true;
+    },
+  );
+  assert.equal(fs.readdirSync(dir).length, 3, "三份收據檔名唔相撞（seq）");
+});
 
 test("T32 rev2 A1: packet require.location writes the scene line — prompt carries no sheet tail", () => {
   const { fx, sheet } = ldSheet();

@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { omittable } from "./script-contract";
 import type { CallSheet, Shot } from "./types";
 import type { QcRequire } from "./photo-qc";
 
@@ -48,6 +50,41 @@ export function negativePoison(negatives: string[]): string | null {
   return negatives.find((n) => NEG_POISON_RE.test(n)) ?? null;
 }
 
+/** Chau 22:24 / T32b C5: require.location is what the CAMERA SEES — a 2–8
+ * character room noun (地下室、宿舍、走廊). Institutional full names are the
+ * heading's牌, never the scene slot. 泛用機構詞，唔係故事名。 */
+const INSTITUTION_RE = /府|宮|殿|軍|校|部|局|署|國|總統|政府/;
+export function isRoomNoun(location: string): boolean {
+  const loc = location.trim();
+  return loc.length >= 2 && loc.length <= 8 && !INSTITUTION_RE.test(loc);
+}
+
+/** Fable 00:20 U1.5=A: the /edit brief is 150–300 中文字 — a six-line
+ * telegram is refuse-to-emit, not "written clearly". CJK count only. */
+export function cjkCount(text: string): number {
+  return (text.match(/[一-鿿]/g) ?? []).length;
+}
+export const EDIT_MIN_CJK = 150;
+
+/** T32b 裁3: 阿圖 answers in BOARDS_CHARTER shape ({sceneId,thinking,shots}),
+ * not in this lane's shape — map the first require-bearing shot onto the
+ * top-level scene slot instead of judging it junk. */
+export function sceneRetryNormalize(raw: unknown, note: (line: string) => void): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const obj = raw as Record<string, unknown>;
+  if (!Array.isArray(obj.shots)) return raw;
+  const hit = (obj.shots as Record<string, unknown>[]).find((s) => s && typeof s === "object" && s.require && typeof s.require === "object");
+  if (!hit) return raw;
+  const req = hit.require as Record<string, unknown>;
+  note("repair: charter 形 {shots[].require} map 落頂層 scene slot");
+  return {
+    thinking: typeof obj.thinking === "string" ? obj.thinking : "charter-shaped reply",
+    location: req.location,
+    ...(req.angle !== undefined ? { angle: req.angle } : {}),
+    ...(Array.isArray(req.negatives) ? { negatives: req.negatives } : {}),
+  };
+}
+
 /** T32 rev2 scene slot: the boards packet's require.location writes the scene
  * sentence (阿圖 authorial slot, sealed+zod upstream). The sheet 公版尾
  * (`location, timeOfDay, weather`) is ONLY the fallback when the packet has no
@@ -67,9 +104,48 @@ export function sceneLine(sheet: CallSheet, shot: Shot): string {
   return `${loc}${ban}。唔好加人。`;
 }
 
-/** /edit prompt for one shot keyframe, naming images by slot. Under img_cfg 1.0
- *  the image branches only exist via Image-N tokens — the prompt must name them.
- *  Nothing scene-specific lives here; every name/wardrobe/prop comes from the sheet. */
+/** T32b 裁1: the scene-retry request carries its own schema so 阿圖 doesn't
+ *  guess against the charter default — plus the Image-1 grey-model note and
+ *  the current location verbatim (with the room-noun rewrite rule). */
+export function sceneRetryUser(shot: Shot, failReasons: string[]): string {
+  const current = shot.require?.location ?? shot.location;
+  return JSON.stringify({
+    task: "只重寫呢一鏡嘅場景 slot",
+    shot: shot.id,
+    action: shot.action,
+    failReasons,
+    currentLocation: current,
+    note: "Image-1 係 Blender 灰模概念圖，唔係實景參考。",
+    rule: `location 寫返 2–8 字場所名詞（例：地下室、宿舍、走廊）。而家嗰句（${current}）如果係機構／劇名，唔好照抄 — 寫畫面真正見到嘅房。`,
+    output_schema: {
+      thinking: "string，最多三句",
+      location: "string，2–8 字場所名詞，例：地下室",
+      angle: "eye|high|low，可省",
+      negatives: "string[]，每項 2–12 字禁令，可省；唔可以有霓虹/neon/night",
+    },
+  });
+}
+
+/** T32b C1/C5: the scene-retry reply schema — 阿圖-shape replies are mapped in
+ *  by sceneRetryNormalize first; location must be a room noun; negatives stay
+ *  behind the T29 poison gate. Shared by the pipeline call and the tests. */
+export const sceneRetrySchema = z.object({
+  thinking: z.string().min(1).max(400),
+  location: z.string().min(2).max(8),
+  angle: omittable(z.enum(["eye", "high", "low"])),
+  negatives: omittable(z.array(z.string().min(1).max(12)).min(1).max(6)),
+}).refine((r) => isRoomNoun(r.location), {
+  message: "location 要係 2–8 字場所名詞（地下室、宿舍、走廊），唔係機構全名",
+  path: ["location"],
+}).refine((r) => !negativePoison(r.negatives ?? []), {
+  message: "negatives 唔可以有霓虹/neon/night — 負面詞毒畫面（T29 法）",
+  path: ["negatives"],
+});
+
+/** /edit prompt for one shot keyframe, Fable 00:20 U1.5=A form: 150–300 中文，
+ *  ordered Image-1 錨 → require.location 原句 → 衫著 → 道具／防農具 → negatives
+ *  （後兩者隨場景句）。PE 只潤色 — 呢度交出去嘅已經係完整 brief。薄 packet
+ *  組唔夠 150 中文字就拒出（prompt_too_thin），唔交六行電報。 */
 export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: boolean }): string {
   const ordered = [...shot.marks].sort((a, b) => a.start.x - b.start.x);
   const chars = ordered.map((m) => {
@@ -77,39 +153,36 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
     if (!hit) throw new Error(`${shot.id}: mark references unknown character ${m.characterId}`);
     return hit;
   });
-  const lines = [
-    "Image-1 係呢一鏡嘅 Blender 灰模概念圖：灰色人偶係角色佔位，唔係道具、唔係石頭。將呢張概念圖轉成 photoreal 實拍一格，",
-    "人偶位置、姿勢、比例、鏡位、地平線、背景結構、牆面、室內外完全照 Image-1。",
-  ];
-  chars.forEach((c, i) => {
-    lines.push(`左起第${i + 1}個人偶＝${c.name}（${c.role}）：${c.wardrobe}。`);
-  });
   const prop = shot.props?.[0];
   const cls = prop ? propNounClass(prop.name) : null;
+  const carried = prop ? prop.name : "犁";
+  const people = chars
+    .map((c, i) => `左起第${i + 1}個人偶＝Image-${i + 2} 嘅臉（${c.name}），衫著：${c.wardrobe}。`)
+    .join("");
+  let props = "";
   if (prop && cls === "garment") {
-    // clothing on the body, never farm vocabulary — a coat drawn as a plow blade is the SH07 regression
-    lines.push(
-      `${prop.name}係一件衣物：披上膊頭或者着住喺身嘅衣服，有領有袖，布料隨姿勢自然垂落，屬於角色造型一部分。`,
-    );
+    props = `【道具】${prop.name}係一件衣物：披上膊頭或者着住喺身嘅衣服，有領有袖，布料隨姿勢自然垂落。衣擺同身體、地面要有接觸同遮擋。`;
   } else if (prop && cls === "document") {
-    // flat paper document in the hands — never the plow sentence, never a tool
-    lines.push(
-      `${prop.name}係一張紙本文書：薄而平，可以喺手中展開、遞出或者攤開睇，上面有字有印；佢係文具唔係工具，畫面冇任何農具或者長柄器具。`,
-    );
+    props = `【道具】${prop.name}係一張紙本文書：薄而平，可以喺手中展開、遞出或者攤開睇，上面有字有印；佢係文具唔係工具，畫面冇任何農具或者長柄器具。`;
   } else if (prop) {
-    // "one blade, one tool" — U1.5's default farm tool is a multi-tine rake
-    lines.push(
-      `人偶手中／兩人之間嘅長條係${prop.name}：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具，背景冇任何其他工具；唔係${prop.forbid.join("、")}。`,
-    );
+    props = `【道具】人偶手中／兩人之間嘅長條係${prop.name}：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具；唔係${prop.forbid.join("、")}。`;
   }
-  lines.push(
-    opts.first
-      ? "Image-2…Image-N 係上述角色嘅正面肖像，只借樣貌。"
-      : `Image-2 係上一鏡嘅定格：兩人樣貌、衣服、${prop ? prop.name : "犁"}、光線同色調全部跟 Image-2，唯獨姿勢跟 Image-1。`,
-  );
-  // T32 rev2: 場景句由阿圖 packet（shot.require）出；sheet 公版尾只 fallback。
-  lines.push(sceneLine(sheet, shot));
-  return lines.join("\n");
+  const keep = opts.first
+    ? "【保留】Image-2…Image-N 係上述角色嘅正面肖像，只借五官同髮際。唔好加第三人。"
+    : `【保留】Image-2 係上一鏡嘅定格：樣貌、衣服、${carried}、光線同色調跟 Image-2，唯獨姿勢跟 Image-1。`;
+  const text = [
+    "將 Image-1 灰模概念圖轉成 photoreal 實拍；人偶係角色佔位，唔係道具。人偶位置、姿勢、比例、鏡位、地平線、背景結構、牆面、室內外完全照 Image-1。",
+    `【場景】${sceneLine(sheet, shot)}牆面、地面、影子畫清楚。`,
+    `【人物】${people}距離、身高照 Image-1。`,
+    props,
+    "【光影材質】布料、紙、金屬、水泥各有材質；手指、衣擺、道具同地面要有接觸遮擋。",
+    keep,
+  ].filter((s) => s.length > 0).join("\n\n");
+  const n = cjkCount(text);
+  if (n < EDIT_MIN_CJK) {
+    throw new Error(`prompt_too_thin: ${shot.id} /edit 只組到 ${n} 中文字（最少 ${EDIT_MIN_CJK}）— packet 太薄，生成器拒出（Fable 00:20 U1.5=A）`);
+  }
+  return text;
 }
 
 /** what photo QC requires of this shot's keyframe: the marks decide people_count;

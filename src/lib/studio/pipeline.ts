@@ -18,10 +18,8 @@ import { relInJob } from "./isolate";
 import { loadCallSheet } from "./writer";
 import { runWriter } from "./seat-writer";
 import { runBoards } from "./seat-boards";
-import { chatJson } from "./crew-llm";
+import { chatJson, SchemaMismatchError } from "./crew-llm";
 import { BOARDS_CHARTER } from "./seat-charters";
-import { omittable } from "./script-contract";
-import { z } from "zod";
 import { ensurePortraits } from "./portraits";
 import { ensureDir, jobDir, jobFile, projectsDir, seatsDir } from "./paths";
 import { runReflector } from "./reflector";
@@ -30,7 +28,7 @@ import { buildCutPlan, type CutPlan } from "./cut-plan";
 import { checkGate } from "./concat-gate";
 import { writeAnchors } from "./dhash-anchors";
 import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "./blockout";
-import { isLocationFail, keyframeEditPrompt, keyframeRequire, negativePoison } from "./keyframe-prompt";
+import { isLocationFail, keyframeEditPrompt, keyframeRequire, sceneRetryNormalize, sceneRetrySchema, sceneRetryUser } from "./keyframe-prompt";
 import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
 import type { H3GraphVariant } from "./h3-r2v-graph";
@@ -938,51 +936,58 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           to: "boards",
           payload: { shotId: shot.id, failReasons: result.checks.fail_reasons, current: shot.require?.location ?? shot.location },
         });
-        const rewrite = await chatJson({
-          seat: "boards",
-          unit: `${shot.id}.scene-retry`,
-          model: cfg.crew.boardsModel,
-          crew: cfg.crew,
-          system: BOARDS_CHARTER,
-          user: JSON.stringify({
-            task: "rewrite this shot's scene slot only",
-            shot: shot.id,
-            action: shot.action,
-            failReasons: result.checks.fail_reasons,
-            currentLocation: shot.require?.location ?? shot.location,
-            rule: "location 係阿圖嘅 authorial slot：寫返真場景（室內就寫室內場所名，唔好抄 sheet 外景）；天氣光線寫入 location 字串內，唔靠 sheet 尾。",
-          }),
-          schema: z.object({
-            thinking: z.string().min(1).max(400),
-            location: z.string().min(1).max(60),
-            angle: omittable(z.enum(["eye", "high", "low"])),
-            negatives: omittable(z.array(z.string().min(1).max(12)).min(1).max(6)),
-          }).refine((r) => !negativePoison(r.negatives ?? []), {
-            message: "negatives 唔可以有霓虹/neon/night — 負面詞毒畫面（T29 法）",
-            path: ["negatives"],
-          }),
-          receiptDir: path.join(jobDir(jobId), "seats"),
-        });
-        const next = rewrite.value;
-        promptShot = {
-          ...shot,
-          require: {
-            location: next.location,
-            angle: next.angle ?? shot.require?.angle,
-            ...(next.negatives?.length ? { negatives: next.negatives } : {}),
-          },
-        };
-        emit(jobId, {
-          agent: "pictureQc",
-          level: "warn",
-          message: `${shot.id} location FAIL — 退返阿圖重寫場景 slot（${next.location}），重出一次。`,
-          data: { stage: "retry", seat: "阿圖", shot: shot.id, packet: open(backToBoards, { slate: jobId, to: "boards" }) },
-          step_id: "require",
-          parent_steps: ["keyframe-prompt"],
-          seat: "pictureQc",
-          constraints_checked: ["photo-qc"],
-        });
-        editInputs.set(shot.id, { ...inputs0, prompt: keyframeEditPrompt(timed, promptShot, { first }) });
+        // T32b: 請求自帶 schema（阿圖唔使估）＋charter 形 map＋junk 另計 ceiling 3
+        let next: { location: string; angle?: "eye" | "high" | "low"; negatives?: string[] } | null = null;
+        try {
+          const rewrite = await chatJson({
+            seat: "boards",
+            unit: `${shot.id}.scene-retry`,
+            model: cfg.crew.boardsModel,
+            crew: cfg.crew,
+            system: BOARDS_CHARTER,
+            user: sceneRetryUser(shot, result.checks.fail_reasons),
+            schema: sceneRetrySchema,
+            normalize: sceneRetryNormalize,
+            schemaJunkCeiling: 3,
+            receiptDir: path.join(jobDir(jobId), "seats"),
+          });
+          next = rewrite.value;
+        } catch (err) {
+          if (!(err instanceof SchemaMismatchError)) throw err;
+          // T32b 裁4：shape 唔啱停喺 schema_mismatch，attempt 0 — 唔食 ceiling，
+          // 阿圖 rewrite 作罷，行返通用 retry（起碼一張 /edit 出到）。
+          emit(jobId, {
+            agent: "pictureQc",
+            level: "warn",
+            message: `${shot.id} 阿圖 scene-retry shape 三次都唔啱（schema_mismatch）— rewrite 作罷，行通用 retry。`,
+            data: { stage: "retry", seat: "阿圖", reason: err.reason, attempts: err.attemptsBurned, shot: shot.id, receipts: err.receipts },
+            step_id: "require",
+            parent_steps: ["keyframe-prompt"],
+            seat: "pictureQc",
+            constraints_checked: ["photo-qc"],
+          });
+        }
+        if (next) {
+          promptShot = {
+            ...shot,
+            require: {
+              location: next.location,
+              angle: next.angle ?? shot.require?.angle,
+              ...(next.negatives?.length ? { negatives: next.negatives } : {}),
+            },
+          };
+          emit(jobId, {
+            agent: "pictureQc",
+            level: "warn",
+            message: `${shot.id} location FAIL — 退返阿圖重寫場景 slot（${next.location}），重出一次。`,
+            data: { stage: "retry", seat: "阿圖", shot: shot.id, packet: open(backToBoards, { slate: jobId, to: "boards" }) },
+            step_id: "require",
+            parent_steps: ["keyframe-prompt"],
+            seat: "pictureQc",
+            constraints_checked: ["photo-qc"],
+          });
+          editInputs.set(shot.id, { ...inputs0, prompt: keyframeEditPrompt(timed, promptShot, { first }) });
+        }
       }
       if (result.status === "FAIL") {
 

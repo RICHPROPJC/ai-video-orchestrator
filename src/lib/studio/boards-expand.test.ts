@@ -234,27 +234,31 @@ test("T32 Chau 17:48: require.negatives are packet data — poison gated at zod,
   });
 
   const clean = structuredClone(boards[0]!);
-  clean.shots[0]!.require = { location: "a sealed room", angle: "high", negatives: ["street", "lamp glare"] };
-  assert.equal(schema.safeParse(clean).success, true, "clean packet negatives parse");
+  clean.shots[0]!.require = { location: "地下室", angle: "high", negatives: ["街道", "路燈"] };
+  assert.equal(schema.safeParse(clean).success, true, "clean packet negatives parse (C5 房名詞)");
 
   const poisoned = structuredClone(boards[0]!);
-  poisoned.shots[0]!.require = { location: "a sealed room", negatives: ["neon signs"] };
+  poisoned.shots[0]!.require = { location: "地下室", negatives: ["neon signs"] };
   assert.match(JSON.stringify(schema.safeParse(poisoned).error!.issues), /negatives/, "poison token rejected at the contract");
+
+  const named = structuredClone(boards[0]!);
+  named.shots[0]!.require = { location: "總統府地下審判室" };
+  assert.match(JSON.stringify(schema.safeParse(named).error!.issues), /場所名詞/, "T32b C5: 機構全名拒");
 
   const withReq = boards.map((b, i) =>
     i === 0
       ? {
           ...b,
           shots: b.shots.map((s, j) =>
-            j === 0 ? { ...s, require: { location: "a sealed room", angle: "high" as const, negatives: ["street", "lamp glare"] } } : s,
+            j === 0 ? { ...s, require: { location: "地下室", angle: "high" as const, negatives: ["街道", "路燈"] } } : s,
           ),
         }
       : b,
   );
   const carried = expandBoards({ script, boards: withReq, targetSec: TARGET, aspect: "16:9" });
-  assert.equal(carried.shots[0]!.require?.location, "a sealed room");
+  assert.equal(carried.shots[0]!.require?.location, "地下室");
   assert.equal(carried.shots[0]!.require?.angle, "high", "angle defaults from shot.angle when packet omits it");
-  assert.deepEqual(carried.shots[0]!.require?.negatives, ["street", "lamp glare"], "negatives ride the packet into the Shot");
+  assert.deepEqual(carried.shots[0]!.require?.negatives, ["街道", "路燈"], "negatives ride the packet into the Shot");
 });
 
 test("the boards schema covers every beat, quotes the line verbatim and seats the speaker", () => {

@@ -180,6 +180,22 @@ const HTTP_429_BACKOFF_MS = [20_000, 40_000, 80_000];
  *  attempts plus at most 2 junk passes, 5 HTTP calls, then it throws. */
 const CALL_CEILING = 5;
 
+/** Fable T32b 裁4: schema-invalid is junk of a second kind — it must not burn
+ * the counted attempts nor hide behind the 5-call ceiling. A seat using
+ * schemaJunkCeiling re-asks shape-missed replies for free until its own
+ * ceiling, then stops with this error (reason schema_mismatch, attempts = the
+ * attempts that DID burn, typically 0). */
+export class SchemaMismatchError extends Error {
+  readonly reason = "schema_mismatch";
+  constructor(
+    readonly seatUnit: string,
+    readonly attemptsBurned: number,
+    readonly receipts: string[],
+  ) {
+    super(`seat ${seatUnit} schema_mismatch: junk ceiling reached at ${attemptsBurned} counted attempt(s) — shape never matched, attempts not burned`);
+  }
+}
+
 /** One seat turn: charter as system, sealed packet as the only user content,
  *  zod as the gate. Every attempt leaves a receipt, valid or not. */
 export type ChatJsonOpts<T> = {
@@ -193,6 +209,10 @@ export type ChatJsonOpts<T> = {
   receiptDir: string;
   maxAttempts?: number;
   normalize?: (raw: unknown, note: RepairNote) => unknown;
+  /** T32b 裁4: schema-invalid replies re-ask free under their own junk
+   * ceiling instead of burning maxAttempts; at the ceiling a
+   * SchemaMismatchError escapes (reason schema_mismatch, attempts unburned). */
+  schemaJunkCeiling?: number;
   fetchImpl?: typeof fetch;
   /** test clock: receives every backoff wait instead of really sleeping */
   sleepImpl?: (ms: number) => Promise<void>;
@@ -246,6 +266,8 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
   };
 
   let attempt = 0;
+  let seq = 0;
+  let schemaInvalid = 0;
   let calls = 0;
   let repairs: string[] = [];
   while (attempt < maxAttempts) {
@@ -319,12 +341,22 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
       repairs,
       elapsed_ms: Date.now() - started,
     };
-    const file = path.join(opts.receiptDir, `${opts.seat}.${opts.unit}.${attempt}.json`);
+    seq += 1;
+    const file = path.join(opts.receiptDir, `${opts.seat}.${opts.unit}.${seq}.json`);
     fs.writeFileSync(file, JSON.stringify(receipt, null, 2));
     receipts.push(path.basename(file));
 
     if (errors.length === 0) return { value: value as T, model: opts.model, receipts };
 
+    if (opts.schemaJunkCeiling !== undefined) {
+      // T32b 裁4: refund the optimistic burn — a shape-missed reply is junk
+      // of a second kind. Free re-ask under its own ceiling, then stop loud.
+      attempt -= 1;
+      schemaInvalid += 1;
+      if (schemaInvalid >= opts.schemaJunkCeiling) {
+        throw new SchemaMismatchError(`${opts.seat} ${opts.unit}`, attempt, receipts);
+      }
+    }
     messages.push({ role: "assistant", content });
     messages.push({ role: "user", content: retryUserText(errors, content) });
   }
