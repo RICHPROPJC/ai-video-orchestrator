@@ -414,9 +414,16 @@ export async function runPhotoQc(
   if (fs.existsSync(outJson)) {
     try {
       const existing = JSON.parse(fs.readFileSync(outJson, "utf8")) as PhotoQcRecord;
+      // T35b-cache: every terminal verdict caches - GREEN, PASS_UNCONFIRMED,
+      // PASS_WITH_WARN and FAIL alike. Only a summary-parse record re-runs (the
+      // gate itself never issued a verdict there). sha+require+second-eye law
+      // unchanged; parameters untouched (envelope).
+      const cachedSummary = existing.summary as Record<string, unknown> | undefined;
+      const summaryParsed = !!cachedSummary && typeof cachedSummary === "object" && !("parse_error" in cachedSummary);
       if (
         existing.tool === "slatecrew.photo_qc" &&
-        (existing.status === "GREEN" || existing.status === "PASS_UNCONFIRMED") &&
+        ["GREEN", "PASS_UNCONFIRMED", "PASS_WITH_WARN", "FAIL"].includes(existing.status) &&
+        summaryParsed &&
         existing.sha256 === digest &&
         sameRequire(existing.require, require) &&
         (!secondCfg || existing.second?.model === secondCfg.model)

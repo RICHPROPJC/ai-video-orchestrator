@@ -612,6 +612,94 @@ test("T35b A8: all-black and all-white frames fail empty_frame", async () => {
   }
 });
 
+test("T35b-cache: warn and FAIL receipts cache; parse-error does not", async () => {
+  const http = await import("node:http");
+  const sharp = (await import("sharp")).default;
+  const W = 640, H = 360, CUT = Math.floor(H * 0.7);
+  const mkPng = async (dir: string, name: string, flat: boolean) => {
+    const png = path.join(dir, name);
+    if (flat) {
+      await sharp({ create: { width: W, height: H, channels: 3, background: { r: 122, g: 122, b: 122 } } }).png().toFile(png);
+    } else {
+      const buf = Buffer.alloc(W * H * 3);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const o = (y * W + x) * 3;
+        if (y < CUT) { buf[o] = 122; buf[o + 1] = 122; buf[o + 2] = 122; }
+        else { buf[o] = Math.floor(Math.random() * 256); buf[o + 1] = Math.floor(Math.random() * 256); buf[o + 2] = Math.floor(Math.random() * 256); }
+      }
+      await sharp(buf, { raw: { width: W, height: H, channels: 3 } }).png().toFile(png);
+    }
+    return png;
+  };
+  const mkEye = (summary: string) => {
+    let calls = 0;
+    const server = http.createServer((_req, res) => {
+      let body = "";
+      _req.on("data", (c) => (body += c));
+      _req.on("end", () => {
+        if ((_req.url ?? "").includes("/v1/models")) {
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ data: [{ id: "fixture-eye" }] }));
+          return;
+        }
+        calls += 1;
+        const content = (JSON.parse(body) as { messages: { content: unknown }[] }).messages[0]!.content;
+        const reply = Array.isArray(content) ? "一个人企喺房中间。" : summary;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
+      });
+    });
+    return { server, calls: () => calls };
+  };
+  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
+  delete process.env.SLATECREW_SECOND_ENDPOINT;
+  try {
+    // warn receipt caches: resume does not re-hit the eye
+    const dirA = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t35bc-a-"));
+    const warnPng = await mkPng(dirA, "SH01.png", false);
+    const eyeA = mkEye('{"people_count":1,"grey_blocks":false,"size_notes":"medium"}');
+    await new Promise<void>((r) => eyeA.server.listen(0, "127.0.0.1", r));
+    const portA = (eyeA.server.address() as { port: number }).port;
+    const recA1 = await runPhotoQc(warnPng, path.join(dirA, "SH01.photo_qc.json"), { people_count: 1, grey_blocks: false, size: "medium" }, {}, { first: { url: `http://127.0.0.1:${portA}`, model: "fixture-eye" } });
+    assert.equal(recA1.status, "PASS_WITH_WARN");
+    eyeA.server.close();
+    const recA2 = await runPhotoQc(warnPng, path.join(dirA, "SH01.photo_qc.json"), { people_count: 1, grey_blocks: false, size: "medium" }, {}, { first: { url: `http://127.0.0.1:${portA}`, model: "fixture-eye" } });
+    assert.equal(recA2.status, "PASS_WITH_WARN", "warn receipt must cache (server closed)");
+    assert.equal(eyeA.calls(), 2, "eye call count must not grow after close");
+
+    // FAIL receipt caches the same way
+    const dirB = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t35bc-b-"));
+    const failPng = await mkPng(dirB, "SH02.png", true);
+    const eyeB = mkEye('{"people_count":1,"grey_blocks":true,"size_notes":"medium"}');
+    await new Promise<void>((r) => eyeB.server.listen(0, "127.0.0.1", r));
+    const portB = (eyeB.server.address() as { port: number }).port;
+    const recB1 = await runPhotoQc(failPng, path.join(dirB, "SH02.photo_qc.json"), { people_count: 1, grey_blocks: false, size: "medium" }, {}, { first: { url: `http://127.0.0.1:${portB}`, model: "fixture-eye" } });
+    assert.equal(recB1.status, "FAIL");
+    eyeB.server.close();
+    const recB2 = await runPhotoQc(failPng, path.join(dirB, "SH02.photo_qc.json"), { people_count: 1, grey_blocks: false, size: "medium" }, {}, { first: { url: `http://127.0.0.1:${portB}`, model: "fixture-eye" } });
+    assert.equal(recB2.status, "FAIL", "FAIL receipt must cache (server closed)");
+
+    // parse-error record does NOT cache: the eye gets hit again
+    const dirC = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t35bc-c-"));
+    const pPng = await mkPng(dirC, "SH03.png", true);
+    const eyeC = mkEye("summary is not json at all {{{");
+    await new Promise<void>((r) => eyeC.server.listen(0, "127.0.0.1", r));
+    const portC = (eyeC.server.address() as { port: number }).port;
+    const recC1 = await runPhotoQc(pPng, path.join(dirC, "SH03.photo_qc.json"), { people_count: 1, grey_blocks: false, size: "medium" }, {}, { first: { url: `http://127.0.0.1:${portC}`, model: "fixture-eye" } });
+    assert.equal(recC1.status, "FAIL");
+    assert.ok("parse_error" in (recC1.summary as Record<string, unknown>), "fixture must produce parse_error record");
+    eyeC.server.close();
+    await assert.rejects(
+      runPhotoQc(pPng, path.join(dirC, "SH03.photo_qc.json"), { people_count: 1, grey_blocks: false, size: "medium" }, {}, { first: { url: `http://127.0.0.1:${portC}`, model: "fixture-eye" } }),
+      undefined,
+      "parse-error record must not cache - eye would be hit (server closed => throw)",
+    );
+  } finally {
+    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
+    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
+  }
+});
+
 if (bareBun) {
   void (async () => {
     let failed = 0;

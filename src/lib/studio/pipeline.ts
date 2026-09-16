@@ -718,8 +718,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         });
         return;
       }
+      const warns = (result.checks.warns as string[] | undefined) ?? [];
       if (result.status === "PASS_WITH_WARN") {
-        const warns = (result.checks.warns as string[] | undefined) ?? [];
         emit(jobId, {
           agent: "pictureQc",
           level: "warn",
@@ -731,7 +731,12 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           constraints_checked: ["photo-qc"],
         });
       }
-      await speak("pictureQc", `${shot.id} GREEN（人數 ${require.people_count}）`, "pass");
+      if (result.status === "PASS_WITH_WARN") {
+        // T35b-cache: a warned still never speaks GREEN/pass — the warn is the headline.
+        await speak("pictureQc", `${shot.id} PASS_WITH_WARN（${warns.join("; ")}）`, "warn");
+      } else {
+        await speak("pictureQc", `${shot.id} GREEN（人數 ${require.people_count}）`, "pass");
+      }
     }
     trace.mars = `MARS ${cfg.pictureQc.endpoint} (${cfg.pictureQc.model})`;
     job = patch(job, { pictureQcStills: geometry, providers: trace, progress: 55 });
