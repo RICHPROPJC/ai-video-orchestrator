@@ -109,6 +109,11 @@ test("resume + all stills GREEN skips portraits and reaches motion-prep", async 
   const cwd = process.cwd();
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pipe-skip-"));
   process.chdir(tmp);
+  // T39: the earn GPU gate reads the real /mnt/ssd/earn/.lock by default —
+  // point it at a nonexistent temp path so a parked earn lock can never hang
+  // this test (the gate itself is covered in earn-gpu-lock.test.ts)
+  const hadLockEnv = process.env.SLATECREW_EARN_LOCK;
+  process.env.SLATECREW_EARN_LOCK = path.join(tmp, "no-earn.lock");
   try {
     const jobId = "SC-0913-SKIP";
     const sheet = resumeSheet();
@@ -174,6 +179,8 @@ test("resume + all stills GREEN skips portraits and reaches motion-prep", async 
     );
     assert.ok(events.some((e) => e.agent === "motion" && e.message.includes("packet")), events.map((e) => e.message).join(" | "));
   } finally {
+    if (hadLockEnv === undefined) delete process.env.SLATECREW_EARN_LOCK;
+    else process.env.SLATECREW_EARN_LOCK = hadLockEnv;
     process.chdir(cwd);
     fs.rmSync(tmp, { recursive: true, force: true });
   }

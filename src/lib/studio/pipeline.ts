@@ -6,6 +6,7 @@ import { readWavMono, runCommand } from "./audio";
 import { emit, readJob, writeJob } from "./store";
 import { renderBlockingSvg, sceneSize } from "./painter";
 import { localPictureQc, localSoundQc, senseVoiceHttp } from "./providers";
+import { shouldWaitEarnLock, waitEarnGpuLock } from "./earn-gpu-lock";
 import { loadConfig, type SlateConfig } from "./config";
 import type { AgentId, CallSheet, JobRecord, ProduceInput, ProviderTrace, Shot } from "./types";
 import { floorLine, seat } from "./crew";
@@ -590,6 +591,14 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     let prevKeyframe: string | null = null;
     const editInputs = new Map<string, { prompt: string; nodePaths: string[]; base: string; refs: string[]; first: boolean }>();
     const greenAlready = new Set<string>();
+    // T39: earn out-earns us on this U1.5/H3 pair — before the first /edit
+    // (and everything downstream) wait on earn's lock; dry-run and
+    // boards/blockout runs never POST the pair, so they never wait
+    if (shouldWaitEarnLock(input)) {
+      await waitEarnGpuLock({
+        speak: () => speak("stills", "earn GPU lock，等", "warn"),
+      });
+    }
     // g6 hop geometry: stills + picture QC run only the hop's shots; the rest
     // of the slate's stills land in other hops, so both lanes crop to the hop
     const hopStillIds = new Set(shotsForScene(timed.shots, input.scene).map((s) => s.id));
