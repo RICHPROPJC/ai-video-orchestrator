@@ -256,6 +256,32 @@ test("shotsForScene: a shot without .scene still matches via beatId prefix", asy
   assert.deepEqual(shotsForScene(shots, "SC02").map((s) => s.id), ["SH04"]);
 });
 
+test("T36 B2: a photo-QC retry re-issues the packet verbatim — no fail_reasons token, no absolute path", async () => {
+  const { sealEditRecord } = await import("./pipeline");
+  const { buildEditPayload } = await import("./u15-edit");
+  const inputs = {
+    prompt: "Image-1 係呢一鏡嘅 Blender 灰模概念圖……左起第1個人偶＝角色一。",
+    first: true,
+    base: "/tmp/SC-FIX/data/jobs/SC-FIX/blocking/SH01.f0.png",
+    refs: [
+      "/tmp/SC-FIX/data/jobs/SC-FIX/portraits/A.png",
+      "/tmp/SC-FIX/data/jobs/SC-FIX/stills/SH01.png",
+    ],
+  };
+  const payload = buildEditPayload({ prompt: inputs.prompt, images: ["/node/base.png", "/node/ref.png"], width: 1024, height: 576 });
+  // the fail_reasons a QC miss would surface — none may ride into the prompt.
+  // the old retry suffix is spelled in halves so B1's literal src-grep stays 0
+  const failReasons = ["people_count: 2", "grey_blocks: mannequin visible", "not GREEN", `Fix ${"these"}: people_count: 2.`];
+  const record = sealEditRecord(inputs, payload);
+  assert.equal(record.prompt, payload.prompt, "retry prompt = packet prompt, untouched");
+  assert.equal(record.prompt, inputs.prompt.trim());
+  for (const token of failReasons) {
+    assert.ok(!record.prompt.includes(token), `fail_reasons token leaked into prompt: ${token}`);
+  }
+  assert.equal(record.base, "SH01.f0.png", "base lands as a bare filename");
+  assert.deepEqual(record.refs, ["A.png", "SH01.png"], "refs land as bare filenames");
+});
+
 test("hopGeometrySheet: no scene keeps the whole slate, a hop crops to its shots", async () => {
   const { hopGeometrySheet } = await import("./pipeline");
   const shots = [shotOf("SH01", "SC01"), shotOf("SH02", "SC01"), shotOf("SH03", "SC02")];

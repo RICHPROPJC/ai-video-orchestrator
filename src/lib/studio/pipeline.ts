@@ -29,7 +29,7 @@ import { keyframeEditPrompt, keyframeRequire, loadBaseCast } from "./keyframe-pr
 import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
 import type { H3GraphVariant } from "./h3-r2v-graph";
-import { checkHealth, buildEditPayload, u15Edit, type U15EditRecord } from "./u15-edit";
+import { checkHealth, buildEditPayload, u15Edit, type EditPayload, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
 import { runPhotoQc, pinQcAccepted, type QcRequire } from "./photo-qc";
 import { pinVideoQcAccepted, runVideoQc } from "./video-qc";
@@ -155,6 +155,28 @@ export function shotsForScene(shots: Shot[], scene?: string): Shot[] {
  *  healthy SC01 hop (LD0F). Same no-match throw as the H3 crop. */
 export function hopGeometrySheet(sheet: CallSheet, scene?: string): CallSheet {
   return scene ? { ...sheet, shots: shotsForScene(sheet.shots, scene) } : sheet;
+}
+
+/** T36 law, both stills /edit records go through here: base／refs land in the
+ *  JSON as bare filenames — zero absolute paths inside job records — and the
+ *  prompt is whatever 阿圖's packet said, verbatim. */
+export function sealEditRecord(
+  inputs: { prompt: string; first: boolean; base: string; refs: string[] },
+  payload: EditPayload,
+): Pick<U15EditRecord, "ts" | "prompt" | "img_cfg" | "cfg" | "steps" | "use_edit_pe" | "width" | "height" | "first" | "base" | "refs"> {
+  return {
+    ts: new Date().toISOString(),
+    prompt: payload.prompt,
+    img_cfg: payload.img_cfg_scale,
+    cfg: payload.cfg_scale,
+    steps: payload.num_steps,
+    use_edit_pe: payload.use_edit_pe,
+    width: payload.width,
+    height: payload.height,
+    first: inputs.first,
+    base: path.basename(inputs.base),
+    refs: inputs.refs.map((f) => path.basename(f)),
+  };
 }
 
 /** Speaking parts must be castable, so the roster is read from a data file the
@@ -618,19 +640,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         outFile: out,
         recordJson,
         health,
-        record: {
-          ts: new Date().toISOString(),
-          prompt,
-          img_cfg: payload.img_cfg_scale,
-          cfg: payload.cfg_scale,
-          steps: payload.num_steps,
-          use_edit_pe: payload.use_edit_pe,
-          width: payload.width,
-          height: payload.height,
-          first,
-          base,
-          refs: refFiles,
-        },
+        record: sealEditRecord({ prompt, first, base, refs: refFiles }, payload),
       });
       editInputs.set(shot.id, { prompt, nodePaths, base, refs: refFiles, first });
       prevKeyframe = out;
@@ -685,13 +695,30 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       if (result.status !== "GREEN") {
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
         appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
-        await speak("pictureQc", `${shot.id} 唔過（${reasons}）— 補一句 prompt 再 /edit 一次。`, "warn");
+        // T36 law: fail_reasons go to events + violations only, never into the
+        // prompt — the old retry suffix taught the stills model to game its own
+        // QC by quoting its fail reasons back at it. retry = the 阿圖 packet
+        // re-issued verbatim (same base, same refs, same lane settings); if it
+        // fails again the job blocks below.
+        emit(jobId, {
+          agent: "pictureQc",
+          level: "warn",
+          message: `${shot.id} 唔過（fail_reasons 只入 events，唔入 prompt）`,
+          data: {
+            shot: shot.id, require, fail_reasons: result.checks.fail_reasons,
+            stage: "require", eye: "pictureQc", verdict: "fail",
+            proof: `stills/${shot.id}.photo_qc.json`, ms: Date.now() - qcStarted,
+          },
+          step_id: "require",
+          parent_steps: ["keyframe-prompt"],
+          seat: "pictureQc",
+          constraints_checked: ["photo-qc"],
+        });
+        await speak("pictureQc", `${shot.id} 唔過（${reasons}）— 原封重出同一 packet 一次。`, "warn");
         const inputs = editInputs.get(shot.id);
         if (!inputs) throw new Error(`picture QC ${shot.id}: no /edit inputs to retry with`);
-        // retry changes only the prompt: same base, same refs, same lane settings
-        const retryPrompt = `${inputs.prompt} Fix these: ${reasons}.`;
         const payload = buildEditPayload({
-          prompt: retryPrompt,
+          prompt: inputs.prompt,
           images: inputs.nodePaths,
           width: cfg.stills.width || size.width,
           height: cfg.stills.height || size.height,
@@ -703,19 +730,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           outFile: png,
           recordJson: path.join(stillDir, `${shot.id}.u15_edit.retry.json`),
           health: await checkHealth(cfg.stills.url, inputs.nodePaths.length),
-          record: {
-            ts: new Date().toISOString(),
-            prompt: retryPrompt,
-            img_cfg: payload.img_cfg_scale,
-            cfg: payload.cfg_scale,
-            steps: payload.num_steps,
-            use_edit_pe: payload.use_edit_pe,
-            width: payload.width,
-            height: payload.height,
-            first: inputs.first,
-            base: inputs.base,
-            refs: inputs.refs,
-          },
+          record: sealEditRecord(inputs, payload),
         });
         result = await runPhotoQc(png, qcJson, require);
       }
