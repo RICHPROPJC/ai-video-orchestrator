@@ -782,10 +782,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       } else {
         await speak("pictureQc", `${shot.id} GREEN（人數 ${require.people_count}）`, "pass");
       }
-      await buildShotSheet(shot.id, require, inputs?.prompt ?? shot.stillPrompt ?? "");
+      await buildShotSheet(shot.id, require, editInputs.get(shot.id)?.prompt ?? shot.stillPrompt ?? "");
     }
     writeSceneSheetHtml();
-    }
     trace.mars = `MARS ${cfg.pictureQc.endpoint} (${cfg.pictureQc.model})`;
     job = patch(job, { pictureQcStills: geometry, providers: trace, progress: 55 });
     if (input.until === "stills") {
