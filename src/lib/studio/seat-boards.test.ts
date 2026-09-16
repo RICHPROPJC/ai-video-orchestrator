@@ -380,6 +380,83 @@ test("padBoardDurations drops heldBy when that letter is not in the shot cast", 
   assert.equal(padded.shots[0]!.props[0]!.heldBy, undefined);
 });
 
+test("2Y0V grave: gait word in stanceEnd and depth word in travelTo drop before zod, no retry burned", () => {
+  // b5+b6 pre-send self-check: both enum misses used to fail zod and burn a
+  // fail-closed ×3 repair round; the desk now drops them with a receipt line
+  const raw = {
+    sceneId: "SC01",
+    thinking: "修。",
+    shots: [{
+      beatId: "SC01.B01",
+      size: "medium" as const,
+      angle: "eye" as const,
+      side: "frontal" as const,
+      durationSec: 6.5,
+      action: "holds",
+      dialogue: "",
+      cast: [{ characterId: "A", slot: "C" as const, depth: "mid" as const, facing: 1 as const, gait: "plant" as const, stance: "stand" as const, stanceEnd: "walk" as unknown as "lean", travelTo: "far" as unknown as "R" }],
+    }],
+  };
+  const beats = [{ id: "SC01.B01", action: "holds" }];
+  const schema = boardsSceneSchema({
+    sceneId: "SC01",
+    beats,
+    characters: [{ id: "A", name: "Cast-A" }],
+    budgetSec: 7,
+  });
+  assert.equal(schema.safeParse(raw).success, false, "the grave must fail zod before the pad");
+  const notes: string[] = [];
+  const repaired = padBoardDurations(raw, 7, (line) => notes.push(line));
+  const parsed = schema.safeParse(repaired);
+  assert.equal(parsed.success, true, JSON.stringify(parsed.success ? [] : parsed.error?.issues.map((i) => i.message)));
+  assert.equal(parsed.data!.shots[0]!.cast[0]!.stanceEnd, undefined);
+  assert.equal(parsed.data!.shots[0]!.cast[0]!.travelTo, undefined);
+  assert.ok(notes.some((l) => l === 'repair: shots[0].cast[0].stanceEnd saw "walk" became (dropped: gait word, not a stance)'), notes.join(" | "));
+  assert.ok(notes.some((l) => l === 'repair: shots[0].cast[0].travelTo saw "far" became (dropped: depth word, not a slot)'), notes.join(" | "));
+});
+
+test("BO9W grave: two figures on C/mid — the later one is nudged to a free seat before zod", () => {
+  // b7 pre-send self-check: the shared-seat custom issue used to fail zod and
+  // burn a repair round; the desk now moves the later figure, valid fields survive
+  const raw = {
+    sceneId: "SC01",
+    thinking: "修。",
+    shots: [{
+      beatId: "SC01.B01",
+      size: "medium" as const,
+      angle: "eye" as const,
+      side: "frontal" as const,
+      durationSec: 6.5,
+      action: "holds",
+      dialogue: "",
+      cast: [
+        { characterId: "A", slot: "C" as const, depth: "mid" as const, facing: 1 as const, gait: "plant" as const, stance: "stand" as const, stanceEnd: "lean" as const, travelTo: "R" as const },
+        { characterId: "B", slot: "C" as const, depth: "mid" as const, facing: -1 as const, gait: "plant" as const, stance: "stand" as const },
+      ],
+    }],
+  };
+  const beats = [{ id: "SC01.B01", action: "holds" }];
+  const schema = boardsSceneSchema({
+    sceneId: "SC01",
+    beats,
+    characters: [
+      { id: "A", name: "Cast-A" },
+      { id: "B", name: "Cast-B" },
+    ],
+    budgetSec: 7,
+  });
+  assert.equal(schema.safeParse(raw).success, false, "the grave must fail zod before the pad");
+  const notes: string[] = [];
+  const repaired = padBoardDurations(raw, 7, (line) => notes.push(line));
+  const parsed = schema.safeParse(repaired);
+  assert.equal(parsed.success, true, JSON.stringify(parsed.success ? [] : parsed.error?.issues.map((i) => i.message)));
+  const seats = parsed.data!.shots[0]!.cast.map((c) => `${c.slot}/${c.depth}`);
+  assert.deepEqual(seats, ["C/mid", "L/mid"], "the later figure moves to the first free seat at the same depth");
+  assert.equal(parsed.data!.shots[0]!.cast[0]!.stanceEnd, "lean", "valid fields survive the self-check");
+  assert.equal(parsed.data!.shots[0]!.cast[0]!.travelTo, "R");
+  assert.ok(notes.some((l) => l === 'repair: shots[0].cast[1].slot saw "C" became "L" (seat C/mid already taken in this shot)'), notes.join(" | "));
+});
+
 test("recoverBoardsKeys maps qwen punctuation keys onto sceneId", () => {
   assert.equal((recoverBoardsKeys({ ".": "SC04", shots: [] }) as { sceneId: string }).sceneId, "SC04");
   assert.equal((recoverBoardsKeys({ ",": "SC02", thinking: "x" }) as { sceneId: string }).sceneId, "SC02");

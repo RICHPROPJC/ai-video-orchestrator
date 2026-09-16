@@ -12,15 +12,21 @@ const CAST_PER_SHOT_MAX = 3;
  *  normalised before they get here, so holding every scene holds the film. */
 export const SCENE_BUDGET_TOLERANCE = 0.09;
 
+/** The b5/b6 narrow-slot vocabularies, exported so the boards desk's pre-send
+ *  self-check (padBoardDurations) repairs against the same enums zod gates. */
+export const SLOT_VALUES = ["L", "C", "R"] as const;
+export const DEPTH_VALUES = ["near", "mid", "far"] as const;
+export const STANCE_VALUES = ["stand", "lean", "crouch"] as const;
+
 const castSchema = z.object({
   characterId: z.string().regex(CHARACTER_ID_RE),
-  slot: z.enum(["L", "C", "R"]),
-  depth: z.enum(["near", "mid", "far"]),
+  slot: z.enum(SLOT_VALUES),
+  depth: z.enum(DEPTH_VALUES),
   facing: z.union([z.literal(1), z.literal(-1)]),
   gait: z.enum(["plant", "walk", "reach", "turn"]),
-  stance: z.enum(["stand", "lean", "crouch"]),
-  stanceEnd: omittable(z.enum(["stand", "lean", "crouch"])),
-  travelTo: omittable(z.enum(["L", "C", "R"])),
+  stance: z.enum(STANCE_VALUES),
+  stanceEnd: omittable(z.enum(STANCE_VALUES)),
+  travelTo: omittable(z.enum(SLOT_VALUES)),
 });
 
 const propSchema = z.object({
