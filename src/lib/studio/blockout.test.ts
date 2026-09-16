@@ -206,3 +206,83 @@ test("SH01 vs SH02 f0 differ by hamming(dhash) >= 8 (test (d))", async () => {
   const d = hamming(h1[0]!, h2[0]!);
   assert.ok(d >= 8, `hamming ${d} < 8 — SH02 f0 is not distinct from SH01 f0`);
 });
+
+/** T34 — interior shots grow three walls + a ceiling in the grey blockout;
+ *  exterior shots must not (structure locked, camera never moves). */
+import { blenderBlockoutScript, isInteriorShot } from "./blender";
+
+test("isInteriorShot classifies by location, exterior hints win", () => {
+  const at = (location: string) => ({ ...sheet.shots[0]!, location });
+  assert.equal(isInteriorShot(at("總統府地下審判室")), true);
+  assert.equal(isInteriorShot(at("滄瀾軍校男生宿舍")), true);
+  assert.equal(isInteriorShot(at("滄瀾軍校大禮堂")), true);
+  assert.equal(isInteriorShot(at("國防部聯合作戰指揮中心")), true);
+  assert.equal(isInteriorShot(at("臨京舊城出租公寓")), true);
+  assert.equal(isInteriorShot(at("滄瀾軍校野外射擊場")), false, "野外 wins over 場");
+  assert.equal(isInteriorShot(at("茶餐廳門口")), false, "門口 is outside");
+  assert.equal(isInteriorShot(at("無關地方")), false, "unknown defaults exterior");
+});
+
+/** region mean luma of a greyscale f0 — thresholds measured from real renders:
+ *  ceiling 0.30 ~149, wall 0.95 ~243, floor 0.62 ~207, void bg ~64, figure ~170 */
+async function bandMeans(png: string) {
+  const { data, info } = await sharp(png).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const W = info.width, H = info.height;
+  const mean = (x0: number, x1: number, y0: number, y1: number) => {
+    let s = 0, n = 0;
+    for (let y = Math.floor(H * y0); y < Math.floor(H * y1); y += 2)
+      for (let x = Math.floor(W * x0); x < Math.floor(W * x1); x += 2) { s += data[y * W + x]!; n += 1; }
+    return Math.round(s / n);
+  };
+  return {
+    ceiling: mean(0.05, 0.95, 0.02, 0.10),
+    walls: mean(0.05, 0.95, 0.30, 0.45),
+    leftCol: mean(0.005, 0.06, 0.30, 0.75),
+    rightCol: mean(0.94, 0.995, 0.30, 0.75),
+    floor: mean(0.35, 0.65, 0.60, 0.95),
+  };
+}
+
+test("interior blockout f0 shows >=2 wall faces + a ceiling line (T34 A1)", async () => {
+  const interior: CallSheet = {
+    ...sheet,
+    location: "總統府地下審判室",
+    shots: [{ ...sheet.shots[0]!, location: "總統府地下審判室" }],
+  };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-bl-int-"));
+  const outMp4 = path.join(dir, "SH01.mp4");
+  await renderBlockout({ sheet: interior, shot: interior.shots[0]!, frames: 8, outMp4 });
+  const f0 = path.join(dir, "SH01.f0.png");
+  await extractFrame0(outMp4, f0);
+  const m = await bandMeans(f0);
+  // ceiling band reads its own grey, far from the void background (~64)
+  assert.ok(m.ceiling >= 120 && m.ceiling <= 175, `ceiling band ${m.ceiling} not in [120,175]`);
+  // at least two wall faces: back band + both edge columns must read wall grey
+  const wallFaces = [m.walls, m.leftCol, m.rightCol].filter((v) => v >= 210).length;
+  assert.ok(wallFaces >= 2, `only ${wallFaces} wall faces >=210 (walls=${m.walls} L=${m.leftCol} R=${m.rightCol})`);
+  // the ceiling line: a hard step between ceiling band and wall band
+  assert.ok(m.walls - m.ceiling >= 50, `ceiling line step ${m.walls - m.ceiling} < 50`);
+  // floor keeps its own tone — the room did not paint over the ground
+  assert.ok(m.floor >= 190, `floor band ${m.floor} lost its grey`);
+});
+
+test("exterior blockout stays bare — no walls, no ceiling (T34 A2)", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-bl-ext-"));
+  const outMp4 = path.join(dir, "SH01.mp4");
+  await renderBlockout({ sheet, shot: sheet.shots[0]!, frames: 8, outMp4 });
+  const f0 = path.join(dir, "SH01.f0.png");
+  await extractFrame0(outMp4, f0);
+  const m = await bandMeans(f0);
+  assert.ok(m.ceiling < 100, `ceiling band ${m.ceiling} — exterior grew a ceiling`);
+  assert.ok(m.walls < 110, `wall band ${m.walls} — exterior grew walls`);
+  assert.ok(m.leftCol < 160 && m.rightCol < 160, "edge columns read wall grey");
+  // structural lock: the call site is always emitted, the per-shot flag gates it
+  // (shots json is embedded double-stringified, hence the escaped quotes)
+  const script = blenderBlockoutScript(sheet, sheet.shots[0]!.id);
+  assert.ok(script.includes('\\"interior\\": false'), "exterior shot must carry interior:false");
+  const interiorSheet: CallSheet = {
+    ...sheet,
+    shots: [{ ...sheet.shots[0]!, location: "總統府地下審判室" }],
+  };
+  assert.ok(blenderBlockoutScript(interiorSheet, "SH01").includes('\\"interior\\": true'));
+});
