@@ -700,6 +700,50 @@ test("T35b-cache: warn and FAIL receipts cache; parse-error does not", async () 
   }
 });
 
+test("T41b E3: verdict invariant to /edit prompt — photo-qc reads require only", () => {
+  // Same require, two legal prompt shapes per PROMPT_ALIGN U1.5=A: telegraph vs 150-300.
+  const telegraph = "night，neon。";
+  const long = [
+    "Image-1 係呢一鏡嘅 Blender 灰模概念圖：灰色人偶係角色佔位。將概念圖轉成 photoreal 實拍一格，",
+    "人偶位置、姿勢、比例、鏡位、地平線完全照 Image-1。場景：總統府地下審判室——室內，冇窗，水泥地，",
+    "頂光慘白，牆身石屎加軍政徽記。左起第一個人偶＝沈孟舟：洗舊軍校常服，肩披黑色呢大衣，被按住肩膀跪喺水泥地。",
+    "左起第二個人偶＝白慎行：黑色中山裝，胸前口袋插鋼筆，跪坐持判決書提筆蘸紅墨畫上一勾。判決書係紙本文書，",
+    "薄而平，有字有印。夜色只由室內燈光呈現。禁止：街道、霓虹、路燈、濕地反光。唔好加人。",
+  ].join("");
+  assert.ok(long.length >= 150 && long.length <= 300, `long prompt ${long.length} chars`);
+
+  const require = {
+    people_count: 2,
+    grey_blocks: false,
+    location: "總統府地下審判室",
+    action: "白慎行提筆蘸紅墨畫判決書；沈孟舟被按住肩膀跪喺水泥地",
+    size: "wide",
+  };
+  // The eye sees the IMAGE, never the prompt: identical blind/summary for both.
+  const blind =
+    "两人跪在总统府地下的审判室里。白慎行提笔蘸红墨，在判决书上画上一勾；沈孟舟被按住肩膀，跪在水泥地上。地面水泥，无窗。";
+  const summary = {
+    people_count: 2,
+    grey_blocks: false,
+    location_notes: "总统府地下审判室 室内 无窗",
+    action_notes: "提笔蘸红墨画判决书；被按住肩膀跪在水泥地",
+    pose_notes: "跪",
+    size_notes: "wide",
+  };
+
+  const v1 = judge(blind, summary, require);
+  const v2 = judge(blind, summary, require);
+  assert.deepEqual(
+    { status: v1.status, fail_reasons: v1.checks.fail_reasons },
+    { status: v2.status, fail_reasons: v2.checks.fail_reasons },
+  );
+  assert.equal(v1.status, "GREEN", v1.checks.fail_reasons.join(" | "));
+
+  // Structural lock: no code path in photo-qc.ts reads any .prompt field.
+  const src = fs.readFileSync(path.resolve("src/lib/studio/photo-qc.ts"), "utf8");
+  assert.ok(!/\.prompt\b/.test(src), "photo-qc.ts must not read any .prompt field");
+});
+
 if (bareBun) {
   void (async () => {
     let failed = 0;
