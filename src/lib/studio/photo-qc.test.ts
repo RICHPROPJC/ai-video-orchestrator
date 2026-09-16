@@ -9,6 +9,7 @@ import {
   judgeSecondEye,
   pinQcAccepted,
   resolveSecondEye,
+  runPhotoQc,
   runSecondEye,
   sameRequire,
 } from "./photo-qc";
@@ -79,7 +80,7 @@ test("matching location and action stay GREEN", () => {
     people_count: 2,
     grey_blocks: false,
     location: "茶餐廳門口",
-    action: "企喺",
+    action: "企喺門口", // T35: a 2-char action has no judgeable bigrams -> unparseable FAIL
     size: "medium",
   });
   assert.equal(v.status, "GREEN");
@@ -91,7 +92,7 @@ test("traditional location hits simplified morgue write-up", () => {
     "一人。坐姿。双手拉着一块白布。地面有水渍。背景是地下停尸间，两侧金属床架，白色床单。";
   const v = judge(
     morgue,
-    { people_count: 1, grey_blocks: false, pose_notes: "坐姿", location_notes: "地下停尸间", size_notes: "medium" },
+    { people_count: 1, grey_blocks: false, pose_notes: "坐姿", location_notes: "地下停尸间", action_notes: "从钢床上挣扎坐起，伸手扯下白布", size_notes: "medium" },
     { people_count: 1, grey_blocks: false, location: "首都地下停屍間", action: "重生者喺鋼床掙扎坐起，扯下白布", size: "medium" },
   );
   assert.equal(v.status, "GREEN", v.checks.fail_reasons.join(" | "));
@@ -330,6 +331,158 @@ test("keyframeRequire has no tool keys without props", () => {
   assert.equal("tool" in req, false);
   assert.equal("tool_shape" in req, false);
   assert.equal("tool_forbid" in req, false);
+});
+
+test("T35 A2: street write-up vs 總統府地下審判室 fails with hit counts", () => {
+  const street = "两人跪在湿漉漉的街道上，远处有霓虹灯牌和路灯。";
+  const v = judge(
+    street,
+    { grey_blocks: false, location_notes: "wet street, neon" },
+    { grey_blocks: false, location: "總統府地下審判室" },
+  );
+  assert.equal(v.status, "FAIL");
+  assert.ok(
+    v.checks.fail_reasons.some((r) => r.startsWith("location: hits 0/4")),
+    v.checks.fail_reasons.join(" | "),
+  );
+});
+
+test("T35 A3: unparseable location require fails loud, never auto-passes", () => {
+  const v = judge(DESC, { grey_blocks: false }, { grey_blocks: false, location: "府" });
+  assert.equal(v.status, "FAIL");
+  assert.ok(
+    v.checks.fail_reasons.some((r) => r.includes("location: require unparseable")),
+    v.checks.fail_reasons.join(" | "),
+  );
+  const v2 = judge(DESC, { grey_blocks: false }, { grey_blocks: false, action: "企" });
+  assert.ok(
+    v2.checks.fail_reasons.some((r) => r.includes("action: require unparseable")),
+    v2.checks.fail_reasons.join(" | "),
+  );
+});
+
+test("T35 item3: medium needs scale evidence; none => size: unmeasured", () => {
+  const v1 = judge(
+    "一人企喺房中间。",
+    { grey_blocks: false, size_notes: "unknown" },
+    { grey_blocks: false, size: "medium" },
+  );
+  assert.ok(
+    v1.checks.fail_reasons.some((r) => r.includes("size: unmeasured")),
+    v1.checks.fail_reasons.join(" | "),
+  );
+  const v2 = judge(DESC, { grey_blocks: false }, { grey_blocks: false, size: "medium" });
+  assert.equal(v2.status, "GREEN", v2.checks.fail_reasons.join(" | "));
+});
+
+test("T35 A1: empty grey still fails grey_leak through runPhotoQc", async () => {
+  const http = await import("node:http");
+  const sharp = (await import("sharp")).default;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t35-a1-"));
+  const png = path.join(dir, "SH01.png");
+  await sharp({ create: { width: 640, height: 360, channels: 3, background: { r: 122, g: 122, b: 122 } } }).png().toFile(png);
+  const server = http.createServer((_req, res) => {
+    let body = "";
+    _req.on("data", (c) => (body += c));
+    _req.on("end", () => {
+      if ((_req.url ?? "").includes("/v1/models")) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ data: [{ id: "fixture-eye" }] }));
+        return;
+      }
+      const content = (JSON.parse(body) as { messages: { content: unknown }[] }).messages[0]!.content;
+      const reply = Array.isArray(content)
+        ? "一个人企喺房中间。"
+        : '{"people_count":1,"grey_blocks":false,"size_notes":"medium"}';
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
+  delete process.env.SLATECREW_SECOND_ENDPOINT;
+  try {
+    const rec = await runPhotoQc(
+      png,
+      path.join(dir, "SH01.photo_qc.json"),
+      { people_count: 1, grey_blocks: false, size: "medium" },
+      {},
+      { first: { url: `http://127.0.0.1:${port}`, model: "fixture-eye" } },
+    );
+    assert.equal(rec.status, "FAIL");
+    assert.ok(
+      rec.checks.fail_reasons.some((r) => r.startsWith("grey_leak:")),
+      rec.checks.fail_reasons.join(" | "),
+    );
+  } finally {
+    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
+    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
+    server.close();
+  }
+});
+
+test("T35 item5: un-armed second eye caps GREEN at PASS_UNCONFIRMED; arming upgrades", async () => {
+  const http = await import("node:http");
+  const sharp = (await import("sharp")).default;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t35-pu-"));
+  const png = path.join(dir, "SH02.png");
+  // noisy frame: photoreal-ish so the grey/empty gate stays quiet
+  const noise = Buffer.from(Array.from({ length: 640 * 360 * 3 }, () => Math.floor(Math.random() * 256)));
+  await sharp(noise, { raw: { width: 640, height: 360, channels: 3 } }).png().toFile(png);
+  const mkServer = (desc: string, summary: string) =>
+    http.createServer((_req, res) => {
+      let body = "";
+      _req.on("data", (c) => (body += c));
+      _req.on("end", () => {
+        if ((_req.url ?? "").includes("/v1/models")) {
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ data: [{ id: "fixture-eye" }] }));
+          return;
+        }
+        const content = (JSON.parse(body) as { messages: { content: unknown }[] }).messages[0]!.content;
+        const reply = Array.isArray(content) ? desc : summary;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
+      });
+    });
+  const eye = mkServer("两个人企喺茶餐厅门口，地面湿，背景霓虹灯。", '{"people_count":2,"grey_blocks":false,"size_notes":"medium"}');
+  const second = mkServer("两个人企喺茶餐厅门口。", '{"people_count":2,"grey_blocks":false}');
+  await new Promise<void>((r) => eye.listen(0, "127.0.0.1", r));
+  await new Promise<void>((r) => second.listen(0, "127.0.0.1", r));
+  const eyePort = (eye.address() as { port: number }).port;
+  const sePort = (second.address() as { port: number }).port;
+  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
+  const prevM = process.env.SLATECREW_SECOND_MODEL;
+  delete process.env.SLATECREW_SECOND_ENDPOINT;
+  delete process.env.SLATECREW_SECOND_MODEL;
+  const qc = path.join(dir, "SH02.photo_qc.json");
+  try {
+    const un = await runPhotoQc(png, qc, { people_count: 2, grey_blocks: false, size: "medium" }, {}, { first: { url: `http://127.0.0.1:${eyePort}`, model: "fixture-eye" } });
+    assert.equal(un.status, "PASS_UNCONFIRMED", un.checks.fail_reasons.join(" | "));
+    const before = fs.readFileSync(qc, "utf8");
+    // un-armed re-run: PASS_UNCONFIRMED receipt is a valid cache hit (no re-run)
+    const cached = await runPhotoQc(png, qc, { people_count: 2, grey_blocks: false, size: "medium" }, {}, { first: { url: `http://127.0.0.1:${eyePort}`, model: "fixture-eye" } });
+    assert.equal(fs.readFileSync(qc, "utf8"), before);
+    assert.equal(cached.status, "PASS_UNCONFIRMED");
+    // PASS_UNCONFIRMED never pins - second eye is the acceptance floor
+    assert.equal(pinQcAccepted(dir, "SH02"), false);
+    // arming the second eye busts the cache and upgrades to GREEN
+    process.env.SLATECREW_SECOND_ENDPOINT = `http://127.0.0.1:${sePort}`;
+    const armed = await runPhotoQc(png, qc, { people_count: 2, grey_blocks: false, size: "medium" }, {}, { first: { url: `http://127.0.0.1:${eyePort}`, model: "fixture-eye" } });
+    assert.equal(armed.status, "GREEN");
+    assert.equal(armed.second?.model, "glm-5.3-flash");
+    assert.notEqual(fs.readFileSync(qc, "utf8"), before);
+    // armed GREEN pins again
+    assert.equal(pinQcAccepted(dir, "SH02"), true);
+  } finally {
+    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
+    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
+    if (prevM === undefined) delete process.env.SLATECREW_SECOND_MODEL;
+    else process.env.SLATECREW_SECOND_MODEL = prevM;
+    eye.close();
+    second.close();
+  }
 });
 
 if (bareBun) {

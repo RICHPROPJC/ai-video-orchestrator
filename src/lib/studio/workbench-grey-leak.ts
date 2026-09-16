@@ -22,6 +22,8 @@ export type GreyLeakBlob = {
 export type GreyLeakMeasure = {
   hit: boolean;
   blobs: GreyLeakBlob[];
+  /** Fraction of the whole frame that is flat grey — unbounded by the blob size window. */
+  coverage: number;
 };
 
 function lumaOf(r: number, g: number, b: number): number {
@@ -77,6 +79,7 @@ export async function measureWorkbenchGreyLeak(file: string): Promise<GreyLeakMe
   const seen = new Uint8Array(n);
   const blobs: GreyLeakBlob[] = [];
   const stack: number[] = [];
+  let flatSum = 0;
   for (let start = 0; start < n; start++) {
     if (!flat[start] || seen[start]) continue;
     stack.length = 0;
@@ -92,6 +95,7 @@ export async function measureWorkbenchGreyLeak(file: string): Promise<GreyLeakMe
     while (stack.length) {
       const i = stack.pop()!;
       count += 1;
+      flatSum += 1;
       chromaSum += chroma[i]!;
       lumaSum += luma[i]!;
       const x = i % w;
@@ -121,7 +125,29 @@ export async function measureWorkbenchGreyLeak(file: string): Promise<GreyLeakMe
     });
   }
   const hit = blobs.some((b) => b.aspect >= MIN_ASPECT && b.chroma < MAX_CHROMA);
-  return { hit, blobs };
+  return { hit, blobs, coverage: flatSum / n };
+}
+
+/** Photo gate: 空灰框 threshold — a photoreal still is never mostly flat grey.
+ *  The blob window (MIN–MAX_FRAC) targets mannequin-shaped leftovers; a whole
+ *  empty/grey frame (frac≈1) slips that window, so photo adds a coverage gate. */
+export const EMPTY_GREY_MAX = 0.6;
+
+export type PhotoGreyLeakMeasure = { hit: boolean; reason: string | null };
+
+export async function measureWorkbenchGreyLeakPhoto(file: string): Promise<PhotoGreyLeakMeasure> {
+  const m = await measureWorkbenchGreyLeak(file);
+  if (m.hit) {
+    const blob = machineGreyFailReason(m).replace(/^machine_grey: /, "");
+    return { hit: true, reason: `grey_leak: workbench silhouette ${blob}` };
+  }
+  if (m.coverage >= EMPTY_GREY_MAX) {
+    return {
+      hit: true,
+      reason: `grey_leak: flat grey/empty coverage ${m.coverage.toFixed(2)} >= ${EMPTY_GREY_MAX}`,
+    };
+  }
+  return { hit: false, reason: null };
 }
 
 export function machineGreyFailReason(m: GreyLeakMeasure): string {

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { loadConfig } from "./config";
+import { measureWorkbenchGreyLeakPhoto } from "./workbench-grey-leak";
 
 const BLIND_PROMPT = [
   "用中文写成连贯短句，只写看得见的东西：人数、衣服、姿势、手里的物件、地面、背景。",
@@ -72,6 +73,9 @@ export type PhotoQcCtx = { prevDesc?: string };
 
 const FACE_RE = /脸|臉|头|頭|肩|胸口|眼|颈|頸|特写|特寫/;
 const WIDE_SET_RE = /背景|环境|環境|全身|一排|房间|房間|室内|室內/;
+/** medium ≈ person fills 25–60% of frame height — body visible but not filling it. */
+const MEDIUM_BODY_RE = /胸口|胸前|肩膀|肩上|腰|膝|腿|腳|脚|鞋|半身|上身|全身|制服|大衣|大褸|褲|裙|着|穿|跪|站|坐|企|躺|蹲/;
+const MEDIUM_GROUND_RE = /地面|地上|路面|地台|地板|水泥地|街道|跪在|跪喺|腳下|脚下/;
 
 export type QcVerdict = {
   status: "GREEN" | "FAIL";
@@ -157,6 +161,20 @@ function gramHits(need: string, blob: string): number {
   return grams.filter((g) => hay.includes(g)).length;
 }
 
+/** Bigram evidence for location/action gates: hit count + total judgeable grams.
+ *  total < 2 means the require has no discrimination power (T35: never auto-pass). */
+export function gramMatch(
+  need: string,
+  blob: string,
+): { hits: number; total: number; need: number } {
+  const grams = requireGrams(need);
+  const hay = foldCjk(blob);
+  const hits = grams.filter((g) => hay.includes(g)).length;
+  const total = grams.length;
+  const needCount = Math.max(2, Math.ceil(total * 0.5));
+  return { hits, total, need: needCount };
+}
+
 function jaccardGrams(a: string, b: string): number {
   const A = new Set(sceneGrams(a));
   const B = new Set(sceneGrams(b));
@@ -210,31 +228,63 @@ export function judge(desc: string, summary: QcSummary, require: QcRequire, ctx:
   }
 
   if (require.location) {
-    const hits = gramHits(require.location, blob);
-    const ok = hits !== 0;
+    const { hits, total, need } = gramMatch(require.location, blob);
+    const ok = total >= 2 && hits >= need;
     checks.location = ok;
-    if (!ok) reasons.push(`location: write-up misses tokens from ${JSON.stringify(require.location)}`);
+    if (total < 2) {
+      reasons.push(`location: require unparseable — no judgeable bigrams`);
+    } else if (!ok) {
+      reasons.push(`location: hits ${hits}/${need} — misses ${JSON.stringify(require.location)}`);
+    }
   }
 
   if (require.action) {
-    const hits = gramHits(require.action, `${blob}\n${String(summary.action_notes ?? "")}`);
-    const ok = hits !== 0;
+    const { hits, total, need } = gramMatch(require.action, `${blob}\n${String(summary.action_notes ?? "")}`);
+    const ok = total >= 2 && hits >= need;
     checks.action = ok;
-    if (!ok) reasons.push(`action: write-up misses tokens from ${JSON.stringify(require.action)}`);
+    if (total < 2) {
+      reasons.push(`action: require unparseable — no judgeable bigrams`);
+    } else if (!ok) {
+      reasons.push(`action: hits ${hits}/${need} — misses ${JSON.stringify(require.action)}`);
+    }
   }
 
   if (require.size) {
     const noted = String(summary.size_notes ?? "").toLowerCase();
     const size = require.size;
     let ok = true;
+    let unmeasured = false;
     if (size === "closeup" || size === "insert") {
       // MCU write-ups often say medium; face/chest tokens are the gate. Wide notes still fail.
       ok = FACE_RE.test(blob) && noted !== "wide" && noted !== "full";
     } else if (size === "wide" || size === "full") {
       ok = WIDE_SET_RE.test(blob) || noted === "wide" || noted === "full";
+    } else if (size === "medium") {
+      // T35 item 3: medium gets a real call — person fills ~25-60% of frame height.
+      // Text path: the describer's scale note, or body+environment evidence
+      // (person visibly in frame, not filling it). No evidence => fail loud.
+      if (noted === "medium") {
+        ok = true;
+      } else if (["wide", "full", "closeup", "insert"].includes(noted)) {
+        ok = false; // describer actively measured another scale
+      } else if (MEDIUM_BODY_RE.test(blob) && MEDIUM_GROUND_RE.test(blob)) {
+        ok = true;
+      } else {
+        ok = false;
+        unmeasured = true; // no scale evidence either way - fail loud, not auto-pass
+      }
+    } else {
+      ok = false;
+      unmeasured = true;
     }
     checks.size = ok;
-    if (!ok) reasons.push(`size: require ${size}; write-up is not that scale`);
+    if (!ok) {
+      reasons.push(
+        unmeasured
+          ? `size: unmeasured - require ${size}; write-up carries no scale evidence`
+          : `size: require ${size}; write-up is not that scale`,
+      );
+    }
   }
 
   if (ctx.prevDesc) {
@@ -274,6 +324,18 @@ export function resolveSecondEye(opts: SecondEyeOpts = {}): SecondEyeConfig | nu
   return { endpoint, model };
 }
 
+/** T35 item 5: pipeline call sites pass eyes explicitly (audit-visible) instead of
+ *  relying on ambient env inside runPhotoQc. Same resolution law as resolveSecondEye:
+ *  env set → :4000 glm-5.3-flash; env empty → un-armed (PASS_UNCONFIRMED ceiling). */
+export function photoQcEyesFromEnv(): PhotoQcEyes {
+  return {
+    second: {
+      secondEndpoint: process.env.SLATECREW_SECOND_ENDPOINT ?? "",
+      secondModel: process.env.SLATECREW_SECOND_MODEL,
+    },
+  };
+}
+
 /** Sequential 拆步 against the second eye: describe the frame, THEN summarize.
  *  One describe + one summarize, awaited in order — never a parallel batch. */
 export async function runSecondEye(
@@ -310,6 +372,8 @@ export function judgeSecondEye(
   return { ok: true };
 }
 
+export type PhotoQcStatus = "GREEN" | "PASS_UNCONFIRMED" | "FAIL";
+
 export type PhotoQcRecord = {
   tool: "slatecrew.photo_qc";
   ts: string;
@@ -318,7 +382,7 @@ export type PhotoQcRecord = {
   endpoint: string;
   model: string;
   require: QcRequire;
-  status: "GREEN" | "FAIL";
+  status: PhotoQcStatus;
   blind: string;
   summary: QcSummary | { parse_error: string; raw: string };
   checks: QcVerdict["checks"];
@@ -350,7 +414,7 @@ export async function runPhotoQc(
       const existing = JSON.parse(fs.readFileSync(outJson, "utf8")) as PhotoQcRecord;
       if (
         existing.tool === "slatecrew.photo_qc" &&
-        existing.status === "GREEN" &&
+        (existing.status === "GREEN" || existing.status === "PASS_UNCONFIRMED") &&
         existing.sha256 === digest &&
         sameRequire(existing.require, require) &&
         (!secondCfg || existing.second?.model === secondCfg.model)
@@ -386,6 +450,20 @@ export async function runPhotoQc(
       };
     }
   }
+  // T35 item 4: machine grey/empty-frame gate on stills — same law as video-qc.
+  if (require.grey_blocks === false) {
+    const leak = await measureWorkbenchGreyLeakPhoto(pngFile);
+    if (leak.hit && leak.reason) {
+      verdict = {
+        status: "FAIL",
+        checks: { ...verdict.checks, status: "FAIL", fail_reasons: [...verdict.checks.fail_reasons, leak.reason] },
+      };
+    }
+  }
+  // T35 item 5: one eye alone never issues a final pass. Un-armed second eye
+  // downgrades GREEN to PASS_UNCONFIRMED; pin/delivery keeps demanding GREEN.
+  let status: PhotoQcStatus = verdict.status;
+  if (status === "GREEN" && !secondCfg) status = "PASS_UNCONFIRMED";
   const record: PhotoQcRecord = {
     tool: "slatecrew.photo_qc",
     ts: new Date().toISOString(),
@@ -394,10 +472,10 @@ export async function runPhotoQc(
     endpoint: url,
     model,
     require,
-    status: verdict.status,
+    status,
     blind: desc,
     summary,
-    checks: verdict.checks,
+    checks: { ...verdict.checks, status },
     ...(second ? { second } : {}),
   };
   fs.mkdirSync(path.dirname(outJson), { recursive: true });

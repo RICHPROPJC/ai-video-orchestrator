@@ -31,7 +31,7 @@ import { submitH3Shot } from "./h3-submit";
 import type { H3GraphVariant } from "./h3-r2v-graph";
 import { checkHealth, buildEditPayload, u15Edit, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
-import { runPhotoQc, pinQcAccepted, type QcRequire } from "./photo-qc";
+import { runPhotoQc, pinQcAccepted, photoQcEyesFromEnv, type QcRequire } from "./photo-qc";
 import { pinVideoQcAccepted, runVideoQc } from "./video-qc";
 import { appendViolation, checkBoardsToKeyframe, checkKeyframeToStills, hardErrorRow, hardPhotoQcRow } from "./trace";
 import { rangesFor } from "./script-contract";
@@ -659,8 +659,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       if (greenAlready.has(shot.id)) continue;
       const png = path.join(stillDir, `${shot.id}.png`);
       const qcJson = path.join(stillDir, `${shot.id}.photo_qc.json`);
-      let result = await runPhotoQc(png, qcJson, require);
-      if (result.status !== "GREEN") {
+      let result = await runPhotoQc(png, qcJson, require, {}, photoQcEyesFromEnv());
+      if (result.status === "FAIL") {
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
         appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
         await speak("pictureQc", `${shot.id} 唔過（${reasons}）— 補一句 prompt 再 /edit 一次。`, "warn");
@@ -695,9 +695,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
             refs: inputs.refs,
           },
         });
-        result = await runPhotoQc(png, qcJson, require);
+        result = await runPhotoQc(png, qcJson, require, {}, photoQcEyesFromEnv());
       }
-      if (result.status !== "GREEN") {
+      if (result.status === "FAIL") {
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
         appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
         job = patch(job, {
