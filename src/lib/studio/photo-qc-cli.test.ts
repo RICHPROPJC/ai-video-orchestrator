@@ -136,10 +136,11 @@ test("T40: usage errors exit 2 without touching an eye", async () => {
 });
 
 test("T40 E3: the CLI carries zero copied gates — rg lock", () => {
-  const cli = fs.readFileSync(path.join(import.meta.dir, "photo-qc-cli.ts"), "utf8");
+  const here = path.resolve("src/lib/studio"); // runner-neutral (import.meta.dir is bun-only)
+  const cli = fs.readFileSync(path.join(here, "photo-qc-cli.ts"), "utf8");
   assert.ok(!/judge|gramMatch/.test(cli), "CLI must not name or reimplement gate internals");
   assert.ok(/runPhotoQc/.test(cli), "CLI must go through runPhotoQc");
-  const mainCliPath = path.join(import.meta.dir, "../../cli.ts");
+  const mainCliPath = path.resolve("src/cli.ts");
   if (fs.existsSync(mainCliPath)) {
     const main = fs.readFileSync(mainCliPath, "utf8");
     assert.ok(!/judge|gramMatch/.test(main), "src/cli.ts must not reimplement gate internals either");

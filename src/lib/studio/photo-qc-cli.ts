@@ -49,9 +49,12 @@ export async function runCli(argv: string[], eyes?: PhotoQcEyes): Promise<CliRes
   return { code: record.status === "FAIL" ? 1 : 0, record };
 }
 
-if (import.meta.main) {
+// entry via main(): top-level await breaks tsx/esbuild's CJS transform, and
+// import.meta.main keeps tsx --test imports side-effect free (bun-only flag).
+async function main() {
   const res = await runCli(process.argv.slice(2));
   if (res.record) console.log(JSON.stringify(res.record, null, 2));
   else if (res.message) console.error(res.message);
   process.exit(res.code);
 }
+if (import.meta.main) void main();
