@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { loadConfig } from "./config";
-import { measureWorkbenchGreyLeakPhoto } from "./workbench-grey-leak";
+import { EMPTY_FRAME_MIN, judgePhotoGreyLeak, measureEmptyFrame } from "./workbench-grey-leak";
 
 const BLIND_PROMPT = [
   "用中文写成连贯短句，只写看得见的东西：人数、衣服、姿势、手里的物件、地面、背景。",
@@ -162,7 +162,9 @@ function gramHits(need: string, blob: string): number {
 }
 
 /** Bigram evidence for location/action gates: hit count + total judgeable grams.
- *  total < 2 means the require has no discrimination power (T35: never auto-pass). */
+ *  total < 2 means the require has no discipline (T35: never auto-pass).
+ *  T35b §1: need = max(2, min(5, ceil(total*0.3))) — the gate asks whether key
+ *  nouns/verbs show up, not for a literary paraphrase ratio. */
 export function gramMatch(
   need: string,
   blob: string,
@@ -171,7 +173,7 @@ export function gramMatch(
   const hay = foldCjk(blob);
   const hits = grams.filter((g) => hay.includes(g)).length;
   const total = grams.length;
-  const needCount = Math.max(2, Math.ceil(total * 0.5));
+  const needCount = Math.max(2, Math.min(5, Math.ceil(total * 0.3)));
   return { hits, total, need: needCount };
 }
 
@@ -372,7 +374,7 @@ export function judgeSecondEye(
   return { ok: true };
 }
 
-export type PhotoQcStatus = "GREEN" | "PASS_UNCONFIRMED" | "FAIL";
+export type PhotoQcStatus = "GREEN" | "PASS_UNCONFIRMED" | "PASS_WITH_WARN" | "FAIL";
 
 export type PhotoQcRecord = {
   tool: "slatecrew.photo_qc";
@@ -450,20 +452,39 @@ export async function runPhotoQc(
       };
     }
   }
-  // T35 item 4: machine grey/empty-frame gate on stills — same law as video-qc.
+  // T35b §2 grey gate: blob silhouette still hard-fails; flat coverage fails only
+  // when the eye agrees (grey_blocks true) — either alone is a recorded warn.
+  const warns: string[] = [];
   if (require.grey_blocks === false) {
-    const leak = await measureWorkbenchGreyLeakPhoto(pngFile);
-    if (leak.hit && leak.reason) {
+    const eyeSaidGrey = summary.grey_blocks === true || summary.grey_blocks === "true";
+    const g = await judgePhotoGreyLeak(pngFile, eyeSaidGrey);
+    if (g.fail) {
       verdict = {
         status: "FAIL",
-        checks: { ...verdict.checks, status: "FAIL", fail_reasons: [...verdict.checks.fail_reasons, leak.reason] },
+        checks: { ...verdict.checks, status: "FAIL", fail_reasons: [...verdict.checks.fail_reasons, g.fail] },
       };
+    } else if (g.warn) {
+      warns.push(g.warn);
     }
+  }
+  // T35b §3: unconditional empty-frame blocking gate (all-black/all-white frame).
+  const ef = await measureEmptyFrame(pngFile);
+  if (ef.hit) {
+    verdict = {
+      status: "FAIL",
+      checks: {
+        ...verdict.checks,
+        status: "FAIL",
+        fail_reasons: [...verdict.checks.fail_reasons, `empty_frame: ${ef.kind} coverage ${ef.frac.toFixed(2)} >= ${EMPTY_FRAME_MIN}`],
+      },
+    };
   }
   // T35 item 5: one eye alone never issues a final pass. Un-armed second eye
   // downgrades GREEN to PASS_UNCONFIRMED; pin/delivery keeps demanding GREEN.
   let status: PhotoQcStatus = verdict.status;
   if (status === "GREEN" && !secondCfg) status = "PASS_UNCONFIRMED";
+  // T35b §2: a surviving warn is never silent — it becomes the status itself.
+  if (status !== "FAIL" && warns.length > 0) status = "PASS_WITH_WARN";
   const record: PhotoQcRecord = {
     tool: "slatecrew.photo_qc",
     ts: new Date().toISOString(),
@@ -475,7 +496,7 @@ export async function runPhotoQc(
     status,
     blind: desc,
     summary,
-    checks: { ...verdict.checks, status },
+    checks: { ...verdict.checks, status, ...(warns.length > 0 ? { warns } : {}) },
     ...(second ? { second } : {}),
   };
   fs.mkdirSync(path.dirname(outJson), { recursive: true });

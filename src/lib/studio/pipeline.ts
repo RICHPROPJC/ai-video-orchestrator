@@ -718,6 +718,19 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         });
         return;
       }
+      if (result.status === "PASS_WITH_WARN") {
+        const warns = (result.checks.warns as string[] | undefined) ?? [];
+        emit(jobId, {
+          agent: "pictureQc",
+          level: "warn",
+          message: `${shot.id} PASS_WITH_WARN（${warns.join("; ")}）— 照出，警示留底。`,
+          data: { shot: shot.id, warns },
+          step_id: "require",
+          parent_steps: ["keyframe-prompt"],
+          seat: "pictureQc",
+          constraints_checked: ["photo-qc"],
+        });
+      }
       await speak("pictureQc", `${shot.id} GREEN（人數 ${require.people_count}）`, "pass");
     }
     trace.mars = `MARS ${cfg.pictureQc.endpoint} (${cfg.pictureQc.model})`;

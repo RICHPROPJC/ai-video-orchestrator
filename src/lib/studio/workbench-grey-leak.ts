@@ -130,24 +130,62 @@ export async function measureWorkbenchGreyLeak(file: string): Promise<GreyLeakMe
 
 /** Photo gate: 空灰框 threshold — a photoreal still is never mostly flat grey.
  *  The blob window (MIN–MAX_FRAC) targets mannequin-shaped leftovers; a whole
- *  empty/grey frame (frac≈1) slips that window, so photo adds a coverage gate. */
+ *  empty/grey frame (frac≈1) slips that window, so photo adds a coverage gate.
+ *  T35b: coverage alone no longer fails (plain-studio portraits hit it) — FAIL
+ *  needs the eye's grey_blocks verdict AND machine coverage; one alone warns. */
 export const EMPTY_GREY_MAX = 0.6;
 
-export type PhotoGreyLeakMeasure = { hit: boolean; reason: string | null };
+export type PhotoGreyVerdict = { fail: string | null; warn: string | null };
 
-export async function measureWorkbenchGreyLeakPhoto(file: string): Promise<PhotoGreyLeakMeasure> {
+/** T35b §2: blob silhouette stays a hard fail; the flat-coverage path fails only
+ *  when machine coverage AND the eye's grey_blocks agree, warns on either alone. */
+export async function judgePhotoGreyLeak(file: string, eyeSaidGrey: boolean): Promise<PhotoGreyVerdict> {
   const m = await measureWorkbenchGreyLeak(file);
   if (m.hit) {
     const blob = machineGreyFailReason(m).replace(/^machine_grey: /, "");
-    return { hit: true, reason: `grey_leak: workbench silhouette ${blob}` };
+    return { fail: `grey_leak: workbench silhouette ${blob}`, warn: null };
   }
+  const cov = `flat grey/empty coverage ${m.coverage.toFixed(2)} vs ${EMPTY_GREY_MAX}`;
   if (m.coverage >= EMPTY_GREY_MAX) {
-    return {
-      hit: true,
-      reason: `grey_leak: flat grey/empty coverage ${m.coverage.toFixed(2)} >= ${EMPTY_GREY_MAX}`,
-    };
+    if (eyeSaidGrey) {
+      return { fail: `grey_leak: ${cov} — eye also reports grey blocks`, warn: null };
+    }
+    return { fail: null, warn: `grey_watch: ${cov} — machine suspects, eye says clean` };
   }
-  return { hit: false, reason: null };
+  if (eyeSaidGrey) {
+    return { fail: null, warn: `grey_watch: eye reports grey blocks but ${cov} — machine clean` };
+  }
+  return { fail: null, warn: null };
+}
+
+// ── T35b §3: empty-frame blocking gate — ≥0.8 of the frame near-black/near-white.
+export const EMPTY_FRAME_MIN = 0.8;
+const LUMA_DARK = 20;
+const LUMA_BRIGHT = 235;
+
+export type EmptyFrameMeasure = { hit: boolean; kind: "dark" | "bright" | null; frac: number };
+
+export async function measureEmptyFrame(file: string): Promise<EmptyFrameMeasure> {
+  const { data, info } = await sharp(file)
+    .resize(DW, DH, { fit: "fill" })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const n = info.width * info.height;
+  const channels = info.channels;
+  let dark = 0;
+  let bright = 0;
+  for (let i = 0; i < n; i++) {
+    const o = i * channels;
+    const L = lumaOf(data[o]!, data[o + 1]!, data[o + 2]!);
+    if (L < LUMA_DARK) dark += 1;
+    else if (L > LUMA_BRIGHT) bright += 1;
+  }
+  const darkFrac = dark / n;
+  const brightFrac = bright / n;
+  if (darkFrac >= EMPTY_FRAME_MIN) return { hit: true, kind: "dark", frac: darkFrac };
+  if (brightFrac >= EMPTY_FRAME_MIN) return { hit: true, kind: "bright", frac: brightFrac };
+  return { hit: false, kind: null, frac: Math.max(darkFrac, brightFrac) };
 }
 
 export function machineGreyFailReason(m: GreyLeakMeasure): string {
