@@ -62,6 +62,10 @@ export type BuildH3GraphOpts = {
   refImageNames?: string[];
   /** default COND_VISUAL 0.999. C8b probe may lower this; do not change the golden default. */
   visualStrength?: number;
+  /** T42 prose mode (packet-decided in h3-prose). Receipt metadata only —
+   *  node ids and values stay identical to the v6 golden in BOTH modes;
+   *  prose text reaches the graph via the split node input, not here. */
+  proseMode?: "action-short" | "identity-long";
 };
 
 const KFINJECT_VARIANTS = new Set<H3GraphVariant>(["a", "bkf", "c"]);
