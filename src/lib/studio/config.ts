@@ -27,7 +27,7 @@ export type SlateConfig = {
   };
   tts: { endpoint: string; model: string; promptWav: string; seed: number };
   pictureQc: { endpoint: string; model: string };
-  /** Layout / 3D tool brain. Not pictureQc. Empty = fleet UNCONFIG, not a QC skip. */
+  /** PACKAGE-QC-0917 眼：nex-n2.5 五路 describe（判官先係 pictureQc 端點）。 */
   nex: { endpoint: string; model: string };
   soundQc: { endpoint: string; model: string };
   /** A3: every sense is a provider. Empty = the stage that needs it FAILs loud. */
@@ -66,7 +66,7 @@ const DEFAULTS: SlateConfig = {
     seed: 20260914,
   },
   pictureQc: { endpoint: "http://127.0.0.1:8015", model: "qwen38" },
-  nex: { endpoint: "", model: "nex-n2.5" },
+  nex: { endpoint: "http://127.0.0.1:8017", model: "nex-n2.5" },
   soundQc: { endpoint: "", model: "FunAudioLLM/SenseVoiceSmall" },
   ocr: { endpoint: "", model: "" },
   embed: { endpoint: "", model: "wemm-2b" },
