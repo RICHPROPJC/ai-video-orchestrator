@@ -158,6 +158,34 @@ export function hopGeometrySheet(sheet: CallSheet, scene?: string): CallSheet {
   return scene ? { ...sheet, shots: shotsForScene(sheet.shots, scene) } : sheet;
 }
 
+/** T44 §1 (Fable 08:58): `first` means a face the viewer has not seen — the
+ *  slate's first shot or a character's first appearance. A size change alone
+ *  no longer re-portraits the cast: same faces, same references. */
+export function stillFirstFlags(boards: { marks: { characterId: string }[] }[]): boolean[] {
+  const seen = new Set<string>();
+  return boards.map((board, i) => {
+    const newChar = board.marks.some((m) => !seen.has(m.characterId));
+    for (const m of board.marks) seen.add(m.characterId);
+    return i === 0 || newChar;
+  });
+}
+
+/** T44 §4 (Fable 08:58), one law for every /edit ref: a file may feed
+ *  Image-2+ only with its own hash-matched GREEN photo_qc — portraits and
+ *  prior stills alike. Rejected candidates come back for a ref_rejected
+ *  event; the f0 base keeps its own blockout gate (assertFiguresVisible):
+ *  it is Image-1, never a ref. */
+export function refsGreenOnly(candidates: string[]): { kept: string[]; rejected: string[] } {
+  const kept: string[] = [];
+  const rejected: string[] = [];
+  for (const file of candidates) {
+    const dir = path.dirname(file);
+    const id = path.basename(file, path.extname(file));
+    (pinQcAccepted(dir, id) ? kept : rejected).push(file);
+  }
+  return { kept, rejected };
+}
+
 /** T36 law, both stills /edit records go through here: base／refs land in the
  *  JSON as bare filenames — zero absolute paths inside job records — and the
  *  prompt is whatever 阿圖's packet said, verbatim. */
@@ -519,12 +547,12 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // base cast (L1b): a job with a drama reads its fixed wardrobe from
     // projects/<drama>/base/cast.json — a base fact, not a playbook bullet
     const baseCast = job.drama ? loadBaseCast(projectsDir(), job.drama) : undefined;
+    // T44 §1: `first` tracks unseen faces only — a size change no longer
+    // re-portraits a cast the viewer already knows
+    const firstFlags = stillFirstFlags(continuity.boards);
     const stillPlans = continuity.boards.map((boardShot, i) => {
       const shot = timed.shots.find((s) => s.id === boardShot.id)!;
-      const prev = i > 0 ? continuity.boards[i - 1]! : null;
-      const seenChars = new Set(continuity.boards.slice(0, i).flatMap((b) => b.marks.map((m) => m.characterId)));
-      const newChar = shot.marks.some((m) => !seenChars.has(m.characterId));
-      const first = i === 0 || (prev ? prev.size !== shot.size : false) || newChar;
+      const first = firstFlags[i]!;
       const prompt = keyframeEditPrompt(timed, shot, { first, ...(baseCast ? { cast: baseCast } : {}) });
       const require = keyframeRequire(shot);
       // D1a trace: soft edge invariants (boards→keyframe, keyframe→stills),
@@ -606,6 +634,20 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     if (input.scene) {
       await speak("stills", `--scene ${input.scene} hop：stills/QC ${hopStillPlans.length}/${stillPlans.length} 鏡。`);
     }
+    // T44 §4: the one ref_rejected event shape for every gate below
+    const refRejected = (shotId: string, file: string) =>
+      emit(jobId, {
+        agent: "stills",
+        level: "warn",
+        message: `ref_rejected ${path.basename(file)}（photo_qc 非 GREEN，唔准入 /edit refs）`,
+        data: {
+          shot: shotId, stage: "stills", eye: "stills", verdict: "ref_rejected",
+          file: path.basename(file), reason: "photo_qc not GREEN",
+        },
+        step_id: "keyframe-prompt",
+        parent_steps: ["boards"],
+        seat: "stills",
+      });
     for (const { shot, first, prompt, require } of hopStillPlans) {
       const out = path.join(stillDir, `${shot.id}.png`);
       const recordJson = path.join(stillDir, `${shot.id}.u15_edit.json`);
@@ -620,14 +662,25 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       }
       const stillStarted = Date.now();
       const refIds = [...new Set(shot.marks.map((m) => m.characterId))];
-      const refFiles = first
-        ? refIds.map((id) => {
-            const p = portraits.files[id];
-            if (!p || !fs.existsSync(p)) throw new Error(`${shot.id}: 首次出場冇肖像（${id}）`);
-            return p;
-          })
-        : [prevKeyframe!];
-      if (refFiles.some((r) => !r)) throw new Error(`${shot.id}: no ref for /edit (first=${first}, no previous keyframe)`);
+      const portraitFor = (id: string) => {
+        const p = portraits.files[id];
+        if (!p || !fs.existsSync(p)) throw new Error(`${shot.id}: 首次出場冇肖像（${id}）`);
+        return p;
+      };
+      // T44 §2/§4: every /edit ref passes the GREEN gate first — a FAILed
+      // prior still is rejected (ref_rejected) and the cast's GREEN portraits
+      // stand in; the shot's own failed still never rides back in
+      const candidates = first ? refIds.map(portraitFor) : prevKeyframe ? [prevKeyframe] : [];
+      if (!candidates.length) throw new Error(`${shot.id}: no ref for /edit (first=${first}, no previous keyframe)`);
+      const gate = refsGreenOnly(candidates);
+      for (const r of gate.rejected) refRejected(shot.id, r);
+      let refFiles = gate.kept;
+      if (gate.rejected.length && !refFiles.length) {
+        const fallback = refsGreenOnly(refIds.map(portraitFor));
+        for (const r of fallback.rejected) refRejected(shot.id, r);
+        refFiles = fallback.kept;
+      }
+      if (!refFiles.length) throw new Error(`${shot.id}: refs 冇一張 photo_qc GREEN — 唔准 /edit`);
       const images = [base, ...refFiles];
       const health = await checkHealth(cfg.stills.url, images.length);
       const nodePaths: string[] = [];
@@ -726,20 +779,47 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         await speak("pictureQc", `${shot.id} 唔過（${reasons}）— 原封重出同一 packet 一次。`, "warn");
         const inputs = editInputs.get(shot.id);
         if (!inputs) throw new Error(`picture QC ${shot.id}: no /edit inputs to retry with`);
+        // T44 §2/§4: the retry re-derives refs through the GREEN gate — the
+        // shot's own failed still is structurally never among the candidates,
+        // and any ref that lost its GREEN since the first attempt drops out
+        // with a ref_rejected event, portraits standing in
+        const regate = refsGreenOnly(inputs.refs);
+        for (const r of regate.rejected) refRejected(shot.id, r);
+        let retryRefs = regate.kept;
+        if (regate.rejected.length && !retryRefs.length) {
+          const ids = [...new Set(shot.marks.map((m) => m.characterId))];
+          const portraitOf = (id: string) => {
+            const p = portraits.files[id];
+            if (!p || !fs.existsSync(p)) throw new Error(`${shot.id}: retry 冇肖像 fallback（${id}）`);
+            return p;
+          };
+          const fallback = refsGreenOnly(ids.map(portraitOf));
+          for (const r of fallback.rejected) refRejected(shot.id, r);
+          retryRefs = fallback.kept;
+        }
+        if (!retryRefs.length) throw new Error(`picture QC ${shot.id}: retry refs 冇一張 GREEN — 唔准再 /edit`);
+        const retryImages = [inputs.base, ...retryRefs];
+        const retryNodePaths: string[] = [];
+        for (const img of retryImages) {
+          const rpath = u15RefPath(img);
+          await scpToHost(stillsHost, cfg.ssh.user, img, path.dirname(rpath), path.basename(rpath));
+          retryNodePaths.push(rpath);
+        }
+        editInputs.set(shot.id, { ...inputs, nodePaths: retryNodePaths, refs: retryRefs });
         const payload = buildEditPayload({
           prompt: inputs.prompt,
-          images: inputs.nodePaths,
+          images: retryNodePaths,
           width: cfg.stills.width || size.width,
           height: cfg.stills.height || size.height,
         });
         await u15Edit({
           server: cfg.stills.url,
           payload,
-          nodePaths: inputs.nodePaths,
+          nodePaths: retryNodePaths,
           outFile: png,
           recordJson: path.join(stillDir, `${shot.id}.u15_edit.retry.json`),
-          health: await checkHealth(cfg.stills.url, inputs.nodePaths.length),
-          record: sealEditRecord(inputs, payload),
+          health: await checkHealth(cfg.stills.url, retryNodePaths.length),
+          record: sealEditRecord({ ...inputs, refs: retryRefs }, payload),
         });
         result = await runPhotoQc(png, qcJson, require);
       }
