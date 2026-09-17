@@ -26,7 +26,11 @@
   },
   "pictureQc": {
     "endpoint": "http://127.0.0.1:8015",
-    "model": "mars-fa2"
+    "model": "qwen38"
+  },
+  "nex": {
+    "endpoint": "http://127.0.0.1:8017",
+    "model": "nex-n2.5"
   },
   "soundQc": {
     "endpoint": "http://127.0.0.1:9881",
