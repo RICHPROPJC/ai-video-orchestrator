@@ -6,18 +6,22 @@ import * as nodeTest from "node:test";
 import sharp from "sharp";
 import { runCli } from "./photo-qc-cli";
 
-/** Same three-door idiom as photo-qc.test.ts (store.test.ts house pattern). */
-const bareBun = !!process.versions.bun && process.env.BUN_TEST !== "1";
+/** Same three-door idiom as photo-qc.test.ts — lazy registration because
+ *  bun 1.3 no longer sets BUN_TEST (0917 fix). */
 const cases: { name: string; fn: () => void | Promise<void> }[] = [];
-const test = bareBun
-  ? (name: string, fn: () => void | Promise<void>) => cases.push({ name, fn })
-  : nodeTest.test;
+function test(name: string, fn: () => void | Promise<void>) {
+  try {
+    nodeTest.test(name, fn);
+  } catch {
+    cases.push({ name, fn });
+  }
+}
 
 import http from "node:http";
 
-/** Local stub eye with the same wire shape as the photo-qc.test fixtures:
- *  /v1/models serves mars-fa2; describe→desc, summarize→summary. */
-function stubEyeNode(desc: string, summary: string) {
+/** Local stub eye/judge with the same wire shape as the photo-qc.test fixtures:
+ *  /v1/models serves mars-fa2; image calls→desc (five legs), text calls→judge JSON. */
+function stubEyeNode(desc: string, judgeJson: string) {
   let calls = 0;
   const server = http.createServer((_req, res) => {
     let body = "";
@@ -30,13 +34,18 @@ function stubEyeNode(desc: string, summary: string) {
       }
       calls += 1;
       const content = (JSON.parse(body) as { messages: { content: unknown }[] }).messages[0]!.content;
-      const reply = Array.isArray(content) ? desc : summary;
+      const reply = Array.isArray(content) ? desc : judgeJson;
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
     });
   });
   return { server, calls: () => calls };
 }
+
+/** PACKAGE-0917 判官回覆（達標版）。 */
+const JUDGE_OK =
+  '{"items":[{"item":"人數","verdict":"達標","evidence":"【全圖】「一个人」"}],' +
+  '"style":{"verdict":"寫實"},"pass":true,"fail_reasons":[]}';
 
 const REQUIRE_JSON = { people_count: 1, grey_blocks: false, size: "medium" };
 
@@ -63,13 +72,16 @@ test("T40 E1: all-black still fails empty_frame through the CLI with exit 1", as
   const png = await mkPng(dir, "SH09.png", "allblack");
   const requirePath = path.join(dir, "require.json");
   fs.writeFileSync(requirePath, JSON.stringify(REQUIRE_JSON));
-  const eye = stubEyeNode("一个人企喺房中间。", '{"people_count":1,"grey_blocks":false,"size_notes":"medium"}');
+  const eye = stubEyeNode("一个人企喺房中间。", JUDGE_OK);
   await new Promise<void>((r) => eye.server.listen(0, "127.0.0.1", r));
   const port = (eye.server.address() as { port: number }).port;
   const prev = process.env.SLATECREW_SECOND_ENDPOINT;
   delete process.env.SLATECREW_SECOND_ENDPOINT;
   try {
-    const res = await runCli([png, "--require", requirePath], { first: { url: `http://127.0.0.1:${port}`, model: "mars-fa2" } });
+    const res = await runCli([png, "--require", requirePath], {
+      first: { url: `http://127.0.0.1:${port}`, model: "mars-fa2" },
+      judge: { url: `http://127.0.0.1:${port}`, model: "mars-fa2" },
+    });
     assert.equal(res.code, 1);
     assert.equal(res.record?.status, "FAIL");
     assert.ok(
@@ -90,13 +102,16 @@ test("T40 E2: plain-studio portrait does not grey-fail — exit 0 PASS_WITH_WARN
   const png = await mkPng(dir, "PA.png", "portrait");
   const requirePath = path.join(dir, "require.json");
   fs.writeFileSync(requirePath, JSON.stringify(REQUIRE_JSON));
-  const eye = stubEyeNode("一个人企喺净色背景前。", '{"people_count":1,"grey_blocks":false,"size_notes":"medium"}');
+  const eye = stubEyeNode("一个人企喺净色背景前。", JUDGE_OK);
   await new Promise<void>((r) => eye.server.listen(0, "127.0.0.1", r));
   const port = (eye.server.address() as { port: number }).port;
   const prev = process.env.SLATECREW_SECOND_ENDPOINT;
   delete process.env.SLATECREW_SECOND_ENDPOINT;
   try {
-    const res = await runCli([png, "--require", requirePath], { first: { url: `http://127.0.0.1:${port}`, model: "mars-fa2" } });
+    const res = await runCli([png, "--require", requirePath], {
+      first: { url: `http://127.0.0.1:${port}`, model: "mars-fa2" },
+      judge: { url: `http://127.0.0.1:${port}`, model: "mars-fa2" },
+    });
     assert.equal(res.code, 0, JSON.stringify(res.record?.checks));
     assert.equal(res.record?.status, "PASS_WITH_WARN");
     assert.ok((res.record?.checks?.warns as string[]).some((w) => w.includes("grey_watch")));
@@ -112,12 +127,15 @@ test("T40: empty require object goes through the gate — exit 1 cannot accept",
   const png = await mkPng(dir, "SH10.png", "allblack");
   const requirePath = path.join(dir, "require.json");
   fs.writeFileSync(requirePath, "{}");
-  // parseable summary so the parse_error path does not mask the gate's verdict
-  const eye = stubEyeNode("x", '{"people_count":null}');
+  // parseable judge reply so the parse_error path does not mask the gate's verdict
+  const eye = stubEyeNode("x", JUDGE_OK);
   await new Promise<void>((r) => eye.server.listen(0, "127.0.0.1", r));
   const port = (eye.server.address() as { port: number }).port;
   try {
-    const res = await runCli([png, "--require", requirePath], { first: { url: `http://127.0.0.1:${port}`, model: "mars-fa2" } });
+    const res = await runCli([png, "--require", requirePath], {
+      first: { url: `http://127.0.0.1:${port}`, model: "mars-fa2" },
+      judge: { url: `http://127.0.0.1:${port}`, model: "mars-fa2" },
+    });
     assert.equal(res.code, 1);
     assert.ok((res.record?.checks?.fail_reasons ?? []).some((r) => r.includes("no require: cannot accept")));
   } finally {
@@ -147,7 +165,7 @@ test("T40 E3: the CLI carries zero copied gates — rg lock", () => {
   }
 });
 
-if (bareBun) {
+if (cases.length > 0) {
   void (async () => {
     let failed = 0;
     for (const c of cases) {

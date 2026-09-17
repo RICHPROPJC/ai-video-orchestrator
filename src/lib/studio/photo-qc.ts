@@ -4,27 +4,37 @@ import crypto from "node:crypto";
 import { loadConfig } from "./config";
 import { EMPTY_FRAME_MIN, judgePhotoGreyLeak, measureEmptyFrame } from "./workbench-grey-leak";
 
-const BLIND_PROMPT = [
-  "用中文写成连贯短句，只写看得见的东西：人数、衣服、姿势、手里的物件、地面、背景。",
-  "姿势写坐、站、跪、蹲、躺、转身；从床上坐起来就写坐起。手在做什么要写（按胸口、拉白布、握徽章）。",
-  "看得见的脸、眼、肩、胸口、白布、屏幕、徽章要写出来。",
-  "背景写场所类型（停尸间、茶餐厅、街道、仓库、走廊、地下室）；能判断在地下就写地下。不要写城市名或故事人名。",
-  "只写物件和结构，不要写清晰、良好、干净。",
-  "叫不出物件名字就写形状（柄、刃、木、铁、弯不弯），不要编故事。",
-].join("");
+// ─── PACKAGE-QC-FORMULA-0917（Chau 0917 收斂版，SUPERSEDE 16:08 引導式假fail）───
+// 眼（五路並行）：2K 全圖一路 + 4K 原生切四格各一路；prompt 只准一句，一字唔改。
+// 判官（一路，text-only）：任務原文逐項 → 引描述原句標 達標/唔達標/冇提及 →
+// 矛盾並列 → 決定。釘死：數碼寫實＝寫實；插畫／漫畫／厚塗／卡通／版畫先係唔寫實。
 
-const SUMMARIZE_PROMPT =
-  "The following text is an eyewitness description of one still image. " +
-  "Using ONLY that text, fill JSON (no markdown). If the text does not say it, " +
-  'use null or "unknown". Keys:\n' +
-  "- people_count (integer or null)\n" +
-  "- pose_notes (short string)\n" +
-  '- tool_as_written (verbatim clause about any held object, including shape words)\n' +
-  "- grey_blocks (true/false/unknown): grey cubes, mannequin/i-mannequin placeholders, placards, or white silhouettes\n" +
-  "- location_notes (short string): place as written — indoor/outdoor, wet/dry, ground, walls, and place type if named\n" +
-  "- action_notes (short string): what the body is doing\n" +
-  "- size_notes (closeup|medium|wide|full|insert|unknown): how much of the body and set is in frame\n" +
-  "Do not name characters. Do not decide whether an object is 'correct'.";
+/** 公版眼 prompt —— PACKAGE 0917 指定句，帶圖 call 一字唔改，改咗就 throw。 */
+export const EYE_PROMPT = "描述下呢個U1.5做出嚟嘅圖片。";
+
+/** 發射前 lint：任何帶圖 call 嘅 prompt 唔係規定句 → throw，唔落網。 */
+export function lintEyePrompt(prompt: string): string {
+  if (prompt !== EYE_PROMPT) {
+    throw new Error(`eye lint: image-bearing prompt must be exactly EYE_PROMPT ${JSON.stringify(EYE_PROMPT)}, got ${JSON.stringify(prompt)}`);
+  }
+  return prompt;
+}
+
+/** chat 出口 lint：content 帶 image_url 而文字部份 ≠ EYE_PROMPT → throw。
+ *  引導式審問（第二條問題／清單／選項／「係咪」）從此進唔到任何帶圖 request。 */
+export function lintEyeContent(content: unknown): void {
+  if (!Array.isArray(content)) return;
+  const parts = content as { type?: string; text?: string }[];
+  if (!parts.some((p) => p?.type === "image_url")) return;
+  const text = parts.filter((p) => p?.type === "text").map((p) => p.text ?? "").join("");
+  lintEyePrompt(text);
+}
+
+/** Nex-n2.5 官方 sampling（PACKAGE 0917；唔用 temp 0）。 */
+export const EYE_SAMPLING = { temperature: 0.7, top_p: 0.95, top_k: 40, reasoning_effort: "none" } as const;
+
+/** qwen38 判官 sampling（README 例；唔抄 MARS temp 0.0）。 */
+export const JUDGE_SAMPLING = { temperature: 0.7 } as const;
 
 /** Traditional → simplified for gram matching. Not a story lexicon. */
 const TRAD_SIMP: Record<string, string> = {
@@ -85,39 +95,135 @@ export type QcVerdict = {
 const GREY_RE =
   /灰色方块|灰色方塊|灰块|灰塊|占位人偶|灰色立方|灰色人形|人偶|i-?mannequin|mannequin|placard|標牌|看板|剪影|silhouette|grey cubes?|gray cubes?|grey blocks?/i;
 
-/** GET /v1/models on the configured vision endpoint; resolves the exact model,
- *  else any model with "mars" in its id. Throws when neither is served. */
+/** GET /v1/models on an endpoint; resolves the exact model id or throws.
+ *  0917 公版：唔再有 mars 模糊後備——眼＝nex-n2.5(:8017)、判官＝qwen38(:8015)，
+ *  probe 唔中即 fail loud，唔准估。 */
 export async function probeVisionEndpoint(url: string, model: string): Promise<string> {
   const res = await fetch(`${url.replace(/\/$/, "")}/v1/models`, { signal: AbortSignal.timeout(5000) });
   if (!res.ok) throw new Error(`vision endpoint down: GET ${url}/v1/models -> HTTP ${res.status}`);
   const json = (await res.json()) as { data?: { id?: string }[] };
   const ids = (json.data ?? []).map((m) => m.id ?? "").filter(Boolean);
   if (ids.includes(model)) return model;
-  const alt = ids.find((id) => id.includes("mars"));
-  if (alt) return alt;
-  throw new Error(`no vision model on ${url}: want ${model}, have ${ids.join(", ") || "none"}`);
+  throw new Error(`model ${model} not served on ${url}: have ${ids.join(", ") || "none"}`);
 }
 
-async function chat(url: string, model: string, content: unknown, maxTokens: number): Promise<string> {
+type ChatSampling = { temperature: number; top_p?: number; top_k?: number; reasoning_effort?: string };
+
+async function chat(
+  url: string,
+  model: string,
+  content: unknown,
+  maxTokens: number,
+  sampling: ChatSampling = { temperature: 0.1 },
+  timeoutMs = 180_000,
+): Promise<string> {
+  lintEyeContent(content); // 帶圖 prompt 唔係規定句＝呢度 throw，唔落網
   const res = await fetch(`${url.replace(/\/$/, "")}/v1/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages: [{ role: "user", content }], max_tokens: maxTokens, temperature: 0.1 }),
-    signal: AbortSignal.timeout(180_000),
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content }],
+      max_tokens: maxTokens,
+      temperature: sampling.temperature,
+      ...(sampling.top_p !== undefined ? { top_p: sampling.top_p } : {}),
+      ...(sampling.top_k !== undefined ? { top_k: sampling.top_k } : {}),
+      ...(sampling.reasoning_effort !== undefined ? { reasoning_effort: sampling.reasoning_effort } : {}),
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`vision chat ${url} HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   return (json.choices?.[0]?.message?.content ?? "").trim();
 }
 
-export async function blindDescribe(url: string, model: string, imageFile: string): Promise<string> {
-  const b64 = fs.readFileSync(imageFile).toString("base64");
-  const mime = imageFile.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
-  return chat(url, model, [
-    { type: "text", text: BLIND_PROMPT },
-    { type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } },
-  ], 2000);
+// ─── 眼：五路（whole 2K + TL/TR/BL/BR 原生四格） ───
+
+export type QuadKey = "TL" | "TR" | "BL" | "BR";
+
+/** 判官輸入用嘅格仔標籤（PACKAGE 0917）。 */
+export const QUAD_LABELS: Record<QuadKey, string> = { TL: "左上角", TR: "右上角", BL: "左下角", BR: "右下角" };
+
+export type EyeLegs = { whole: Buffer; quads: Record<QuadKey, Buffer> };
+
+/** 2K 全圖一路 + 原生切四格各一路。四格由原圖原生像素切出（唔降級）——
+ *  風格來源唔可以用 2K 降級碎片。 */
+export async function prepEyeLegs(pngFile: string): Promise<EyeLegs> {
+  const sharp = (await import("sharp")).default;
+  const meta = await sharp(pngFile).metadata();
+  const W = meta.width ?? 0;
+  const H = meta.height ?? 0;
+  if (W < 8 || H < 8) throw new Error(`photo-qc eye: unreadable or tiny image ${pngFile} (${W}x${H})`);
+  const whole = await sharp(pngFile)
+    .resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true })
+    .png()
+    .toBuffer();
+  const hw = Math.floor(W / 2);
+  const hh = Math.floor(H / 2);
+  const crop = (left: number, top: number) =>
+    sharp(pngFile).extract({ left, top, width: hw, height: hh }).png().toBuffer();
+  const quads: Record<QuadKey, Buffer> = {
+    TL: await crop(0, 0),
+    TR: await crop(W - hw, 0),
+    BL: await crop(0, H - hh),
+    BR: await crop(W - hw, H - hh),
+  };
+  return { whole, quads };
 }
+
+/** 帶圖 describe：唯一合法 prompt 係 EYE_PROMPT（lint 喺 chat 出口再閘一次）。 */
+export async function eyeDescribe(
+  url: string,
+  model: string,
+  png: Buffer,
+  sampling: ChatSampling = EYE_SAMPLING,
+  maxTokens = 4000,
+): Promise<string> {
+  const b64 = png.toString("base64");
+  return chat(
+    url,
+    model,
+    [
+      { type: "text", text: lintEyePrompt(EYE_PROMPT) },
+      { type: "image_url", image_url: { url: `data:image/png;base64,${b64}` } },
+    ],
+    maxTokens,
+    sampling,
+  );
+}
+
+export type EyeDescriptions = { whole: string } & Record<QuadKey, string>;
+
+/** 五路並行 describe（whole + 四格），全部同一隻眼模型。 */
+export async function describeFive(url: string, model: string, legs: EyeLegs): Promise<EyeDescriptions> {
+  const [whole, TL, TR, BL, BR] = await Promise.all([
+    eyeDescribe(url, model, legs.whole),
+    eyeDescribe(url, model, legs.quads.TL),
+    eyeDescribe(url, model, legs.quads.TR),
+    eyeDescribe(url, model, legs.quads.BL),
+    eyeDescribe(url, model, legs.quads.BR),
+  ]);
+  return { whole, TL, TR, BL, BR };
+}
+
+/** 相容出口（video-qc／second eye 用）：同一句 EYE_PROMPT，temp 0.7。 */
+export async function blindDescribe(url: string, model: string, imageFile: string): Promise<string> {
+  const png = fs.readFileSync(imageFile);
+  return eyeDescribe(url, model, png, { temperature: 0.7 });
+}
+
+const SUMMARIZE_PROMPT =
+  "The following text is an eyewitness description of one still image. " +
+  "Using ONLY that text, fill JSON (no markdown). If the text does not say it, " +
+  'use null or "unknown". Keys:\n' +
+  "- people_count (integer or null)\n" +
+  "- pose_notes (short string)\n" +
+  '- tool_as_written (verbatim clause about any held object, including shape words)\n' +
+  "- grey_blocks (true/false/unknown): grey cubes, mannequin/i-mannequin placeholders, placards, or white silhouettes\n" +
+  "- location_notes (short string): place as written — indoor/outdoor, wet/dry, ground, walls, and place type if named\n" +
+  "- action_notes (short string): what the body is doing\n" +
+  "- size_notes (closeup|medium|wide|full|insert|unknown): how much of the body and set is in frame\n" +
+  "Do not name characters. Do not decide whether an object is 'correct'.";
 
 export async function summarize(url: string, model: string, desc: string, maxTokens = 800): Promise<QcSummary> {
   const raw = await chat(url, model, `${SUMMARIZE_PROMPT}\n\n---\n${desc}`, maxTokens);
@@ -130,13 +236,190 @@ export async function summarize(url: string, model: string, desc: string, maxTok
   return JSON.parse(text.slice(a, b + 1)) as QcSummary;
 }
 
+// ─── 判官：text-only，唔見圖 ───
+
+export type PackageJudgeItem = { item?: string; verdict?: string; evidence?: string };
+
+export type PackageJudge = {
+  items?: PackageJudgeItem[];
+  contradictions?: string[];
+  style?: { verdict?: string; evidence?: string };
+  pass?: boolean;
+  fail_reasons?: string[];
+} & Record<string, unknown>;
+
+/** 任務原文（require 逐項）→ 判官 prompt 用嘅清單。 */
+export function renderRequireLines(require: QcRequire): string[] {
+  const lines: string[] = [];
+  if (require.people_count != null) lines.push(`- 人數：${require.people_count}`);
+  if (require.tool) {
+    let line = `- 道具：${require.tool}`;
+    if (require.tool_shape?.length) line += `（形狀線索：${require.tool_shape.join("、")}）`;
+    if (require.tool_forbid?.length) line += `（禁：${require.tool_forbid.join("、")}）`;
+    lines.push(line);
+  }
+  if (require.location) lines.push(`- 地點：${require.location}`);
+  if (require.action) lines.push(`- 動作：${require.action}`);
+  if (require.size) lines.push(`- 尺寸：${require.size}`);
+  if (require.grey_blocks === false) lines.push("- 灰模佔位：禁止（唔准有灰色方塊／人偶／剪影）");
+  lines.push("- 風格：寫實（寫實包括數碼生成嘅寫實；插畫／漫畫／厚塗／卡通／版畫先係唔寫實）");
+  return lines;
+}
+
+/** 公版判官 prompt：任務原文＋五份描述＋程序＋釘死規則＋JSON 回覆格式。 */
+export function buildJudgePrompt(require: QcRequire, eyes: EyeDescriptions): string {
+  const quads: QuadKey[] = ["TL", "TR", "BL", "BR"];
+  return [
+    "你係公版QC判官：只讀文字，唔會見到圖。",
+    "",
+    "任務原文（request require，逐項）：",
+    ...renderRequireLines(require),
+    "",
+    "五份眼描述（同一張U1.5成品圖；【左上角】【右上角】【左下角】【右下角】係呢張圖入面嘅四分一格局部座標，唔係四張獨立圖）：",
+    "",
+    `【全圖】\n${eyes.whole}`,
+    ...quads.flatMap((k) => ["", `【${QUAD_LABELS[k]}】\n${eyes[k]}`]),
+    "",
+    "程序（照次序做，逐步寫出）：",
+    "1. 將任務要求逐項列出。",
+    "2. 每項喺描述入面搵證據，引描述原句，標：達標／唔達標／冇提及。",
+    "3. 五份描述之間有矛盾，並列雙方原句。",
+    "4. 最後決定。",
+    "",
+    "規則（釘死，唔准推翻）：",
+    "1. 判斷範圍＝具體可見內容＋風格，唔好腦補。",
+    "2. 寫實包括數碼生成嘅寫實——「數碼」「數碼化」「數碼生成」「AI生成」「U1.5」字眼唔等於唔寫實。",
+    "3. 插畫／漫畫／厚塗／卡通／版畫——只有呢五類先係唔寫實。",
+    "4. 風格判斷只可以根據【全圖】描述（呢張圖係U1.5出品）；四格只用嚟捉全圖睇漏嘅可見內容，唔准攞四格碎片判風格。",
+    "",
+    "最後另起一行只回一個 JSON object（冇 code fence 冇廢話）：",
+    '{"items":[{"item":"…","verdict":"達標|唔達標|冇提及","evidence":"引描述原句"}],',
+    '"contradictions":["並列原句"],',
+    '"style":{"verdict":"寫實|插畫|漫畫|厚塗|卡通|版畫","evidence":"【全圖】原句"},',
+    '"pass":true,"fail_reasons":["一句到點"]}',
+  ].join("\n");
+}
+
+/** 判官 call：text-only（content 係純字串，唔收 image bytes）。 */
+export async function runPackageJudge(
+  url: string,
+  model: string,
+  require: QcRequire,
+  eyes: EyeDescriptions,
+): Promise<PackageJudge> {
+  const raw = await chat(url, model, buildJudgePrompt(require, eyes), 6000, JUDGE_SAMPLING, 300_000);
+  let text = raw.trim();
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) text = (fence[1] ?? "").trim();
+  const a = text.indexOf("{");
+  const b = text.lastIndexOf("}");
+  if (a < 0 || b <= a) throw new Error(`no JSON object in judge reply: ${raw.slice(0, 400)}`);
+  return JSON.parse(text.slice(a, b + 1)) as PackageJudge;
+}
+
+// ─── 風格守衞：Chau 0917 主點——數碼寫實＝寫實（code 層釘死，唔靠判官自覺） ───
+
+/** 五類唔寫實（PACKAGE 0917 規則 3）。 */
+export const NON_PHOTOREAL_RE =
+  /插畫|插画|漫畫|漫画|厚塗|厚涂|卡通|版畫|版画|illustration|comic|graphic novel|cartoon|anime|manga|woodblock|printmak/i;
+
+/** 數碼寫實家族（出現呢啲字眼而冇五類唔寫實字眼＝仍然寫實）。 */
+export const DIGITAL_REALISM_RE =
+  /數碼|数码|數位|数位|数字|數字|AI生成|人工智能|生成式|生成模型|U1\.5|電腦繪|电脑绘|電繪|电绘|渲染|digital|AI-generated|computer-generated|photoreal|3d render/i;
+
+export type StyleGuardResult = {
+  judge: PackageJudge;
+  guard: string[]; // 推翻記錄（唔係 fail_reasons）
+  styleNonPhotoreal: boolean;
+};
+
+/** 守衞只在「數碼家族字眼出現、而五類唔寫實字眼完全冇出現」時推翻風格死刑。 */
+export function applyStyleGuard(judge: PackageJudge): StyleGuardResult {
+  const guard: string[] = [];
+  const out: PackageJudge = { ...judge, items: judge.items?.map((i) => ({ ...i })), fail_reasons: judge.fail_reasons ? [...judge.fail_reasons] : [] };
+
+  const digitalOnly = (text: string | undefined) =>
+    !!text && DIGITAL_REALISM_RE.test(text) && !NON_PHOTOREAL_RE.test(text);
+
+  // 1. fail_reasons：淨係數碼字眼嘅風格死刑理由 → 推翻
+  if (out.fail_reasons) {
+    const kept: string[] = [];
+    for (const reason of out.fail_reasons) {
+      if (digitalOnly(reason)) guard.push(`style_guard: 數碼寫實＝寫實（推翻 ${JSON.stringify(reason)}）`);
+      else kept.push(reason);
+    }
+    out.fail_reasons = kept;
+  }
+
+  // 2. 風格 item：唔達標但證據淨係數碼字眼 → 翻做達標
+  if (out.items) {
+    for (const item of out.items) {
+      if (item.verdict === "唔達標" && /風格|风格|style/i.test(item.item ?? "") && digitalOnly(`${item.item ?? ""} ${item.evidence ?? ""}`)) {
+        item.verdict = "達標";
+        guard.push(`style_guard: 風格項推翻（${item.item ?? "?"} 證據只含數碼寫實字眼）`);
+      }
+    }
+  }
+
+  // 3. style verdict：數碼寫實家族 → 寫實
+  let styleNonPhotoreal = false;
+  if (out.style?.verdict) {
+    if (NON_PHOTOREAL_RE.test(out.style.verdict)) {
+      styleNonPhotoreal = true;
+    } else if (DIGITAL_REALISM_RE.test(out.style.verdict) && out.style.verdict !== "寫實") {
+      guard.push(`style_guard: ${out.style.verdict} → 寫實（數碼寫實＝寫實）`);
+      out.style = { ...out.style, verdict: "寫實" };
+    }
+  }
+
+  // 4. pass：所有被推翻後已無死因 → 翻做 pass
+  const failedItems = (out.items ?? []).filter((i) => i.verdict === "唔達標");
+  if (judge.pass === false && out.pass !== true && guard.length > 0 && failedItems.length === 0 && (out.fail_reasons?.length ?? 0) === 0 && !styleNonPhotoreal) {
+    out.pass = true;
+    guard.push("style_guard: 判官 pass=false 全部因數碼字眼成立 → 推翻");
+  }
+  return { judge: out, guard, styleNonPhotoreal };
+}
+
+/** 判官輸出 → QcVerdict（GREEN/FAIL ＋ fail_reasons）。 */
+export function packageVerdict(require: QcRequire, judgeOut: PackageJudge): QcVerdict {
+  const reasons: string[] = [];
+  const checks: Record<string, unknown> = {};
+  const { judge: j, guard, styleNonPhotoreal } = applyStyleGuard(judgeOut);
+
+  if (Object.keys(require).length === 0) {
+    reasons.push("no require: cannot accept");
+  }
+
+  for (const item of j.items ?? []) {
+    if (item.verdict === "唔達標") {
+      reasons.push(`${item.item ?? "項目"}: 唔達標 — ${item.evidence ?? "（判官冇引句）"}`);
+    }
+  }
+  if (styleNonPhotoreal) {
+    reasons.push(`style: ${j.style?.verdict ?? ""} 唔係寫實（插畫／漫畫／厚塗／卡通／版畫） — ${j.style?.evidence ?? ""}`);
+  }
+  for (const reason of j.fail_reasons ?? []) reasons.push(reason);
+  if (j.pass === false && reasons.length === 0) {
+    reasons.push("judge pass=false 但冇列任何理由 — fail loud");
+  }
+
+  checks.items = j.items ?? [];
+  checks.style = j.style ?? null;
+  checks.contradictions = j.contradictions ?? [];
+  if (guard.length > 0) checks.style_guard = guard;
+
+  const status: "GREEN" | "FAIL" = reasons.length === 0 ? "GREEN" : "FAIL";
+  return { status, checks: { ...checks, status, fail_reasons: reasons } };
+}
+
 /** CJK bigrams + latin words — sheet tokens, never hardcoded story nouns. */
 export function sceneGrams(text: string): string[] {
   const folded = foldCjk(text);
   const out: string[] = [];
   const chars = [...folded];
   for (let i = 0; i < chars.length - 1; i++) {
-    if (/[\u4e00-\u9fff]/.test(chars[i]!) && /[\u4e00-\u9fff]/.test(chars[i + 1]!)) {
+    if (/[一-鿿]/.test(chars[i]!) && /[一-鿿]/.test(chars[i + 1]!)) {
       out.push(chars[i]! + chars[i + 1]!);
     }
   }
@@ -190,6 +473,7 @@ export function sameRequire(a: QcRequire, b: QcRequire): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** 舊 bigram judge（video-qc 幀檢同舊收據路仲用；公版 stills 路已行五路＋判官）。 */
 export function judge(desc: string, summary: QcSummary, require: QcRequire, ctx: PhotoQcCtx = {}): QcVerdict {
   const reasons: string[] = [];
   const checks: Record<string, unknown> = {};
@@ -304,8 +588,8 @@ export function judge(desc: string, summary: QcSummary, require: QcRequire, ctx:
   return { status, checks: { ...checks, status, fail_reasons: reasons } };
 }
 
-/** C10 second eye — glm-5.3-flash via LiteLLM :4000. MARS stays the first eye;
- *  the second eye is one extra sequential pass, never fan-out. */
+/** C10 second eye — glm-5.3-flash via LiteLLM :4000. The second eye is one extra
+ *  sequential pass, never fan-out; it describes with the same EYE_PROMPT. */
 export type SecondEyeConfig = { endpoint: string; model: string };
 
 export type SecondEyeRecord = {
@@ -327,8 +611,8 @@ export function resolveSecondEye(opts: SecondEyeOpts = {}): SecondEyeConfig | nu
 }
 
 /** T35 item 5: pipeline call sites pass eyes explicitly (audit-visible) instead of
- *  relying on ambient env inside runPhotoQc. Same resolution law as resolveSecondEye:
- *  env set → :4000 glm-5.3-flash; env empty → un-armed (PASS_UNCONFIRMED ceiling). */
+ *  relying on ambient env inside runPhotoQc. Eye/judge endpoints come from config
+ *  (nex :8017 / pictureQc :8015); env set → :4000 glm-5.3-flash second eye. */
 export function photoQcEyesFromEnv(): PhotoQcEyes {
   return {
     second: {
@@ -376,31 +660,39 @@ export function judgeSecondEye(
 
 export type PhotoQcStatus = "GREEN" | "PASS_UNCONFIRMED" | "PASS_WITH_WARN" | "FAIL";
 
+/** 公版 record（0917 五路眼＋text-only 判官）。blind 保留＝全圖路描述（pin 法讀佢）。 */
 export type PhotoQcRecord = {
   tool: "slatecrew.photo_qc";
   ts: string;
+  formula: "package-0917";
   image: string;
   sha256: string;
-  endpoint: string;
-  model: string;
+  eye: { endpoint: string; model: string; sampling: ChatSampling };
+  judgeCfg: { endpoint: string; model: string; temperature: number };
   require: QcRequire;
   status: PhotoQcStatus;
   blind: string;
-  summary: QcSummary | { parse_error: string; raw: string };
+  quads: Record<QuadKey, string>;
+  judgeOutput: PackageJudge | { parse_error: string; raw: string };
   checks: QcVerdict["checks"];
   second?: SecondEyeRecord;
 };
 
-/** eyes overrides keep runPhotoQc testable without touching config.ts: first.eye
- *  points the MARS leg at a fixture; second arms the glm second eye. */
+export const QC_FORMULA = "package-0917" as const;
+
+/** eyes overrides keep runPhotoQc testable without touching config.ts: first
+ *  points the five-path eye at a fixture; judge points the text-only judge at a
+ *  fixture; second arms the glm second eye. */
 export type PhotoQcEyes = {
   first?: { url?: string; model?: string };
+  judge?: { url?: string; model?: string };
   second?: SecondEyeOpts;
 };
 
-/** blind write-up → summarize → judge vs require. HTTP failures throw (no local
- *  schema substitute); only a summary-parse failure records FAIL. Second eye
- *  (when armed) runs AFTER the first-eye verdict, sequentially. */
+/** 公版 stills QC：五路眼（nex :8017）並行 describe → text-only 判官（qwen38 :8015）
+ *  逐項引句判 → 風格守衞（數碼寫實＝寫實）→ second eye／grey／empty 機器閘照舊。
+ *  HTTP failures throw (no local schema substitute); only a judge-parse failure
+ *  records FAIL. Cache law: formula+sha+require+parsed judge+second-eye model. */
 export async function runPhotoQc(
   pngFile: string,
   outJson: string,
@@ -415,15 +707,16 @@ export async function runPhotoQc(
     try {
       const existing = JSON.parse(fs.readFileSync(outJson, "utf8")) as PhotoQcRecord;
       // T35b-cache: every terminal verdict caches - GREEN, PASS_UNCONFIRMED,
-      // PASS_WITH_WARN and FAIL alike. Only a summary-parse record re-runs (the
-      // gate itself never issued a verdict there). sha+require+second-eye law
-      // unchanged; parameters untouched (envelope).
-      const cachedSummary = existing.summary as Record<string, unknown> | undefined;
-      const summaryParsed = !!cachedSummary && typeof cachedSummary === "object" && !("parse_error" in cachedSummary);
+      // PASS_WITH_WARN and FAIL alike. Only a judge-parse failure re-runs (the
+      // gate itself never issued a verdict there). 0917 公版：收據必須係本公式
+      // 先算數（formula 不符＝舊公式收據，重跑）。
+      const judgeParsed =
+        !!existing.judgeOutput && typeof existing.judgeOutput === "object" && !("parse_error" in existing.judgeOutput);
       if (
         existing.tool === "slatecrew.photo_qc" &&
+        existing.formula === QC_FORMULA &&
         ["GREEN", "PASS_UNCONFIRMED", "PASS_WITH_WARN", "FAIL"].includes(existing.status) &&
-        summaryParsed &&
+        judgeParsed &&
         existing.sha256 === digest &&
         sameRequire(existing.require, require) &&
         (!secondCfg || existing.second?.model === secondCfg.model)
@@ -435,19 +728,36 @@ export async function runPhotoQc(
     }
   }
   const cfg = loadConfig();
-  const url = eyes.first?.url ?? cfg.pictureQc.endpoint;
-  const model = await probeVisionEndpoint(url, eyes.first?.model ?? cfg.pictureQc.model);
-  const desc = await blindDescribe(url, model, pngFile);
-  let summary: QcSummary;
+  const eyeUrl = eyes.first?.url ?? cfg.nex.endpoint;
+  const eyeModel = await probeVisionEndpoint(eyeUrl, eyes.first?.model ?? cfg.nex.model);
+  const judgeUrl = eyes.judge?.url ?? cfg.pictureQc.endpoint;
+  const judgeModel = await probeVisionEndpoint(judgeUrl, eyes.judge?.model ?? cfg.pictureQc.model);
+
+  const legs = await prepEyeLegs(pngFile);
+  const desc = await describeFive(eyeUrl, eyeModel, legs);
+  const blind = desc.whole;
+
+  let judgeOutput: PhotoQcRecord["judgeOutput"];
   let verdict: QcVerdict;
   try {
-    summary = await summarize(url, model, desc);
-    verdict = judge(desc, summary, require, ctx);
+    judgeOutput = await runPackageJudge(judgeUrl, judgeModel, require, desc);
+    verdict = packageVerdict(require, judgeOutput);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    summary = { parse_error: message, raw: desc.slice(0, 2000) };
-    verdict = { status: "FAIL", checks: { status: "FAIL", fail_reasons: [`summary parse: ${message}`] } };
+    judgeOutput = { parse_error: message, raw: blind.slice(0, 2000) };
+    verdict = { status: "FAIL", checks: { status: "FAIL", fail_reasons: [`judge parse: ${message}`] } };
   }
+
+  if (ctx.prevDesc) {
+    const sim = jaccardGrams(blind, ctx.prevDesc);
+    if (sim >= 0.42) {
+      verdict = {
+        status: "FAIL",
+        checks: { ...verdict.checks, status: "FAIL", fail_reasons: [...verdict.checks.fail_reasons, `distinct: still too close to previous (jaccard ${sim.toFixed(2)})`] },
+      };
+    }
+  }
+
   let second: SecondEyeRecord | undefined;
   if (secondCfg) {
     second = await runSecondEye(secondCfg.endpoint, secondCfg.model, pngFile);
@@ -460,10 +770,10 @@ export async function runPhotoQc(
     }
   }
   // T35b §2 grey gate: blob silhouette still hard-fails; flat coverage fails only
-  // when the eye agrees (grey_blocks true) — either alone is a recorded warn.
+  // when the eye agrees (five descriptions mention grey) — either alone is a warn.
   const warns: string[] = [];
   if (require.grey_blocks === false) {
-    const eyeSaidGrey = summary.grey_blocks === true || summary.grey_blocks === "true";
+    const eyeSaidGrey = GREY_RE.test(`${blind}\n${desc.TL}\n${desc.TR}\n${desc.BL}\n${desc.BR}`);
     const g = await judgePhotoGreyLeak(pngFile, eyeSaidGrey);
     if (g.fail) {
       verdict = {
@@ -495,14 +805,16 @@ export async function runPhotoQc(
   const record: PhotoQcRecord = {
     tool: "slatecrew.photo_qc",
     ts: new Date().toISOString(),
+    formula: QC_FORMULA,
     image: pngFile,
     sha256: digest,
-    endpoint: url,
-    model,
+    eye: { endpoint: eyeUrl, model: eyeModel, sampling: EYE_SAMPLING },
+    judgeCfg: { endpoint: judgeUrl, model: judgeModel, temperature: JUDGE_SAMPLING.temperature },
     require,
     status,
-    blind: desc,
-    summary,
+    blind,
+    quads: { TL: desc.TL, TR: desc.TR, BL: desc.BL, BR: desc.BR },
+    judgeOutput,
     checks: { ...verdict.checks, status, ...(warns.length > 0 ? { warns } : {}) },
     ...(second ? { second } : {}),
   };

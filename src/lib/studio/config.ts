@@ -27,6 +27,8 @@ export type SlateConfig = {
   };
   tts: { endpoint: string; model: string };
   pictureQc: { endpoint: string; model: string };
+  /** PACKAGE-QC-0917 眼：nex-n2.5 五路 describe（判官先係 pictureQc 端點）。 */
+  nex: { endpoint: string; model: string };
   soundQc: { endpoint: string; model: string };
   /** A3: every sense is a provider. Empty = the stage that needs it FAILs loud. */
   ocr: { endpoint: string; model: string };
@@ -57,7 +59,8 @@ const DEFAULTS: SlateConfig = {
     seed: 42,
   },
   tts: { endpoint: "", model: "Fun-CosyVoice3-0.5B" },
-  pictureQc: { endpoint: "http://127.0.0.1:8015", model: "mars-fa2" },
+  pictureQc: { endpoint: "http://127.0.0.1:8015", model: "qwen38" },
+  nex: { endpoint: "http://127.0.0.1:8017", model: "nex-n2.5" },
   soundQc: { endpoint: "", model: "FunAudioLLM/SenseVoiceSmall" },
   ocr: { endpoint: "", model: "" },
   ssh: {
@@ -83,6 +86,7 @@ export function loadConfig(): SlateConfig {
     motion: { ...DEFAULTS.motion, ...raw.motion },
     tts: { ...DEFAULTS.tts, ...raw.tts },
     pictureQc: { ...DEFAULTS.pictureQc, ...raw.pictureQc },
+    nex: { ...DEFAULTS.nex, ...raw.nex },
     soundQc: { ...DEFAULTS.soundQc, ...raw.soundQc },
     ocr: { ...DEFAULTS.ocr, ...raw.ocr },
     ssh: { ...DEFAULTS.ssh, ...raw.ssh },
