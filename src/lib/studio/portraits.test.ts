@@ -57,14 +57,35 @@ test("the t2i payload is 1024² with thinking on and the fork's step count", () 
   assert.equal(buildGeneratePayload({ prompt: "x", width: 1050 }).width, 1024);
 });
 
-test("the portrait prompt is built from the callsheet, and bans crowds and placeholders", () => {
-  const prompt = portraitPrompt(characters[0]!, sheet);
+test("T43 P1/P2: the portrait prompt carries no world line — sheet 夜街 tokens never enter the face reference", () => {
+  const nightSheet = {
+    ...sheet,
+    location: "軍校男生宿舍",
+    timeOfDay: "night",
+    weather: "neon",
+    styleBible: { ...sheet.styleBible, grade: "夜街霓虹濕地反光" },
+  } as CallSheet;
+  const prompt = portraitPrompt(characters[0]!);
+  assert.match(prompt, /Plain background/, "P1: Plain background 明示");
   assert.match(prompt, /one person alone/);
   assert.match(prompt, /dark coat/);
   assert.match(prompt, /#111111/);
   assert.match(prompt, /No other people/);
   assert.match(prompt, /no grey mannequins/);
   assert.ok(!prompt.includes("Cast-A"), "identity comes from the image, not the name");
+  // P2: callsheet 世界句入肖像＝FAIL — 逐個 world token 驗
+  for (const banned of [
+    nightSheet.location,
+    nightSheet.timeOfDay,
+    nightSheet.weather,
+    nightSheet.styleBible.grade,
+    "軍校",
+    "霓虹",
+    "night",
+    "neon",
+  ]) {
+    assert.ok(!prompt.includes(banned), `portrait prompt 唔准有 world token：${JSON.stringify(banned)}`);
+  }
 });
 
 test("a plugged portrait is used as-is and never regenerated", async () => {

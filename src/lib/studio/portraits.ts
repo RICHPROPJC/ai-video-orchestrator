@@ -7,14 +7,17 @@ import { runPhotoQc, type PhotoQcRecord, type QcRequire } from "./photo-qc";
 /** One face, alone, no placeholders — the same eye that gates the keyframes. */
 export const PORTRAIT_REQUIRE: QcRequire = { people_count: 1, grey_blocks: false };
 
-/** The template is the desk's; every noun in it comes from the callsheet. */
-export function portraitPrompt(character: Character, sheet: CallSheet): string {
+/** T43 (Chau: embed 同一張垃圾圖一路塞返 /edit，源頭 1＝肖像抄 world night/neon):
+ * a portrait is a face reference, not a scene — the sheet's world line
+ * (location/timeOfDay/weather/grade) NEVER enters it. Only: 一人半身、wardrobe、
+ * palette、Plain background. The signature takes no sheet so the leak cannot
+ * come back by accident. */
+export function portraitPrompt(character: Character): string {
   return [
       `Photoreal portrait, one person alone, head and shoulders, facing camera, neutral expression.`,
     `${character.role}: ${character.wardrobe}.`,
     `Palette ${character.palette.join(", ")}.`,
-    `${sheet.location}, ${sheet.timeOfDay}, ${sheet.weather}. ${sheet.styleBible.grade}.`,
-    `Single frame only. Plain background. No collage, no split panels, no other people, no text, no captions, no grey mannequins, no props held.`,
+    `Single frame only. Plain background. No collage, no split panels. No other people, no text, no captions, no grey mannequins, no props held.`,
   ].join(" ");
 }
 
@@ -64,7 +67,7 @@ export async function ensurePortraits(opts: {
       continue;
     }
     const outFile = path.join(opts.outDir, `${character.id}.png`);
-    const prompt = portraitPrompt(character, opts.sheet);
+    const prompt = portraitPrompt(character);
     let last = "";
     for (const [attempt, trySeed] of [seed, seed + 1].entries()) {
       await lane.generate({
