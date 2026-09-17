@@ -289,6 +289,52 @@ test("T36 B2: a photo-QC retry re-issues the packet verbatim — no fail_reasons
   assert.deepEqual(record.refs, ["A.png", "SH01.png"], "refs land as bare filenames");
 });
 
+test("T44 R1: `first` tracks unseen faces only — a size change no longer re-portraits", async () => {
+  const { stillFirstFlags } = await import("./pipeline");
+  const boards = [
+    { marks: [{ characterId: "A" }] }, // i=0 → first
+    { marks: [{ characterId: "A" }] }, // same face, any size change → not first
+    { marks: [{ characterId: "A" }, { characterId: "B" }] }, // B unseen → first
+    { marks: [{ characterId: "B" }] }, // B seen, A gone → not first
+  ];
+  assert.deepEqual(stillFirstFlags(boards), [true, false, true, false]);
+});
+
+test("T44 R2/R4: only GREEN-photo_qc files may feed /edit refs — the rest come back rejected", async () => {
+  const { refsGreenOnly } = await import("./pipeline");
+  const { pinQcAccepted } = await import("./photo-qc");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "t44-refs-"));
+  const bytes = Buffer.concat([Buffer.from("89504e470d0a1a1a0000", "hex"), Buffer.alloc(9000)]);
+  const mk = (id: string, status: "GREEN" | "FAIL") => {
+    fs.writeFileSync(path.join(dir, `${id}.png`), bytes);
+    fs.writeFileSync(
+      path.join(dir, `${id}.photo_qc.json`),
+      JSON.stringify({
+        tool: "slatecrew.photo_qc",
+        status,
+        sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+        blind: "fixture",
+        require: { people_count: 1, grey_blocks: false },
+      }),
+    );
+    return path.join(dir, `${id}.png`);
+  };
+  const greenStill = mk("SH01", "GREEN");
+  const failStill = mk("SH02", "FAIL");
+  const portrait = mk("A", "GREEN");
+  // R4: the FAILed still is rejected, the GREEN still and portrait pass
+  const gate = refsGreenOnly([greenStill, failStill, portrait]);
+  assert.deepEqual(gate.kept, [greenStill, portrait]);
+  assert.deepEqual(gate.rejected, [failStill]);
+  // R2's mechanism: a FAILed still can never enter refs, so a retry built
+  // from kept files cannot contain it
+  assert.ok(!gate.kept.includes(failStill));
+  // R3's mechanism: pinQcAccepted is GREEN-only — a FAIL png never skips /edit on resume
+  assert.equal(pinQcAccepted(dir, "SH02"), false);
+  assert.equal(pinQcAccepted(dir, "SH01"), true);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("hopGeometrySheet: no scene keeps the whole slate, a hop crops to its shots", async () => {
   const { hopGeometrySheet } = await import("./pipeline");
   const shots = [shotOf("SH01", "SC01"), shotOf("SH02", "SC01"), shotOf("SH03", "SC02")];

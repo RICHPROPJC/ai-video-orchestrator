@@ -137,13 +137,26 @@ export async function embedImage(file: string, fetchImpl: typeof fetch = fetch):
   return parseEmbed(await res.json());
 }
 
-export function queryRefs(
+/** T44 §5 (card R5): retrieval ranks candidates by REAL cosine between the
+ *  query's own embedding (WeMM) and each stored vector — the score is
+ *  computed, never assumed. Rows whose vector can't be scored against the
+ *  query (dimension mismatch, another embed model's run) never surface. */
+export async function queryRefs(
   ep: string,
-  opts: { characters?: string[]; scene?: string; k?: number },
-): MemoryHit[] {
+  opts: {
+    queryFile?: string;
+    characters?: string[];
+    scene?: string;
+    k?: number;
+    embed?: EmbedFn;
+  },
+): Promise<MemoryHit[]> {
   const wantChars = new Set((opts.characters ?? []).filter(Boolean));
   const scene = (opts.scene ?? "").trim();
   const k = opts.k ?? 3;
+  const embed = opts.embed ?? embedImage;
+  if (!opts.queryFile || !fs.existsSync(opts.queryFile)) return [];
+  const query = await embed(opts.queryFile);
   return withDb(ep, (db) => {
     const rows = db.prepare("SELECT shot, kind, character, scene, rel, vector FROM items WHERE kind = 'still'").all() as Array<{
       shot: string;
@@ -158,16 +171,18 @@ export function queryRefs(
       const byChar = wantChars.size > 0 && wantChars.has(row.character);
       const byScene = Boolean(scene) && row.scene === scene;
       if (!byChar && !byScene) continue;
+      const vec = unpack(row.vector);
+      if (vec.length !== query.length) continue;
       hits.push({
         shot: row.shot,
         kind: row.kind as MemoryKind,
         character: row.character,
         scene: row.scene,
         rel: row.rel,
-        cosine: 1,
+        cosine: cosine(query, vec),
       });
     }
-    return hits.slice(0, k);
+    return hits.sort((a, b) => b.cosine - a.cosine).slice(0, k);
   });
 }
 
