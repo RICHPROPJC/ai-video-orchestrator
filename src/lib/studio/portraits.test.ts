@@ -82,8 +82,8 @@ test("a plugged portrait is used as-is and never regenerated", async () => {
   assert.equal(calls[0]!.outFile, path.join(outDir, "B.png"));
 });
 
-test("the blind eye gates every made portrait with people_count 1 and no grey", () => {
-  assert.deepEqual(PORTRAIT_REQUIRE, { people_count: 1, grey_blocks: false });
+test("the blind eye gates every made portrait: one person, no grey, plain background", () => {
+  assert.deepEqual(PORTRAIT_REQUIRE, { people_count: 1, grey_blocks: false, plain_background: true });
 });
 
 test("a failed portrait gets exactly one more seed, then passes", async () => {
