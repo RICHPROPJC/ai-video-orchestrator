@@ -11,6 +11,7 @@ import {
   JUDGE_SAMPLING,
   buildJudgePrompt,
   judge,
+  judgePlainBackground,
   judgeSecondEye,
   lintEyeContent,
   lintEyePrompt,
@@ -22,8 +23,10 @@ import {
   runSecondEye,
   sameRequire,
   type PackageJudge,
+  type QcRequire,
 } from "./photo-qc";
 import { keyframeRequire } from "./keyframe-prompt";
+import { PORTRAIT_REQUIRE } from "./portraits";
 
 /** One file, three doors: bun 1.3 no longer sets BUN_TEST, so registration is
  *  lazy — node.test binds to the real runner (`bun test` / `tsx --test`); a
@@ -1031,6 +1034,144 @@ test("T41b E3: verdict invariant to /edit prompt — photo-qc reads require only
   // Structural lock: no code path in photo-qc.ts reads any .prompt field.
   const src = fs.readFileSync(path.resolve("src/lib/studio/photo-qc.ts"), "utf8");
   assert.ok(!/\.prompt\b/.test(src), "photo-qc.ts must not read any .prompt field");
+});
+
+// ─── T43b：肖像 plain_background 閘——夜街／霓虹 FAIL（LD0F A/E 教訓）───
+
+/** LD0F A/E 現場形狀：判官冇 location 項可判 → 達標；眼描述就係夜街。 */
+const NIGHT_STREET_BLIND =
+  "呢張圖片係由 U1.5 生成。一位年長男性嘅半身肖像，着黑色立領中山裝，企喺夜晚街道，" +
+  "背後係霓虹燈招牌同濕漉漉嘅地面。整體係數碼寫實風格。";
+
+test("T43b Q1: night-street portrait FAILs even when the judge passes", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t43b-q1-"));
+  const png = await mkPortraitPng(path.join(dir, "PA.png"));
+  const eye = await roleServer(["nex-fx"], () => NIGHT_STREET_BLIND, () => NIGHT_STREET_BLIND);
+  const judgeSrv = await roleServer(["qwen-fx"], () => EYE_DESC, () => JSON.stringify(JUDGE_PASS_JSON));
+  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
+  delete process.env.SLATECREW_SECOND_ENDPOINT;
+  try {
+    const rec = await runPhotoQc(png, path.join(dir, "PA.photo_qc.json"), PORTRAIT_REQUIRE, {}, {
+      first: { url: eye.url, model: "nex-fx" },
+      judge: { url: judgeSrv.url, model: "qwen-fx" },
+    });
+    assert.equal(rec.status, "FAIL", `${rec.status} ${rec.checks.fail_reasons.join("|")}`);
+    assert.ok(
+      rec.checks.fail_reasons.some((r) => r.startsWith("plain_background:") && r.includes("blind")),
+      rec.checks.fail_reasons.join(" | "),
+    );
+  } finally {
+    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
+    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
+    eye.close(); judgeSrv.close();
+  }
+});
+
+test("T43b Q1b: second-eye location_notes with street words FAILs too", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t43b-q1b-"));
+  const png = await mkPortraitPng(path.join(dir, "PA.png"));
+  const eye = await roleServer(["nex-fx"], () => EYE_DESC, () => EYE_DESC);
+  const judgeSrv = await roleServer(["qwen-fx"], () => EYE_DESC, () => JSON.stringify(JUDGE_PASS_JSON));
+  const second = await roleServer(
+    ["glm-fx"],
+    () => "一個人企喺淨色背景前。",
+    () => '{"people_count":1,"grey_blocks":false,"location_notes":"夜晚街道，霓虹招牌下"}',
+  );
+  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
+  try {
+    process.env.SLATECREW_SECOND_ENDPOINT = second.url;
+    const rec = await runPhotoQc(png, path.join(dir, "PA.photo_qc.json"), PORTRAIT_REQUIRE, {}, {
+      first: { url: eye.url, model: "nex-fx" },
+      judge: { url: judgeSrv.url, model: "qwen-fx" },
+    });
+    assert.equal(rec.status, "FAIL", `${rec.status} ${rec.checks.fail_reasons.join("|")}`);
+    assert.ok(
+      rec.checks.fail_reasons.some((r) => r.startsWith("plain_background:") && r.includes("location_notes")),
+      rec.checks.fail_reasons.join(" | "),
+    );
+  } finally {
+    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
+    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
+    eye.close(); judgeSrv.close(); second.close();
+  }
+});
+
+test("T43b Q2: plain-background portrait never fails on location", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t43b-q2-"));
+  const png = await mkPortraitPng(path.join(dir, "PA.png"));
+  const { eye, judge, second } = await qcHarness({
+    secondReply: () => '{"people_count":1,"grey_blocks":false,"location_notes":"室內淨色攝影棚背景"}',
+  });
+  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
+  try {
+    process.env.SLATECREW_SECOND_ENDPOINT = second.url;
+    const rec = await runPhotoQc(png, path.join(dir, "PA.photo_qc.json"), PORTRAIT_REQUIRE, {}, {
+      first: { url: eye.url, model: "nex-fx" },
+      judge: { url: judge.url, model: "qwen-fx" },
+    });
+    assert.notEqual(rec.status, "FAIL", rec.checks.fail_reasons.join(" | "));
+    assert.ok(
+      !rec.checks.fail_reasons.some((r) => r.includes("plain_background") || r.includes("location")),
+      `location 敗咗純色肖像：${rec.checks.fail_reasons.join(" | ")}`,
+    );
+  } finally {
+    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
+    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
+    eye.close(); judge.close(); second.close();
+  }
+});
+
+test("T43b: judgePlainBackground fires on the four death words, stays inert without the flag", () => {
+  const portraitReq: QcRequire = { people_count: 1, grey_blocks: false, plain_background: true };
+  for (const word of ["street", "Streets", "街道", "霓虹", "neon signs"]) {
+    const v = judgePlainBackground(portraitReq, { blind: `背景有${word}` });
+    assert.equal(v.ok, false, word);
+    assert.ok(v.reason?.startsWith("plain_background:"), `${word} ${v.reason ?? ""}`);
+  }
+  // location_notes 係第二現場：blind 乾淨都照殺
+  const viaNotes = judgePlainBackground(portraitReq, { blind: "純灰色攝影棚底", locationNotes: "霓虹燈下嘅街道" });
+  assert.equal(viaNotes.ok, false);
+  assert.ok(viaNotes.reason?.includes("location_notes"));
+  // 純色／無場景 → 過
+  assert.equal(judgePlainBackground(portraitReq, { blind: "背景為純灰色漸層攝影棚底", locationNotes: "室內淨色背景" }).ok, true);
+  // keyframe stills：冇 set flag → 閘完全唔着（location 閘形狀不變）
+  const stillReq: QcRequire = { people_count: 2, grey_blocks: false, location: "夜晚街道" };
+  assert.equal(judgePlainBackground(stillReq, { blind: "兩人企喺街道，霓虹燈照住", locationNotes: "夜晚街道" }).ok, true);
+});
+
+test("T43b: keyframe stills require keeps its shape — no plain_background key, location gate untouched", () => {
+  const shot = {
+    id: "SH01",
+    index: 0,
+    heading: "1",
+    size: "medium",
+    location: "夜晚街道",
+    action: "a",
+    dialogue: "",
+    durationSec: 4,
+    camera: { pos: { x: 0, y: -5, z: 1.7 }, lookAt: { x: 0, y: 0, z: 1.2 }, lensMm: 35 },
+    marks: [
+      { characterId: "A", start: { x: 30, y: 50 }, end: { x: 30, y: 50 }, facing: 1, handL: { x: 34, y: 45 }, handR: { x: 36, y: 45 }, footL: { x: 28, y: 80 }, footR: { x: 32, y: 80 }, gait: "plant" },
+    ],
+    stillPrompt: "",
+    motionPrompt: "",
+  } as const;
+  const req = keyframeRequire(shot as unknown as Parameters<typeof keyframeRequire>[0]);
+  assert.equal("plain_background" in req, false, "keyframe stills never arm the portrait gate");
+  assert.equal(req.location, "夜晚街道", "location require passes through untouched");
+  // 肖像 require 冇 location 鍵——人數／灰塵照舊，地點閘本來就唔着
+  assert.equal("location" in PORTRAIT_REQUIRE, false);
+});
+
+test("T43b: renderRequireLines arms the judge with the plain-background item", () => {
+  const lines = buildJudgePrompt({ people_count: 1, grey_blocks: false, plain_background: true }, {
+    whole: "x", TL: "", TR: "", BL: "", BR: "",
+  });
+  assert.ok(lines.includes("- 背景：純色平面背景（唔准街道／夜街／霓虹場景）"), "判官清單要有背景項");
+  const still = buildJudgePrompt({ people_count: 1, grey_blocks: false, location: "街道" }, {
+    whole: "x", TL: "", TR: "", BL: "", BR: "",
+  });
+  assert.ok(!still.includes("純色平面背景"), "keyframe stills prompt shape unchanged");
 });
 
 if (cases.length > 0) {
