@@ -57,6 +57,9 @@ export type QcRequire = {
   location?: string;
   action?: string;
   size?: string;
+  /** T43b 肖像閘：要純色背景——夜街字眼（street／街道／neon／霓虹）即 FAIL。
+   *  只有 PORTRAIT_REQUIRE 會 set；keyframe stills 唔 set，location 閘形狀不變。 */
+  plain_background?: boolean;
 };
 
 export type QcSummary = {
@@ -374,6 +377,30 @@ export function judgeSecondEye(
   return { ok: true };
 }
 
+// ─── T43b 肖像 plain_background 閘：夜街／霓虹即 FAIL（LD0F A/E 教訓）───
+
+/** 夜街死刑詞（卡上釘死四個）：street／街道／neon／霓虹。 */
+export const NIGHT_STREET_RE = /street|街道|neon|霓虹/i;
+
+/** T43b: armed only when the require asks for a plain background (portraits).
+ *  Night-street vocabulary in the whole-image description (blind) or the second
+ *  eye's location_notes fails regardless of the judge — one face on a night
+ *  street is a scene still, not a portrait anchor. Keyframe stills never set
+ *  the flag, so their location gate keeps its shape. */
+export function judgePlainBackground(
+  require: QcRequire,
+  texts: { blind: string; locationNotes?: string | null },
+): { ok: boolean; reason?: string } {
+  if (require.plain_background !== true) return { ok: true };
+  for (const [where, text] of [["blind", texts.blind], ["location_notes", texts.locationNotes ?? ""]] as const) {
+    const hit = text.match(NIGHT_STREET_RE);
+    if (hit) {
+      return { ok: false, reason: `plain_background: 夜街字眼「${hit[0]}」出現喺 ${where}（肖像背景要純色）` };
+    }
+  }
+  return { ok: true };
+}
+
 export type PhotoQcStatus = "GREEN" | "PASS_UNCONFIRMED" | "PASS_WITH_WARN" | "FAIL";
 
 export type PhotoQcRecord = {
@@ -451,6 +478,18 @@ export async function runPhotoQc(
         checks: { ...verdict.checks, status: "FAIL", fail_reasons: [...verdict.checks.fail_reasons, se.reason] },
       };
     }
+  }
+  // T43b: portrait plain-background gate — night-street words in the whole
+  // description or the second eye's location_notes fail regardless of the judge.
+  const pb = judgePlainBackground(require, {
+    blind: desc,
+    locationNotes: second && !("parse_error" in second.summary) ? String((second.summary as QcSummary).location_notes ?? "") : "",
+  });
+  if (!pb.ok && pb.reason) {
+    verdict = {
+      status: "FAIL",
+      checks: { ...verdict.checks, status: "FAIL", fail_reasons: [...verdict.checks.fail_reasons, pb.reason] },
+    };
   }
   // T35b §2 grey gate: blob silhouette still hard-fails; flat coverage fails only
   // when the eye agrees (grey_blocks true) — either alone is a recorded warn.

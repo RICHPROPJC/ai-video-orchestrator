@@ -6,14 +6,17 @@ import crypto from "node:crypto";
 import * as nodeTest from "node:test";
 import {
   judge,
+  judgePlainBackground,
   judgeSecondEye,
   pinQcAccepted,
   resolveSecondEye,
   runPhotoQc,
   runSecondEye,
   sameRequire,
+  type QcRequire,
 } from "./photo-qc";
 import { keyframeRequire } from "./keyframe-prompt";
+import { PORTRAIT_REQUIRE } from "./portraits";
 
 /** One file, three doors: bun's node:test shim only works under `bun test`,
  *  so bare `bun <this file>` self-drives the collected cases; `bun test` and
@@ -610,6 +613,196 @@ test("T35b A8: all-black and all-white frames fail empty_frame", async () => {
     else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
     server.close();
   }
+});
+
+// ─── T43b：肖像 plain_background 閘——夜街／霓虹 FAIL（LD0F A/E 教訓）───
+
+/** LD0F A/E 現場形狀：判官冇 location 項可判 → 達標；眼描述就係夜街。 */
+const NIGHT_STREET_BLIND =
+  "呢張圖片係由 U1.5 生成。一位年長男性嘅半身肖像，着黑色立領中山裝，企喺夜晚街道，" +
+  "背後係霓虹燈招牌同濕漉漉嘅地面。整體係數碼寫實風格。";
+
+const PLAIN_PORTRAIT_BLIND = "一位年長男性嘅半身肖像，着黑色立領中山裝，企喺室內淨色攝影棚背景前。";
+
+test("T43b Q1: night-street portrait FAILs even when the judge passes", async () => {
+  const http = await import("node:http");
+  const sharp = (await import("sharp")).default;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t43b-q1-"));
+  const png = path.join(dir, "PA.png");
+  // noisy frame so the grey/empty machine gates stay quiet — only the T43b gate may speak
+  const noise = Buffer.from(Array.from({ length: 640 * 360 * 3 }, () => Math.floor(Math.random() * 256)));
+  await sharp(noise, { raw: { width: 640, height: 360, channels: 3 } }).png().toFile(png);
+  const server = http.createServer((_req, res) => {
+    let body = "";
+    _req.on("data", (c) => (body += c));
+    _req.on("end", () => {
+      if ((_req.url ?? "").includes("/v1/models")) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ data: [{ id: "fixture-eye" }] }));
+        return;
+      }
+      const content = (JSON.parse(body) as { messages: { content: unknown }[] }).messages[0]!.content;
+      const reply = Array.isArray(content) ? NIGHT_STREET_BLIND : '{"people_count":1,"grey_blocks":false}';
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
+  delete process.env.SLATECREW_SECOND_ENDPOINT;
+  try {
+    const rec = await runPhotoQc(png, path.join(dir, "PA.photo_qc.json"), PORTRAIT_REQUIRE, {}, {
+      first: { url: `http://127.0.0.1:${port}`, model: "fixture-eye" },
+    });
+    assert.equal(rec.status, "FAIL", `${rec.status} ${rec.checks.fail_reasons.join("|")}`);
+    assert.ok(
+      rec.checks.fail_reasons.some((r) => r.startsWith("plain_background:") && r.includes("blind")),
+      rec.checks.fail_reasons.join(" | "),
+    );
+  } finally {
+    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
+    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
+    server.close();
+  }
+});
+
+test("T43b Q1b: second-eye location_notes with street words FAILs too", async () => {
+  const http = await import("node:http");
+  const sharp = (await import("sharp")).default;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t43b-q1b-"));
+  const png = path.join(dir, "PA.png");
+  const noise = Buffer.from(Array.from({ length: 640 * 360 * 3 }, () => Math.floor(Math.random() * 256)));
+  await sharp(noise, { raw: { width: 640, height: 360, channels: 3 } }).png().toFile(png);
+  const mkServer = (desc: string, summary: string) =>
+    http.createServer((_req, res) => {
+      let body = "";
+      _req.on("data", (c) => (body += c));
+      _req.on("end", () => {
+        if ((_req.url ?? "").includes("/v1/models")) {
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ data: [{ id: "fixture-eye" }] }));
+          return;
+        }
+        const content = (JSON.parse(body) as { messages: { content: unknown }[] }).messages[0]!.content;
+        const reply = Array.isArray(content) ? desc : summary;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
+      });
+    });
+  const eye = mkServer(PLAIN_PORTRAIT_BLIND, '{"people_count":1,"grey_blocks":false}');
+  const second = mkServer("一個人企喺淨色背景前。", '{"people_count":1,"grey_blocks":false,"location_notes":"夜晚街道，霓虹招牌下"}');
+  await new Promise<void>((r) => eye.listen(0, "127.0.0.1", r));
+  await new Promise<void>((r) => second.listen(0, "127.0.0.1", r));
+  const eyePort = (eye.address() as { port: number }).port;
+  const sePort = (second.address() as { port: number }).port;
+  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
+  try {
+    process.env.SLATECREW_SECOND_ENDPOINT = `http://127.0.0.1:${sePort}`;
+    const rec = await runPhotoQc(png, path.join(dir, "PA.photo_qc.json"), PORTRAIT_REQUIRE, {}, {
+      first: { url: `http://127.0.0.1:${eyePort}`, model: "fixture-eye" },
+    });
+    assert.equal(rec.status, "FAIL", `${rec.status} ${rec.checks.fail_reasons.join("|")}`);
+    assert.ok(
+      rec.checks.fail_reasons.some((r) => r.startsWith("plain_background:") && r.includes("location_notes")),
+      rec.checks.fail_reasons.join(" | "),
+    );
+  } finally {
+    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
+    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
+    eye.close();
+    second.close();
+  }
+});
+
+test("T43b Q2: plain-background portrait never fails on location", async () => {
+  const http = await import("node:http");
+  const sharp = (await import("sharp")).default;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t43b-q2-"));
+  const png = path.join(dir, "PA.png");
+  const noise = Buffer.from(Array.from({ length: 640 * 360 * 3 }, () => Math.floor(Math.random() * 256)));
+  await sharp(noise, { raw: { width: 640, height: 360, channels: 3 } }).png().toFile(png);
+  const mkServer = (desc: string, summary: string) =>
+    http.createServer((_req, res) => {
+      let body = "";
+      _req.on("data", (c) => (body += c));
+      _req.on("end", () => {
+        if ((_req.url ?? "").includes("/v1/models")) {
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ data: [{ id: "fixture-eye" }] }));
+          return;
+        }
+        const content = (JSON.parse(body) as { messages: { content: unknown }[] }).messages[0]!.content;
+        const reply = Array.isArray(content) ? desc : summary;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
+      });
+    });
+  const eye = mkServer(PLAIN_PORTRAIT_BLIND, '{"people_count":1,"grey_blocks":false}');
+  const second = mkServer("一個人企喺淨色背景前。", '{"people_count":1,"grey_blocks":false,"location_notes":"室內淨色攝影棚背景"}');
+  await new Promise<void>((r) => eye.listen(0, "127.0.0.1", r));
+  await new Promise<void>((r) => second.listen(0, "127.0.0.1", r));
+  const eyePort = (eye.address() as { port: number }).port;
+  const sePort = (second.address() as { port: number }).port;
+  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
+  try {
+    process.env.SLATECREW_SECOND_ENDPOINT = `http://127.0.0.1:${sePort}`;
+    const rec = await runPhotoQc(png, path.join(dir, "PA.photo_qc.json"), PORTRAIT_REQUIRE, {}, {
+      first: { url: `http://127.0.0.1:${eyePort}`, model: "fixture-eye" },
+    });
+    assert.notEqual(rec.status, "FAIL", rec.checks.fail_reasons.join(" | "));
+    assert.ok(
+      !rec.checks.fail_reasons.some((r) => r.includes("plain_background") || r.includes("location")),
+      `location 敗咗純色肖像：${rec.checks.fail_reasons.join(" | ")}`,
+    );
+  } finally {
+    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
+    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
+    eye.close();
+    second.close();
+  }
+});
+
+test("T43b: judgePlainBackground fires on the four death words, stays inert without the flag", () => {
+  const portraitReq: QcRequire = { people_count: 1, grey_blocks: false, plain_background: true };
+  for (const word of ["street", "Streets", "街道", "霓虹", "neon signs"]) {
+    const v = judgePlainBackground(portraitReq, { blind: `背景有${word}` });
+    assert.equal(v.ok, false, word);
+    assert.ok(v.reason?.startsWith("plain_background:"), `${word} ${v.reason ?? ""}`);
+  }
+  // location_notes 係第二現場：blind 乾淨都照殺
+  const viaNotes = judgePlainBackground(portraitReq, { blind: "純灰色攝影棚底", locationNotes: "霓虹燈下嘅街道" });
+  assert.equal(viaNotes.ok, false);
+  assert.ok(viaNotes.reason?.includes("location_notes"));
+  // 純色／無場景 → 過
+  assert.equal(judgePlainBackground(portraitReq, { blind: "背景為純灰色漸層攝影棚底", locationNotes: "室內淨色背景" }).ok, true);
+  // keyframe stills：冇 set flag → 閘完全唔着（location 閘形狀不變）
+  const stillReq: QcRequire = { people_count: 2, grey_blocks: false, location: "夜晚街道" };
+  assert.equal(judgePlainBackground(stillReq, { blind: "兩人企喺街道，霓虹燈照住", locationNotes: "夜晚街道" }).ok, true);
+});
+
+test("T43b: keyframe stills require keeps its shape — no plain_background key, location gate untouched", () => {
+  const shot = {
+    id: "SH01",
+    index: 0,
+    heading: "1",
+    size: "medium",
+    location: "夜晚街道",
+    action: "a",
+    dialogue: "",
+    durationSec: 4,
+    camera: { pos: { x: 0, y: -5, z: 1.7 }, lookAt: { x: 0, y: 0, z: 1.2 }, lensMm: 35 },
+    marks: [
+      { characterId: "A", start: { x: 30, y: 50 }, end: { x: 30, y: 50 }, facing: 1, handL: { x: 34, y: 45 }, handR: { x: 36, y: 45 }, footL: { x: 28, y: 80 }, footR: { x: 32, y: 80 }, gait: "plant" },
+    ],
+    stillPrompt: "",
+    motionPrompt: "",
+  } as const;
+  const req = keyframeRequire(shot as unknown as Parameters<typeof keyframeRequire>[0]);
+  assert.equal("plain_background" in req, false, "keyframe stills never arm the portrait gate");
+  assert.equal(req.location, "夜晚街道", "location require passes through untouched");
+  // 肖像 require 冇 location 鍵——人數／灰塵照舊，地點閘本來就唔着
+  assert.equal("location" in PORTRAIT_REQUIRE, false);
 });
 
 if (bareBun) {

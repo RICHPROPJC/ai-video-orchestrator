@@ -4,8 +4,10 @@ import type { CallSheet, Character } from "./types";
 import { buildGeneratePayload, u15Generate, type GeneratePayload } from "./u15-generate";
 import { runPhotoQc, type PhotoQcRecord, type QcRequire } from "./photo-qc";
 
-/** One face, alone, no placeholders — the same eye that gates the keyframes. */
-export const PORTRAIT_REQUIRE: QcRequire = { people_count: 1, grey_blocks: false };
+/** One face, alone, no placeholders, no scene — the same eye that gates the
+ *  keyframes, plus the portrait-only plain-background gate (T43b: a night
+ *  street behind the face is a scene still, not a portrait anchor). */
+export const PORTRAIT_REQUIRE: QcRequire = { people_count: 1, grey_blocks: false, plain_background: true };
 
 /** T43 (Chau: embed 同一張垃圾圖一路塞返 /edit，源頭 1＝肖像抄 world night/neon):
  * a portrait is a face reference, not a scene — the sheet's world line
