@@ -138,9 +138,12 @@ export function peakAndSilence(samples: Float32Array) {
   return { peak, silenceRatio: silent / Math.max(1, samples.length) };
 }
 
-export function runCommand(cmd: string, args: string[], cwd?: string) {
+export function runCommand(cmd: string, args: string[], cwd?: string, extraEnv?: Record<string, string | undefined>) {
   return new Promise<{ code: number; stderr: string; stdout: string }>((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const env = extraEnv ? { ...process.env, ...extraEnv } : undefined;
+    // extraEnv value undefined = delete the inherited var (e.g. strip DISPLAY for blender)
+    if (env) for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
+    const child = spawn(cmd, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => {

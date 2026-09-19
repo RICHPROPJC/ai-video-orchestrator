@@ -39,7 +39,10 @@ export async function renderBlockout(opts: {
     "--width", String(BLOCKOUT_WIDTH),
     "--height", String(BLOCKOUT_HEIGHT),
     "--fps", String(BLOCKOUT_FPS),
-  ]);
+    // 5.1.2 -b with DISPLAY set picks GLX on this host and segfaults (exit 139, no
+    // ARB_shader_draw_parameters); stripped → surfaceless EGL, pixel-identical to vulkan
+    // (receipts /tmp/bl_egl_run vs /tmp/bl_vk_run). Same rule as lane/front 735dc2e.
+  ], undefined, { DISPLAY: undefined, WAYLAND_DISPLAY: undefined });
   if (render.code !== 0) {
     throw new Error(`blender blockout failed (${opts.shot.id}, exit ${render.code}): ${render.stderr || render.stdout}`);
   }
