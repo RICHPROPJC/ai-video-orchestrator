@@ -56,7 +56,11 @@ export type ProduceInput = {
   castRosterPath?: string;
   /** load this callsheet JSON instead of letting the seats author one */
   callSheetPath?: string;
-  /** H3 graph shape: default A (Video 1 + kfinject); B/BKF/C for verify/ab experiments */
+  /** H3 graph shape: default A = official path (Video 1 motion-only + H3Keyframes
+   *  anchors; identity burned into the still by U1.5 /edit). B/BKF = documented
+   *  FALLBACK (card C ②, 0919): the character-image ref route is officially
+   *  legitimate (samples #17/#22/#23/#31/#34) but is only for shots with NO
+   *  still-pinned identity. C = verify alternate (zero refs). */
   graphVariant?: "a" | "b" | "bkf" | "c";
   /** test-only H3 sampler steps override; live default stays config.motion.steps (4) */
   steps?: number;

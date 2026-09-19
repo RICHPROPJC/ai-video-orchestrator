@@ -41,7 +41,9 @@ Flags
   --cast-roster <json>  可出聲角色名單（有聲音檔嘅名），編劇檯只准用呢批名
   --gap <sec>           鏡與鏡之間靜音（默許 0）
   --dry-run             行到 prompt/receipt 為止，唔 POST 任何機
-  --graph-variant a|b|bkf|c  H3 graph（默認 a）；b/bkf/c 唔餵 Video 1
+  --graph-variant a|b|bkf|c  H3 graph（默認 a＝官方路：still 已燒身份＋H3Keyframes 錨）
+                        b/bkf＝documented fallback：角色圖 ref 係官方正路（samples #17/#22/#34），
+                        但 A 路 still 已釘身份——淨係冇 still 釘身份嘅鏡頭先用；c＝verify 實驗位
   --steps <n>           測試用 H3 steps 覆寫（默認 4）
   --until boards|stills|motion 早停閘：boards＝劇本同分鏡出齊即停（status boarded，唔使 wav）；
                         stills＝photo QC GREEN 即停（stills-ready）；motion＝H3 落片即停
