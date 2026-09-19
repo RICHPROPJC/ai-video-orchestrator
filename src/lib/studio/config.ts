@@ -26,7 +26,11 @@ export type SlateConfig = {
     seed: number;
   };
   tts: { endpoint: string; model: string };
-  pictureQc: { endpoint: string; model: string };
+  /** CARD_BUG3_0920 item4 (Fable): the photo-qc second eye now lives in config,
+   *  not just env. Empty secondEndpoint = not armed — judge GREEN stays capped
+   *  at PASS_UNCONFIRMED. Env SLATECREW_SECOND_ENDPOINT/SLATECREW_SECOND_MODEL
+   *  override (test seam, same chain seats photo-qc reads: opts → env → config). */
+  pictureQc: { endpoint: string; model: string; secondEndpoint: string; secondModel: string };
   /** Card D 掣3 search-first PE step: local brains only (nex :8017 first,
    *  qwen38 :8015 backup). GLM cloud brains are banned for PE — thinking
    *  bursts the content field (0919 wire receipts). */
@@ -73,7 +77,7 @@ const DEFAULTS: SlateConfig = {
     seed: 42,
   },
   tts: { endpoint: "", model: "Fun-CosyVoice3-0.5B" },
-  pictureQc: { endpoint: "http://127.0.0.1:8015", model: "mars-fa2" },
+  pictureQc: { endpoint: "http://127.0.0.1:8015", model: "mars-fa2", secondEndpoint: "", secondModel: "" },
   pe: {
     endpoint: "http://127.0.0.1:8017",
     model: "nex-n2.5",
@@ -125,6 +129,10 @@ export function loadConfig(): SlateConfig {
   if (u15) merged.stills.url = u15;
   const mars = process.env.MARS_URL?.trim();
   if (mars) merged.pictureQc.endpoint = mars;
+  const secondE = process.env.SLATECREW_SECOND_ENDPOINT?.trim();
+  if (secondE) merged.pictureQc.secondEndpoint = secondE;
+  const secondM = process.env.SLATECREW_SECOND_MODEL?.trim();
+  if (secondM) merged.pictureQc.secondModel = secondM;
   const crew = process.env.CREW_LLM_URL?.trim();
   if (crew) merged.crew.endpoint = crew;
   const sf3d = process.env.SF3D_URL?.trim();

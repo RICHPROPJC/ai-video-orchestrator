@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import * as nodeTest from "node:test";
-import { keyframeEditPrompt, keyframeRequire, propNounClass } from "./keyframe-prompt";
-import type { CallSheet, Shot, ShotProp } from "./types";
+import { keyframeEditPrompt, keyframeRequire, propNounClass, cjkCount, EDIT_MIN_CJK, EDIT_MAX_CJK } from "./keyframe-prompt";
+import type { CallSheet, Character, Shot, ShotProp } from "./types";
 
 /** One file, three doors: bun's node:test shim only works under `bun test`,
  *  so bare `bun <this file>` self-drives the collected cases; `bun test` and
@@ -194,6 +194,108 @@ test("noun classes: garments and documents never take the held-tool gate; 犁/�
     assert.equal(propNounClass(name), "tool", `${name} is a held tool`);
     assert.equal(keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })).tool, name);
   }
+});
+
+/** CARD_BUG3_0920 (Chau 0917 法1/2/4/5): the four banned sentences and their
+ *  families never appear in any composed /edit brief. */
+const BUG3_BANNED = [
+  "地平線", // 法1: 場景結構唔跟灰模
+  "背景結構", // 法1
+  "室內外", // 法1
+  "完全照 Image-1", // 法1 原句尾巴
+  "比例", // 法1/4 同族: 灰模比例唔係錨
+  "鏡位", // 法1: 只準錨人偶位置/姿勢/佔位
+  "夜只由室內燈", // 法2 廢話句
+  "身高照", // 法4 無意義句
+  "只借五官", // 法5 閹 ref
+  "只借樣貌", // 法5 閹 ref（本 lane 原字眼）
+  "髮際", // 法5 閹 ref
+  "正面肖像", // 法6 逼角色正面對鏡頭
+  "唔好加第三人", // 法5 冇錨 negative
+  "唔好加人", // 法5 冇錨 negative（本 lane 原字眼）
+];
+
+test("BUG3: the four Chau-banned sentences never appear (first/later, every prop class, facts shots)", () => {
+  const texts = [
+    keyframeEditPrompt(sheet, shotWithProp(coat), { first: true }),
+    keyframeEditPrompt(sheet, shotWithProp(coat), { first: false }),
+    keyframeEditPrompt(sheet, shotWithProp(decree), { first: true }),
+    keyframeEditPrompt(sheet, shotWithProp(), { first: false }),
+    keyframeEditPrompt(sheet, screenShot({ require: { facts: INFO_FACTS } }), { first: false }),
+  ];
+  for (const text of texts) {
+    for (const b of BUG3_BANNED) assert.ok(!text.includes(b), `banned phrase "${b}" leaked:\n${text}`);
+  }
+});
+
+test("BUG3: Image-1 anchors puppet 位置/姿勢/佔位 only; the change/keep pair is explicit (法1)", () => {
+  const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: true });
+  assert.ok(text.includes("人偶嘅位置、姿勢、佔位保持照 Image-1"), "keep side: 法1 allowed anchor list verbatim");
+  assert.ok(text.includes("變嘅係質感、材質同光線"), "change side: what the edit changes");
+});
+
+test("BUG3: Image-N 對號 — each ref is the character's dressed body, facing follows Image-1 (法5/6/9)", () => {
+  const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: true });
+  assert.ok(text.includes("左起第1個人偶＝Image-2 嘅角色角色一"), "puppet 1 → Image-2");
+  assert.ok(text.includes("左起第2個人偶＝Image-3 嘅角色角色二"), "puppet 2 → Image-3");
+  assert.ok(text.includes("面容、髮型同成套衫著照 Image-2"), "dressed-body ref, never face-only");
+  assert.ok(text.includes("朝向同動作跟 Image-1 人偶"), "facing follows the blockout, not forced frontal");
+  assert.ok(text.includes("淨係得呢2個角色"), "people count anchored to the puppets (法5)");
+});
+
+test("BUG3: scene truth source is ONE field — require.location, then shot.location, sheet tail last (Fable 1d9bb51)", () => {
+  const packet = shotWithProp();
+  packet.require = { location: "地下室" };
+  assert.ok(keyframeEditPrompt(sheet, packet, { first: false }).includes("【場景】地下室"), "packet require.location wins");
+  const ownRoom = shotWithProp();
+  ownRoom.location = "走廊";
+  assert.ok(keyframeEditPrompt(sheet, ownRoom, { first: false }).includes("【場景】走廊"), "shot's own room next");
+  assert.ok(
+    keyframeEditPrompt(sheet, shotWithProp(), { first: false }).includes("【場景】亂葬崗"),
+    "sheet tail only as the last fallback",
+  );
+});
+
+test("BUG3: the brief is 150–300 中文字 — thin refuses (prompt_too_thin), fat refuses (prompt_too_thick)", () => {
+  const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: false });
+  const n = cjkCount(text);
+  assert.ok(n >= EDIT_MIN_CJK && n <= EDIT_MAX_CJK, `2-char brief in band: ${n}`);
+  // thin: no marks at all cannot reach 150 — refuse, never a six-line telegram
+  const empty = shotWithProp();
+  empty.marks = [];
+  assert.throws(() => keyframeEditPrompt(sheet, empty, { first: true }), /prompt_too_thin/);
+  // fat: five dressed characters push the brief past 300 — refuse (法11 no compensation)
+  const many: Character[] = ["一", "二", "三", "四", "五"].map((suffix, i) => ({
+    id: `C${i}`,
+    name: `角色${suffix}`,
+    role: "舊同事",
+    wardrobe: "白襯衫",
+    palette: ["#111", "#222", "#333"] as [string, string, string],
+    voice: { pitchHz: 180, gender: "m" as const },
+  }));
+  const fatSheet: CallSheet = { ...sheet, characters: [...sheet.characters, ...many] };
+  const fat = shotWithProp();
+  fat.marks = fatSheet.characters.map((c, i) => ({
+    characterId: c.id,
+    start: { x: 10 + i * 20, y: 50 },
+    end: { x: 10 + i * 20, y: 50 },
+    facing: 1,
+    handL: { x: 12 + i * 20, y: 45 },
+    handR: { x: 14 + i * 20, y: 45 },
+    footL: { x: 8 + i * 20, y: 80 },
+    footR: { x: 12 + i * 20, y: 80 },
+    gait: "plant" as const,
+  }));
+  assert.throws(() => keyframeEditPrompt(fatSheet, fat, { first: true }), /prompt_too_thick/);
+});
+
+test("BUG3: the facts block rides AFTER the band — packet rows never pad the brief", () => {
+  const shot = screenShot({ require: { facts: INFO_FACTS } });
+  const text = keyframeEditPrompt(sheet, shot, { first: false });
+  assert.ok(text.includes("【上屏事實】"), "facts block appended");
+  const brief = text.split("\n\n【上屏事實】")[0]!;
+  assert.ok(cjkCount(brief) >= EDIT_MIN_CJK, "brief alone still clears the floor without the packet rows");
+  assert.ok(cjkCount(brief) <= EDIT_MAX_CJK, "brief alone stays under the ceiling");
 });
 
 if (bareBun) {

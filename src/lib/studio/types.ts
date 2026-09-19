@@ -128,6 +128,10 @@ export type ShotRequire = {
   facts?: ShotFact[];
   /** the seat marks this shot a text/data screen even when the action words don't say it */
   factsRequired?: boolean;
+  /** packet scene room (2–8 字場所名詞) — the ONE scene truth source (Fable
+   *  1d9bb51): keyframeEditPrompt reads require.location ?? shot.location, sheet
+   *  tail last. Prompt and photo-qc gate on this single field. */
+  location?: string;
 };
 
 export type Shot = {

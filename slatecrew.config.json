@@ -33,7 +33,9 @@
   },
   "pictureQc": {
     "endpoint": "http://127.0.0.1:8015",
-    "model": "mars-fa2"
+    "model": "mars-fa2",
+    "secondEndpoint": "http://127.0.0.1:4000",
+    "secondModel": "glm-5.3-flash"
   },
   "pe": {
     "endpoint": "http://127.0.0.1:8017",

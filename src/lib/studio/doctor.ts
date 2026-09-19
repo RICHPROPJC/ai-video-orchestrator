@@ -56,6 +56,18 @@ export type MesherProbe = {
   error?: string;
 };
 
+/** CARD_BUG3_0920 item4: the photo-qc second eye. armed=false (empty
+ *  secondEndpoint) keeps the PASS_UNCONFIRMED ceiling — doctor states it, never
+ *  hides it. */
+export type SecondQcProbe = {
+  armed: boolean;
+  up: boolean;
+  url: string;
+  error?: string;
+  modelPresent: boolean;
+  models: string[];
+};
+
 export type DoctorReport = {
   ffmpeg: boolean;
   blender: boolean;
@@ -64,6 +76,7 @@ export type DoctorReport = {
   motion: MotionProbe;
   stills: StillsProbe;
   pictureQc: MarsProbe;
+  secondQc: SecondQcProbe;
   mesher: MesherProbe;
   config: SlateConfig;
   warns: string[];
@@ -167,6 +180,15 @@ async function probeMesher(url: string): Promise<MesherProbe> {
   }
 }
 
+/** second eye probe: only touches the network when armed — unarmed is a stated
+ *  fact (PASS_UNCONFIRMED ceiling), not a failure. Default model mirrors seats
+ *  photo-qc's own default (glm-5.3-flash) when the config names none. */
+async function probeSecondQc(endpoint: string, model: string): Promise<SecondQcProbe> {
+  if (!endpoint) return { armed: false, up: false, url: "", modelPresent: false, models: [] };
+  const base = await probeMars(endpoint, model || "glm-5.3-flash");
+  return { armed: true, ...base };
+}
+
 export async function doctor(): Promise<DoctorReport> {
   const cfg = loadConfig();
   const ffmpeg = await runCommand("ffmpeg", ["-version"]).then((r) => r.code === 0).catch(() => false);
@@ -181,6 +203,7 @@ export async function doctor(): Promise<DoctorReport> {
     motion: await probeMotion(cfg.motion.comfyUrl),
     stills: await probeStills(cfg.stills.url),
     pictureQc: await probeMars(cfg.pictureQc.endpoint, cfg.pictureQc.model),
+    secondQc: await probeSecondQc(cfg.pictureQc.secondEndpoint, cfg.pictureQc.secondModel),
     mesher: await probeMesher(cfg.mesher.endpoint),
     config: cfg,
     warns: configWarns(cfg),
@@ -199,6 +222,13 @@ export function formatDoctor(report: DoctorReport) {
     `  /edit    model ${report.stills.model ?? "?"}  multi_image ${report.stills.multiImage ?? "?"}  defaults ${JSON.stringify(report.stills.defaults ?? {})}`,
     `pictureqc  ${report.pictureQc.up ? `UP ${report.pictureQc.url}` : `DOWN ${report.pictureQc.url}  ${report.pictureQc.error ?? ""}`.trim()}`,
     `  mars     ${report.pictureQc.modelPresent ? `${report.config.pictureQc.model} present` : `${report.config.pictureQc.model} NOT listed (host has ${report.pictureQc.models.length} models)`}`,
+    `  second   ${
+      report.secondQc.armed
+        ? report.secondQc.up
+          ? `UP ${report.secondQc.url}  ${report.secondQc.modelPresent ? `${report.config.pictureQc.secondModel} present` : `${report.config.pictureQc.secondModel} NOT listed (host has ${report.secondQc.models.length} models)`}`
+          : `DOWN ${report.secondQc.url}  ${report.secondQc.error ?? ""}`.trim()
+        : "not armed — judge GREEN caps at PASS_UNCONFIRMED (CARD_BUG3 item4: set pictureQc.secondEndpoint)"
+    }`,
     `sf3d       ${report.mesher.up ? `UP ${report.mesher.url}  ready ${report.mesher.ready ?? "?"}  served ${report.mesher.served ?? "?"}` : `DOWN ${report.mesher.url}  ${report.mesher.error ?? ""}`.trim()}`,
     `  gate     blender ${report.config.mesher.blender}  tx ${report.config.mesher.textureResolution}  h ${report.config.mesher.targetHeightM}m`,
   ];
