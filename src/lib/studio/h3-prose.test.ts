@@ -14,7 +14,9 @@ import {
   pickProseMode,
   validateProse,
   validateProsePositive,
+  validateUiSpec,
   wardrobeClauses,
+  type UiShotSpec,
 } from "./h3-prose";
 import { buildH3Graph, BINDINGS } from "./h3-r2v-graph";
 import { defaultConfig } from "./config";
@@ -189,15 +191,19 @@ test("validator: explicit mode enforces its own bucket", () => {
   );
 });
 
-test("buildProse is exactly 4 paragraphs in the 40-sample shape (identity-long)", () => {
+test("identity-long is 5 paragraphs: setting / motion / pin / sound design / dialogue (③a)", () => {
   const { sheet: s, shot: room } = interrogationShot();
   const body = buildProse(s, room);
   const paras = body.split("\n\n");
-  assert.equal(paras.length, 4);
+  assert.equal(paras.length, 5);
   assert.match(paras[0]!, /^Photoreal\. 舊式審判室/);
   assert.ok(paras[1]!.includes("<Video 1>"), "motion paragraph");
   assert.ok(paras[2]!.includes("start keyframe image"), "pin paragraph");
-  assert.match(paras[3]!, /^阿月 \(left\) speaks the line in Audio 1: "你嗰晚喺邊？講。"\. 阿衡 listens\.$/);
+  // card ③a: sound design is a formal field — three layers, no ref files
+  assert.ok(paras[3]!.includes("low bed"), "sound: low bed layer (#24)");
+  assert.ok(paras[3]!.includes("In-frame sources"), "sound: in-frame sources (#25)");
+  assert.ok(paras[3]!.includes("beat by beat"), "sound: accents follow action (#36)");
+  assert.match(paras[4]!, /^阿月 \(left\) speaks the line in Audio 1: "你嗰晚喺邊？講。"\. 阿衡 listens\.$/);
   assert.ok(body.includes(VIDEO_SENTENCE.replace("{{N}}", "2")));
   assert.ok(body.includes(PIN_SENTENCE.replace("{{PROP}}", "props")));
 });
@@ -305,6 +311,80 @@ test("location is trimmed to its first clause, keeping the header readable", () 
   assert.equal(pickProseMode(s, solo), "action-short");
   const body = buildProse(s, solo);
   assert.ok(body.startsWith("Photoreal. Ming-dynasty field, night."));
+});
+
+test("③a: 'overall_soundscape:' is unbanned; real label lines stay banned (F2 stands)", () => {
+  const { sheet: s, shot: room } = interrogationShot();
+  const prose = buildProse(s, room);
+  assert.ok(prose.includes("low bed"), "sound design field present");
+  // the concept is free prose now — mid-line or line-start, no ban
+  validateProse(
+    wrap(`${prose}\n\nThe overall_soundscape is described above in prose.`),
+    { requireQuote: true },
+  );
+  validateProse(wrap(`${prose}\n\noverall_soundscape: rain bed`), { requireQuote: true });
+  // genuine labels still fail loud: named-list member and generic line-start
+  assert.throws(
+    () => validateProse(wrap(`${prose}\n\nsummary: 兩句`), { requireQuote: true }),
+    /summary/,
+  );
+  assert.throws(
+    () => validateProse(wrap(`${prose}\n\nCamera: 35mm手持`), { requireQuote: true }),
+    /label line/,
+  );
+});
+
+test("③a: timingRef rides the #31 sentence (Audio 2 as timing reference)", () => {
+  const { sheet: s, shot: room } = interrogationShot();
+  const body = buildProse(s, room, { timingRef: true });
+  assert.ok(body.includes("Audio 2"), "Audio 2 role named");
+  assert.ok(body.includes("cuts land on its beats"), "#31 beats sentence");
+  // dialogue still introduces as the Audio 1 line — exactly one dialogue wav
+  assert.ok(body.includes('speaks the line in Audio 1: "你嗰晚喺邊？講。"'));
+  validateProse(wrap(body), { requireQuote: true, wardrobe: wardrobeClauses(s) });
+});
+
+test("③b: UI shot prose — mapping table, camera lock, move whitelist, verbatim on-screen text", () => {
+  const { sheet: s, shot: room } = interrogationShot();
+  const ui: UiShotSpec = {
+    cards: [{ label: "LUMI HARE" }, { label: "IRON MOLE" }],
+    onscreen: [{ text: "LOOK盤 323.2", where: "top-centre of the hero card" }],
+    replace: [{ from: "2021年9月", to: "2026年9月", where: "in the date field, bottom-left" }],
+  };
+  const body = buildProse(s, room, { ui });
+  assert.ok(body.includes("<Picture 1> = the UI layout, typography and colour reference."));
+  assert.ok(body.includes("<Picture 2> = the LUMI HARE card."));
+  assert.ok(body.includes("<Picture 3> = the IRON MOLE card."));
+  assert.ok(body.includes("The camera stays locked on the interface."));
+  assert.ok(body.includes("Only the cursor, the selection state"), "default move whitelist (#34)");
+  assert.ok(body.includes("「LOOK盤 323.2」 appears top-centre"), "verbatim quote + placement");
+  assert.ok(
+    body.includes("「2021年9月」 becomes 「2026年9月」 in the date field"),
+    "old→new character-for-character (case06)",
+  );
+  assert.ok(body.includes("same typeface, size and position"), "style-unchanged clause");
+  // ui forces identity-long and the motion contract still stands
+  assert.ok(body.includes("<Video 1>"));
+  validateProse(wrap(body), { requireQuote: true, wardrobe: wardrobeClauses(s) });
+  const hits = body.split("\n").filter((l) => LABEL_LINE.test(l));
+  assert.deepEqual(hits, [], "no label lines in UI prose");
+});
+
+test("③b: on-screen text over 6 詞 fails loud; story shots carry no UI lines", () => {
+  const { sheet: s, shot: room } = interrogationShot();
+  assert.throws(
+    () =>
+      validateUiSpec({
+        onscreen: [{ text: "香港樓價指數連續十三個月上升創歷史新高紀錄", where: "top" }],
+      }),
+    /over 6 詞/,
+  );
+  assert.throws(
+    () => validateUiSpec({ onscreen: [{ text: "323.2", where: " " }] }),
+    /position-level placement/,
+  );
+  const story = buildProse(s, room);
+  assert.equal(story.includes("<Picture 1>"), false, "story prose assigns no Picture slots");
 });
 
 test("graph stays v6-golden in both prose modes (proseMode is metadata only)", () => {

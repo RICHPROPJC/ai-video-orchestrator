@@ -8,12 +8,15 @@ export const VIDEO_SENTENCE = `Have the {{N}} people act following the movements
 
 export const PIN_SENTENCE = `Faces, clothes, the {{PROP}} and the field continue exactly from the start keyframe image. Do not add people.`;
 
+// card C ③a (0919): "overall_soundscape:" is UNBANNED as a concept — sound
+// design is now a formal, builder-owned prose field (soundDesignLines, samples
+// #24/#25/#36: SFX are prompt text, not ref files). Line-start labels stay
+// banned (LABEL_LINE below): the paragraph is authored prose, never a label.
 const BANNED_LABELS = [
   "subject_definitions:",
   "summary:",
   "retention_analysis:",
   "detailed_description:",
-  "overall_soundscape:",
   "non_diegetic_music:",
 ];
 
@@ -93,6 +96,40 @@ function words(text: string): number {
   return (text.match(WORD) ?? []).length;
 }
 
+// ---- card C ③a: sound design as a formal prose field (samples #24/#25/#36)
+// SFX are PROMPT TEXT, never ref files: a low bed, honest in-frame sources,
+// and accents that follow the action. Woven from packet fields only.
+const WEATHER_BED: Record<CallSheet["weather"], string> = {
+  rain: "Rain holds a steady low bed under the whole shot.",
+  wind: "Wind carries a low continuous bed under the whole shot.",
+  clear: "A quiet low room-tone bed carries the whole shot.",
+  neon: "A low electric hum beds the whole shot.",
+};
+
+/** three-layer sound design (#24 bed / #25 in-frame sources / #36 follows
+ *  action) from packet fields — no invented specifics, no label lines */
+export function soundDesignLines(sheet: CallSheet, shot: Shot): string {
+  const props = shot.props?.map((p) => p.name) ?? [];
+  const moving = shot.marks.some((m) => m.gait !== "plant");
+  const sources = [
+    ...props.map((p) => `the ${p} answers every touch`),
+    ...(moving ? ["footsteps track whoever moves"] : []),
+  ];
+  const mid = sources.length
+    ? `In-frame sources stay honest: ${sources.join("; ")}.`
+    : `In-frame sources stay honest: the place breathes around the stillness.`;
+  return [
+    WEATHER_BED[sheet.weather],
+    mid,
+    `Event accents land on the action beat by beat, ${sheet.weather} rising and falling with what the shot does.`,
+  ].join(" ");
+}
+
+/** card C ③a (sample #31): the montage beat-cut timing reference sentence —
+ *  rides only when a timing wav is wired as ref_audio_1 (<Audio 2>). */
+export const TIMING_REF_SENTENCE =
+  "Audio 2 rides as the timing and editing reference — cuts land on its beats.";
+
 /** wardrobe clauses long enough to be distinctive — used as banned strings */
 export function wardrobeClauses(sheet: CallSheet): string[] {
   return sheet.characters
@@ -135,6 +172,64 @@ function budgetCheck(body: string, mode: ProseMode | undefined): void {
   if (total > IDENTITY_LONG_MAX) {
     throw new Error(`${total} 詞 over identity-long max ${IDENTITY_LONG_MAX}`);
   }
+}
+
+// ---- card C ③b: UI/infographic shot prose (cookbook case02 Image-N numbering
+// + sample #34 mapping table; on-screen text engineering verbatim/replace/
+// position-level). Story shots pass no ui spec and stay ref-free.
+export const ONSCREEN_MAX_WORDS = 6; // charter law: 上屏文字≤6詞白名單制
+
+export type UiOnscreenText = { text: string; where: string };
+export type UiTextReplace = { from: string; to: string; where: string };
+
+export type UiShotSpec = {
+  /** mapping-table entries: <Picture 2..N+1> = card label (case02 numbering) */
+  cards?: { label: string; note?: string }[];
+  /** exact copy, quoted verbatim, position-level placement */
+  onscreen?: UiOnscreenText[];
+  /** 舊字→新字 character-for-character, style/position unchanged (case06) */
+  replace?: UiTextReplace[];
+  /** the only things allowed to move (#34 four-things whitelist) */
+  moving?: string[];
+};
+
+export function validateUiSpec(ui: UiShotSpec): void {
+  for (const t of [...(ui.onscreen ?? []).map((t) => t.text), ...(ui.replace ?? []).flatMap((r) => [r.from, r.to])]) {
+    const n = countWords(t);
+    if (n > ONSCREEN_MAX_WORDS) {
+      throw new Error(`on-screen text over ${ONSCREEN_MAX_WORDS} 詞 (${n}): '${t}' — short display lines only`);
+    }
+    if (!t.trim()) throw new Error("on-screen text must be non-empty");
+  }
+  for (const t of [...(ui.onscreen ?? []), ...(ui.replace ?? [])]) {
+    if (!t.where.trim()) throw new Error("on-screen text needs position-level placement (where)");
+  }
+}
+
+/** UI shot prose lines — the photo refs carry the layout; these lines assign
+ *  every Image-N slot, lock the camera, whitelist movement, and pin on-screen
+ *  copy verbatim. */
+export function buildUiLines(ui: UiShotSpec): string[] {
+  validateUiSpec(ui);
+  const lines: string[] = [];
+  lines.push("<Picture 1> = the UI layout, typography and colour reference.");
+  (ui.cards ?? []).forEach((c, i) => {
+    lines.push(`<Picture ${i + 2}> = the ${c.label} card${c.note ? ` — ${c.note}` : ""}.`);
+  });
+  lines.push("The camera stays locked on the interface.");
+  const moving = ui.moving ?? ["the cursor", "the selection state", "the highlighted card", "the on-screen text"];
+  lines.push(`Only ${moving.join(", ")} move; every other part of the layout holds still.`);
+  for (const t of ui.onscreen ?? []) {
+    lines.push(
+      `The on-screen text 「${t.text}」 appears ${t.where}, character-for-character, in the reference typeface, weight and colour.`,
+    );
+  }
+  for (const r of ui.replace ?? []) {
+    lines.push(
+      `「${r.from}」 becomes 「${r.to}」 ${r.where}, character-for-character — same typeface, size and position; nothing else changes.`,
+    );
+  }
+  return lines;
 }
 
 export function validateProse(script: string, opts: ValidateProseOpts = {}): void {
@@ -292,8 +387,15 @@ const GAIT_PHRASE: Record<Shot["marks"][number]["gait"], string> = {
 /** assemble identity-long prose from packet fields only — every clause traces
  *  to a field (location/timeOfDay/weather/mood/size/action/marks/props/
  *  dialogue/camera/duration). No invented content; a packet too thin to reach
- *  the 150 詞 floor fails loud instead of padding. */
-function buildProseLong(sheet: CallSheet, shot: Shot, chars: ReturnType<typeof shotCast>): string {
+ *  the 150 詞 floor fails loud instead of padding. Cards ③a/③b add the sound
+ *  design field (always) and the UI mapping/on-screen lines (when a ui spec
+ *  rides with the shot). */
+function buildProseLong(
+  sheet: CallSheet,
+  shot: Shot,
+  chars: ReturnType<typeof shotCast>,
+  opts: BuildProseOpts = {},
+): string {
   const location = sheet.location.split(/[,，]/)[0]!.trim();
   const prop = shot.props?.[0]?.name ?? "props";
   const duration = Math.round(shot.durationSec * 10) / 10;
@@ -327,6 +429,16 @@ function buildProseLong(sheet: CallSheet, shot: Shot, chars: ReturnType<typeof s
     // pin
     PIN_SENTENCE.replace("{{PROP}}", prop),
   ];
+  if (opts.ui) {
+    // card ③b: mapping table + camera lock + on-screen text engineering
+    paras.push(buildUiLines(opts.ui).join(" "));
+  }
+  // card ③a: sound design is a formal field on identity-long prose
+  paras.push(
+    opts.timingRef
+      ? `${soundDesignLines(sheet, shot)} ${TIMING_REF_SENTENCE}`
+      : soundDesignLines(sheet, shot),
+  );
   const dialogue = shot.dialogue.trim();
   if (dialogue) {
     if (!speakerName) throw new Error(`${shot.id}: dialogue but no speaker and no cast`);
@@ -353,13 +465,23 @@ function shotCast(sheet: CallSheet, shot: Shot) {
   });
 }
 
+export type BuildProseOpts = {
+  /** card ③b: UI/infographic shot spec — forces identity-long (mapping table
+   *  + camera lock + on-screen text engineering ride with the photo refs) */
+  ui?: UiShotSpec;
+  /** card ③a: a montage timing wav rides as <Audio 2> (ref_audio_1) */
+  timingRef?: boolean;
+};
+
 /** H3＝A prose, mode decided by the packet (T42):
  *  action-short keeps the 40-sample skeleton (≤70 詞);
- *  identity-long weaves 150–300 詞 label-free prose from packet fields. */
-export function buildProse(sheet: CallSheet, shot: Shot): string {
-  const mode = pickProseMode(sheet, shot);
+ *  identity-long weaves 150–300 詞 label-free prose from packet fields,
+ *  now carrying the sound-design field (③a) and, when given, the UI
+ *  mapping/on-screen lines (③b). */
+export function buildProse(sheet: CallSheet, shot: Shot, opts: BuildProseOpts = {}): string {
+  const mode = opts.ui ? "identity-long" : pickProseMode(sheet, shot);
   if (mode === "identity-long") {
-    return buildProseLong(sheet, shot, shotCast(sheet, shot));
+    return buildProseLong(sheet, shot, shotCast(sheet, shot), opts);
   }
   const chars = shotCast(sheet, shot);
   const location = sheet.location.split(/[,，]/)[0]!.trim();
