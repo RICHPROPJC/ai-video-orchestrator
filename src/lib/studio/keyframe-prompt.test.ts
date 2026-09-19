@@ -92,6 +92,7 @@ test("T41 E2: 六行電報薄 packet → 生成器拒出 prompt_too_thin", () =>
     ...shotWithProp(),
     marks: [shotWithProp().marks[0]!],
     props: undefined,
+    action: "",
     stillPrompt: "",
   };
   const thinSheet: CallSheet = {

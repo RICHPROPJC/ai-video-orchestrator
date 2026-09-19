@@ -149,6 +149,15 @@ export const sceneRetrySchema = z.object({
  *  ordered Image-1 錨 → require.location 原句 → 衫著 → 道具／防農具 → negatives
  *  （後兩者隨場景句）。PE 只潤色 — 呢度交出去嘅已經係完整 brief。薄 packet
  *  組唔夠 150 中文字就拒出（prompt_too_thin），唔交六行電報。 */
+/** shot.size → framing sentence, same scale words photo-qc measures (size_notes) */
+const SIZE_LINE: Record<string, string> = {
+  wide: "景別 wide：全身連大片環境，人只佔畫面高度三成以下。",
+  full: "景別 full：全身入畫，頭頂到腳底都見到。",
+  medium: "景別 medium：腰以上半身入畫。",
+  closeup: "景別 closeup：面同肩膊填滿畫面。",
+  insert: "景別 insert：只見手同道具嘅局部特寫。",
+};
+
 export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: boolean }): string {
   const ordered = [...shot.marks].sort((a, b) => a.start.x - b.start.x);
   const chars = ordered.map((m) => {
@@ -166,19 +175,23 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
   if (prop && cls === "garment") {
     props = `【道具】${prop.name}係一件衣物：披上膊頭或者着住喺身嘅衣服，有領有袖，布料隨姿勢自然垂落。衣擺同身體、地面要有接觸同遮擋。`;
   } else if (prop && cls === "document") {
-    props = `【道具】${prop.name}係一張紙本文書：薄而平，可以喺手中展開、遞出或者攤開睇，上面有字有印；佢係文具唔係工具，畫面冇任何農具或者長柄器具。`;
+    props = `【道具】${prop.name}係薄而平嘅紙本文書，喺手中展開或者攤開，上面有字有印；佢係文具唔係工具，畫面冇農具或長柄器具。`;
   } else if (prop) {
     props = `【道具】人偶手中／兩人之間嘅長條係${prop.name}：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具；唔係${prop.forbid.join("、")}。`;
   }
   const keep = opts.first
     ? "【保留】Image-2…Image-N 係上述角色嘅正面肖像，只借五官同髮際。唔好加第三人。"
     : `【保留】Image-2 係上一鏡嘅定格：樣貌、衣服、${carried}、光線同色調跟 Image-2，唯獨姿勢跟 Image-1。`;
+  // photo-qc gates on require.action / require.size verbatim — the prompt must
+  // carry the same sentence, else the still is judged on words it never saw
+  const action = shot.action ? `【動作】${shot.action}` : "";
   const text = [
     "將 Image-1 灰模概念圖轉成 photoreal 實拍；人偶係角色佔位，唔係道具。人偶位置、姿勢、比例、鏡位、地平線、背景結構、牆面、室內外完全照 Image-1。",
-    `【場景】${sceneLine(sheet, shot)}牆面、地面、影子畫清楚。`,
-    `【人物】${people}距離、身高照 Image-1。`,
+    `【場景】${sceneLine(sheet, shot)}`,
+    `【人物】${people}距離、身高照 Image-1。${SIZE_LINE[shot.size] ?? ""}`,
+    action,
     props,
-    "【光影材質】布料、紙、金屬、水泥各有材質；手指、衣擺、道具同地面要有接觸遮擋。",
+    "【材質】布料、紙、金屬各有質感；手、衣擺、道具同地面有接觸遮擋同影子。",
     keep,
   ].filter((s) => s.length > 0).join("\n\n");
   const n = cjkCount(text);
