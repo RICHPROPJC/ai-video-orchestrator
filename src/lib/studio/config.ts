@@ -27,6 +27,18 @@ export type SlateConfig = {
   };
   tts: { endpoint: string; model: string };
   pictureQc: { endpoint: string; model: string };
+  /** Card D 掣3 search-first PE step: local brains only (nex :8017 first,
+   *  qwen38 :8015 backup). GLM cloud brains are banned for PE — thinking
+   *  bursts the content field (0919 wire receipts). */
+  pe: {
+    endpoint: string;
+    model: string;
+    fallbackEndpoint: string;
+    fallbackModel: string;
+    maxTokens: number;
+    wigoloClient: string;
+    timeoutMs: number;
+  };
   mesher: {
     endpoint: string;
     blender: string;
@@ -62,6 +74,16 @@ const DEFAULTS: SlateConfig = {
   },
   tts: { endpoint: "", model: "Fun-CosyVoice3-0.5B" },
   pictureQc: { endpoint: "http://127.0.0.1:8015", model: "mars-fa2" },
+  pe: {
+    endpoint: "http://127.0.0.1:8017",
+    model: "nex-n2.5",
+    fallbackEndpoint: "http://127.0.0.1:8015",
+    fallbackModel: "qwen38",
+    // nex call-shape law: effort none + official sampling 0.7/0.95/40 + max_tokens >= 5000
+    maxTokens: 6000,
+    wigoloClient: "/mnt/ssd/u1_canvas_research/wigolo_research.py",
+    timeoutMs: 300_000,
+  },
   mesher: {
     endpoint: "http://127.0.0.1:8018",
     blender: "/home/c/applications/blender-5.1.2-linux-x64/blender",
@@ -92,6 +114,7 @@ export function loadConfig(): SlateConfig {
     motion: { ...DEFAULTS.motion, ...raw.motion },
     tts: { ...DEFAULTS.tts, ...raw.tts },
     pictureQc: { ...DEFAULTS.pictureQc, ...raw.pictureQc },
+    pe: { ...DEFAULTS.pe, ...raw.pe },
     mesher: { ...DEFAULTS.mesher, ...raw.mesher },
     soundQc: { ...DEFAULTS.soundQc, ...raw.soundQc },
     ssh: { ...DEFAULTS.ssh, ...raw.ssh },

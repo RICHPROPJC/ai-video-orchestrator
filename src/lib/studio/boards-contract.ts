@@ -36,6 +36,14 @@ const propSchema = z.object({
   forbid: z.array(z.string().min(1).max(12)).max(8),
 });
 
+/** Card D 0919: an on-screen fact row. Packet-authored — 阿圖 may pre-author,
+ *  the search-first PE step writes wigolo evidence here; code only assembles. */
+const factSchema = z.object({
+  claim: z.string().min(1).max(200),
+  source: z.string().min(1).max(200),
+  fetched_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "fetched_at 要 YYYY-MM-DD"),
+});
+
 const boardShotShape = z.object({
   beatId: z.string().regex(BEAT_ID_RE),
   size: z.enum(["wide", "full", "medium", "closeup", "insert"]),
@@ -47,6 +55,15 @@ const boardShotShape = z.object({
   speaker: omittable(z.string().min(1).max(12)),
   cast: z.array(castSchema).min(1).max(CAST_PER_SHOT_MAX),
   props: omittable(z.array(propSchema).max(3)),
+  /** require.facts 同 negatives 同形：packet-authored。文字圖／infographic 類
+   *  shot 冇 facts 唔准出（keyframe-prompt 拒出閘）。factsRequired 係席位對
+   *  「呢鏡係文字／數據畫面」嘅顯式標記；結構詞彙（TEXT_SCREEN_RE）係後備。 */
+  require: omittable(
+    z.object({
+      facts: omittable(z.array(factSchema).min(1).max(8)),
+      factsRequired: omittable(z.boolean()),
+    }),
+  ),
 });
 
 const boardsSceneShape = z.object({

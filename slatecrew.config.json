@@ -35,6 +35,15 @@
     "endpoint": "http://127.0.0.1:8015",
     "model": "mars-fa2"
   },
+  "pe": {
+    "endpoint": "http://127.0.0.1:8017",
+    "model": "nex-n2.5",
+    "fallbackEndpoint": "http://127.0.0.1:8015",
+    "fallbackModel": "qwen38",
+    "maxTokens": 6000,
+    "wigoloClient": "/mnt/ssd/u1_canvas_research/wigolo_research.py",
+    "timeoutMs": 300000
+  },
   "mesher": {
     "endpoint": "http://127.0.0.1:8018",
     "blender": "/home/c/applications/blender-5.1.2-linux-x64/blender",

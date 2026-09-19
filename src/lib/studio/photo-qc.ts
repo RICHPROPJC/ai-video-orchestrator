@@ -23,6 +23,9 @@ export type QcRequire = {
   tool?: string;
   tool_shape?: string[];
   tool_forbid?: string[];
+  /** Card D 掣4: on-screen evidence rows; the judge checks each claim's
+   *  numbers/dates/names verbatim against the blind description. */
+  facts?: import("./types").ShotFact[];
 };
 
 export type QcSummary = {
@@ -85,6 +88,24 @@ export async function summarize(url: string, model: string, desc: string): Promi
   return JSON.parse(text.slice(a, b + 1)) as QcSummary;
 }
 
+/** The verbatim atoms of one fact claim. Dates are lifted first, then every
+ *  remaining number (with , . % as written), then CJK runs of 3+ chars from
+ *  what is left (proper-noun cores like 差餉物業估價署) — stripping dates and
+ *  numbers first keeps 月／點 boundary chars out of the name cores. A date
+ *  matches in its written form: 2026年6月 and 2026-06 are different atoms and
+ *  the claim's own rendering is the one that must appear. The claim IS the
+ *  on-screen copy (the /edit prompt paints it verbatim), so a GREEN blind
+ *  description must echo these atoms. */
+export function factTokens(claim: string): string[] {
+  const dates = claim.match(/\d{4}[-/.年]\d{1,2}(?:[-/.月]\d{1,2})?月?日?/g) ?? [];
+  let rest = claim;
+  for (const d of dates) rest = rest.split(d).join(" ");
+  const numbers = rest.match(/[0-9][0-9,]*\.?[0-9]*%?/g) ?? [];
+  for (const n of numbers) rest = rest.split(n).join(" ");
+  const names = rest.match(/[一-鿿]{3,}/g) ?? [];
+  return [...new Set([...dates, ...numbers, ...names])];
+}
+
 export function judge(desc: string, summary: QcSummary, require: QcRequire): QcVerdict {
   const reasons: string[] = [];
   const checks: Record<string, unknown> = {};
@@ -121,6 +142,20 @@ export function judge(desc: string, summary: QcSummary, require: QcRequire): QcV
           `named=${named} shape=${shaped} forbid=${JSON.stringify(banned)}`,
       );
     }
+  }
+
+  // Card D 掣4: the comparison target widens from the task text to the facts
+  // text — every number/date/name a fact claims must appear verbatim in the
+  // blind description (the "今年2021年9月" screen slip is exactly this gate)
+  const facts = require.facts ?? [];
+  if (facts.length > 0) {
+    const misses: string[] = [];
+    for (const f of facts) {
+      const missing = factTokens(f.claim).filter((tok) => !desc.includes(tok));
+      if (missing.length > 0) misses.push(`${f.claim} 冇逐字見到：${missing.join("、")}`);
+    }
+    checks.facts = misses.length === 0;
+    if (!checks.facts) reasons.push(`facts: ${misses.join("；")}`);
   }
 
   let status: "GREEN" | "FAIL" = Object.keys(checks).length > 0 && reasons.length === 0 ? "GREEN" : "FAIL";

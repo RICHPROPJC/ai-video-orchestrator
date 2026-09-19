@@ -113,6 +113,23 @@ export type ShotProp = {
   forbid: string[];
 };
 
+/** Chau 0919 search-first PE law: one evidence row behind every number a
+ *  frame puts on screen. Packet-authored (boards seat or the PE step writing
+ *  wigolo results back) — code assembles these verbatim, never authors them. */
+export type ShotFact = {
+  claim: string;
+  source: string;
+  /** YYYY-MM-DD, the day the evidence was fetched */
+  fetched_at: string;
+};
+
+export type ShotRequire = {
+  /** evidence rows for text/data screens; a facts-needing shot with none refuses to emit */
+  facts?: ShotFact[];
+  /** the seat marks this shot a text/data screen even when the action words don't say it */
+  factsRequired?: boolean;
+};
+
 export type Shot = {
   id: string;
   index: number;
@@ -142,6 +159,7 @@ export type Shot = {
     stanceEnd?: Stance;
   }[];
   props?: ShotProp[];
+  require?: ShotRequire;
   stillPrompt: string;
   motionPrompt: string;
   /** which scene and beat the seats cut this shot from */

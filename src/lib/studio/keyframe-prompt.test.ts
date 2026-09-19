@@ -57,6 +57,61 @@ function shotWithProp(prop?: ShotProp): Shot {
 const coat: ShotProp = { name: "軍大衣", heldBy: "A", shape: ["披", "肩"], forbid: ["木犁", "鐵犁鏵"] };
 const decree: ShotProp = { name: "通緝令", heldBy: "A", shape: ["紙", "字"], forbid: ["木犁", "鋤頭"] };
 
+/** Card D 掣2: a text/data screen without require.facts refuses to emit —
+ *  the prompt_too_thin shape (fail loud at composition, never a thin emit). */
+const INFO_FACTS = [
+  { claim: "2026年6月私人住宅售價指數報323.2點", source: "https://example.hk/rvd", fetched_at: "2026-09-19" },
+  { claim: "指數連升13個月", source: "https://example.hk/rvd", fetched_at: "2026-09-19" },
+];
+
+function screenShot(overrides: Partial<Shot> = {}): Shot {
+  return {
+    ...shotWithProp(),
+    action: "螢幕顯示樓價指數走勢圖表",
+    ...overrides,
+  } satisfies Shot;
+}
+
+test("infographic shot without facts refuses to emit (facts_missing, prompt_too_thin shape)", () => {
+  assert.throws(
+    () => keyframeEditPrompt(sheet, screenShot(), { first: false }),
+    /facts_missing: SH07/,
+    "text screen with no facts throws",
+  );
+  assert.throws(
+    () => keyframeEditPrompt(sheet, screenShot(), { first: false }),
+    /去PE步攞/,
+    "the error says where facts come from (PE step)",
+  );
+});
+
+test("factsRequired flag alone (no 圖表 words) also trips the gate; normal shots never do", () => {
+  const flagged = shotWithProp();
+  flagged.require = { factsRequired: true };
+  assert.throws(() => keyframeEditPrompt(sheet, flagged, { first: false }), /facts_missing/);
+  // a plain story shot (no screen words, no flag) still composes untouched
+  const plain = keyframeEditPrompt(sheet, shotWithProp(coat), { first: false });
+  assert.ok(!plain.includes("上屏事實"), "no facts block on a plain shot");
+});
+
+test("facts shot with packet rows emits the facts block verbatim and carries facts into require", () => {
+  const shot = screenShot({ require: { facts: INFO_FACTS } });
+  const text = keyframeEditPrompt(sheet, shot, { first: false });
+  for (const f of INFO_FACTS) {
+    assert.ok(text.includes(f.claim), `claim verbatim: ${f.claim}`);
+    assert.ok(text.includes(f.source), "source verbatim");
+    assert.ok(text.includes(f.fetched_at), "fetched_at verbatim");
+  }
+  assert.ok(text.includes("【上屏事實】"), "facts block header present");
+  const req = keyframeRequire(shot);
+  assert.deepEqual(req.facts, INFO_FACTS, "QC require carries the same facts rows");
+});
+
+test("prop name alone (數據卡 as a prop) trips the facts gate too", () => {
+  const card = screenShot({ action: "遞出一張卡", props: [{ name: "數據卡", shape: ["卡"], forbid: [] }], require: {} });
+  assert.throws(() => keyframeEditPrompt(sheet, card, { first: false }), /facts_missing/);
+});
+
 test("garment prop: prompt names the coat as clothing, never a plow (SH07 class)", () => {
   const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: false });
   assert.ok(text.includes("軍大衣"), "prop name from sheet");

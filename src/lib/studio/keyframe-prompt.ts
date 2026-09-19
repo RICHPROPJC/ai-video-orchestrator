@@ -1,4 +1,4 @@
-import type { CallSheet, Shot } from "./types";
+import type { CallSheet, Shot, ShotFact } from "./types";
 import type { QcRequire } from "./photo-qc";
 
 /** A prop's noun class decides its prompt template and its QC gate. Classes
@@ -19,10 +19,39 @@ export function propNounClass(name: string): PropNounClass {
   return "tool";
 }
 
+/** Chau 0919 search-first PE law: a frame that shows text/data (infographic,
+ *  手機畫面, 數據卡, 走勢圖) must be composed from packet facts — numbers
+ *  never come from the model's head. Structural vocabulary only, same register
+ *  as propNounClass; the seat can also mark the shot with require.factsRequired. */
+const TEXT_SCREEN_RE =
+  /infograph|信息圖|資訊圖|圖表|數據卡|數字卡|文字圖|走勢圖|柱狀|折線|圓餅|螢幕截圖|屏幕截圖|手機畫面|畫面顯示|chart|dashboard/i;
+
+export function needsShotFacts(shot: Shot): boolean {
+  if (shot.require?.factsRequired) return true;
+  return TEXT_SCREEN_RE.test(shot.action) || (shot.props ?? []).some((p) => TEXT_SCREEN_RE.test(p.name));
+}
+
+/** Assemble packet facts verbatim for the /edit prompt. Code assembles, never
+ *  authors — every number on screen must trace to one of these rows. */
+export function factsBlock(facts: ShotFact[]): string {
+  const lines = ["【上屏事實】以下數字／日期／名逐字照抄上屏，唔准改寫、唔准四捨五入、唔准自己補："];
+  facts.forEach((f, i) => lines.push(`${i + 1}. ${f.claim}（來源：${f.source}，${f.fetched_at} 摳返嚟）`));
+  return lines.join("\n");
+}
+
 /** /edit prompt for one shot keyframe, naming images by slot. Under img_cfg 1.0
  *  the image branches only exist via Image-N tokens — the prompt must name them.
  *  Nothing scene-specific lives here; every name/wardrobe/prop comes from the sheet. */
 export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: boolean }): string {
+  // refuse-to-emit (Card D 掣2, prompt_too_thin 嘅形): a text/data screen with
+  // no packet facts has nothing honest to put on screen — the generator refuses
+  // rather than let the model invent numbers
+  const facts = shot.require?.facts ?? [];
+  if (needsShotFacts(shot) && facts.length === 0) {
+    throw new Error(
+      `facts_missing: ${shot.id} 文字圖／infographic 類 shot 冇 require.facts — 文字圖要facts，去PE步攞（search-first PE：wigolo 搜證→PE 腦寫入 require.facts 先准出；Card D 掣2）`,
+    );
+  }
   const ordered = [...shot.marks].sort((a, b) => a.start.x - b.start.x);
   const chars = ordered.map((m) => {
     const hit = sheet.characters.find((c) => c.id === m.characterId);
@@ -60,6 +89,7 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
       : `Image-2 係上一鏡嘅定格：兩人樣貌、衣服、${prop ? prop.name : "犁"}、光線同色調全部跟 Image-2，唯獨姿勢跟 Image-1。`,
   );
   lines.push(`${sheet.location}，${sheet.timeOfDay}，${sheet.weather}。唔好加人。`);
+  if (facts.length > 0) lines.push(factsBlock(facts));
   return lines.join("\n");
 }
 
@@ -71,9 +101,11 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
 export function keyframeRequire(shot: Shot): QcRequire {
   const prop = shot.props?.[0];
   const heldTool = prop && propNounClass(prop.name) === "tool" ? prop : undefined;
+  const facts = shot.require?.facts ?? [];
   return {
     people_count: new Set(shot.marks.map((m) => m.characterId)).size,
     grey_blocks: false,
     ...(heldTool ? { tool: heldTool.name, tool_shape: heldTool.shape, tool_forbid: heldTool.forbid } : {}),
+    ...(facts.length ? { facts } : {}),
   };
 }
