@@ -262,7 +262,10 @@ export function renderRequireLines(require: QcRequire): string[] {
     lines.push(line);
   }
   if (require.location) lines.push(`- 地點：${require.location}`);
-  if (require.action) lines.push(`- 動作：${require.action}`);
+  // a keyframe is one frozen instant of the beat: motion verbs (彈起／掃跌／散落)
+  // are judged by whether the pose is a plausible mid-action frame, not by
+  // whether a still shows movement — WR1Q SH01 failed three /edits on this alone
+  if (require.action) lines.push(`- 動作（呢張係動作中途一格定格；動態動詞只睇姿勢係唔係該動作進行中嘅一瞬，唔要求見到移動）：${require.action}`);
   if (require.size) lines.push(`- 尺寸：${require.size}`);
   if (require.plain_background === true) lines.push("- 背景：純色平面背景（唔准街道／夜街／霓虹場景）");
   if (require.grey_blocks === false) lines.push("- 灰模佔位：禁止（唔准有灰色方塊／人偶／剪影）");
