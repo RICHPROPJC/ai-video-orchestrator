@@ -104,6 +104,9 @@ export async function assertFiguresVisible(f0png: string, shot: Shot): Promise<v
   const width = meta.width ?? 0;
   const height = meta.height ?? 0;
   if (!width || !height) throw new Error(`${f0png}: cannot read dimensions for figure check`);
+  // insert = detail framing (hands/prop); the body mark is off-frame by design, so the
+  // figure crop sees only figure+floor (5.1.2: 159 vs 179, span 20) — no figure claim to gate
+  if (shot.size === "insert") return;
   for (const mark of shot.marks) {
     const w = Math.round(width * 0.16);
     const h = Math.round(height * 0.4);
