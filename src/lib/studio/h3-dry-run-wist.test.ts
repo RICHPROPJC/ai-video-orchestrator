@@ -68,11 +68,11 @@ test("WIST verify/ab/dry receipts for A/B/BKF/C on SH01 and SH04", async (t) => 
       assert.equal(receipt.dry_run, true);
       assert.equal(receipt.steps, 4);
 
-      const graph = receipt.graph as Record<string, { inputs: Record<string, unknown> }>;
+      const graph = receipt.graph as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
       const r2v = graph.r2v.inputs;
       const hasVideo = "blender_vid" in graph && "ref_videos.ref_video_0" in r2v;
       const refImgKeys = Object.keys(r2v).filter((k) => k.startsWith("ref_images."));
-      const hasKf = "kfinject" in graph;
+      const hasKf = "keyframes" in graph && graph.keyframes.class_type === "H3Keyframes";
 
       if (variant === "a") {
         assert.ok(hasVideo);
