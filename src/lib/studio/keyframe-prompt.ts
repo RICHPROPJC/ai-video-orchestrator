@@ -29,7 +29,7 @@ export function propNounClass(name: string): PropNounClass {
  * the sheet tail is the pre-T32 behaviour, so an unrecognised location keeps
  * today's prompt, never a guessed indoor line. Generic set vocabulary only. */
 const OUTDOOR_RE = /戶外|室外|野外|露天|街|大道|跑道|廣場|岸|橋|門口|崗/;
-const INDOOR_RE = /室|房|廳|宿舍|禮堂|館|公寓|中心|停屍間/;
+const INDOOR_RE = /室|房|廳|廊|宿舍|禮堂|館|公寓|中心|停屍間/;
 
 export function isIndoorLocation(location: string): boolean {
   if (OUTDOOR_RE.test(location)) return false;

@@ -625,9 +625,12 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // T44 §1: `first` tracks unseen faces only — a size change no longer
     // re-portraits a cast the viewer already knows
     const firstFlags = stillFirstFlags(continuity.boards);
-    const stillPlans = continuity.boards.map((boardShot, i) => {
+    // --scene hop composes only its own shots: an out-of-scene prompt_too_thin
+    // throw must not fail the hop (WR1Q SC01 died on SH06)
+    const planBoards = input.scene ? shotsForScene(continuity.boards, input.scene) : continuity.boards;
+    const stillPlans = planBoards.map((boardShot) => {
       const shot = timed.shots.find((s) => s.id === boardShot.id)!;
-      const first = firstFlags[i]!;
+      const first = firstFlags[continuity.boards.indexOf(boardShot)]!;
       const prompt = keyframeEditPrompt(timed, shot, { first });
       const require = keyframeRequire(shot);
       // D1a trace: soft edge invariants (boards→keyframe, keyframe→stills),
