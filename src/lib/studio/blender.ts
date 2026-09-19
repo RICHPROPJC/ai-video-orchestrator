@@ -299,6 +299,11 @@ def main():
     # cannot pass the YMAX-YMIN>=40 figure gate; FLAT renders pure material greys
     scene.display.shading.light = "FLAT"
     scene.display.shading.color_type = "MATERIAL"
+    # Blender 4/5 default view transform (AgX) compresses the material greys
+    # (wall 0.95 -> ~194, figure -> ~159) and breaks every luma gate calibrated on
+    # 3.0's Standard; pin Standard so the measured greys above hold on 5.1.2.
+    scene.view_settings.view_transform = "Standard"
+    scene.view_settings.look = "None"
     scene.render.fps = fps
     scene.render.resolution_x = width
     scene.render.resolution_y = height
