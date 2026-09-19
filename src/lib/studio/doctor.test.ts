@@ -12,6 +12,7 @@ function report(cfg: SlateConfig, warns: string[]): DoctorReport {
     motion: { up: false, url: cfg.motion.comfyUrl, nodesMissing: [] },
     stills: { up: false, url: cfg.stills.url },
     pictureQc: { up: false, url: cfg.pictureQc.endpoint, modelPresent: false, models: [] },
+    mesher: { up: false, url: cfg.mesher.endpoint },
     config: cfg,
     warns,
   };
@@ -51,4 +52,9 @@ test("formatDoctor prints report.warns as WARN lines", () => {
   const warns = configWarns(cfg);
   const text = formatDoctor(report(cfg, warns));
   assert.ok(text.split("\n").some((line) => line.startsWith("WARN") && line.includes("localhost")));
+});
+
+test("mesher.endpoint is a local sf3d_server by design — never a loopback WARN", () => {
+  const warns = configWarns(structuredClone(defaultConfig));
+  assert.ok(!warns.some((w) => w.includes("mesher.endpoint") && w.includes("loopback")));
 });

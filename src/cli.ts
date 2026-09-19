@@ -27,7 +27,8 @@ Commands
   produce "<brief>"          行 log 開工
   frames <job> <shot>        從 motion mp4 抽 QC 帧（首/中/尾 + 每 2s）→ jpg
   events [slate] [--follow]  睇 projects/<ep>/events.jsonl；--follow 點住尾
-  doctor                     探兩部機 / MARS / ffmpeg / Blender
+  doctor                     探兩部機 / MARS / SF3D / ffmpeg / Blender
+  mesh <plate.png>           去背方塊 → sf3d :8018 → mesh_front.glb＋geometry閘（Blender 5.1.2）
   models                     睇而家用緊邊個 checkpoint
   models set <dot.path> <v>  換模型，例：stills.checkpoint foo.safetensors
   status [slate]
@@ -236,6 +237,67 @@ async function main() {
   }
   if (cmd === "doctor") {
     console.log(formatDoctor(await doctor()));
+    return;
+  }
+  if (cmd === "mesh") {
+    const plate = process.argv[3];
+    const meshClass = arg("--class", "figure");
+    const usage = "mesh <plate.png> [--out dir] [--front-ref png] [--class figure|prop] [--target-height 1.7] [--dry-run]";
+    if (!plate || (meshClass !== "figure" && meshClass !== "prop")) {
+      console.error(usage);
+      process.exitCode = 1;
+      return;
+    }
+    const cfg = loadConfig();
+    const { assertMeshPlate, importMeshCall, sf3dGenerate, sf3dHealth } = await import("./lib/studio/mesh-provider");
+    const outDir = path.resolve(arg("--out") ?? path.join(process.cwd(), "data", "mesh", `${path.basename(plate).replace(/\.png$/i, "")}_${Date.now()}`));
+    if (process.argv.includes("--dry-run")) {
+      const facts = await assertMeshPlate(plate).catch((e: Error) => ({ refused: e.message }));
+      const health = await sf3dHealth(cfg.mesher.endpoint).catch((e: Error) => ({ error: e.message }));
+      console.log(JSON.stringify({ dry_run: true, plate, facts, health, outDir }, null, 2));
+      return;
+    }
+    const receipt = await sf3dGenerate({
+      plate,
+      outDir,
+      endpoint: cfg.mesher.endpoint,
+      frontRef: arg("--front-ref"),
+      textureResolution: cfg.mesher.textureResolution,
+    });
+    if (receipt.status !== "succeeded" || !receipt.mesh_front) {
+      console.error(JSON.stringify(receipt, null, 2));
+      process.exitCode = 1;
+      return;
+    }
+    const targetHeightM = Number(arg("--target-height", String(cfg.mesher.targetHeightM)));
+    const { runMeshGeometryGate } = await import("./lib/studio/mesh-geometry-gate");
+    const verdict = await runMeshGeometryGate({
+      glb: receipt.mesh_front,
+      outDir: path.join(outDir, "gate"),
+      blenderBin: cfg.mesher.blender,
+      targetHeightM,
+      meshClass,
+    });
+    console.log(JSON.stringify({
+      receipt,
+      importCall: importMeshCall({
+        path: receipt.mesh_front,
+        name: "Sf3d" + path.basename(outDir).replace(/[^A-Za-z0-9]/g, ""),
+        targetHeightM,
+      }),
+      gate: {
+        ok: verdict.ok,
+        checks: verdict.checks,
+        metrics: {
+          solidity: verdict.metrics.solidity,
+          thinness: verdict.metrics.thinness,
+          vertices: verdict.metrics.vertices,
+          dimensionsM: verdict.metrics.dimensionsM,
+          preview: verdict.metrics.preview,
+        },
+      },
+    }, null, 2));
+    process.exitCode = verdict.ok ? 0 : 1;
     return;
   }
   if (cmd === "models") {

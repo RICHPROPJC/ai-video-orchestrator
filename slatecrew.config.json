@@ -35,6 +35,12 @@
     "endpoint": "http://127.0.0.1:8015",
     "model": "mars-fa2"
   },
+  "mesher": {
+    "endpoint": "http://127.0.0.1:8018",
+    "blender": "/home/c/applications/blender-5.1.2-linux-x64/blender",
+    "textureResolution": 512,
+    "targetHeightM": 1.7
+  },
   "soundQc": {
     "endpoint": "",
     "model": "FunAudioLLM/SenseVoiceSmall"

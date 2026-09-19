@@ -47,6 +47,15 @@ export type MarsProbe = {
   models: string[];
 };
 
+export type MesherProbe = {
+  up: boolean;
+  url: string;
+  ready?: boolean;
+  busy?: boolean;
+  served?: number;
+  error?: string;
+};
+
 export type DoctorReport = {
   ffmpeg: boolean;
   blender: boolean;
@@ -55,6 +64,7 @@ export type DoctorReport = {
   motion: MotionProbe;
   stills: StillsProbe;
   pictureQc: MarsProbe;
+  mesher: MesherProbe;
   config: SlateConfig;
   warns: string[];
 };
@@ -144,6 +154,19 @@ async function probeMars(url: string, model: string): Promise<MarsProbe> {
   }
 }
 
+async function probeMesher(url: string): Promise<MesherProbe> {
+  if (!url) return { up: false, url, error: "mesher.endpoint unset" };
+  const base = url.replace(/\/$/, "");
+  try {
+    const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const info = (await res.json()) as { ready?: boolean; busy?: boolean; served?: number };
+    return { up: true, url: base, ready: info.ready, busy: info.busy, served: info.served };
+  } catch (error) {
+    return { up: false, url: base, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export async function doctor(): Promise<DoctorReport> {
   const cfg = loadConfig();
   const ffmpeg = await runCommand("ffmpeg", ["-version"]).then((r) => r.code === 0).catch(() => false);
@@ -158,6 +181,7 @@ export async function doctor(): Promise<DoctorReport> {
     motion: await probeMotion(cfg.motion.comfyUrl),
     stills: await probeStills(cfg.stills.url),
     pictureQc: await probeMars(cfg.pictureQc.endpoint, cfg.pictureQc.model),
+    mesher: await probeMesher(cfg.mesher.endpoint),
     config: cfg,
     warns: configWarns(cfg),
   };
@@ -175,6 +199,8 @@ export function formatDoctor(report: DoctorReport) {
     `  /edit    model ${report.stills.model ?? "?"}  multi_image ${report.stills.multiImage ?? "?"}  defaults ${JSON.stringify(report.stills.defaults ?? {})}`,
     `pictureqc  ${report.pictureQc.up ? `UP ${report.pictureQc.url}` : `DOWN ${report.pictureQc.url}  ${report.pictureQc.error ?? ""}`.trim()}`,
     `  mars     ${report.pictureQc.modelPresent ? `${report.config.pictureQc.model} present` : `${report.config.pictureQc.model} NOT listed (host has ${report.pictureQc.models.length} models)`}`,
+    `sf3d       ${report.mesher.up ? `UP ${report.mesher.url}  ready ${report.mesher.ready ?? "?"}  served ${report.mesher.served ?? "?"}` : `DOWN ${report.mesher.url}  ${report.mesher.error ?? ""}`.trim()}`,
+    `  gate     blender ${report.config.mesher.blender}  tx ${report.config.mesher.textureResolution}  h ${report.config.mesher.targetHeightM}m`,
   ];
   for (const warn of report.warns) lines.push(`WARN  ${warn}`);
   return lines.join("\n");

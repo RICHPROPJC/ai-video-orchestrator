@@ -27,6 +27,12 @@ export type SlateConfig = {
   };
   tts: { endpoint: string; model: string };
   pictureQc: { endpoint: string; model: string };
+  mesher: {
+    endpoint: string;
+    blender: string;
+    textureResolution: number;
+    targetHeightM: number;
+  };
   soundQc: { endpoint: string; model: string };
   ssh: { user: string; motionInputDir: string; stillsRefsDir: string };
 };
@@ -56,6 +62,12 @@ const DEFAULTS: SlateConfig = {
   },
   tts: { endpoint: "", model: "Fun-CosyVoice3-0.5B" },
   pictureQc: { endpoint: "http://127.0.0.1:8015", model: "mars-fa2" },
+  mesher: {
+    endpoint: "http://127.0.0.1:8018",
+    blender: "/home/c/applications/blender-5.1.2-linux-x64/blender",
+    textureResolution: 512,
+    targetHeightM: 1.7,
+  },
   soundQc: { endpoint: "", model: "FunAudioLLM/SenseVoiceSmall" },
   ssh: {
     user: "hojaiv3v",
@@ -80,6 +92,7 @@ export function loadConfig(): SlateConfig {
     motion: { ...DEFAULTS.motion, ...raw.motion },
     tts: { ...DEFAULTS.tts, ...raw.tts },
     pictureQc: { ...DEFAULTS.pictureQc, ...raw.pictureQc },
+    mesher: { ...DEFAULTS.mesher, ...raw.mesher },
     soundQc: { ...DEFAULTS.soundQc, ...raw.soundQc },
     ssh: { ...DEFAULTS.ssh, ...raw.ssh },
   };
@@ -91,6 +104,8 @@ export function loadConfig(): SlateConfig {
   if (mars) merged.pictureQc.endpoint = mars;
   const crew = process.env.CREW_LLM_URL?.trim();
   if (crew) merged.crew.endpoint = crew;
+  const sf3d = process.env.SF3D_URL?.trim();
+  if (sf3d) merged.mesher.endpoint = sf3d;
   return merged;
 }
 
