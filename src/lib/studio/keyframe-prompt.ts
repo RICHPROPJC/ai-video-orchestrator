@@ -13,7 +13,7 @@ export type PropNounClass = "garment" | "document" | "tool";
 const GARMENT_RE = /外套|大衣|衫|衣|coat|jacket|cloak|robe/i;
 /** flat paper/board things carried, shown or read — never swung like a tool */
 const DOCUMENT_RE =
-  /令|詔|旨|敕|書|信|箋|函|卷|軸|圖|紙|契|券|符|帖|牒|表|冊|decree|edict|letter|scroll|document|paper|map|warrant|pardon|deed|pass\b/i;
+  /令|詔|旨|敕|書|信|箋|函|卷|軸|圖|紙|契|券|符|帖|牒|表|冊|文件|檔案|文書|decree|edict|letter|scroll|document|paper|map|warrant|pardon|deed|pass\b/i;
 
 export function propNounClass(name: string): PropNounClass {
   if (GARMENT_RE.test(name)) return "garment";
@@ -93,7 +93,10 @@ export function sceneRetryNormalize(raw: unknown, note: (line: string) => void):
  * Chau 17:48: negatives are packet data too (require.negatives, authored per
  * 道具/場景類別) — this function ONLY assembles, never authors a ban list. */
 export function sceneLine(sheet: CallSheet, shot: Shot): string {
-  const loc = shot.require?.location?.trim();
+  // packet require.location first; else the shot's own room (the same field
+  // keyframeRequire hands photo-qc — prompt and gate must read one source);
+  // the sheet tail only when the shot has no room at all
+  const loc = (shot.require?.location ?? shot.location)?.trim();
   if (!loc) return `${sheet.location}，${sheet.timeOfDay}，${sheet.weather}。唔好加人。`;
   const negs = shot.require?.negatives ?? [];
   const ban = negs.length ? `；禁止${negs.join("、")}` : "";

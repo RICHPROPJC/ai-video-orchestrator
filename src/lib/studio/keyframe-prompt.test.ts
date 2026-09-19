@@ -355,15 +355,20 @@ test("T32 rev2 A2: same-set later shots SH02–SH05 also drop the sheet tail", (
   }
 });
 
-test("T32 rev2: no packet ⇒ sheet tail fallback (pre-T32 behaviour intact)", () => {
+test("T32 rev2 (e2-min): no packet ⇒ shot.location writes the scene slot; sheet tail only when the shot has no room", () => {
+  // WR1Q SH01 receipt: boards emitted require on 0/87 real shots, so the tail
+  // (總統府…night，rain) was prompted while photo-qc gated on shot.location 地下室
+  // — two truth sources, guaranteed 地點 FAIL. Prompt now reads the same field the gate reads.
   const { fx, sheet } = ldSheet();
-  const text = keyframeEditPrompt(sheet, fx.shots[0]!, { first: true });
+  const shot = fx.shots[0]!;
+  const text = keyframeEditPrompt(sheet, shot, { first: true });
+  assert.ok(text.includes(shot.location), "without require.location the shot's own room writes the scene slot");
   assert.ok(
-    text.includes(`${fx.sheet.location}，${fx.sheet.timeOfDay}，${fx.sheet.weather}`),
-    "without require.location the sheet tail is the fallback",
+    !text.includes(`${fx.sheet.location}，${fx.sheet.timeOfDay}，${fx.sheet.weather}`),
+    "sheet tail never rides a shot that names its room",
   );
-  const outdoor = keyframeEditPrompt(baseSheet, shotWithProp(), { first: false });
-  assert.ok(outdoor.includes("亂葬崗，dusk，wind"), "sheet tail intact for an outdoor/unknown set");
+  const roomless = keyframeEditPrompt(baseSheet, { ...shotWithProp(), location: "" }, { first: false });
+  assert.ok(roomless.includes("亂葬崗，dusk，wind"), "sheet tail is the fallback only for a roomless shot");
   assert.equal(isIndoorLocation("亂葬崗"), false, "unknown location defaults outdoor");
 });
 
