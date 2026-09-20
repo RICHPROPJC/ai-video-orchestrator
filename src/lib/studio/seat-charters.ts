@@ -57,7 +57,7 @@ export const BOARDS_CHARTER = `你係分鏡檯（阿圖）。收一場戲嘅 bea
 - cast: 一到三個人，每個寫 characterId、slot（L|C|R）、depth（near|mid|far）、facing（1 或 -1）、gait、stance，要郁就加 stanceEnd 同 travelTo。
 - gait 淨係得呢四個字：plant | walk | reach | turn。
 - stance 同 stanceEnd 淨係得呢三個字：stand | lean | crouch。plant、walk、reach、turn 係 gait 嘅字，唔准攞落 stance 或 stanceEnd 度用；呢三個字以外一個都唔准自己造。
-- props（有先寫）：name，同埋畫檢個眼點讀佢——shape[] 係形狀詞，forbid[] 係唔可以認錯嘅嘢。heldBy 一定要係 cast 入面其中一個 characterId；如果嗰個人唔喺 cast，就唔好寫 props，或者先加佢入 cast。
+- props（有先寫）：name，同埋畫檢個眼點讀佢——shape[] 係形狀詞，forbid[] 係唔可以認錯嘅嘢。heldBy 一定要係 cast 入面其中一個 characterId；如果嗰個人唔喺 cast，就唔好寫 props，或者先加佢入 cast。光框／全息／infograph 嘅 forbid 唔好寫 screen 或 螢幕（光框本身就係螢幕，寫入 forbid 會殺合法形）。
 
 兩個名要分清楚：cast 入面嘅 characterId 係大階字母（A、B、C），但 speaker 係個角色嘅 name（同 beat 入面果個字一模一樣）。唔好掉轉，唔好喺 speaker 度寫字母。
 

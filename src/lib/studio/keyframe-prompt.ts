@@ -19,19 +19,22 @@ const DOCUMENT_RE =
 /** §0c hologram/infograph class (WR1Q SH02: 光框 fell into tool + forbid=screen
  *  and the blind eye's 全息螢幕 killed the legal form). The drama's proper name
  *  for this class stays out of src (noun-lint); 光框／全息／infograph cover it. */
-const SYSTEM_RE = /光框|光幕|全息|投影|infograph|信息圖|hologram|holographic|數據卡/i;
+const SYSTEM_RE = /光框|光幕|全息|投影|infograph|信息圖|系統|hologram|holographic|數據卡/i;
 
 /** Class order is load-bearing: hologram/infograph first — a 光框-named prop is
- *  never a held farm tool, and a 數據圖表 must not ride document. */
-export function propNounClass(name: string): PropNounClass {
+ *  never a held farm tool, and a 數據圖表 must not ride document. */export function propNounClass(name: string): PropNounClass {
   if (SYSTEM_RE.test(name)) return "system";
   if (GARMENT_RE.test(name)) return "garment";
   if (DOCUMENT_RE.test(name)) return "document";
   return "tool";
 }
 
-/** FLOW_LAW §0c: hologram/infograph props ARE screens. Boards writing
- *  screen/螢幕 into forbid makes QC kill the legal form (WR1Q SH02). */
+/** §0c law46（CHAU_FULL_FLOW_LAW 0917 QC豁免位）：系統出場 shot，TEXT_SCREEN_RE
+ *  等「螢幕/screen」禁詞要豁免——系統＝螢幕合法，角色亂生螢幕先係犯規。
+ *  boards 寫 screen/螢幕 入 system prop 嘅 forbid＝禁詞殺自己人（WR1Q SH02
+ *  「掌心托住全息螢幕＋道具描述包含被禁詞『螢幕/screen』」）。判詞族上限收
+ *  全形字（螢幕／屏幕等）；boards 契約層（boards-contract）用呢度兩個 predicate
+ *  釘死 system prop 唔准帶 screen 族 forbid。 */
 const SYSTEM_DISPLAY_SCREEN_FORBID_RE = /^(screen|螢幕)$/i;
 
 export function isSystemDisplayProp(name: string): boolean {
@@ -42,6 +45,8 @@ export function isSystemDisplayScreenForbid(tok: string): boolean {
   return SYSTEM_DISPLAY_SCREEN_FORBID_RE.test(tok);
 }
 
+/** boards 端豁免數據（#27 手搬）：system display prop 嘅 forbid 剷走
+ *  screen/螢幕——非 system 照抄，一個字都唔郁。 */
 export function scrubSystemDisplayForbid(name: string, forbid: string[]): string[] {
   if (!isSystemDisplayProp(name)) return forbid;
   return forbid.filter((tok) => !isSystemDisplayScreenForbid(tok));
@@ -249,8 +254,7 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
     throw new Error(
       `facts_missing: ${shot.id} 文字圖／infographic 類 shot 冇 require.facts — 文字圖要facts，去PE步攞（search-first PE：wigolo 搜證→PE 腦寫入 require.facts 先准出；Card D 掣2）`,
     );
-  }
-  const ordered = [...shot.marks].sort((a, b) => a.start.x - b.start.x);
+  }  const ordered = [...shot.marks].sort((a, b) => a.start.x - b.start.x);
   const chars = ordered.map((m) => {
     const hit = sheet.characters.find((c) => c.id === m.characterId);
     if (!hit) throw new Error(`${shot.id}: mark references unknown character ${m.characterId}`);
@@ -285,8 +289,7 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
     props = `【道具】${prop.name}係一張紙本文書：薄而平，可以喺手中展開、遞出或者攤開睇，上面有字有印；佢係文具唔係工具，畫面冇任何農具或者長柄器具。`;
   } else if (prop && cls === "system") {
     // chart + UI frame + text labels; never plow, never a screen/forbid echo
-    props = `【道具】${prop.name}係一個懸浮喺半空嘅全息投影界面：半透明光造影像微微發光，畫面要見齊三層結構——數據圖表圖形、UI介面框線、細小文字標籤，全部懸浮喺角色手上方；佢係光造嘅投影，冇機身冇金屬邊框，唔係實體機器。`;
-  } else if (prop) {
+    props = `【道具】${prop.name}係一個懸浮喺半空嘅全息投影界面：半透明光造影像微微發光，畫面要見齊三層結構——數據圖表圖形、UI介面框線、細小文字標籤，全部懸浮喺角色手上方；佢係光造嘅投影，冇機身冇金屬邊框，唔係實體機器。`;  } else if (prop) {
     // "one blade, one tool" — U1.5's default farm tool is a multi-tine rake
     props = `【道具】人偶手中／兩人之間嘅長條係${prop.name}：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具，背景冇任何其他工具；唔係${prop.forbid.join("、")}。`;
   }
@@ -356,9 +359,15 @@ export function unchangedBlock(shot: Shot): string {
 }
 
 /** what photo QC requires of this shot's keyframe: the marks decide people_count;
- *  a held tool or a hologram/infograph prop (class "system") adds the prop gate.
- *  Screen-family exemption lives in the judge; boards strip stays as upstream
- *  hygiene. Garments and documents are wardrobe/paper — no gate. */
+ *  a held tool (noun class "tool") or a system prop (noun class "system" — the
+ *  WR1Q SH02 光框) adds the proven prop gate from data: the blind eye must name
+ *  the prop or hit its shape words. The require strips screen/螢幕 from a system
+ *  prop's forbid at the source (§0c law46 boards 端豁免，#27 手搬) — the
+ *  screen-family exemption also lives in the judge (photo-qc), so stale
+ *  require.json from the old classifier is still fixed at judgement time.
+ *  Garments and documents are wardrobe/paper — no gate: blind QC can only
+ *  describe shape words, never the sheet's proper name, so the name gate never
+ *  turns GREEN. */
 export function keyframeRequire(shot: Shot): QcRequire {
   const prop = shot.props?.[0];
   const cls = prop ? propNounClass(prop.name) : null;
@@ -367,14 +376,12 @@ export function keyframeRequire(shot: Shot): QcRequire {
   const facts = shot.require?.facts ?? [];
   // the QC action key mirrors what actionBlock emits (require.action first,
   // else the boards line) — prompt and gate must read one source (0c636e9)
-  const actionKey = shot.require?.action?.trim() || shot.action;
-  return {
+  const actionKey = shot.require?.action?.trim() || shot.action;  return {
     people_count: new Set(shot.marks.map((m) => m.characterId)).size,
     grey_blocks: false,
     ...(shot.location ? { location: shot.location } : {}),
     ...(actionKey ? { action: actionKey } : {}),
     ...(shot.size ? { size: shot.size } : {}),
     ...(heldTool ? { tool: heldTool.name, tool_shape: heldTool.shape, tool_forbid: toolForbid } : {}),
-    ...(facts.length ? { facts } : {}),
-  };
+    ...(facts.length ? { facts } : {}),  };
 }

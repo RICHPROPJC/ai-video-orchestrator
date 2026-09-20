@@ -6,8 +6,7 @@ import { readWavMono, runCommand } from "./audio";
 import { emit, readJob, writeJob } from "./store";
 import { renderBlockingSvg, sceneSize } from "./painter";
 import { localPictureQc, senseVoiceHttp, soundQcFromRemote, soundQcUnconfigured, wavPrecheck } from "./providers";
-import { shouldWaitEarnLock, waitEarnGpuLock } from "./earn-gpu-lock";
-import { loadConfig, type SlateConfig } from "./config";
+import { shouldWaitEarnLock, waitEarnGpuLock } from "./earn-gpu-lock";import { loadConfig, type SlateConfig } from "./config";
 import type { AgentId, CallSheet, JobRecord, ProduceInput, ProviderTrace, Shot } from "./types";
 import { floorLine, seat } from "./crew";
 import { assertSameCanon, continuityMarkdown, lockContinuity } from "./continuity";
@@ -38,6 +37,7 @@ import { assertNativeFfmpeg, concatCopyArgs } from "./native-cut";
 import { checkHealth, buildEditPayload, u15Edit, MAX_IMAGES, type EditPayload, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
 import { runPhotoQc, pinQcAccepted, photoQcEyesFromEnv, type QcRequire } from "./photo-qc";
+import { buildQcSheet, buildQcSheetHtml, readQcReceipt } from "./qc-sheet";
 import { pinVideoQcAccepted, runVideoQc } from "./video-qc";
 import { attachMemoryDistances, ingestStill, queryRefs } from "./memory";
 import { appendViolation, checkBoardsToKeyframe, checkKeyframeToStills, hardErrorRow, hardPhotoQcRow } from "./trace";
@@ -361,8 +361,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     motion: `H3 R2V ${cfg.motion.comfyUrl}`,
     tts: "wav plug",
     senseVoice: cfg.soundQc.endpoint ? "SenseVoice HTTP" : "SenseVoice unconfigured",
-    mars: `qwen38 ${cfg.pictureQc.endpoint}`,
-    blender: "pending",
+    mars: `qwen38 ${cfg.pictureQc.endpoint}`,    blender: "pending",
     lipSync: "none — H3 audio dropped; own wav muxed",
   };
 
@@ -776,6 +775,45 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         parent_steps: ["boards"],
         seat: "stills",
       });
+    // T37 眼板: every shot gets stills/SHxx.qc-sheet.png + one SCxx.qc-sheet.html.
+    // Built from the receipt (fresh or resumed), never an LLM, no absolute paths.
+    const qcSheetRows: { shotId: string; status: string; failReasons: string[]; sheetBasename: string }[] = [];
+    const buildShotSheet = async (shotId: string, require_: QcRequire, prompt: string) => {
+      try {
+        const receipt = readQcReceipt(path.join(stillDir, `${shotId}.photo_qc.json`));
+        const f0File = path.join(blockoutDir, `${shotId}.f0.png`);
+        await buildQcSheet(
+          {
+            shotId,
+            f0File: fs.existsSync(f0File) ? f0File : path.join(stillDir, `${shotId}.png`),
+            stillFile: path.join(stillDir, `${shotId}.png`),
+            status: receipt.status,
+            failReasons: receipt.failReasons,
+            requireLocation: require_.location,
+            blind: receipt.blind,
+            prompt,
+          },
+          path.join(stillDir, `${shotId}.qc-sheet.png`),
+        );
+        qcSheetRows.push({
+          shotId,
+          status: receipt.status,
+          failReasons: receipt.failReasons,
+          sheetBasename: `${shotId}.qc-sheet.png`,
+        });
+      } catch (error) {
+        await speak("pictureQc", `${shotId} qc-sheet 出唔到（${error instanceof Error ? error.message : error}）— QC 本身唔受影響。`, "warn");
+      }
+    };
+    const writeSceneSheetHtml = () => {
+      if (qcSheetRows.length === 0) return;
+      try {
+        buildQcSheetHtml(qcSheetRows, path.join(stillDir, `${jobId}.qc-sheet.html`));
+      } catch (error) {
+        void (error instanceof Error ? error.message : error);
+      }
+    };
+
     for (const { shot, first, prompt, require } of hopStillPlans) {
       const out = path.join(stillDir, `${shot.id}.png`);
       const recordJson = path.join(stillDir, `${shot.id}.u15_edit.json`);
@@ -1021,7 +1059,6 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         }
       }
       if (result.status === "FAIL") {
-
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
         appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
         // T36 law: fail_reasons go to events + violations only, never into the
@@ -1121,6 +1158,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       if (result.status === "FAIL") {
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
         appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
+        await buildShotSheet(shot.id, require, editInputs.get(shot.id)?.prompt ?? shot.stillPrompt ?? "");
+        writeSceneSheetHtml();
         job = patch(job, {
           status: "blocked",
           currentAgent: "pictureQc",
@@ -1143,8 +1182,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         });
         return;
       }
+      const warns = (result.checks.warns as string[] | undefined) ?? [];
       if (result.status === "PASS_WITH_WARN") {
-        const warns = (result.checks.warns as string[] | undefined) ?? [];
         emit(jobId, {
           agent: "pictureQc",
           level: "warn",
@@ -1156,7 +1195,12 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           constraints_checked: ["photo-qc"],
         });
       }
-      await speak("pictureQc", `${shot.id} GREEN（人數 ${require.people_count}）`, "pass");
+      if (result.status === "PASS_WITH_WARN") {
+        // T35b-cache: a warned still never speaks GREEN/pass — the warn is the headline.
+        await speak("pictureQc", `${shot.id} PASS_WITH_WARN（${warns.join("; ")}）`, "warn");
+      } else {
+        await speak("pictureQc", `${shot.id} GREEN（人數 ${require.people_count}）`, "pass");
+      }
       emit(jobId, {
         agent: "pictureQc",
         level: "pass",
@@ -1180,7 +1224,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           rel: `stills/${shot.id}.png`,
         });
       }
+      await buildShotSheet(shot.id, require, editInputs.get(shot.id)?.prompt ?? shot.stillPrompt ?? "");
     }
+    writeSceneSheetHtml();
     // picture QC slate record: every hop still above is already GREEN-pinned
     // in-loop (bug4). Whole-slate (or hop) plan-geometry is the receipt.
     const qcSheet = input.scene

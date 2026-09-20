@@ -108,7 +108,6 @@ export function scriptEditRate(ref: string, hyp: string): { rate: number; code: 
   }
   return { rate: wer(ref, hyp), code: "wer" };
 }
-
 /** A3 fail-loud: an ear is a provider. No endpoint = stage FAIL "unconfigured",
  *  never a schema stand-in. */
 export function soundQcUnconfigured(reason = "soundQc.endpoint not set — no ASR ear on this stage"): SoundQc {
@@ -162,15 +161,13 @@ export function soundQcFromRemote(opts: {
       severity: "block" as const,
       detail: `${code.toUpperCase()} ${rate.toFixed(2)} vs script`,
     });
-  }
-  return {
+  }  return {
     provider: opts.remote.provider ?? "sensevoice-http",
     transcript: opts.remote.transcript ?? "",
     language: opts.remote.language ?? (/[㐀-鿿]/.test(opts.expectedText) ? "yue/zh" : "en"),
     emotion: opts.remote.emotion ?? opts.expectedEmotion,
     events: opts.remote.events ?? ["Speech"],
-    wer: rate,
-    durationSec: opts.wav.durationSec,
+    wer: rate,    durationSec: opts.wav.durationSec,
     peak: opts.wav.peak,
     silenceRatio: opts.wav.silenceRatio,
     cloneSimilarity: opts.cloneSimilarity,

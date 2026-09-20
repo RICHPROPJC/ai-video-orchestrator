@@ -73,8 +73,7 @@ export type QcRequire = {
   plain_background?: boolean;
   /** Card D 掣4: on-screen evidence rows; the judge checks each claim's
    *  numbers/dates/names verbatim against the blind description. */
-  facts?: import("./types").ShotFact[];
-};
+  facts?: import("./types").ShotFact[];};
 
 export type QcSummary = {
   people_count?: number | string | null;
@@ -102,12 +101,12 @@ export type QcVerdict = {
 const GREY_RE =
   /灰色方块|灰色方塊|灰块|灰塊|占位人偶|灰色立方|灰色人形|人偶|i-?mannequin|mannequin|placard|標牌|看板|剪影|silhouette|grey cubes?|gray cubes?|grey blocks?/i;
 
-/** §0c hologram/infograph — screen-family: forbid token or blind write on
- *  either side is the same family (螢幕↔screen). */
+/** §0c 系統形象法（WR1Q SH02 root cause）——screen 字族：forbid token 或者盲眼
+ *  描述任何一邊係 screen 族字，兩邊就同族（螢幕↔screen，繁簡都收）。 */
 const SCREEN_FAMILY_RE = /screen|螢幕|屏幕|萤幕|荧幕/i;
-/** §0c mixed form: extra head marked as projection / hologram / shrunken. */
+/** §0c 混合形：盲眼寫到「多出嚟嗰個」係投影／全息／縮細系統人樣——唔算多一個人。 */
 const SYSTEM_FORM_RE =
-  /縮細|縮小|縮咗|迷你|投影|全息|hologram|holographic|projection|miniature|shrunken|scaled.?down/i;
+  /縮細|縮小|縮咗|迷你|投影|全息|系統人樣|hologram|holographic|projection|miniature|shrunken|scaled.?down/i;
 
 /** GET /v1/models on an endpoint; resolves the exact model id or throws.
  *  0917 公版：唔再有 mars 模糊後備——眼＝nex-n2.5(:8017)、判官＝qwen38(:8015)，
@@ -276,8 +275,7 @@ export function renderRequireLines(require: QcRequire): string[] {
   // a keyframe is one frozen instant of the beat: motion verbs (彈起／掃跌／散落)
   // are judged by whether the pose is a plausible mid-action frame, not by
   // whether a still shows movement — WR1Q SH01 failed three /edits on this alone
-  if (require.action) lines.push(`- 動作（呢張係動作中途一格定格；動態動詞只睇姿勢係唔係該動作進行中嘅一瞬，唔要求見到移動）：${require.action}`);
-  if (require.size) lines.push(`- 尺寸：${require.size}`);
+  if (require.action) lines.push(`- 動作（呢張係動作中途一格定格；動態動詞只睇姿勢係唔係該動作進行中嘅一瞬，唔要求見到移動）：${require.action}`);  if (require.size) lines.push(`- 尺寸：${require.size}`);
   if (require.plain_background === true) lines.push("- 背景：純色平面背景（唔准街道／夜街／霓虹場景）");
   if (require.grey_blocks === false) lines.push("- 灰模佔位：禁止（唔准有灰色方塊／人偶／剪影）");
   lines.push("- 風格：寫實（寫實包括數碼生成嘅寫實；插畫／漫畫／厚塗／卡通／版畫先係唔寫實）");
@@ -416,7 +414,6 @@ export function factTokens(claim: string): string[] {
   const names = rest.match(/[一-鿿]{3,}/g) ?? [];
   return [...new Set([...dates, ...numbers, ...names])];
 }
-
 /** 判官輸出 → QcVerdict（GREEN/FAIL ＋ fail_reasons）。 */
 export function packageVerdict(require: QcRequire, judgeOut: PackageJudge): QcVerdict {
   const reasons: string[] = [];
@@ -447,6 +444,152 @@ export function packageVerdict(require: QcRequire, judgeOut: PackageJudge): QcVe
 
   const status: "GREEN" | "FAIL" = reasons.length === 0 ? "GREEN" : "FAIL";
   return { status, checks: { ...checks, status, fail_reasons: reasons } };
+}
+
+// ─── §7 NEX pose 覆核（疊加唔取代：判官動作項 FAIL → NEX effort=medium 覆核）───
+
+/** law26 修法①問式（CHAU_FULL_FLOW_LAW 0917 §0b 動作定格）：①一句描述人物姿勢
+ *  ②呢個姿勢對 require.action 定格句嚟講係咪合理可信定格姿勢。
+ *  PLAUSIBLE→動作項改判達標；IMPLAUSIBLE→維持 FAIL；動作項達標＝零 NEX call。 */
+export function buildPoseJudgePrompt(action: string): string {
+  return [
+    "①一句描述人物姿勢。",
+    `②呢個姿勢對「${action}」嚟講係咪合理可信定格姿勢？答PLAUSIBLE或IMPLAUSIBLE＋一句理由。`,
+  ].join("\n");
+}
+
+export type PoseJudgeVerdict = "PLAUSIBLE" | "IMPLAUSIBLE" | "no_verdict";
+
+export type PoseJudgeReceipt = {
+  judge: "NEX";
+  endpoint: string;
+  model: string;
+  verdict: PoseJudgeVerdict;
+  reason: string;
+  raw: string;
+};
+
+/** IMPLAUSIBLE 先查——佢本身含 PLAUSIBLE 子串，次序倒轉會全判 PLAUSIBLE。 */
+export function parseNexPoseReply(raw: string): { verdict: PoseJudgeVerdict; reason: string } {
+  const text = raw.trim();
+  const reasonLine = (token: RegExp) =>
+    text
+      .replace(token, " ")
+      .split("\n")
+      .map((l) => l.replace(/^[ \t]*[—:：\-·、.~]+/, "").trim())
+      .filter(Boolean)[0] ?? "";
+  if (/IMPLAUSIBLE/i.test(text)) {
+    return { verdict: "IMPLAUSIBLE", reason: reasonLine(/IMPLAUSIBLE/gi).slice(0, 200) };
+  }
+  if (/PLAUSIBLE/i.test(text)) {
+    return { verdict: "PLAUSIBLE", reason: reasonLine(/PLAUSIBLE/gi).slice(0, 200) };
+  }
+  return { verdict: "no_verdict", reason: text.slice(0, 200) };
+}
+
+/** NEX pose 覆核 call——獨立 fetch，唔經公版 chat／EYE_PROMPT lint（帶圖 prompt
+ *  係 law26 問式，唔係 EYE_PROMPT）。官方 sampling 0.7/0.95、max_tokens 5000、
+ *  chat_template_kwargs reasoning_effort=medium；180s hang → 300s 重試一次。
+ *  覆核唔通（HTTP error／兩次 timeout／reply 冇 verdict）＝no_verdict：原判
+ *  維持——覆核係上訴步，唔會因為佢死人多一條死因。 */
+export async function runNexPoseJudge(
+  url: string,
+  model: string,
+  png: Buffer,
+  action: string,
+  timeouts: { firstMs?: number; retryMs?: number } = {},
+): Promise<PoseJudgeReceipt> {
+  const endpoint = url.replace(/\/$/, "");
+  const prompt = buildPoseJudgePrompt(action);
+  const receipt = (verdict: PoseJudgeVerdict, reason: string, rawText: string): PoseJudgeReceipt => ({
+    judge: "NEX",
+    endpoint,
+    model,
+    verdict,
+    reason,
+    raw: rawText.slice(0, 2000),
+  });
+  const call = async (timeoutMs: number): Promise<string> => {
+    const res = await fetch(`${endpoint}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: `data:image/png;base64,${png.toString("base64")}` } },
+            ],
+          },
+        ],
+        max_tokens: 5000,
+        temperature: 0.7,
+        top_p: 0.95,
+        chat_template_kwargs: { reasoning_effort: "medium" },
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) throw new Error(`pose chat ${url} HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    return (json.choices?.[0]?.message?.content ?? "").trim();
+  };
+  let raw = "";
+  try {
+    raw = await call(timeouts.firstMs ?? 180_000);
+  } catch {
+    try {
+      raw = await call(timeouts.retryMs ?? 300_000);
+    } catch (retryError) {
+      const msg = retryError instanceof Error ? retryError.message : String(retryError);
+      return receipt("no_verdict", `pose retry also failed: ${msg}`, "");
+    }
+  }
+  const { verdict, reason } = parseNexPoseReply(raw);
+  return receipt(verdict, reason, raw);
+}
+
+/** 判官 items 入面「動作」項＝require.action 嗰項（renderRequireLines「- 動作：」）。 */
+const POSE_ITEM_RE = /動作|action/i;
+
+function isActionItem(item: PackageJudgeItem): boolean {
+  return POSE_ITEM_RE.test(String(item.item ?? "")) && item.verdict === "唔達標";
+}
+
+/** 動作項有冇被公版判官判死（items 層）。冇 require.action／判官冇出動作項＝false。 */
+export function actionItemFailed(verdict: QcVerdict): boolean {
+  const items = (verdict.checks.items as PackageJudgeItem[] | undefined) ?? [];
+  return items.some(isActionItem);
+}
+
+/** §7 疊加：NEX PLAUSIBLE → 動作項改判達標，其他項死因原封不動（地點閘仍然
+ *  獨立）。IMPLAUSIBLE／no_verdict → 原判維持。收據由 caller 寫入
+ *  checks.second_judge。 */
+export function liftActionWithPoseJudge(
+  require: QcRequire,
+  judgeOutput: PackageJudge,
+  pose: PoseJudgeReceipt,
+): QcVerdict {
+  if (pose.verdict !== "PLAUSIBLE") return packageVerdict(require, judgeOutput);
+  let flippedAny = false;
+  const items = (judgeOutput.items ?? []).map((i) => {
+    if (!isActionItem(i)) return i;
+    flippedAny = true;
+    return { ...i, verdict: "達標", evidence: `${i.evidence ?? ""}〔second_judge NEX PLAUSIBLE：${pose.reason}〕` };
+  });
+  // 冇動作項好翻（判官冇出動作項／名對不上）＝冇嘢上訴到，原判照計
+  if (!flippedAny) return packageVerdict(require, judgeOutput);
+  const flipped: PackageJudge = {
+    ...judgeOutput,
+    items,
+    // 上訴得直：判官 pass=false 唔可以靠一個已翻案嘅動作項企住——其他項有死因
+    // （風格插畫、地點唔達標、其他 fail_reasons）packageVerdict 照樣 FAIL
+    pass: true,
+    // 判官自己引用動作嘅 fail_reasons 一併清——項已翻案；風格／地點等死因原封不動
+    fail_reasons: (judgeOutput.fail_reasons ?? []).filter((r) => !POSE_ITEM_RE.test(r)),
+  };
+  return packageVerdict(require, flipped);
 }
 
 /** CJK bigrams + latin words — sheet tokens, never hardcoded story nouns. */
@@ -517,9 +660,17 @@ export function judge(desc: string, summary: QcSummary, require: QcRequire, ctx:
 
   const wantN = require.people_count;
   const gotN = summary.people_count;
+  // §0c: one signal for both system gates — the require's tool/prop name
+  // re-classified by the noun class. Works for fresh requires and stale
+  // require.json written by the old classifier alike.
   const systemProp = require.tool ? propNounClass(String(require.tool)) === "system" : false;
   if (wantN != null) {
     let ok = gotN === wantN;
+    // §0c 混合形: a system shot may show the scene cast plus a shrunken system
+    // person-form beside the infograph — the blind eye counting one extra head
+    // is not an extra scene person. Loosens ONLY system shots, ONLY when MORE
+    // heads are seen (never fewer), and ONLY when the write-up marks the extra
+    // as projection/hologram/shrunken form.
     if (
       !ok && systemProp && typeof wantN === "number" && typeof gotN === "number" &&
       gotN > wantN && SYSTEM_FORM_RE.test(blob)
@@ -546,6 +697,10 @@ export function judge(desc: string, summary: QcSummary, require: QcRequire, ctx:
     const forbid = require.tool_forbid ?? [];
     const named = blob.includes(String(wantTool));
     const shaped = shape.length > 0 && shape.every((tok) => blob.includes(tok));
+    // §0c 系統形象法: a screen-family forbid token matches any screen-family
+    // word in the write-up (螢幕↔screen). On a system prop the screen IS the
+    // system — screen-family tokens are exempt outright; a character growing a
+    // screen on a non-system prop still dies. phone/book etc. kill both ways.
     const banned = forbid.filter((tok) => {
       if (SCREEN_FAMILY_RE.test(tok)) {
         return !systemProp && (blob.includes(tok) || SCREEN_FAMILY_RE.test(blob));
@@ -642,7 +797,6 @@ export function judge(desc: string, summary: QcSummary, require: QcRequire, ctx:
     checks.facts = misses.length === 0;
     if (!checks.facts) reasons.push(`facts: ${misses.join("；")}`);
   }
-
   let status: "GREEN" | "FAIL" = Object.keys(checks).length > 0 && reasons.length === 0 ? "GREEN" : "FAIL";
   if (Object.keys(require).length === 0) {
     status = "FAIL";
@@ -682,8 +836,7 @@ export function photoQcEyesFromEnv(): PhotoQcEyes {
   return {
     second: {
       secondEndpoint: process.env.SLATECREW_SECOND_ENDPOINT ?? cfg.pictureQc.secondEndpoint ?? "",
-      secondModel: process.env.SLATECREW_SECOND_MODEL ?? cfg.pictureQc.secondModel,
-    },
+      secondModel: process.env.SLATECREW_SECOND_MODEL ?? cfg.pictureQc.secondModel,    },
   };
 }
 
@@ -771,11 +924,13 @@ export const QC_FORMULA = "package-0917" as const;
 
 /** eyes overrides keep runPhotoQc testable without touching config.ts: first
  *  points the five-path eye at a fixture; judge points the text-only judge at a
- *  fixture; second arms the glm second eye. */
+ *  fixture; second arms the glm second eye; pose points the §7 NEX pose judge
+ *  at a fixture (default＝nex :8017，同眼同一端點). */
 export type PhotoQcEyes = {
   first?: { url?: string; model?: string };
   judge?: { url?: string; model?: string };
   second?: SecondEyeOpts;
+  pose?: { url?: string; model?: string };
 };
 
 /** 公版 stills QC：五路眼（nex :8017）並行 describe → text-only 判官（qwen38 :8015）
@@ -835,6 +990,17 @@ export async function runPhotoQc(
     const message = error instanceof Error ? error.message : String(error);
     judgeOutput = { parse_error: message, raw: blind.slice(0, 2000) };
     verdict = { status: "FAIL", checks: { status: "FAIL", fail_reasons: [`judge parse: ${message}`] } };
+  }
+
+  // §7 NEX pose 覆核（疊加唔取代）：判官動作項 FAIL 先 call——動作 GREEN＝零
+  // NEX call（慳成本）。PLAUSIBLE→動作項改判達標；IMPLAUSIBLE／覆核唔通→維持
+  // 原判。收據（second_judge）入 photo_qc.json checks。
+  if (require.action && verdict.status === "FAIL" && actionItemFailed(verdict)) {
+    const poseUrl = eyes.pose?.url ?? cfg.nex.endpoint;
+    const poseModel = await probeVisionEndpoint(poseUrl, eyes.pose?.model ?? cfg.nex.model);
+    const pose = await runNexPoseJudge(poseUrl, poseModel, raw, require.action);
+    verdict = liftActionWithPoseJudge(require, judgeOutput as PackageJudge, pose);
+    verdict = { ...verdict, checks: { ...verdict.checks, second_judge: pose } };
   }
 
   // Card D 掣4 (MERGE_THREE_0921 graft onto the PACKAGE path): every fact
@@ -928,8 +1094,7 @@ export async function runPhotoQc(
     ts: new Date().toISOString(),
     formula: QC_FORMULA,
     // T36: bare filename — zero absolute paths inside job JSON records
-    image: path.basename(pngFile),
-    sha256: digest,
+    image: path.basename(pngFile),    sha256: digest,
     eye: { endpoint: eyeUrl, model: eyeModel, sampling: EYE_SAMPLING },
     judgeCfg: { endpoint: judgeUrl, model: judgeModel, temperature: JUDGE_SAMPLING.temperature },
     require,

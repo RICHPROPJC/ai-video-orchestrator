@@ -25,7 +25,6 @@ import {
 import { chatJson, DEFAULT_CREW, SchemaMismatchError, type CrewConfig } from "./crew-llm";
 import { loadTraceFixture } from "./trace";
 import type { CallSheet, Character, Shot, ShotProp } from "./types";
-
 /** One file, three doors: bun's node:test shim only works under `bun test`,
  *  so bare `bun <this file>` self-drives the collected cases; `bun test` and
  *  `tsx --test` use the real runner. (store.test.ts idiom.)
@@ -286,8 +285,7 @@ test("system-display tool: require strips screen/螢幕 from tool_forbid (§0c)"
   assert.deepEqual(keyframeRequire(shotWithProp(plow)).tool_forbid, ["screen", "锹"]);
 });
 
-test("noun classes: garments and documents never take the held-tool gate; hologram props carry it; 犁/槍/鋤 do", () => {
-  for (const name of ["軍大衣", "蓑衣", "斗篷 cloak", "leather jacket", "silk robe"]) {
+test("noun classes: garments and documents never take the held-tool gate; hologram props carry it; 犁/槍/鋤 do", () => {  for (const name of ["軍大衣", "蓑衣", "斗篷 cloak", "leather jacket", "silk robe"]) {
     assert.equal(propNounClass(name), "garment", `${name} is a garment`);
     assert.equal("tool" in keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })), false);
   }
@@ -295,9 +293,8 @@ test("noun classes: garments and documents never take the held-tool gate; hologr
     assert.equal(propNounClass(name), "document", `${name} is a document`);
     assert.equal("tool" in keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })), false);
   }
-  for (const name of ["藍色光框", "全息投影", "全息界面", "戰術infograph", "holographic frame"]) {
-    assert.equal(propNounClass(name), "system", `${name} is a hologram/infograph prop`);
-    assert.equal(keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })).tool, name, `${name} carries the prop gate`);
+  for (const name of ["藍色光框", "全息投影", "全息界面", "系統界面", "戰術infograph", "holographic frame"]) {
+    assert.equal(propNounClass(name), "system", `${name} is a hologram/infograph prop`);    assert.equal(keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })).tool, name, `${name} carries the prop gate`);
   }
   for (const name of ["曲轅犁", "長槍", "鋤頭"]) {
     assert.equal(propNounClass(name), "tool", `${name} is a held tool`);
@@ -307,8 +304,7 @@ test("noun classes: garments and documents never take the held-tool gate; hologr
 
 test("hologram prop (藍色光框, WR1Q SH02 class): infograph three-layer sentence, never the plow, no forbid echo", () => {
   const frame: ShotProp = { name: "藍色光框", heldBy: "A", shape: ["光", "框"], forbid: ["phone", "screen", "book"] };
-  const text = keyframeEditPrompt(baseSheet, shotWithProp(frame), { first: false });
-  assert.ok(text.includes("藍色光框"), "prop name from sheet");
+  const text = keyframeEditPrompt(baseSheet, shotWithProp(frame), { first: false });  assert.ok(text.includes("藍色光框"), "prop name from sheet");
   assert.ok(/圖表/.test(text), "§0c: chart layer written out");
   assert.ok(/UI/.test(text), "§0c: UI frame layer written out");
   assert.ok(/文字/.test(text), "§0c: text-label layer written out — bare text card is not an infograph");
@@ -720,8 +716,7 @@ test("C1b: require.unchanged emits the 【不變】 lock after the band, verbati
   both.require = { facts: INFO_FACTS, unchanged: ["右後牆身照舊係空牆"], action: "俯身雙手撐地、上身抬起" };
   const ftext = keyframeEditPrompt(sheet, both, { first: false });
   assert.ok(ftext.indexOf("【動作】") < ftext.indexOf("【不變】"), "change extras before the keep lock");
-  assert.ok(ftext.indexOf("【不變】") < ftext.indexOf("【上屏事實】"), "keep lock before the facts block");
-});
+  assert.ok(ftext.indexOf("【不變】") < ftext.indexOf("【上屏事實】"), "keep lock before the facts block");});
 
 if (bareBun) {
   // IIFE, not top-level await: tsx transpiles this file as CJS

@@ -54,8 +54,7 @@ export type SlateConfig = {
   soundQc: { endpoint: string; model: string };
   /** A3: every sense is a provider. Empty = the stage that needs it FAILs loud. */
   ocr: { endpoint: string; model: string };
-  embed: { endpoint: string; model: string };
-  ssh: { user: string; motionInputDir: string; stillsRefsDir: string };
+  embed: { endpoint: string; model: string };  ssh: { user: string; motionInputDir: string; stillsRefsDir: string };
 };
 
 const DEFAULTS: SlateConfig = {
@@ -107,8 +106,7 @@ const DEFAULTS: SlateConfig = {
   },
   soundQc: { endpoint: "", model: "FunAudioLLM/SenseVoiceSmall" },
   ocr: { endpoint: "", model: "" },
-  embed: { endpoint: "", model: "wemm-2b" },
-  ssh: {
+  embed: { endpoint: "", model: "wemm-2b" },  ssh: {
     user: "hojaiv3v",
     motionInputDir: "~/comfy/ComfyUI/input",
     stillsRefsDir: "/home/hojaiv3v/SenseNova-U1/refs",
@@ -136,8 +134,7 @@ export function loadConfig(): SlateConfig {
     mesher: { ...DEFAULTS.mesher, ...raw.mesher },
     soundQc: { ...DEFAULTS.soundQc, ...raw.soundQc },
     ocr: { ...DEFAULTS.ocr, ...raw.ocr },
-    embed: { ...DEFAULTS.embed, ...raw.embed },
-    ssh: { ...DEFAULTS.ssh, ...raw.ssh },
+    embed: { ...DEFAULTS.embed, ...raw.embed },    ssh: { ...DEFAULTS.ssh, ...raw.ssh },
   };
   const h3 = process.env.H3_COMFY_URL?.trim();
   if (h3) merged.motion.comfyUrl = h3;

@@ -96,7 +96,9 @@ export async function ensurePortraits(opts: {
       if (verdict.status !== "FAIL") {
         files[character.id] = outFile;
         made.push(character.id);
-        opts.onEvent?.(`${character.id} 肖像 GREEN（seed ${trySeed}）`, { file: outFile, attempt: attempt + 1 });
+        // T35b-cache envelope: the event names the real status — PASS_WITH_WARN /
+        // PASS_UNCONFIRMED must never be worded as GREEN (warn ≠ pass).
+        opts.onEvent?.(`${character.id} 肖像 ${verdict.status}（seed ${trySeed}）`, { file: outFile, attempt: attempt + 1 });
         break;
       }
       last = verdict.checks.fail_reasons.join("; ") || "not GREEN";

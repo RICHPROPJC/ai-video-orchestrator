@@ -128,13 +128,19 @@ export function checkBoardsToKeyframe(
 
 /** keyframe→stills soft edge: require fields are derivable from the prompt —
  *  people_count matches the marks, and the tool gate exists exactly when the
- *  shot's prop is noun class "tool" or "system" (hologram/infograph carries the
- *  prop gate; the judge exempts screen-family forbid. garment/document: no gate). */
+ *  shot's prop is noun class "tool" or "system" (§0c 系統形象法: the system
+ *  光框 carries the prop gate, the judge exempts its screen-family forbid;
+ *  garment ⇒ no tool gate; document ⇒ no tool gate — a document is not a held
+ *  farm tool). */
 export function checkKeyframeToStills(shot: Shot, require: QcRequire): ViolationRow[] {
   const prop = shot.props?.[0];
   const cls: PropNounClass | null = prop ? propNounClass(prop.name) : null;
   const wantTool = cls === "tool" || cls === "system";
   const keys = Object.keys(require).sort();
+  // expected keys mirror keyframeRequire exactly — the optional location/
+  // action/size fields ride the require whenever the shot carries them, so
+  // the expectation must derive them from the shot too (a real SH02 with
+  // location+action is not require drift). Sorted both sides like the saw.
   const expectedKeys = [
     "grey_blocks",
     "people_count",

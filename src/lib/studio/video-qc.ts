@@ -20,7 +20,6 @@ import {
 } from "./photo-qc";
 import { machineGreyFailReason, measureWorkbenchGreyLeak } from "./workbench-grey-leak";
 import { judgeWalkCrop, type WalkCropEvidence } from "./walk-crop-qc";
-
 export type VideoFrameQc = {
   frame: number;
   t_s: number;
@@ -47,8 +46,7 @@ export type VideoQcRecord = {
   memory?: {
     character_drift?: { distance: number; fail: boolean };
     blockout_copy?: { distance: number; fail: boolean };
-  };
-};
+  };};
 
 function videoDigest(mp4: string): string {
   return crypto.createHash("sha256").update(fs.readFileSync(mp4)).digest("hex");

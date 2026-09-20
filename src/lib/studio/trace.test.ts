@@ -119,7 +119,7 @@ test("SH09 paper fixture: fixed prompt has no 木犁, require has no tool, both 
   }
 });
 
-test("§0c hologram prop: the 光框 carries the prop gate, template stays off — replay rows all pass", () => {
+test("§0c system prop: the 光框 carries the prop gate, template stays off — replay rows all pass", () => {
   const characters: Character[] = [
     { id: "A", name: "調查員", role: "保險調查員", wardrobe: "深藍乾濕褸", palette: ["#111111", "#222222", "#333333"], voice: { pitchHz: 200, gender: "f" } },
   ];
@@ -142,8 +142,8 @@ test("§0c hologram prop: the 光框 carries the prop gate, template stays off �
   };
   const prompt = keyframeEditPrompt({ ...minimalSheet(characters), shots: [shot] }, shot, { first: false });
   const require = keyframeRequire(shot);
-  assert.equal(require.tool, "藍色光框", "§0c: hologram prop carries the prop gate");
-  assert.ok(!prompt.includes("犁"), "no plow vocabulary on a hologram shot");
+  assert.equal(require.tool, "藍色光框", "§0c: system prop carries the prop gate");
+  assert.ok(!prompt.includes("犁"), "no plow vocabulary on a system shot");
   assert.ok(!prompt.includes("screen"), "no screen word in the /edit prompt at all");
 
   const rows = replayTrace(characters, shot, prompt, require);
@@ -152,12 +152,12 @@ test("§0c hologram prop: the 光框 carries the prop gate, template stays off �
   }
   const reqRow = rows.find((r) => r.constraint_id === "require-keys") as ViolationRow;
   const saw = reqRow.saw as { keys: string[]; tool_gate_ok: boolean };
-  assert.ok(saw.keys.includes("tool"), "require-keys expects the prop gate on a hologram shot");
-  assert.equal(saw.tool_gate_ok, true, "prop gate on a hologram prop is derivable from the prompt");
+  assert.ok(saw.keys.includes("tool"), "require-keys expects the prop gate on a system shot");
+  assert.equal(saw.tool_gate_ok, true, "prop gate on a system prop is derivable from the prompt");
   const driftRow = rows.find((r) => r.constraint_id === "prop-drift") as ViolationRow;
   const driftSaw = driftRow.saw as { noun_class: string; tool_template: boolean };
   assert.equal(driftSaw.noun_class, "system", "the 光框 classifies as system");
-  assert.equal(driftSaw.tool_template, false, "the held-tool template never rides a hologram shot");
+  assert.equal(driftSaw.tool_template, false, "the held-tool template never rides a system shot");
 });
 
 test("frozen 07JZ and T5MM event slices land for D1b — D1a records, does not judge", () => {
