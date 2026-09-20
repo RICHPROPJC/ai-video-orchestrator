@@ -41,9 +41,19 @@
 - **qc batch**：photo-qc.test **72/72 pass 0 fail**（pose疊加 6 新＋strip 鎖全在）。
 - **tsc --noEmit**：追蹤檔 **3 錯全 pre-existing**——memory.ts node:sqlite（TS2307）、pipeline.test.ts bun:test（TS2307）、pipeline.ts:492 kept（TS2353，MERGE_P1 收據早列）。noun-lint hits 12＝4908bc8 基線逐條同名（途中一度 23，收口見 §4）。
 
-## 3. GAP② 解法（一句）
+## 3. GAP② 解法（逐處列——--no-ff 批准條件）
 
-types.ts 兩邊並存零交疊——c123 嘅 `RefAngle`（shot.refAngle）＋motion 嘅 `UiShotSpec` re-export 同檔共存；doctor 兩邊同切 `H3Keyframes`（c123 doctor 改動＋motion 2d2c0c0 匯流，graph／golden／probe 三者同一 node 名）；h3-prose `BuildProseOpts` union（seats `prevLocation` return-pin＋motion `ui`/`timingRef`）；pipeline `h3MotionPack` export（motion 測試要）＋story 線帶 prevLocation、ui 線帶 uiSpec。
+| # | 位置 | 揀咗邊行 | 兩邊功能點解仲喺 |
+|---|---|---|---|
+| 1 | `types.ts` | 兩邊並存零交疊：c123 `export type RefAngle = "front"\|"45"`＋`shot.refAngle?: RefAngle` 留原位；motion `import type { UiShotSpec } from "./h3-prose"; export type { UiShotSpec }` 加喺後面 | 兩個 identifier 唔相撞，Shot 型同時載 refAngle（角度ref）同 uiShot/uiSpec/uiRefs（UI photo通道）——S1 測試（C1 45°）與 S2 測試（uiShot 閘）各自全綠 |
+| 2 | `doctor.ts` H3_NODES probe | 兩邊同一切名（`H3KeyframeInject`→`H3Keyframes`）：crew 側 ed628fa、motion 側 2d2c0c0，merge 匯流成一筆；註解取 motion「card C ①」 | 改動語義相同無分叉；S2 後 graph（fa15ce9）／golden（h3-r2v.api.json）／probe 三者同一 node 名——S1→S2 之間 doctor 短暫 probe 未切 node（Vera C123 備註嘅「半截」），S2 收口，收據 §2 h3 四檔批 43/42/1 為證 |
+| 3 | `h3-prose.ts` `BuildProseOpts` | union 三欄：seats `prevLocation`（return-pin）＋motion `ui`（UiShotSpec）＋`timingRef` | `buildProse` 用 motion 嘅 mode-pick（`opts.ui → identity-long`）；action-short 路徑保留 seats return-pin（`prevLocation`）；identity-long 用 motion buildProseLong（sound design ③a＋UI mapping ③b）——28/28 綠 |
+| 4 | `h3-prose.ts` PIN 句 | seats PIN 句（雙 `{{PROP}}`）＋motion buildProseLong 嘅單數 `replace`→**修為 `replaceAll`** | 真 merge bug：seats PIN 句有兩個 `{{PROP}}`，單數 replace 淨低模板字入 prose；motion 原句單佔位冇事。h3-prose.test #9 鎖住 |
+| 5 | `pipeline.ts` `h3MotionPack` | motion 嘅 `export`（測試要）＋seats 私有 helpers（prevShotOf/writeH3Plan/assertH3SubmitWiring）全部留 | story-shot 分支帶 `{ prevLocation: prev?.location }`（seats law）＋motion uiShot 閘/uiSpec prose/uiRefs 通道原封；ui 分支照 motion |
+| 6 | `h3-r2v-graph.ts` graph opts | seats `visualStrength` 留＋motion `uiPhotoNames`/`audioTimingRefName`/`proseMode` 加；inputs 區取 motion 排版（值同） | golden 三重（builder deepEqual／Inject 禁詞／positions 不變式）全綠為證 |
+| 7 | 測試側 | 兩側 test 並存；三處重校各帶 `MERGE_THREE_0921` 行內註解：①h3-prose thin packet 改單 mark＋空 action（seats PIN 句較重，原 2-mark 校準過 150）②C1b lock-delta 改減法式（景別行騎 lock 後，union extras 順序）③C1 fat 改五人 fatSheet（seats 短句下 2人唔夠爆 300，法唔變） | 語義不變只遷就 seats 校準值；lane 斷言原文留存於 lane parent（ed6fa/241d101 可尋） |
+
+一句總結：types 兩邊並存零交疊（RefAngle＋UiShotSpec 同檔）；doctor 兩邊同切 H3Keyframes 匯流；h3-prose opts 三欄 union；h3MotionPack story 線帶 prevLocation、ui 線帶 uiSpec。
 
 ## 4. 語義裁決表（兩邊對撞位，照「已 verify 較新事實」裁）
 
