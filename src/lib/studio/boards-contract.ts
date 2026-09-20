@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BEAT_ID_RE, CHARACTER_ID_RE, SCENE_ID_RE, dialogueSeconds, omittable, type Beat } from "./script-contract";
+import { isSystemDisplayProp, isSystemDisplayScreenForbid } from "./keyframe-prompt";
 
 /** One shot is one H3 submit: the frame grid (17k+5, k 7–21) cannot render
  *  anything shorter or longer, so boards may not ask for it. */
@@ -28,6 +29,11 @@ const propSchema = z.object({
   heldBy: omittable(z.string().regex(CHARACTER_ID_RE)),
   shape: z.array(z.string().min(1).max(12)).min(1).max(5),
   forbid: z.array(z.string().min(1).max(12)).max(8),
+}).refine((p) => !isSystemDisplayProp(p.name) || !p.forbid.some(isSystemDisplayScreenForbid), {
+  // §0c law46（#27 boards 端豁免）：光框本身就係螢幕——screen/螢幕 入 system
+  // prop 嘅 forbid＝禁詞殺自己人（WR1Q SH02）；非 system 禁 screen 照舊合法。
+  message: "光框／全息／infograph 嘅 forbid 唔可以有 screen／螢幕 — 光框本身就係螢幕（FLOW_LAW §0c）",
+  path: ["forbid"],
 });
 
 const boardShotShape = z.object({

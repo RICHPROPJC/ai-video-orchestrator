@@ -425,6 +425,152 @@ export function packageVerdict(require: QcRequire, judgeOut: PackageJudge): QcVe
   return { status, checks: { ...checks, status, fail_reasons: reasons } };
 }
 
+// ─── §7 NEX pose 覆核（疊加唔取代：判官動作項 FAIL → NEX effort=medium 覆核）───
+
+/** law26 修法①問式（CHAU_FULL_FLOW_LAW 0917 §0b 動作定格）：①一句描述人物姿勢
+ *  ②呢個姿勢對 require.action 定格句嚟講係咪合理可信定格姿勢。
+ *  PLAUSIBLE→動作項改判達標；IMPLAUSIBLE→維持 FAIL；動作項達標＝零 NEX call。 */
+export function buildPoseJudgePrompt(action: string): string {
+  return [
+    "①一句描述人物姿勢。",
+    `②呢個姿勢對「${action}」嚟講係咪合理可信定格姿勢？答PLAUSIBLE或IMPLAUSIBLE＋一句理由。`,
+  ].join("\n");
+}
+
+export type PoseJudgeVerdict = "PLAUSIBLE" | "IMPLAUSIBLE" | "no_verdict";
+
+export type PoseJudgeReceipt = {
+  judge: "NEX";
+  endpoint: string;
+  model: string;
+  verdict: PoseJudgeVerdict;
+  reason: string;
+  raw: string;
+};
+
+/** IMPLAUSIBLE 先查——佢本身含 PLAUSIBLE 子串，次序倒轉會全判 PLAUSIBLE。 */
+export function parseNexPoseReply(raw: string): { verdict: PoseJudgeVerdict; reason: string } {
+  const text = raw.trim();
+  const reasonLine = (token: RegExp) =>
+    text
+      .replace(token, " ")
+      .split("\n")
+      .map((l) => l.replace(/^[ \t]*[—:：\-·、.~]+/, "").trim())
+      .filter(Boolean)[0] ?? "";
+  if (/IMPLAUSIBLE/i.test(text)) {
+    return { verdict: "IMPLAUSIBLE", reason: reasonLine(/IMPLAUSIBLE/gi).slice(0, 200) };
+  }
+  if (/PLAUSIBLE/i.test(text)) {
+    return { verdict: "PLAUSIBLE", reason: reasonLine(/PLAUSIBLE/gi).slice(0, 200) };
+  }
+  return { verdict: "no_verdict", reason: text.slice(0, 200) };
+}
+
+/** NEX pose 覆核 call——獨立 fetch，唔經公版 chat／EYE_PROMPT lint（帶圖 prompt
+ *  係 law26 問式，唔係 EYE_PROMPT）。官方 sampling 0.7/0.95、max_tokens 5000、
+ *  chat_template_kwargs reasoning_effort=medium；180s hang → 300s 重試一次。
+ *  覆核唔通（HTTP error／兩次 timeout／reply 冇 verdict）＝no_verdict：原判
+ *  維持——覆核係上訴步，唔會因為佢死人多一條死因。 */
+export async function runNexPoseJudge(
+  url: string,
+  model: string,
+  png: Buffer,
+  action: string,
+  timeouts: { firstMs?: number; retryMs?: number } = {},
+): Promise<PoseJudgeReceipt> {
+  const endpoint = url.replace(/\/$/, "");
+  const prompt = buildPoseJudgePrompt(action);
+  const receipt = (verdict: PoseJudgeVerdict, reason: string, rawText: string): PoseJudgeReceipt => ({
+    judge: "NEX",
+    endpoint,
+    model,
+    verdict,
+    reason,
+    raw: rawText.slice(0, 2000),
+  });
+  const call = async (timeoutMs: number): Promise<string> => {
+    const res = await fetch(`${endpoint}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: `data:image/png;base64,${png.toString("base64")}` } },
+            ],
+          },
+        ],
+        max_tokens: 5000,
+        temperature: 0.7,
+        top_p: 0.95,
+        chat_template_kwargs: { reasoning_effort: "medium" },
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) throw new Error(`pose chat ${url} HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    return (json.choices?.[0]?.message?.content ?? "").trim();
+  };
+  let raw = "";
+  try {
+    raw = await call(timeouts.firstMs ?? 180_000);
+  } catch {
+    try {
+      raw = await call(timeouts.retryMs ?? 300_000);
+    } catch (retryError) {
+      const msg = retryError instanceof Error ? retryError.message : String(retryError);
+      return receipt("no_verdict", `pose retry also failed: ${msg}`, "");
+    }
+  }
+  const { verdict, reason } = parseNexPoseReply(raw);
+  return receipt(verdict, reason, raw);
+}
+
+/** 判官 items 入面「動作」項＝require.action 嗰項（renderRequireLines「- 動作：」）。 */
+const POSE_ITEM_RE = /動作|action/i;
+
+function isActionItem(item: PackageJudgeItem): boolean {
+  return POSE_ITEM_RE.test(String(item.item ?? "")) && item.verdict === "唔達標";
+}
+
+/** 動作項有冇被公版判官判死（items 層）。冇 require.action／判官冇出動作項＝false。 */
+export function actionItemFailed(verdict: QcVerdict): boolean {
+  const items = (verdict.checks.items as PackageJudgeItem[] | undefined) ?? [];
+  return items.some(isActionItem);
+}
+
+/** §7 疊加：NEX PLAUSIBLE → 動作項改判達標，其他項死因原封不動（地點閘仍然
+ *  獨立）。IMPLAUSIBLE／no_verdict → 原判維持。收據由 caller 寫入
+ *  checks.second_judge。 */
+export function liftActionWithPoseJudge(
+  require: QcRequire,
+  judgeOutput: PackageJudge,
+  pose: PoseJudgeReceipt,
+): QcVerdict {
+  if (pose.verdict !== "PLAUSIBLE") return packageVerdict(require, judgeOutput);
+  let flippedAny = false;
+  const items = (judgeOutput.items ?? []).map((i) => {
+    if (!isActionItem(i)) return i;
+    flippedAny = true;
+    return { ...i, verdict: "達標", evidence: `${i.evidence ?? ""}〔second_judge NEX PLAUSIBLE：${pose.reason}〕` };
+  });
+  // 冇動作項好翻（判官冇出動作項／名對不上）＝冇嘢上訴到，原判照計
+  if (!flippedAny) return packageVerdict(require, judgeOutput);
+  const flipped: PackageJudge = {
+    ...judgeOutput,
+    items,
+    // 上訴得直：判官 pass=false 唔可以靠一個已翻案嘅動作項企住——其他項有死因
+    // （風格插畫、地點唔達標、其他 fail_reasons）packageVerdict 照樣 FAIL
+    pass: true,
+    // 判官自己引用動作嘅 fail_reasons 一併清——項已翻案；風格／地點等死因原封不動
+    fail_reasons: (judgeOutput.fail_reasons ?? []).filter((r) => !POSE_ITEM_RE.test(r)),
+  };
+  return packageVerdict(require, flipped);
+}
+
 /** CJK bigrams + latin words — sheet tokens, never hardcoded story nouns. */
 export function sceneGrams(text: string): string[] {
   const folded = foldCjk(text);
@@ -743,11 +889,13 @@ export const QC_FORMULA = "package-0917" as const;
 
 /** eyes overrides keep runPhotoQc testable without touching config.ts: first
  *  points the five-path eye at a fixture; judge points the text-only judge at a
- *  fixture; second arms the glm second eye. */
+ *  fixture; second arms the glm second eye; pose points the §7 NEX pose judge
+ *  at a fixture (default＝nex :8017，同眼同一端點). */
 export type PhotoQcEyes = {
   first?: { url?: string; model?: string };
   judge?: { url?: string; model?: string };
   second?: SecondEyeOpts;
+  pose?: { url?: string; model?: string };
 };
 
 /** 公版 stills QC：五路眼（nex :8017）並行 describe → text-only 判官（qwen38 :8015）
@@ -807,6 +955,17 @@ export async function runPhotoQc(
     const message = error instanceof Error ? error.message : String(error);
     judgeOutput = { parse_error: message, raw: blind.slice(0, 2000) };
     verdict = { status: "FAIL", checks: { status: "FAIL", fail_reasons: [`judge parse: ${message}`] } };
+  }
+
+  // §7 NEX pose 覆核（疊加唔取代）：判官動作項 FAIL 先 call——動作 GREEN＝零
+  // NEX call（慳成本）。PLAUSIBLE→動作項改判達標；IMPLAUSIBLE／覆核唔通→維持
+  // 原判。收據（second_judge）入 photo_qc.json checks。
+  if (require.action && verdict.status === "FAIL" && actionItemFailed(verdict)) {
+    const poseUrl = eyes.pose?.url ?? cfg.nex.endpoint;
+    const poseModel = await probeVisionEndpoint(poseUrl, eyes.pose?.model ?? cfg.nex.model);
+    const pose = await runNexPoseJudge(poseUrl, poseModel, raw, require.action);
+    verdict = liftActionWithPoseJudge(require, judgeOutput as PackageJudge, pose);
+    verdict = { ...verdict, checks: { ...verdict.checks, second_judge: pose } };
   }
 
   if (ctx.prevDesc) {

@@ -27,6 +27,29 @@ export function propNounClass(name: string): PropNounClass {
   return "tool";
 }
 
+/** §0c law46（CHAU_FULL_FLOW_LAW 0917 QC豁免位）：系統出場 shot，TEXT_SCREEN_RE
+ *  等「螢幕/screen」禁詞要豁免——系統＝螢幕合法，角色亂生螢幕先係犯規。
+ *  boards 寫 screen/螢幕 入 system prop 嘅 forbid＝禁詞殺自己人（WR1Q SH02
+ *  「掌心托住全息螢幕＋道具描述包含被禁詞『螢幕/screen』」）。判詞族上限收
+ *  全形字（螢幕／屏幕等）；boards 契約層（boards-contract）用呢度兩個 predicate
+ *  釘死 system prop 唔准帶 screen 族 forbid。 */
+const SYSTEM_DISPLAY_SCREEN_FORBID_RE = /^(screen|螢幕)$/i;
+
+export function isSystemDisplayProp(name: string): boolean {
+  return propNounClass(name) === "system";
+}
+
+export function isSystemDisplayScreenForbid(tok: string): boolean {
+  return SYSTEM_DISPLAY_SCREEN_FORBID_RE.test(tok);
+}
+
+/** boards 端豁免數據（#27 手搬）：system display prop 嘅 forbid 剷走
+ *  screen/螢幕——非 system 照抄，一個字都唔郁。 */
+export function scrubSystemDisplayForbid(name: string, forbid: string[]): string[] {
+  if (!isSystemDisplayProp(name)) return forbid;
+  return forbid.filter((tok) => !isSystemDisplayScreenForbid(tok));
+}
+
 /** /edit prompt for one shot keyframe, naming images by slot. Under img_cfg 1.0
  *  the image branches only exist via Image-N tokens — the prompt must name them.
  *  Nothing scene-specific lives here; every name/wardrobe/prop comes from the sheet. */
@@ -83,22 +106,24 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
 /** what photo QC requires of this shot's keyframe: the marks decide people_count;
  *  a held tool (noun class "tool") or a system prop (noun class "system" — the
  *  WR1Q SH02 光框) adds the proven prop gate from data: the blind eye must name
- *  the prop or hit its shape words. The require carries the callsheet forbid
- *  list untouched — the screen-family exemption for system props lives in the
- *  judge (photo-qc), so stale require.json from the old classifier is fixed at
- *  judgement time too. Garments and documents are wardrobe/paper — no gate:
- *  blind QC can only describe shape words, never the sheet's proper name, so
- *  the name gate never turns GREEN. */
+ *  the prop or hit its shape words. The require strips screen/螢幕 from a system
+ *  prop's forbid at the source (§0c law46 boards 端豁免，#27 手搬) — the
+ *  screen-family exemption also lives in the judge (photo-qc), so stale
+ *  require.json from the old classifier is still fixed at judgement time.
+ *  Garments and documents are wardrobe/paper — no gate: blind QC can only
+ *  describe shape words, never the sheet's proper name, so the name gate never
+ *  turns GREEN. */
 export function keyframeRequire(shot: Shot): QcRequire {
   const prop = shot.props?.[0];
   const cls = prop ? propNounClass(prop.name) : null;
   const heldTool = prop && (cls === "tool" || cls === "system") ? prop : undefined;
+  const toolForbid = heldTool ? scrubSystemDisplayForbid(heldTool.name, heldTool.forbid) : undefined;
   return {
     people_count: new Set(shot.marks.map((m) => m.characterId)).size,
     grey_blocks: false,
     ...(shot.location ? { location: shot.location } : {}),
     ...(shot.action ? { action: shot.action } : {}),
     ...(shot.size ? { size: shot.size } : {}),
-    ...(heldTool ? { tool: heldTool.name, tool_shape: heldTool.shape, tool_forbid: heldTool.forbid } : {}),
+    ...(heldTool ? { tool: heldTool.name, tool_shape: heldTool.shape, tool_forbid: toolForbid } : {}),
   };
 }

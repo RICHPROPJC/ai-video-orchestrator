@@ -272,6 +272,32 @@ test("a prop can only be held by someone in the shot", () => {
   assert.match(JSON.stringify(schema.safeParse(held).error!.issues), /not cast in this shot/);
 });
 
+test("hologram/infograph props cannot forbid screen or 螢幕（§0c law46 boards 端豁免）", () => {
+  const script = scriptOf(SCENES, BEATS, TARGET);
+  const boards = boardsOf(script);
+  const schema = boardsSceneSchema({
+    sceneId: "SC01",
+    beats: script.scenes[0]!.beats,
+    characters: script.outline.characters.map((c) => ({ id: c.id, name: c.name })),
+    budgetSec: BEATS * SHOT_SEC,
+  });
+  // WR1Q SH02 形：光框本身係螢幕——screen 入 forbid＝禁詞殺自己人
+  const poison = structuredClone(boards[0]!);
+  poison.shots[0]!.props = [{ name: "全息光框", heldBy: "A", shape: ["glow"], forbid: ["phone", "screen", "book"] }];
+  assert.match(JSON.stringify(schema.safeParse(poison).error!.issues), /screen／螢幕/);
+  const han = structuredClone(boards[0]!);
+  han.shots[0]!.props = [{ name: "infograph", heldBy: "A", shape: ["chart"], forbid: ["螢幕"] }];
+  assert.equal(schema.safeParse(han).success, false);
+  // 剷走 screen 族就過；非 screen 禁詞（phone／book）照寫得
+  const ok = structuredClone(boards[0]!);
+  ok.shots[0]!.props = [{ name: "全息光框", heldBy: "A", shape: ["glow"], forbid: ["phone", "book"] }];
+  assert.equal(schema.safeParse(ok).success, true);
+  // 非 system 道具禁 screen 照舊合法——角色亂生螢幕先係犯規
+  const spear = structuredClone(boards[0]!);
+  spear.shots[0]!.props = [{ name: "長槍", heldBy: "A", shape: ["long"], forbid: ["screen"] }];
+  assert.equal(schema.safeParse(spear).success, true, "non-display tool may forbid screen");
+});
+
 test("the beat total is gated once every scene is back", () => {
   const script = scriptOf(SCENES, BEATS, TARGET);
   assert.doesNotThrow(() => assertBeatTotal(script, { scenes: [3, 3], totalBeats: [12, 12] }));

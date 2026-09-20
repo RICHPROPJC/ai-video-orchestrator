@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import * as nodeTest from "node:test";
-import { keyframeEditPrompt, keyframeRequire, propNounClass } from "./keyframe-prompt";
+import { keyframeEditPrompt, keyframeRequire, propNounClass, scrubSystemDisplayForbid } from "./keyframe-prompt";
 import type { CallSheet, Shot, ShotProp } from "./types";
 
 /** One file, three doors: bun's node:test shim only works under `bun test`,
@@ -147,6 +147,19 @@ test("system prop (藍色光框, WR1Q SH02 class): infograph three-layer sentenc
   assert.ok(!text.includes("犁"), "no plow vocabulary");
   assert.ok(!text.includes("螢幕") && !text.includes("screen"), "no screen word in the /edit prompt at all — the screen is the system's legal shape");
   assert.ok(!text.includes(frame.forbid.join("、")), "no forbid echo for system props");
+});
+
+test("§0c law46 boards 端豁免（#27 手搬）: require strips screen/螢幕 from a system prop's tool_forbid", () => {
+  const frame: ShotProp = { name: "全息光框", heldBy: "A", shape: ["glow", "rect"], forbid: ["phone", "screen", "book", "螢幕"] };
+  const req = keyframeRequire(shotWithProp(frame));
+  assert.equal(req.tool, "全息光框", "system prop still carries the prop gate");
+  assert.deepEqual(req.tool_forbid, ["phone", "book"], "screen/螢幕 stripped at the source");
+  assert.deepEqual(scrubSystemDisplayForbid("infograph", ["screen", "phone"]), ["phone"]);
+  assert.deepEqual(scrubSystemDisplayForbid("戰術infograph", ["螢幕", "偷聽器"]), ["偷聽器"]);
+  // 非 system 道具一個字都唔郁——禁 screen 照舊（角色亂生螢幕先係犯規）
+  const plow: ShotProp = { name: "曲轅犁", heldBy: "A", shape: ["弯"], forbid: ["screen", "鍬"] };
+  assert.deepEqual(keyframeRequire(shotWithProp(plow)).tool_forbid, ["screen", "鍬"]);
+  assert.deepEqual(scrubSystemDisplayForbid("長槍", ["screen"]), ["screen"]);
 });
 
 if (bareBun) {
