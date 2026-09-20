@@ -72,7 +72,58 @@
 - lane 側 worktree 卡外 dirty（.env.example/crew.ts 等）原封留在各 worktree，未 commit。
 - verify/crew/CARD_BUG3_0920.md 判詞備註嘅 wist-sh07 frozen fixture 命運、lane/qc T41b/T37-fix 等其餘 commit——照 lane 全史 merge 已入（ parents 鏈可尋），語義重複處以 seats 手 port 版為準。
 
+## 6. S6 worktree estate good（Chau 0921 令；S5 補做，team-lead 退卡）
+
+### 6a. 三 lane worktree 卡外 dirty 處置
+
+| worktree | 原地 dirty | 處置 | backup |
+|---|---|---|---|
+| crew (lane/crew) | `.env.example`（BLENDER_BIN 本機路徑，Fable 0919 款） | **留**——seats 同款 sanctioned 本機便利改動 | — |
+| crew | `verify/vera/`（untracked） | **留**——Vera 判詞輸出位 | — |
+| qc (lane/qc) | `src/lib/studio/crew.ts`（EVIDENCE_LAW 12席包裝，卡外） | **backup→restore**——內容已由 lane/crew ed628fa 經 S1 入 crew-seats，worktree 副本係多餘複本 | `/home/c/orca/workspaces/sov-cli-merge-wip/Wire/out/lane-dirty-backups-0921/qc-crew.ts.patch`（100行） |
+| motion (lane/motion) | `crew.ts`＋`seat-charters.ts`（EVIDENCE_LAW＋SEAL 同句，卡外） | **backup→restore**——同上，兩檔均已入 crew-seats（ed628fa） | `.../motion-crew.ts-seat-charters.ts.patch`（122行） |
+| qc / motion | `.env.example`＋`verify/vera/` | 留（同 crew 款） | — |
+
+處置後三 worktree 劃一：`M .env.example`＋`?? verify/vera/`，別無他物。
+
+### 6b. 全 14 worktree 盤點（2026-09-21 03:2x snapshot）
+
+| worktree | branch | HEAD | 最後 commit | dirty（M/??） | 席 |
+|---|---|---|---|---|---|
+| /mnt/ssd/ai-video-orchestrator | main | d0f65bf | 09-12 05:04 | 3（.env＋photo-qc.test＋fixture json） | main 鏡像（本卡禁掂；只盤點） |
+| /mnt/ssd/ai-video-orchestrator-crew | crew-seats | 73a6976 | 09-21 03:12 | 2M＋10??（全部 sanctioned Fable 產物，見 6d） | seats 集成樹（本卡目標） |
+| /mnt/ssd/crew-wt/crew | lane/crew | ed628fa | 09-21 02:17 | 1M＋1??（sanctioned） | Wire |
+| /mnt/ssd/crew-wt/motion | lane/motion | 241d101 | 09-20 18:28 | 1M＋1??（6a 處置後） | Mo |
+| /mnt/ssd/crew-wt/qc | lane/qc | 68db63d | 09-21 02:17 | 1M＋1??（6a 處置後） | Kit |
+| /mnt/ssd/crew-wt/front | lane/front | 981f33a | 09-20 02:01 | 3M（.env＋crew.ts＋seat-charters.ts）＋2??（.claude/＋verify/） | Ivo（**有 live terminal——只盤點，零接觸**） |
+| /mnt/ssd/crew-wt/fable | lane/fable | 39d653e | 09-16 21:02 | 2M（.env＋photo-qc.ts WIP） | Fable（只盤點） |
+| /mnt/ssd/crew-wt/forge | lane/forge | 62672f1 | 09-15 02:57 | 3M（.env＋crew.ts＋seat-charters.ts） | Forge（只盤點） |
+| /mnt/ssd/crew-wt/skills | lane/skills | 78540ba | 09-13 20:32 | 3M（.env＋crew.ts＋seat-charters.ts） | skills 席（只盤點） |
+| /mnt/ssd/crew-wt/t32b-onto-seats | lane/t32b-onto-seats | 0d3551c | 09-18 10:20 | 1M（.env） | 舊 port lane |
+| /mnt/ssd/crew-wt/t37-onto-seats | lane/t37-onto-seats | 6b8e78c | 09-18 10:45 | 1M（.env） | 舊 port lane |
+| /mnt/ssd/crew-wt/t43-onto-seats | lane/t43-onto-seats | fafda6d | 09-18 09:44 | 1M（.env） | 舊 port lane |
+| /mnt/ssd/crew-wt/t43b-onto-seats | lane/t43b-onto-seats | 2393c7b | 09-18 09:55 | 1M（.env） | 舊 port lane |
+| /mnt/ssd/crew-wt/t44-onto-seats | lane/t44-onto-seats | 0f572b8 | 09-18 09:24 | 1M（.env） | 舊 port lane |
+
+（全部 worktree 通用：`.env.example` BLENDER_BIN 本機路徑一處 modified——Fable 0919 款 sanctioned，各席自行持有。）
+
+### 6c. stale 候選（**只標記，等 team-lead 裁；一個都冇刪**）
+
+branch 是否完全入 crew-seats（`git merge-base --is-ancestor`）：lane/crew IN（S1）／lane/motion IN（S2）／lane/qc IN（S3）／lane/fable IN／lane/skills IN／lane/t32b IN／lane/t43 IN／lane/t44 IN；lane/forge、lane/front、lane/t37、lane/t43b NOT-in。
+
+| 候選 | 理由 | 註 |
+|---|---|---|
+| **lane/skills** worktree | branch IN crew-seats **＋**最後 commit 09-13（>7日零 activity，雙條件齊） | 最強候選；仍留有 3M 卡外 dirty（crew.ts/seat-charters.ts 同款 EVIDENCE_LAW 複本＋.env）——裁時先問 skills 席 |
+| **lane/fable** worktree | branch IN crew-seats＋最後 commit 09-16（5日） | 有 photo-qc.ts WIP dirty——**Fable 未交收嘢在樹上**，裁前必須 Fable 席確認 |
+| lane/t32b / t43 / t44 worktree ×3 | branch IN crew-seats（port 已收貨）＋09-18 起零 activity（3日，未過7日線） | 較弱候選；port 任務完成，留 .env 一行 |
+| 不標：lane/crew、lane/motion、lane/qc | branch 雖 IN，但係 Wire/Mo/Kit **活躍席工廠**（ed628fa/68db63d 係今朝 commit） | 席 worktree ≠ 可刪 |
+| 不標：lane/forge、lane/front、lane/t37、lane/t43b | branch NOT-in 或席活躍（front 有 live terminal） | 內容未全落地／在用 |
+
+### 6d. crew-seats 終樹乾淨聲明
+
+`git status`：modified 2（`.env.example`＋`.gitignore`）＋untracked 10（nex-blender-effort-abc.ts、nex-blender-real-call.ts、nex-skill-fusion-nexonly.ts、nex-skill-fusion.ts、projects/guojia-lingdaoren/playbook/、blender-bin.ts/test、still-h3-proxy.ts/test、verify/qc/MERGE_P1_0919.md）——**全部係 sanctioned Fable 產物清單之內，零其他 dirty**。tracked 樹＝73a6976。
+
 ## Handover
 
-- 收據：本檔。backup patch＋紅名單：`/home/c/orca/workspaces/sov-cli-merge-wip/Wire/out/`。
-- 等 Vera 驗 be2fea8（+S1/S2/S3 三個 merge commit）；E2E 卡另開，唔係本卡。
+- 收據：本檔。backup patch＋紅名單：`/home/c/orca/workspaces/sov-cli-merge-wip/Wire/out/`；lane dirty backup：`.../out/lane-dirty-backups-0921/`。
+- 等 Vera 驗 dc98b29（收據其後補 §3 表＋§6，見 73a6976 及以後收據 commit——測試樹零改動）；E2E 卡另開，唔係本卡。
