@@ -65,8 +65,14 @@ export function sceneLocation(sheet: CallSheet, shot: Shot): string {
  *  (factsBlock)、150–300 中文. Chau 0917 laws: Image-1 anchors puppet
  *  位置/姿勢/佔位 ONLY — 場景結構同人體尺度永唔跟灰模（法1/4；四句原文同殘句
  *  清單見 verify/crew/CARD_BUG3_0920.md）；refs are the characters' DRESSED
- *  bodies, 面容＋衫著照 ref, facing follows the blockout (法5/6/9); people
- *  count anchors to the puppets — 冇錨 negative 禁（法5）. */
+ *  bodies, 面容＋衫著照 ref, facing follows the blockout (法5/6/9) — EXCEPT on
+ *  a refAngle "45" shot, where the slot's ref IS the angle version and facing
+ *  follows it (§0b 0920: a frontal ref on a sideways shot drags the face back
+ *  to camera — the B-lane regression); the 45° formula names the eye guard and
+ *  the 90° ban (angle-test-45 receipt). people count anchors to the puppets —
+ *  冇錨 negative 禁（法5）. require.action/pose (freeze frame + spatial
+ *  sentence) and require.unchanged (the 【不變】 background-creep lock, §0b
+ *  0920) ride AFTER the band, same slot as facts. */
 export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: boolean }): string {
   // refuse-to-emit (Card D 掣2, prompt_too_thin 嘅形): a text/data screen with
   // no packet facts has nothing honest to put on screen — the generator refuses
@@ -85,12 +91,21 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
   });
   const prop = shot.props?.[0];
   const cls = prop ? propNounClass(prop.name) : null;
+  // §0b ref-matching (card C1): on a "45" shot the slot's ref is the character's
+  // angle version, so facing follows THAT image — never the standing frontal
+  // puppet, which drags the face back to camera. Pose/occupancy stay with
+  // Image-1. The 45° sentence carries the law-mandated eye guard + 90° ban.
+  const facing45 = shot.refAngle === "45";
+  const facing = (slot: number) =>
+    facing45
+      ? `朝向跟 Image-${slot} 嘅三份一側面45度：仍要見到雙眼同兩邊面頰，唔好轉成90度純側面；姿勢同佔位跟 Image-1 人偶。`
+      : `朝向同動作跟 Image-1 人偶。`;
   // Image-N 對號＋每張作用：puppet i+1 wears character from Image-i+2 — the ref
-  // is the DRESSED body (面容＋衫著, Chau 法5/9), facing follows Image-1 (法6)
+  // is the DRESSED body (面容＋衫著, Chau 法5/9), facing per the shot's refAngle
   const people = chars
     .map(
       (c, i) =>
-        `左起第${i + 1}個人偶＝Image-${i + 2} 嘅角色${c.name}（${c.role}）：面容、髮型同成套衫著照 Image-${i + 2}——${c.wardrobe}；朝向同動作跟 Image-1 人偶。`,
+        `左起第${i + 1}個人偶＝Image-${i + 2} 嘅角色${c.name}（${c.role}）：面容、髮型同成套衫著照 Image-${i + 2}——${c.wardrobe}；${facing(i + 2)}`,
     )
     .join("");
   let props = "";
@@ -130,8 +145,39 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
       `prompt_too_thick: ${shot.id} /edit 組到 ${n} 中文字（上限 ${EDIT_MAX_CJK}）— packet 太肥，prompt 只解釋底圖唔補償（Chau 0917 法11）；收細 packet 再出`,
     );
   }
-  if (facts.length > 0) return `${brief}\n\n${factsBlock(facts)}`;
-  return brief;
+  // extras ride after the band (packet data, not brief prose):
+  // 動作 → 不變 → facts (the Editing PE change/keep pair, then the screen copy)
+  const action = actionBlock(shot);
+  const lock = unchangedBlock(shot);
+  let withExtras = action ? `${brief}\n\n${action}` : brief;
+  if (lock) withExtras = `${withExtras}\n\n${lock}`;
+  if (facts.length > 0) return `${withExtras}\n\n${factsBlock(facts)}`;
+  return withExtras;
+}
+
+/** The 【動作】 line, assembled verbatim from the packet: require.action is the
+ *  freeze-frame sentence (zero process verbs is packet discipline — the B-lane
+ *  law), require.pose the body-part spatial sentence copied from the POSE
+ *  LEXICON register. Rides AFTER the band like the facts block (oneshot 0920
+ *  verified shape); empty when the packet carries neither. */
+export function actionBlock(shot: Shot): string {
+  const parts = [shot.require?.action, shot.require?.pose]
+    .map((s) => s?.trim())
+    .filter((s): s is string => Boolean(s))
+    .map((s) => (s.endsWith("。") ? s.slice(0, -1) : s));
+  if (parts.length === 0) return "";
+  return `【動作】${parts.join("。")}。`;
+}
+
+/** The 【不變】 lock, assembled verbatim from require.unchanged — §0b 0920
+ *  background-creep law (Chau 批①, Editing PE「變咩＋保持咩不變」): every edit
+ *  hop names the walls / set dressing / object positions that must stay.
+ *  Rides AFTER the band with the other extras; empty when the packet carries
+ *  none — code never invents items. */
+export function unchangedBlock(shot: Shot): string {
+  const items = (shot.require?.unchanged ?? []).map((s) => s?.trim()).filter((s): s is string => Boolean(s));
+  if (items.length === 0) return "";
+  return `【不變】以下保持不變：\n${items.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
 }
 
 /** what photo QC requires of this shot's keyframe: the marks decide people_count;

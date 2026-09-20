@@ -298,6 +298,75 @@ test("BUG3: the facts block rides AFTER the band — packet rows never pad the b
   assert.ok(cjkCount(brief) <= EDIT_MAX_CJK, "brief alone stays under the ceiling");
 });
 
+/** Card C1 (FABLE_INTAKE_SORT_0920 序1, §0b 0920 釘): a refAngle "45" shot
+ *  feeds angle refs, so facing follows the slot's own Image — never the
+ *  standing frontal puppet; the 45° formula carries the eye guard + 90° ban;
+ *  the scene line and the compound location word are one string; 動作
+ *  (freeze frame + spatial sentence) rides after the band. Single mark —
+ *  the SH01 verified shape. */
+test("C1: refAngle 45 — facing follows Image-2 with eye guard + 90° ban; compound location verbatim; 動作 rides after the band", () => {
+  const shot = shotWithProp(coat);
+  shot.marks = [shot.marks[0]!];
+  shot.refAngle = "45";
+  shot.require = { location: "地下室檔案室", action: "俯身雙手撐地、上身抬起", pose: "體重由雙膝同雙手掌承住，大腿同地面成角度唔貼地" };
+  const text = keyframeEditPrompt(sheet, shot, { first: true });
+  assert.ok(text.includes("朝向跟 Image-2"), "the puppet's facing follows its own 45° ref");
+  assert.ok(text.includes("唔好轉成90度純側面"), "the 90° ban rides the 45° facing clause");
+  assert.ok(text.includes("雙眼"), "eye guard present");
+  assert.ok(text.includes("姿勢同佔位跟 Image-1 人偶"), "pose/occupancy still anchor Image-1");
+  assert.ok(!text.includes("朝向同動作跟 Image-1 人偶"), "the frontal-drag sentence is gone on a 45° shot");
+  assert.ok(text.includes("【場景】地下室檔案室"), "scene line carries the compound word verbatim (require.location 注入)");
+  assert.ok(
+    text.includes("【動作】俯身雙手撐地、上身抬起。體重由雙膝同雙手掌承住，大腿同地面成角度唔貼地。"),
+    "動作 block: freeze frame + spatial sentence, verbatim from the packet",
+  );
+  const brief = text.split("\n\n【動作】")[0]!;
+  const n = cjkCount(brief);
+  assert.ok(n >= EDIT_MIN_CJK && n <= EDIT_MAX_CJK, `brief stays in band with the 45° clause: ${n}`);
+});
+
+test("C1: the 45° clause costs band width — a fat two-hander refuses loud (prompt_too_thick, 法11)", () => {
+  const shot = shotWithProp(coat);
+  shot.refAngle = "45";
+  assert.throws(() => keyframeEditPrompt(sheet, shot, { first: true }), /prompt_too_thick/);
+});
+
+test("C1: absent refAngle stays front (old facing sentence, no 動作 line)", () => {
+  const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: true });
+  assert.ok(text.includes("朝向同動作跟 Image-1 人偶"), "front default unchanged");
+  assert.ok(!text.includes("【動作】"), "no 動作 line without require.action/pose");
+  assert.ok(!text.includes("90度"), "no 45° vocabulary on a front shot");
+});
+
+/** Card 1b (Chau 批①, §0b 0920 background-creep law): the 【不變】 lock rides
+ *  after the band as packet extras — walls/dressing/object positions held
+ *  verbatim, never counted into the 150–300 brief, ahead of the facts block. */
+test("C1b: require.unchanged emits the 【不變】 lock after the band, verbatim and outside the CJK count", () => {
+  const shot = shotWithProp(coat);
+  shot.require = {
+    location: "地下室檔案室",
+    unchanged: ["右後牆身照舊係空牆", "左邊檔案架同架上檔案照原位", "地下散住嘅文件照原位唔搬"],
+  };
+  const text = keyframeEditPrompt(sheet, shot, { first: false });
+  assert.ok(text.includes("【不變】以下保持不變："), "lock header verbatim");
+  assert.ok(text.includes("1. 右後牆身照舊係空牆"), "items verbatim, numbered");
+  assert.ok(text.includes("3. 地下散住嘅文件照原位唔搬"), "every item carried");
+  const brief = text.split("\n\n【不變】")[0]!;
+  const noKeep = shotWithProp(coat);
+  noKeep.require = { location: "地下室檔案室" };
+  const without = keyframeEditPrompt(sheet, noKeep, { first: false });
+  assert.ok(!without.includes("【不變】"), "no lock without require.unchanged — code never invents items");
+  assert.equal(cjkCount(without), cjkCount(brief), "the lock never pads the brief band");
+  const n = cjkCount(brief);
+  assert.ok(n >= EDIT_MIN_CJK && n <= EDIT_MAX_CJK, `brief alone stays in band: ${n}`);
+  // Editing PE pair order: the change extras (動作) then the keep lock, facts last
+  const both = shotWithProp(coat);
+  both.require = { facts: INFO_FACTS, unchanged: ["右後牆身照舊係空牆"], action: "俯身雙手撐地、上身抬起" };
+  const ftext = keyframeEditPrompt(sheet, both, { first: false });
+  assert.ok(ftext.indexOf("【動作】") < ftext.indexOf("【不變】"), "change extras before the keep lock");
+  assert.ok(ftext.indexOf("【不變】") < ftext.indexOf("【上屏事實】"), "keep lock before the facts block");
+});
+
 if (bareBun) {
   // IIFE, not top-level await: tsx transpiles this file as CJS
   void (async () => {

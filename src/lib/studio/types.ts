@@ -105,6 +105,12 @@ export type Character = {
 
 export type Stance = "stand" | "lean" | "crouch";
 
+/** §0b angle-ref law (Chau 0920): which angle version a shot's Image ref slots
+ *  carry — "45" = the three-quarter ref (a frontal ref on a sideways shot
+ *  drags the face back to camera). Absent = "front". 90° is prompt-forbidden,
+ *  never a value here. */
+export type RefAngle = "front" | "45";
+
 export type ShotProp = {
   name: string;
   /** characterId of the mark whose hands hold it */
@@ -128,10 +134,25 @@ export type ShotRequire = {
   facts?: ShotFact[];
   /** the seat marks this shot a text/data screen even when the action words don't say it */
   factsRequired?: boolean;
-  /** packet scene room (2–8 字場所名詞) — the ONE scene truth source (Fable
-   *  1d9bb51): keyframeEditPrompt reads require.location ?? shot.location, sheet
-   *  tail last. Prompt and photo-qc gate on this single field. */
+  /** packet scene room — the ONE scene truth source (Fable 1d9bb51):
+   *  keyframeEditPrompt reads require.location ?? shot.location, sheet tail
+   *  last. Prompt and photo-qc gate on this single field. Compound place
+   *  words are the point (地下室檔案室, not 地下室): the word the eye must
+   *  find is the word the packet wrote — never enum-locked to one room. */
   location?: string;
+  /** B-lane freeze-frame sentence — the pose held at its instant, zero
+   *  process verbs. Packet-authored (boards copies the verified sentence);
+   *  the prompt carries it verbatim, riding after the brief band. */
+  action?: string;
+  /** body-part spatial sentence at 體重由邊度承住 grade (POSE_LEXICON
+   *  register) — the packet copies the lexicon sentence, code only assembles;
+   *  the vocabulary itself never moves into src. */
+  pose?: string;
+  /** background-creep lock (§0b 0920 編輯漂移, Chau 批①): the 【不變】 list —
+   *  background walls / set dressing / left-right object positions every edit
+   *  hop must hold unchanged. Packet-authored, one clause per item; rides
+   *  after the brief band with the other extras. */
+  unchanged?: string[];
 };
 
 export type Shot = {
@@ -162,6 +183,10 @@ export type Shot = {
     stance?: Stance;
     stanceEnd?: Stance;
   }[];
+  /** callsheet column: the angle of the refs this shot's Image slots hold;
+   *  keyframeEditPrompt aims the facing sentence at the ref when "45".
+   *  Optional — absent reads as "front". */
+  refAngle?: RefAngle;
   props?: ShotProp[];
   require?: ShotRequire;
   stillPrompt: string;

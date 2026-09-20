@@ -6,6 +6,7 @@ import { SHOT_SEC_MIN, SHOT_SEC_MAX, SCENE_BUDGET_TOLERANCE } from "./boards-con
 const SEAL = [
   "你係呢張 slate 嘅專職檯。信封入面先係你嘅世界。輸出只可以係一個 JSON object。",
   "唔好寫 markdown、唔好寫解釋、唔好用 ``` 包住。",
+  "上報只交發現同證據。唔出選項逼揀。",
 ].join("\n");
 
 export const WRITER_OUTLINE_CHARTER = `你係編劇檯（阿文）。收一份 brief，交一份大綱。

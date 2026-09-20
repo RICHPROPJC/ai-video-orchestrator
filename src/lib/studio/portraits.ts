@@ -1,14 +1,28 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { CallSheet, Character } from "./types";
+import type { CallSheet, Character, RefAngle } from "./types";
 import { buildGeneratePayload, u15Generate, type GeneratePayload } from "./u15-generate";
 import { runPhotoQc, type PhotoQcRecord, type QcRequire } from "./photo-qc";
 
 /** One face, alone, no placeholders — the same eye that gates the keyframes. */
 export const PORTRAIT_REQUIRE: QcRequire = { people_count: 1, grey_blocks: false };
 
-/** The template is the desk's; every noun in it comes from the callsheet. */
-export function portraitPrompt(character: Character, sheet: CallSheet): string {
+/** The template is the desk's; every noun in it comes from the callsheet.
+ *  angle "45" (card C2, §0b 0920) returns the /edit sentence that turns the
+ *  FRONT portrait into the three-quarter ref — it is fed to u15Edit with
+ *  Image-1 = the front portrait, never to t2i generate (that's why it names
+ *  the character: identity rides the image). The verified v2 formula must
+ *  name the eye guard and the 90° ban — without it U1.5 runs to a pure
+ *  profile (angle-test-45 receipt: v1 without the ban came out 90°). */
+export function portraitPrompt(character: Character, sheet: CallSheet, angle: RefAngle = "front"): string {
+  if (angle === "45") {
+    return [
+      `【編輯】Image-1係角色${character.name}嘅正面參考圖（${character.wardrobe}、純色studio底）。`,
+      `將佢嘅頭部同身體輕微轉側45度（three-quarter三份一側面）：同一個人——面容輪廓、髮型、成套衫著全部照Image-1不變；`,
+      `頭轉向畫面左前方約45度，唔好轉成90度純側面，要仍然見到雙眼同兩邊面頰，鼻樑喺兩眼之間突出嚟。`,
+      `身體微微轉側唔好完全側晒。背景照舊純色。唔好加嘢唔好變第二個人。`,
+    ].join("");
+  }
   return [
     `Photoreal portrait, one person alone, head and shoulders, facing camera, neutral expression.`,
     `${character.role}: ${character.wardrobe}.`,
