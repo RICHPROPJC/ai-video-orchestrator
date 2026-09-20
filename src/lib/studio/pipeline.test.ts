@@ -256,6 +256,111 @@ test("shotsForScene: a shot without .scene still matches via beatId prefix", asy
   assert.deepEqual(shotsForScene(shots, "SC02").map((s) => s.id), ["SH04"]);
 });
 
+// ---- card ③b (sample #20): the UI/infographic photo channel at the pipeline
+// layer. uiShot is the only gate; story shots stay zero-photo even with stray
+// uiRefs. Fixtures are synthetic — nothing from data/jobs.
+
+function uiChannelSheet(): CallSheet {
+  const sheet = resumeSheet();
+  return {
+    ...sheet,
+    shots: [
+      {
+        ...sheet.shots[0]!,
+        id: "SH01",
+        action: "The interface holds a full-bleed dashboard: a header bar, three metric cards, a line chart, and a footnote row. The cursor drifts across the cards, pausing on each metric, while the chart draws its final segment and the highlighted card lifts slightly. The grid gutters hold still and the typography never reflows; the whole panel reads as one flat surface under even studio light. Nothing else in the layout moves.",
+        uiShot: true,
+        uiSpec: {
+          cards: [{ label: "revenue card" }],
+          onscreen: [{ text: "HK$1.2M", where: "top-left metric card" }],
+          moving: ["the cursor", "the highlighted card"],
+        },
+        uiRefs: ["/fixtures/ui/dashboard.png"],
+      },
+      {
+        ...sheet.shots[0]!,
+        id: "SH02",
+        action: "Cast-A crosses the stage and lifts the crate onto the table while Cast-B watches from the doorway, arms folded, weight on the doorframe. Dust lifts through the single hard backlight as the lamp swings once and settles, and the floorboards creak under the crate's weight.",
+        // stray refs without the marker: the channel must stay shut
+        uiRefs: ["/fixtures/ui/accidental.png"],
+      },
+    ],
+  };
+}
+
+test("h3MotionPack: uiShot opens the photo channel; a story shot stays ref-free", async () => {
+  const { h3MotionPack } = await import("./pipeline");
+  const sheet = uiChannelSheet();
+  const [ui, story] = sheet.shots;
+  const uiPack = h3MotionPack(sheet, ui!, "a", "/stills/SH01.png", {});
+  assert.deepEqual(uiPack.uiPhotoFiles, ["/fixtures/ui/dashboard.png"]);
+  assert.match(uiPack.prose, /<Picture 1> = the UI layout/);
+  assert.match(uiPack.prose, /「HK\$1\.2M」/);
+  assert.match(uiPack.prose, /Only the cursor, the highlighted card move/);
+  assert.equal(uiPack.kfEnd, "/stills/SH01.png");
+  const storyPack = h3MotionPack(sheet, story!, "a", "/stills/SH02.png", {});
+  assert.equal(storyPack.uiPhotoFiles, undefined);
+  assert.doesNotMatch(storyPack.prose, /<Picture/);
+  assert.doesNotMatch(storyPack.prose, /accidental/);
+});
+
+test("h3MotionPack: UI channel is A-path only — fallback variants stay frozen", async () => {
+  const { h3MotionPack } = await import("./pipeline");
+  const sheet = uiChannelSheet();
+  const ui = sheet.shots[0]!;
+  for (const variant of ["b", "bkf", "c"] as const) {
+    const pack = h3MotionPack(sheet, ui, variant, "/stills/SH01.png", {});
+    assert.equal(pack.uiPhotoFiles, undefined, `${variant} must not feed ui photos`);
+  }
+});
+
+test("card ③b end-to-end: UI shot's dry receipt carries photo refs, story shot stays zero", async () => {
+  const { h3MotionPack } = await import("./pipeline");
+  const { submitH3Shot } = await import("./h3-submit");
+  const sheet = uiChannelSheet();
+  const [ui, story] = sheet.shots;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-ui-channel-"));
+  for (const id of ["SH01", "SH02"]) {
+    writeWav(path.join(dir, `${id}.wav`), new Float32Array(22050 * 2), 22050); // 2.0s → 124f
+  }
+  for (const id of ["SH01", "SH02"]) {
+    fs.writeFileSync(path.join(dir, `${id}.mp4`), Buffer.from("fake-blockout"));
+    fs.writeFileSync(path.join(dir, `${id}.png`), Buffer.from("fake-kf"));
+  }
+  for (const [shot, stillId] of [[ui!, "SH01"], [story!, "SH02"]] as const) {
+    const pack = h3MotionPack(sheet, shot, "a", path.join(dir, `${stillId}.png`), {});
+    const { receipt } = await submitH3Shot({
+      prose: pack.prose,
+      wavFile: path.join(dir, `${stillId}.wav`),
+      blockoutMp4: path.join(dir, `${stillId}.mp4`),
+      kfStart: path.join(dir, `${stillId}.png`),
+      kfEnd: pack.kfEnd,
+      refImageFiles: pack.refImageFiles,
+      uiPhotoFiles: pack.uiPhotoFiles,
+      outMp4: path.join(dir, "motion", `${stillId}.mp4`),
+      receiptJson: path.join(dir, "motion", `${stillId}.receipt.json`),
+      dryRun: true,
+      shot: stillId,
+      requireQuote: false,
+    });
+    const r2v = (receipt.graph as { r2v: { inputs: Record<string, unknown> } }).r2v;
+    if (shot.uiShot) {
+      assert.equal(receipt.uploads.ui_photos.length, 1);
+      assert.match(receipt.uploads.ui_photos[0]!, /_ui_0\.png$/);
+      assert.deepEqual(r2v.inputs["ref_images.ref_image_0"], ["ref_img_0", 0]);
+      assert.match(receipt.prompt, /<Picture 1>/);
+    } else {
+      assert.deepEqual(receipt.uploads.ui_photos, []);
+      assert.deepEqual(receipt.uploads.ref_images, []);
+      assert.equal(
+        Object.keys(r2v.inputs).filter((k) => k.startsWith("ref_images.")).length,
+        0,
+        "story shot must wire zero ref_images slots",
+      );
+    }
+  }
+});
+
 if (bareBun) {
   // IIFE, not top-level await: tsx transpiles this file as CJS
   void (async () => {

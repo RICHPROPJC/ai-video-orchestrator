@@ -46,7 +46,7 @@ function h3GraphVariant(input: ProduceInput): H3GraphVariant {
   return input.graphVariant ?? "a";
 }
 
-function h3MotionPack(
+export function h3MotionPack(
   timed: CallSheet,
   shot: Shot,
   variant: H3GraphVariant,
@@ -54,7 +54,24 @@ function h3MotionPack(
   portraitFiles: Record<string, string>,
 ) {
   if (variant === "a") {
-    return { prose: buildProse(timed, shot), refImageFiles: undefined as string[] | undefined, kfEnd: stillPng };
+    if (!shot.uiShot) {
+      // story shot: zero photo refs, zero ui prose — the channel stays shut
+      return {
+        prose: buildProse(timed, shot),
+        refImageFiles: undefined as string[] | undefined,
+        uiPhotoFiles: undefined as string[] | undefined,
+        kfEnd: stillPng,
+      };
+    }
+    // card ③b: UI/infographic shot — photo refs ride ref_images (law: 文字圖／
+    // 手機畫面等 UI 反而可以俾 H3 ref) and the prose carries the mapping table.
+    // uiShot is the only gate: story shots with stray uiRefs stay ref-free.
+    return {
+      prose: buildProse(timed, shot, { ui: shot.uiSpec ?? {} }),
+      refImageFiles: undefined as string[] | undefined,
+      uiPhotoFiles: shot.uiRefs ?? [] as string[],
+      kfEnd: stillPng,
+    };
   }
   const ids = [...new Set(shot.marks.map((m) => m.characterId))];
   const portraits = ids
@@ -70,6 +87,7 @@ function h3MotionPack(
   return {
     prose: buildProsePositive(timed, shot, { motionOnly: variant === "c", portraits }),
     refImageFiles,
+    uiPhotoFiles: undefined as string[] | undefined,
     kfEnd: undefined as string | undefined,
   };
 }
@@ -517,6 +535,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           kfStart: stillPng,
           kfEnd: pack.kfEnd,
           refImageFiles: pack.refImageFiles,
+          uiPhotoFiles: pack.uiPhotoFiles,
           outMp4: path.join(jobDir(jobId), "motion", `${shot.id}.mp4`),
           receiptJson: jobFile(jobId, "motion", `${shot.id}.h3_submit_dryrun.json`),
           dryRun: true,
@@ -812,6 +831,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         kfStart: stillPng,
         kfEnd: pack.kfEnd,
         refImageFiles: pack.refImageFiles,
+        uiPhotoFiles: pack.uiPhotoFiles,
         outMp4: path.join(motionDir, `${shot.id}.mp4`),
         receiptJson: path.join(motionDir, `${shot.id}.h3_submit.json`),
         dryRun: false,

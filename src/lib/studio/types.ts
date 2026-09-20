@@ -95,6 +95,11 @@ export type Character = {
 
 export type Stance = "stand" | "lean" | "crouch";
 
+// type-only: UiShotSpec lives with the prose machinery that validates it
+// (h3-prose imports Shot/CallSheet back — type level only, erased at runtime)
+import type { UiShotSpec } from "./h3-prose";
+export type { UiShotSpec };
+
 export type ShotProp = {
   name: string;
   /** characterId of the mark whose hands hold it */
@@ -137,6 +142,17 @@ export type Shot = {
   /** which scene and beat the seats cut this shot from */
   scene?: string;
   beatId?: string;
+  /** card ③b: UI/infographic shot marker — the only gate that opens the H3
+   *  photo channel (law: 文字圖／手機畫面等 UI 反而可以俾 H3 ref). Story shots
+   *  leave this unset and stay ref-free, marker or not. */
+  uiShot?: boolean;
+  /** card ③b prose spec: mapping table + on-screen text engineering; forces
+   *  identity-long prose */
+  uiSpec?: UiShotSpec;
+  /** card ③b photo refs on disk (UI screenshots / data cards) — live submit
+   *  uploads them to ref_images.ref_image_N, dry-run names them. Paths are
+   *  used as given; live submit throws on a missing file. */
+  uiRefs?: string[];
 };
 
 /** Which seat wrote the sheet, on which model, with the receipts to prove it. */
