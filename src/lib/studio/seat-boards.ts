@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { chatJson, type RepairNote } from "./crew-llm";
 import { BOARDS_CHARTER } from "./seat-charters";
 import { assemblePlaybook, markPass } from "./playbook";
-import { boardsSceneSchema, SHOT_SEC_MAX, SHOT_SEC_MIN, SCENE_BUDGET_TOLERANCE, type BoardsScene } from "./boards-contract";
+import { boardsSceneSchema, SHOT_SEC_MAX, SHOT_SEC_MIN, SCENE_BUDGET_TOLERANCE, SLOT_VALUES, DEPTH_VALUES, STANCE_VALUES, type BoardsScene } from "./boards-contract";
 import { assertSheetGates, expandBoards } from "./boards-expand";
 import { dialogueSeconds, type Script } from "./script-contract";
 import type { CallSheet } from "./types";
@@ -14,6 +14,9 @@ type Handoff = Record<string, { slot: string; depth: string; stance: string; pro
 
 const SCENE_ID_RE = /^SC\d{2}$/;
 const GAITS = new Set(["plant", "walk", "reach", "turn"]);
+const SLOTS = new Set<string>(SLOT_VALUES);
+const DEPTHS = new Set<string>(DEPTH_VALUES);
+const STANCES = new Set<string>(STANCE_VALUES);
 
 /** qwen JSON-mode sometimes stores sceneId under "." / "," / "/sceneId". */
 export function recoverBoardsKeys(raw: unknown, note?: RepairNote): unknown {
@@ -64,8 +67,55 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
           repair(`repair: shots[${i}].cast[${j}].gait saw ${JSON.stringify(m.gait)} became plant`);
           m.gait = "plant";
         }
+        // b5 2Y0V grave: a gait word in stanceEnd enum-fails zod and burned a
+        // fail-closed ×3 round; the honest local fix is to drop the end stance
+        if (m.stanceEnd !== undefined && !STANCES.has(String(m.stanceEnd))) {
+          const why = GAITS.has(String(m.stanceEnd)) ? "gait word, not a stance" : `not one of ${STANCE_VALUES.join("/")}`;
+          repair(`repair: shots[${i}].cast[${j}].stanceEnd saw ${JSON.stringify(m.stanceEnd)} became (dropped: ${why})`);
+          delete m.stanceEnd;
+        }
+        // b6 2Y0V grave: a depth word in travelTo enum-fails zod the same way;
+        // drop the travel rather than guess a slot the boards never declared
+        if (m.travelTo !== undefined && !SLOTS.has(String(m.travelTo))) {
+          const why = DEPTHS.has(String(m.travelTo)) ? "depth word, not a slot" : `not one of ${SLOT_VALUES.join("/")}`;
+          repair(`repair: shots[${i}].cast[${j}].travelTo saw ${JSON.stringify(m.travelTo)} became (dropped: ${why})`);
+          delete m.travelTo;
+        }
         return m;
       });
+      // b7 BO9W grave: two figures on one slot/depth seat custom-fails zod
+      // ("two figures cannot share slot"); nudge the later one to the first
+      // free seat — same depth first — before zod burns a repair round
+      const seated = cast as unknown[];
+      if (seated.every((m) => m && typeof m === "object" && !Array.isArray(m))) {
+        const taken = new Set<string>();
+        for (const [j, member] of (seated as Record<string, unknown>[]).entries()) {
+          const m = member as { slot?: unknown; depth?: unknown };
+          if (typeof m.slot !== "string" || typeof m.depth !== "string") continue; // zod reports these
+          if (!SLOTS.has(m.slot) || !DEPTHS.has(m.depth)) continue; // zod reports these
+          const seat = `${m.slot}/${m.depth}`;
+          if (!taken.has(seat)) {
+            taken.add(seat);
+            continue;
+          }
+          const free =
+            SLOT_VALUES.map((s) => (taken.has(`${s}/${m.depth}`) ? null : { slot: s, depth: m.depth as string })).find(Boolean)
+            ?? DEPTH_VALUES.map((d) => (taken.has(`${m.slot}/${d}`) ? null : { slot: m.slot as string, depth: d })).find(Boolean)
+            ?? DEPTH_VALUES.flatMap((d) => SLOT_VALUES.map((s) => (taken.has(`${s}/${d}`) ? null : { slot: s, depth: d }))).find(Boolean);
+          if (free) {
+            if (free.slot !== m.slot) {
+              repair(`repair: shots[${i}].cast[${j}].slot saw ${JSON.stringify(m.slot)} became ${JSON.stringify(free.slot)} (seat ${seat} already taken in this shot)`);
+              m.slot = free.slot;
+            }
+            if (free.depth !== m.depth) {
+              repair(`repair: shots[${i}].cast[${j}].depth saw ${JSON.stringify(m.depth)} became ${JSON.stringify(free.depth)} (seat ${seat} already taken in this shot)`);
+              m.depth = free.depth;
+            }
+            taken.add(`${m.slot}/${m.depth}`);
+          }
+          // no free seat at all: leave it — zod's shared-seat issue is the report
+        }
+      }
     }
     const ids = new Set(
       (Array.isArray(cast) ? cast : [])

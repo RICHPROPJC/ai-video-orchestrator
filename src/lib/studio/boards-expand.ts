@@ -73,9 +73,9 @@ export function expandBoards(opts: {
         ...(shot.require
           ? {
               require: {
-                location: shot.require.location,
-                angle: shot.require.angle ?? shot.angle,
-                ...(shot.require.negatives?.length ? { negatives: shot.require.negatives } : {}),
+                ...shot.require,
+                // T32: the packet's own light angle wins, else the shot's camera angle
+                ...(shot.require.angle === undefined && shot.angle !== undefined ? { angle: shot.angle } : {}),
               },
             }
           : {}),

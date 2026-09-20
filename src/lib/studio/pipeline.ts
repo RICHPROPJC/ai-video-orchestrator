@@ -28,7 +28,8 @@ import { buildCutPlan, type CutPlan } from "./cut-plan";
 import { checkGate } from "./concat-gate";
 import { writeAnchors } from "./dhash-anchors";
 import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "./blockout";
-import { isLocationFail, keyframeEditPrompt, keyframeRequire, loadBaseCast, sceneRetryNormalize, sceneRetrySchema, sceneRetryUser } from "./keyframe-prompt";
+import { isLocationFail, keyframeEditPrompt, keyframeRequire, loadBaseCast, needsShotFacts, sceneRetryNormalize, sceneRetrySchema, sceneRetryUser } from "./keyframe-prompt";
+import { runPeStep } from "./pe-step";
 import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
 import type { H3GraphVariant } from "./h3-r2v-graph";
@@ -180,10 +181,10 @@ export function muxArgs(mp4: string, h3Wav: string, out: string): string[] {
   return args;
 }
 
-/** C-scene-hop: `--scene SCxx` narrows ONLY the H3 lane to one scene's shots
- *  (scene field, else beatId prefix `SCxx.`). Omitted = every shot, the
- *  existing whole-slate path. Zero matches throws — never silently fall back
- *  to burning the full slate's H3. */
+/** C-scene-hop: `--scene SCxx` narrows the stills/picture-QC lanes and the H3
+ *  lane to one scene's shots (scene field, else beatId prefix `SCxx.`).
+ *  Omitted = every shot, the existing whole-slate path. Zero matches throws —
+ *  never silently fall back to burning the full slate. */
 export function shotsForScene(shots: Shot[], scene?: string): Shot[] {
   if (!scene) return shots;
   const kept = shots.filter(
@@ -629,17 +630,42 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // throw must not fail the hop (WR1Q SC01 died on SH06)
     const planBoards = input.scene ? shotsForScene(continuity.boards, input.scene) : continuity.boards;
     const baseCast = job.drama ? loadBaseCast(projectsDir(), job.drama) : undefined;
+    // Card D 掣3: search-first PE runs BEFORE the packet is fed to /edit —
+    // every facts-needing shot without packet facts goes wigolo evidence →
+    // PE brain (nex :8017, qwen38 :8015 backup) → the rows land in
+    // require.facts and the Render JSON rides along as the screen spec.
+    // dry-run never POSTs a machine, so it skips the PE step and lets the
+    // facts_missing refuse-to-emit gate speak instead.
+    const peRenders = new Map<string, string>();
+    if (!input.dryRun) {
+      const needsFacts = timed.shots.filter((s) => needsShotFacts(s) && !(s.require?.facts?.length));
+      for (const shot of needsFacts) {
+        const started = Date.now();
+        const res = await runPeStep({
+          shotId: shot.id,
+          action: shot.action,
+          context: `${timed.title}｜${timed.location}｜${timed.timeOfDay}｜${timed.mood}`,
+          config: cfg.pe,
+          receiptFile: path.join(stillDir, `${shot.id}.pe_step.json`),
+        });
+        shot.require = { ...shot.require, facts: res.facts };
+        peRenders.set(shot.id, res.render);
+        await speak("stills", `${shot.id} search-first PE：wigolo＋${res.brain} 出 ${res.facts.length} 條 facts（${res.wigoloMs}ms 搜證，${Date.now() - started}ms 全程）。`);
+      }
+    }
     const stillPlans = planBoards.map((boardShot) => {
       const shot = timed.shots.find((s) => s.id === boardShot.id)!;
       const first = firstFlags[continuity.boards.indexOf(boardShot)]!;
       const prompt = keyframeEditPrompt(timed, shot, { first, ...(baseCast ? { cast: baseCast } : {}) });
+      const peRender = peRenders.get(shot.id);
+      const editPrompt = peRender ? `${prompt}\n\n【螢幕畫面 Render】\n${peRender}` : prompt;
       const require = keyframeRequire(shot);
       // D1a trace: soft edge invariants (boards→keyframe, keyframe→stills),
       // written for pass and fail alike, always before any QC gate can fail
-      const softRows = [...checkBoardsToKeyframe(timed.characters, shot, prompt), ...checkKeyframeToStills(shot, require)];
+      const softRows = [...checkBoardsToKeyframe(timed.characters, shot, editPrompt), ...checkKeyframeToStills(shot, require)];
       for (const row of softRows) appendViolation(jobDir(jobId), row);
       fs.writeFileSync(path.join(stillDir, `${shot.id}.require.json`), JSON.stringify(require, null, 2));
-      return { shot, first, prompt, require };
+      return { shot, first, prompt: editPrompt, require };
     });
 
     if (input.dryRun) {
@@ -984,6 +1010,11 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
 
         const reasons = result.checks.fail_reasons.join("; ") || "not GREEN";
         appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc", result.checks.fail_reasons));
+        // T36 law: fail_reasons go to events + violations only, never into the
+        // prompt — the old retry suffix taught the stills model to game its own
+        // QC by quoting its fail reasons back at it. retry = the 阿圖 packet
+        // re-issued verbatim (same base, same refs, same lane settings); if it
+        // fails again the job blocks below.
         emit(jobId, {
           agent: "pictureQc",
           level: "warn",
@@ -1182,8 +1213,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     open(toMotion, { slate: jobId, to: "motion" });
     await speak("motion", packetLine(toMotion));
     await speak("motion", `H3 R2V ${cfg.motion.comfyUrl} · <Video 1> motion only · 零 ref_images · 一鏡一 submit。`);
-    // C-scene-hop: the scene flag crops ONLY this loop — stills/QC/layout above
-    // ran full-slate; a no-match scene throws before any H3 is burned
+    // C-scene-hop: the scene flag crops the stills/QC lanes above and this
+    // motion loop; a no-match scene throws before any H3 is burned
     const motionShots = shotsForScene(stillPlans.map((p) => p.shot), input.scene);
     if (input.scene) {
       await speak("motion", `--scene ${input.scene} hop：燒 ${motionShots.length}/${stillPlans.length} 鏡，其餘唔郁。`);

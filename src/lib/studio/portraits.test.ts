@@ -72,6 +72,7 @@ test("T43 P1/P2: the portrait prompt carries no world line — sheet 夜街 toke
   assert.match(prompt, /#111111/);
   assert.match(prompt, /No other people/);
   assert.match(prompt, /no grey mannequins/);
+  assert.ok(prompt.includes("facing camera"), "front portrait keeps the frontal sentence (card C2: 正面保留原句)");
   assert.ok(!prompt.includes("Cast-A"), "identity comes from the image, not the name");
   // P2: callsheet 世界句入肖像＝FAIL — 逐個 world token 驗
   for (const banned of [
@@ -86,6 +87,21 @@ test("T43 P1/P2: the portrait prompt carries no world line — sheet 夜街 toke
   ]) {
     assert.ok(!prompt.includes(banned), `portrait prompt 唔准有 world token：${JSON.stringify(banned)}`);
   }
+});
+
+/** Card C2 (§0b 0920 angle-ref law): the 45° variant is the /edit sentence
+ *  that turns the front portrait into the three-quarter ref — the verified v2
+ *  formula names the 90° ban and the eye guard; v1 without them came out 90°. */
+test("C2: the 45° angle prompt is the /edit v2 sentence — 90° banned, both eyes kept, identity via Image-1", () => {
+  const prompt = portraitPrompt(characters[0]!, sheet, "45");
+  assert.ok(prompt.includes("唔好轉成90度純側面"), "the 90° ban is verbatim");
+  assert.ok(prompt.includes("45度"), "names the angle");
+  assert.ok(prompt.includes("雙眼同兩邊面頰"), "eye guard verbatim");
+  assert.ok(prompt.includes("Image-1"), "naming the image slot — it is an /edit prompt");
+  assert.ok(prompt.includes("照Image-1不變"), "face/hair/wardrobe locked to the front portrait");
+  assert.ok(prompt.includes("dark coat"), "wardrobe from the callsheet");
+  assert.ok(prompt.includes("Cast-A"), "the /edit prompt names the character (identity rides the image)");
+  assert.ok(!prompt.includes("facing camera"), "the frontal t2i sentence never leaks into the angle variant");
 });
 
 test("a plugged portrait is used as-is and never regenerated", async () => {

@@ -56,6 +56,9 @@ const baseSheet: CallSheet = {
   voiceover: "",
 } satisfies CallSheet;
 
+/** lane/crew tests address the fixture as `sheet`; seats calls it `baseSheet` — one object, two names (MERGE_THREE_0921) */
+const sheet: CallSheet = baseSheet;
+
 function shotWithProp(prop?: ShotProp): Shot {
   return {
     id: "SH07",
@@ -146,6 +149,62 @@ test("T32b C3: scene-retry 請求自帶 output_schema，例子用地下室", () 
   assert.ok(!/"location": "[^"]*府/.test(user.replace(/currentLocation[^,]*,/, "")), "schema 例唔用劇名");
   assert.ok(user.includes("灰模概念圖"), "Image-1 係灰模一句");
   assert.ok(user.includes(fx.shots[0]!.location), "currentLocation 原句照抄畀阿圖判斷（輸出先受 C5 管制）");
+
+});
+
+/** Card D 掣2: a text/data screen without require.facts refuses to emit —
+ *  the prompt_too_thin shape (fail loud at composition, never a thin emit). */
+const INFO_FACTS = [
+  { claim: "2026年6月私人住宅售價指數報323.2點", source: "https://example.hk/rvd", fetched_at: "2026-09-19" },
+  { claim: "指數連升13個月", source: "https://example.hk/rvd", fetched_at: "2026-09-19" },
+];
+
+function screenShot(overrides: Partial<Shot> = {}): Shot {
+  return {
+    ...shotWithProp(),
+    action: "螢幕顯示樓價指數走勢圖表",
+    ...overrides,
+  } satisfies Shot;
+}
+
+test("infographic shot without facts refuses to emit (facts_missing, prompt_too_thin shape)", () => {
+  assert.throws(
+    () => keyframeEditPrompt(sheet, screenShot(), { first: false }),
+    /facts_missing: SH07/,
+    "text screen with no facts throws",
+  );
+  assert.throws(
+    () => keyframeEditPrompt(sheet, screenShot(), { first: false }),
+    /去PE步攞/,
+    "the error says where facts come from (PE step)",
+  );
+});
+
+test("factsRequired flag alone (no 圖表 words) also trips the gate; normal shots never do", () => {
+  const flagged = shotWithProp();
+  flagged.require = { factsRequired: true };
+  assert.throws(() => keyframeEditPrompt(sheet, flagged, { first: false }), /facts_missing/);
+  // a plain story shot (no screen words, no flag) still composes untouched
+  const plain = keyframeEditPrompt(sheet, shotWithProp(coat), { first: false });
+  assert.ok(!plain.includes("上屏事實"), "no facts block on a plain shot");
+});
+
+test("facts shot with packet rows emits the facts block verbatim and carries facts into require", () => {
+  const shot = screenShot({ require: { facts: INFO_FACTS } });
+  const text = keyframeEditPrompt(sheet, shot, { first: false });
+  for (const f of INFO_FACTS) {
+    assert.ok(text.includes(f.claim), `claim verbatim: ${f.claim}`);
+    assert.ok(text.includes(f.source), "source verbatim");
+    assert.ok(text.includes(f.fetched_at), "fetched_at verbatim");
+  }
+  assert.ok(text.includes("【上屏事實】"), "facts block header present");
+  const req = keyframeRequire(shot);
+  assert.deepEqual(req.facts, INFO_FACTS, "QC require carries the same facts rows");
+});
+
+test("prop name alone (數據卡 as a prop) trips the facts gate too", () => {
+  const card = screenShot({ action: "遞出一張卡", props: [{ name: "數據卡", shape: ["卡"], forbid: [] }], require: {} });
+  assert.throws(() => keyframeEditPrompt(sheet, card, { first: false }), /facts_missing/);
 });
 
 test("garment prop: prompt names the coat as clothing, never a plow (SH07 class)", () => {
@@ -361,7 +420,7 @@ test("T32 rev2 A1: packet require.location writes the scene line — prompt carr
   const { fx, sheet } = ldSheet();
   const shots = packetShots(fx);
   const text = keyframeEditPrompt({ ...sheet, shots }, shots[0]!, { first: true });
-  assert.ok(text.includes(shots[0]!.require!.location), "scene line names the packet location");
+  assert.ok(text.includes(shots[0]!.require!.location!), "scene line names the packet location");
   assert.ok(text.includes(`；禁止${PACKET_NEGS.join("、")}`), "packet negatives assembled verbatim (Chau 17:48)");
   assert.ok(!text.includes(`，${fx.sheet.timeOfDay}，${fx.sheet.weather}`), "sheet 公版尾（timeOfDay，weather）absent");
   assert.ok(!text.includes(fx.sheet.location), "the sheet-wide location is gone too");
@@ -401,7 +460,7 @@ test("T32 rev2 A2: same-set later shots SH02–SH05 also drop the sheet tail", (
   const shots = packetShots(fx);
   for (const shot of shots.slice(1)) {
     const text = keyframeEditPrompt({ ...sheet, shots }, shot, { first: false });
-    assert.ok(text.includes(shot.require!.location), `${shot.id} names the packet location`);
+    assert.ok(text.includes(shot.require!.location!), `${shot.id} names the packet location`);
     assert.ok(!text.includes(`，${fx.sheet.timeOfDay}，${fx.sheet.weather}`), `${shot.id} no sheet tail`);
   }
 });
@@ -451,42 +510,51 @@ test("T32 classifier: fixture sets are indoor; outdoor markers override indoor-l
 });
 
 /** CARD_BUG3_0920: four banned sentences + families never appear in any /edit brief. */
+/** CARD_BUG3_0920 (Chau 0917 法1/2/4/5): the four banned sentences and their
+ *  families never appear in any composed /edit brief. */
 const BUG3_BANNED = [
-  "地平線",
-  "背景結構",
-  "室內外",
-  "完全照 Image-1",
-  "比例",
-  "鏡位",
-  "夜只由室內燈",
-  "身高照",
-  "只借五官",
-  "只借樣貌",
-  "髮際",
-  "正面肖像",
-  "唔好加第三人",
-  "唔好加人",
+  "地平線", // 法1: 場景結構唔跟灰模
+  "背景結構", // 法1
+  "室內外", // 法1
+  "完全照 Image-1", // 法1 原句尾巴
+  "比例", // 法1/4 同族: 灰模比例唔係錨
+  "鏡位", // 法1: 只準錨人偶位置/姿勢/佔位
+  "夜只由室內燈", // 法2 廢話句
+  "身高照", // 法4 無意義句
+  "只借五官", // 法5 閹 ref
+  "只借樣貌", // 法5 閹 ref（本 lane 原字眼）
+  "髮際", // 法5 閹 ref
+  "正面肖像", // 法6 逼角色正面對鏡頭
+  "唔好加第三人", // 法5 冇錨 negative
+  "唔好加人", // 法5 冇錨 negative（本 lane 原字眼）
 ];
 
-test("BUG3: the four Chau-banned sentences never appear (first/later, every prop class)", () => {
+test("BUG3: the four Chau-banned sentences never appear (first/later, every prop class, facts shots)", () => {
   const texts = [
-    keyframeEditPrompt(baseSheet, shotWithProp(coat), { first: true }),
-    keyframeEditPrompt(baseSheet, shotWithProp(coat), { first: false }),
-    keyframeEditPrompt(baseSheet, shotWithProp(decree), { first: true }),
-    keyframeEditPrompt(baseSheet, shotWithProp(), { first: false }),
+    keyframeEditPrompt(sheet, shotWithProp(coat), { first: true }),
+    keyframeEditPrompt(sheet, shotWithProp(coat), { first: false }),
+    keyframeEditPrompt(sheet, shotWithProp(decree), { first: true }),
+    keyframeEditPrompt(sheet, shotWithProp(), { first: false }),
+    keyframeEditPrompt(sheet, screenShot({ require: { facts: INFO_FACTS } }), { first: false }),
   ];
   for (const text of texts) {
     for (const b of BUG3_BANNED) assert.ok(!text.includes(b), `banned phrase "${b}" leaked:\n${text}`);
   }
 });
 
-test("BUG3: Image-N 對號 — each ref is the character's dressed body, facing follows Image-1", () => {
-  const text = keyframeEditPrompt(baseSheet, shotWithProp(coat), { first: true });
+test("BUG3: Image-1 anchors puppet 位置/姿勢/佔位 only; the change/keep pair is explicit (法1)", () => {
+  const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: true });
+  assert.ok(text.includes("人偶嘅位置、姿勢、佔位保持照 Image-1"), "keep side: 法1 allowed anchor list verbatim");
+  assert.ok(text.includes("變嘅係質感、材質同光線"), "change side: what the edit changes");
+});
+
+test("BUG3: Image-N 對號 — each ref is the character's dressed body, facing follows Image-1 (法5/6/9)", () => {
+  const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: true });
   assert.ok(text.includes("左起第1個人偶＝Image-2 嘅角色角色一"), "puppet 1 → Image-2");
   assert.ok(text.includes("左起第2個人偶＝Image-3 嘅角色角色二"), "puppet 2 → Image-3");
-  assert.ok(text.includes("面容、髮型同成套衫著照 Image-2"), "dressed-body ref");
-  assert.ok(text.includes("朝向同動作跟 Image-1 人偶"), "facing follows blockout");
-  assert.ok(text.includes("淨係得呢2個角色"), "people count anchored");
+  assert.ok(text.includes("面容、髮型同成套衫著照 Image-2"), "dressed-body ref, never face-only");
+  assert.ok(text.includes("朝向同動作跟 Image-1 人偶"), "facing follows the blockout, not forced frontal");
+  assert.ok(text.includes("淨係得呢2個角色"), "people count anchored to the puppets (法5)");
 });
 
 test("BUG3: scene truth source is ONE field — require.location, then shot.location, sheet tail last", () => {
@@ -547,6 +615,112 @@ test("L1b loadBaseCast: missing file / empty roster = no override; wardrobe over
   const text = keyframeEditPrompt(baseSheet, shotWithProp(coat), { first: true, cast });
   assert.ok(text.includes("紅大衣"), "base-cast wardrobe overrides the sheet");
   assert.ok(!text.includes("深藍乾濕褸"), "sheet wardrobe dropped when base-cast hits");
+
+});
+
+test("BUG3: the facts block rides AFTER the band — packet rows never pad the brief", () => {
+  const shot = screenShot({ require: { facts: INFO_FACTS } });
+  const text = keyframeEditPrompt(sheet, shot, { first: false });
+  assert.ok(text.includes("【上屏事實】"), "facts block appended");
+  const brief = text.split("\n\n【上屏事實】")[0]!;
+  assert.ok(cjkCount(brief) >= EDIT_MIN_CJK, "brief alone still clears the floor without the packet rows");
+  assert.ok(cjkCount(brief) <= EDIT_MAX_CJK, "brief alone stays under the ceiling");
+});
+
+/** Card C1 (FABLE_INTAKE_SORT_0920 序1, §0b 0920 釘): a refAngle "45" shot
+ *  feeds angle refs, so facing follows the slot's own Image — never the
+ *  standing frontal puppet; the 45° formula carries the eye guard + 90° ban;
+ *  the scene line and the compound location word are one string; 動作
+ *  (freeze frame + spatial sentence) rides after the band. Single mark —
+ *  the SH01 verified shape. */
+test("C1: refAngle 45 — facing follows Image-2 with eye guard + 90° ban; compound location verbatim; 動作 rides after the band", () => {
+  const shot = shotWithProp(coat);
+  shot.marks = [shot.marks[0]!];
+  shot.refAngle = "45";
+  shot.require = { location: "地下室檔案室", action: "俯身雙手撐地、上身抬起", pose: "體重由雙膝同雙手掌承住，大腿同地面成角度唔貼地" };
+  const text = keyframeEditPrompt(sheet, shot, { first: true });
+  assert.ok(text.includes("朝向跟 Image-2"), "the puppet's facing follows its own 45° ref");
+  assert.ok(text.includes("唔好轉成90度純側面"), "the 90° ban rides the 45° facing clause");
+  assert.ok(text.includes("雙眼"), "eye guard present");
+  assert.ok(text.includes("姿勢同佔位跟 Image-1 人偶"), "pose/occupancy still anchor Image-1");
+  assert.ok(!text.includes("朝向同動作跟 Image-1 人偶"), "the frontal-drag sentence is gone on a 45° shot");
+  assert.ok(text.includes("【場景】地下室檔案室"), "scene line carries the compound word verbatim (require.location 注入)");
+  assert.ok(
+    text.includes("【動作】俯身雙手撐地、上身抬起。體重由雙膝同雙手掌承住，大腿同地面成角度唔貼地。"),
+    "動作 block: freeze frame + spatial sentence, verbatim from the packet",
+  );
+  const brief = text.split("\n\n【動作】")[0]!;
+  const n = cjkCount(brief);
+  assert.ok(n >= EDIT_MIN_CJK && n <= EDIT_MAX_CJK, `brief stays in band with the 45° clause: ${n}`);
+});
+
+test("C1: the 45° clause costs band width — a fat crew refuses loud (prompt_too_thick, 法11)", () => {
+  // MERGE_THREE_0921: seats' trimmed sentences need five dressed bodies to blow
+  // the ceiling where the lane's two-hander did — same law, recalibrated mass
+  const many: Character[] = ["一", "二", "三", "四", "五"].map((suffix, i) => ({
+    id: `C${i}`,
+    name: `角色${suffix}`,
+    role: "舊同事",
+    wardrobe: "白襯衫",
+    palette: ["#111", "#222", "#333"] as [string, string, string],
+    voice: { pitchHz: 180, gender: "m" as const },
+  }));
+  const fatSheet: CallSheet = { ...sheet, characters: [...sheet.characters, ...many] };
+  const shot = shotWithProp(coat);
+  shot.refAngle = "45";
+  shot.marks = fatSheet.characters.map((c, i) => ({
+    characterId: c.id,
+    start: { x: 10 + i * 20, y: 50 },
+    end: { x: 10 + i * 20, y: 50 },
+    facing: 1,
+    handL: { x: 14 + i * 20, y: 45 },
+    handR: { x: 16 + i * 20, y: 45 },
+    footL: { x: 8 + i * 20, y: 80 },
+    footR: { x: 12 + i * 20, y: 80 },
+    gait: "plant",
+  }));
+  assert.throws(() => keyframeEditPrompt(fatSheet, shot, { first: true }), /prompt_too_thick/);
+});
+
+test("C1: absent refAngle stays front (old facing sentence, no 動作 line)", () => {
+  const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: true });
+  assert.ok(text.includes("朝向同動作跟 Image-1 人偶"), "front default unchanged");
+  assert.ok(text.includes("【動作】扯過件外套披上肩"), "boards action rides the 動作 slot when the packet is silent (0c636e9 fallback, MERGE_THREE_0921)");
+  assert.ok(!text.includes("90度"), "no 45° vocabulary on a front shot");
+});
+
+/** Card 1b (Chau 批①, §0b 0920 background-creep law): the 【不變】 lock rides
+ *  after the band as packet extras — walls/dressing/object positions held
+ *  verbatim, never counted into the 150–300 brief, ahead of the facts block. */
+test("C1b: require.unchanged emits the 【不變】 lock after the band, verbatim and outside the CJK count", () => {
+  const shot = shotWithProp(coat);
+  shot.require = {
+    location: "地下室檔案室",
+    unchanged: ["右後牆身照舊係空牆", "左邊檔案架同架上檔案照原位", "地下散住嘅文件照原位唔搬"],
+  };
+  const text = keyframeEditPrompt(sheet, shot, { first: false });
+  assert.ok(text.includes("【不變】以下保持不變："), "lock header verbatim");
+  assert.ok(text.includes("1. 右後牆身照舊係空牆"), "items verbatim, numbered");
+  assert.ok(text.includes("3. 地下散住嘅文件照原位唔搬"), "every item carried");
+  const brief = text.split("\n\n【不變】")[0]!;
+  const noKeep = shotWithProp(coat);
+  noKeep.require = { location: "地下室檔案室" };
+  const without = keyframeEditPrompt(sheet, noKeep, { first: false });
+  assert.ok(!without.includes("【不變】"), "no lock without require.unchanged — code never invents items");
+// MERGE_THREE_0921: 景別 rides after the lock (union extras order), so the
+  // no-lock text minus the with-lock text must equal exactly the lock block
+  const withText = text;
+  const lockStart = withText.indexOf("【不變】");
+  const lockBlock = withText.slice(lockStart, withText.indexOf("\n\n", lockStart));
+  assert.equal(cjkCount(withText) - cjkCount(without), cjkCount(lockBlock), "the lock is the only delta — it never pads the brief band");
+  const n = cjkCount(brief);
+  assert.ok(n >= EDIT_MIN_CJK && n <= EDIT_MAX_CJK, `brief alone stays in band: ${n}`);
+  // Editing PE pair order: the change extras (動作) then the keep lock, facts last
+  const both = shotWithProp(coat);
+  both.require = { facts: INFO_FACTS, unchanged: ["右後牆身照舊係空牆"], action: "俯身雙手撐地、上身抬起" };
+  const ftext = keyframeEditPrompt(sheet, both, { first: false });
+  assert.ok(ftext.indexOf("【動作】") < ftext.indexOf("【不變】"), "change extras before the keep lock");
+  assert.ok(ftext.indexOf("【不變】") < ftext.indexOf("【上屏事實】"), "keep lock before the facts block");
 });
 
 if (bareBun) {

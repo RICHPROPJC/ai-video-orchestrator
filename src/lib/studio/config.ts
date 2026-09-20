@@ -26,9 +26,31 @@ export type SlateConfig = {
     seed: number;
   };
   tts: { endpoint: string; model: string; promptWav: string; seed: number };
+  /** CARD_BUG3_0920 item4 (Fable): the photo-qc second eye now lives in config,
+   *  not just env. Empty secondEndpoint = not armed — judge GREEN stays capped
+   *  at PASS_UNCONFIRMED. Env SLATECREW_SECOND_ENDPOINT/SLATECREW_SECOND_MODEL
+   *  override (test seam, same chain seats photo-qc reads: opts → env → config). */
   pictureQc: { endpoint: string; model: string; secondEndpoint: string; secondModel: string };
   /** PACKAGE-QC-0917 眼：nex-n2.5 五路 describe（判官先係 pictureQc 端點）。空 endpoint＝fleet UNCONFIG（唔係 QC skip），live :8017 由 slatecrew.config.json 提供。 */
   nex: { endpoint: string; model: string };
+  /** Card D 掣3 search-first PE step: local brains only (nex :8017 first,
+   *  qwen38 :8015 backup). GLM cloud brains are banned for PE — thinking
+   *  bursts the content field (0919 wire receipts). */
+  pe: {
+    endpoint: string;
+    model: string;
+    fallbackEndpoint: string;
+    fallbackModel: string;
+    maxTokens: number;
+    wigoloClient: string;
+    timeoutMs: number;
+  };
+  mesher: {
+    endpoint: string;
+    blender: string;
+    textureResolution: number;
+    targetHeightM: number;
+  };
   soundQc: { endpoint: string; model: string };
   /** A3: every sense is a provider. Empty = the stage that needs it FAILs loud. */
   ocr: { endpoint: string; model: string };
@@ -67,6 +89,22 @@ const DEFAULTS: SlateConfig = {
   },
   pictureQc: { endpoint: "http://127.0.0.1:8015", model: "qwen38", secondEndpoint: "", secondModel: "" },
   nex: { endpoint: "", model: "nex-n2.5" },
+  pe: {
+    endpoint: "http://127.0.0.1:8017",
+    model: "nex-n2.5",
+    fallbackEndpoint: "http://127.0.0.1:8015",
+    fallbackModel: "qwen38",
+    // nex call-shape law: effort none + official sampling 0.7/0.95/40 + max_tokens >= 5000
+    maxTokens: 6000,
+    wigoloClient: "/mnt/ssd/u1_canvas_research/wigolo_research.py",
+    timeoutMs: 300_000,
+  },
+  mesher: {
+    endpoint: "http://127.0.0.1:8018",
+    blender: "/home/c/applications/blender-5.1.2-linux-x64/blender",
+    textureResolution: 512,
+    targetHeightM: 1.7,
+  },
   soundQc: { endpoint: "", model: "FunAudioLLM/SenseVoiceSmall" },
   ocr: { endpoint: "", model: "" },
   embed: { endpoint: "", model: "wemm-2b" },
@@ -94,6 +132,8 @@ export function loadConfig(): SlateConfig {
     tts: { ...DEFAULTS.tts, ...raw.tts },
     pictureQc: { ...DEFAULTS.pictureQc, ...raw.pictureQc },
     nex: { ...DEFAULTS.nex, ...raw.nex },
+    pe: { ...DEFAULTS.pe, ...raw.pe },
+    mesher: { ...DEFAULTS.mesher, ...raw.mesher },
     soundQc: { ...DEFAULTS.soundQc, ...raw.soundQc },
     ocr: { ...DEFAULTS.ocr, ...raw.ocr },
     embed: { ...DEFAULTS.embed, ...raw.embed },
@@ -117,6 +157,8 @@ export function loadConfig(): SlateConfig {
   if (auk) merged.tts.endpoint = auk;
   const aukRef = process.env.AUK_REF_WAV?.trim();
   if (aukRef) merged.tts.promptWav = aukRef;
+  const sf3d = process.env.SF3D_URL?.trim();
+  if (sf3d) merged.mesher.endpoint = sf3d;
   return merged;
 }
 

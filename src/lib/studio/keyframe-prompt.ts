@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { omittable } from "./script-contract";
-import type { CallSheet, Shot } from "./types";
+import type { CallSheet, Shot, ShotFact } from "./types";
 import type { QcRequire } from "./photo-qc";
 
 /** A prop's noun class decides its prompt template and its QC gate. Classes
@@ -85,8 +85,31 @@ export function isRoomNoun(location: string): boolean {
   return loc.length >= 2 && loc.length <= 8 && !INSTITUTION_RE.test(loc);
 }
 
-/** Fable 00:20 U1.5=A: the /edit brief is 150–300 中文字 — a six-line
- * telegram is refuse-to-emit, not "written clearly". CJK count only. */
+/** Chau 0919 search-first PE law: a frame that shows text/data (infographic,
+ *  手機畫面, 數據卡, 走勢圖) must be composed from packet facts — numbers
+ *  never come from the model's head. Structural vocabulary only, same register
+ *  as propNounClass; the seat can also mark the shot with require.factsRequired. */
+const TEXT_SCREEN_RE =
+  /infograph|信息圖|資訊圖|圖表|數據卡|數字卡|文字圖|走勢圖|柱狀|折線|圓餅|螢幕截圖|屏幕截圖|手機畫面|畫面顯示|chart|dashboard/i;
+
+export function needsShotFacts(shot: Shot): boolean {
+  if (shot.require?.factsRequired) return true;
+  return TEXT_SCREEN_RE.test(shot.action) || (shot.props ?? []).some((p) => TEXT_SCREEN_RE.test(p.name));
+}
+
+/** Assemble packet facts verbatim for the /edit prompt. Code assembles, never
+ *  authors — every number on screen must trace to one of these rows. */
+export function factsBlock(facts: ShotFact[]): string {
+  const lines = ["【上屏事實】以下數字／日期／名逐字照抄上屏，唔准改寫、唔准四捨五入、唔准自己補："];
+  facts.forEach((f, i) => lines.push(`${i + 1}. ${f.claim}（來源：${f.source}，${f.fetched_at} 摳返嚟）`));
+  return lines.join("\n");
+}
+
+/** BUG3 (CARD_BUG3_0920, Chau 0917 法1/2/4/5): the /edit brief band — 150–300
+ *  中文字. Under 150 the packet is too thin (six-line telegram refuses to emit,
+ *  Fable 00:20 U1.5=A); over 300 it is compensation bloat (Chau 0917 法11:
+ *  prompt 只解釋底圖係咩，唔負責補償). CJK only — Image-N tokens and URLs never
+ *  count. The facts block rides AFTER the band: packet data, not brief prose. */
 export function cjkCount(text: string): number {
   return (text.match(/[一-鿿]/g) ?? []).length;
 }
@@ -210,8 +233,23 @@ export function loadBaseCast(projectsRoot: string, drama: string): BaseCast | un
 
 /** BUG3 cookbook: Image-N 對號＋着衫 ref／變保對／人數錨。Chau 0917 法1/2/4/5
  *  四句禁句唔准出。150–300 CJK。【動作】同景別跟 Fable 0c636e9（QC 要見原句）。
- *  場景句走 sceneLine（T32 室內唔帶 sheet 天氣），唔抄 Wire 嗰句 sheet 尾拼接。 */
+ *  場景句走 sceneLine（T32 室內唔帶 sheet 天氣），唔抄 Wire 嗰句 sheet 尾拼接。
+ *  c123 §0b: on a refAngle "45" shot the slot's ref IS the angle version and
+ *  facing follows it (a frontal ref on a sideways shot drags the face back
+ *  to camera — the B-lane regression); the 45° formula names the eye guard and
+ *  the 90° ban (angle-test-45 receipt). require.action/pose (freeze frame +
+ *  spatial sentence) and require.unchanged (the 【不變】 background-creep lock)
+ *  ride AFTER the band, same slot as facts. */
 export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: boolean; cast?: BaseCast }): string {
+  // refuse-to-emit (Card D 掣2, prompt_too_thin 嘅形): a text/data screen with
+  // no packet facts has nothing honest to put on screen — the generator refuses
+  // rather than let the model invent numbers
+  const facts = shot.require?.facts ?? [];
+  if (needsShotFacts(shot) && facts.length === 0) {
+    throw new Error(
+      `facts_missing: ${shot.id} 文字圖／infographic 類 shot 冇 require.facts — 文字圖要facts，去PE步攞（search-first PE：wigolo 搜證→PE 腦寫入 require.facts 先准出；Card D 掣2）`,
+    );
+  }
   const ordered = [...shot.marks].sort((a, b) => a.start.x - b.start.x);
   const chars = ordered.map((m) => {
     const hit = sheet.characters.find((c) => c.id === m.characterId);
@@ -220,33 +258,43 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
   });
   const prop = shot.props?.[0];
   const cls = prop ? propNounClass(prop.name) : null;
+  // §0b ref-matching (card C1): on a "45" shot the slot's ref is the character's
+  // angle version, so facing follows THAT image — never the standing frontal
+  // puppet, which drags the face back to camera. Pose/occupancy stay with
+  // Image-1. The 45° sentence carries the law-mandated eye guard + 90° ban.
+  const facing45 = shot.refAngle === "45";
+  const facing = (slot: number) =>
+    facing45
+      ? `朝向跟 Image-${slot} 嘅三份一側面45度：仍要見到雙眼同兩邊面頰，唔好轉成90度純側面；姿勢同佔位跟 Image-1 人偶。`
+      : `朝向同動作跟 Image-1 人偶。`;
+  // Image-N 對號＋每張作用：puppet i+1 wears character from Image-i+2 — the ref
+  // is the DRESSED body (面容＋衫著, Chau 法5/9), facing per the shot's refAngle;
+  // wardrobe prefers the drama's base cast on disk (loadBaseCast, Ivo bug4)
   const people = chars
     .map((c, i) => {
       const wardrobe = opts.cast?.characters.find((e) => e.id === c.id)?.wardrobe ?? c.wardrobe;
-      return `左起第${i + 1}個人偶＝Image-${i + 2} 嘅角色${c.name}：面容、髮型同成套衫著照 Image-${i + 2}——${wardrobe}；朝向同動作跟 Image-1 人偶。`;
+      return `左起第${i + 1}個人偶＝Image-${i + 2} 嘅角色${c.name}（${c.role}）：面容、髮型同成套衫著照 Image-${i + 2}——${wardrobe}；${facing(i + 2)}`;
     })
     .join("");
   let props = "";
   if (prop && cls === "garment") {
+    // clothing on the body, never farm vocabulary — a coat drawn as a plow blade is the SH07 regression
     props = `【道具】${prop.name}係一件衣物：披上膊頭或者着住喺身嘅衣服，有領有袖，布料隨姿勢自然垂落，屬於角色造型一部分。`;
   } else if (prop && cls === "document") {
-    props = `【道具】${prop.name}係薄而平嘅紙本文書，喺手中展開或者攤開，上面有字有印；佢係文具唔係工具，畫面冇農具或長柄器具。`;
+    // flat paper document in the hands — never the plow sentence, never a tool
+    props = `【道具】${prop.name}係一張紙本文書：薄而平，可以喺手中展開、遞出或者攤開睇，上面有字有印；佢係文具唔係工具，畫面冇任何農具或者長柄器具。`;
   } else if (prop && cls === "system") {
     // chart + UI frame + text labels; never plow, never a screen/forbid echo
     props = `【道具】${prop.name}係一個懸浮喺半空嘅全息投影界面：半透明光造影像微微發光，畫面要見齊三層結構——數據圖表圖形、UI介面框線、細小文字標籤，全部懸浮喺角色手上方；佢係光造嘅投影，冇機身冇金屬邊框，唔係實體機器。`;
   } else if (prop) {
-    props = `【道具】人偶手中／兩人之間嘅長條係${prop.name}：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具；唔係${prop.forbid.join("、")}。`;
+    // "one blade, one tool" — U1.5's default farm tool is a multi-tine rake
+    props = `【道具】人偶手中／兩人之間嘅長條係${prop.name}：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具，背景冇任何其他工具；唔係${prop.forbid.join("、")}。`;
   }
+  // 變咗＋保持咩唔變：質感/材質/光線變，人偶位置/姿勢/佔位不變（法1準錨清單）；
+  // 人數錨住人偶數（法5：錨定句，唔係冇錨 negative）
   const keep = opts.first
     ? `畫面人數照 Image-1 人偶：淨係得呢${chars.length}個角色，每個嘅面容同衫著照自己嗰張 Image。`
     : `Image-2 係上一鏡嘅定格：樣貌、衣服${prop ? `、${prop.name}` : ""}、光線同色調照 Image-2；姿勢同企位跟 Image-1。`;
-  // 【動作】／景別 are packet facts (Fable 0c636e9: photo-qc gates on them).
-  // They ride AFTER the 150–300 band like Card D facts — long drama beats
-  // must not blow Chau 法11's brief ceiling.
-  const extras = [
-    shot.action ? `【動作】${shot.action}` : "",
-    SIZE_LINE[shot.size] ?? "",
-  ].filter((s) => s.length > 0).join("\n\n");
   const brief = [
     "【底圖】Image-1 係 Blender 灰模概念圖，人偶係角色佔位。轉 photoreal——變嘅係質感、材質同光線；人偶嘅位置、姿勢、佔位保持照 Image-1。",
     `【人物】${people}`,
@@ -255,15 +303,56 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
     "【光影材質】布料、紙、金屬各有質感；手、衣擺、道具同地面有接觸遮擋。",
     keep,
   ].filter((s) => s.length > 0).join("\n\n");
+  // ceiling is cookbook-only (94f8b74: the 300 ceiling stays brief); the floor
+  // counts the emitted prompt including extras (6b72eb2 recalibration)
   const nBrief = cjkCount(brief);
   if (nBrief > EDIT_MAX_CJK) {
     throw new Error(`prompt_too_thick: ${shot.id} /edit 組到 ${nBrief} 中文字（上限 ${EDIT_MAX_CJK}）— packet 太肥，prompt 只解釋底圖唔補償（Chau 0917 法11）；收細 packet 再出`);
   }
-  const text = extras ? `${brief}\n\n${extras}` : brief;
+  // extras ride after the band (packet data, not brief prose):
+  // 動作 → 不變 → 景別 → facts (freeze sentence, background lock, framing, screen copy)
+  const action = actionBlock(shot);
+  const lock = unchangedBlock(shot);
+  const sizeLine = SIZE_LINE[shot.size] ?? "";
+  let text = action ? `${brief}\n\n${action}` : brief;
+  if (lock) text = `${text}\n\n${lock}`;
+  if (sizeLine) text = `${text}\n\n${sizeLine}`;
+  if (facts.length > 0) text = `${text}\n\n${factsBlock(facts)}`;
   if (cjkCount(text) < EDIT_MIN_CJK) {
     throw new Error(`prompt_too_thin: ${shot.id} /edit 只組到 ${cjkCount(text)} 中文字（最少 ${EDIT_MIN_CJK}）— packet 太薄，生成器拒出（Fable 00:20 U1.5=A）`);
   }
   return text;
+}
+
+/** The 【動作】 line, assembled verbatim from the packet: require.action is the
+ *  freeze-frame sentence (zero process verbs is packet discipline — the B-lane
+ *  law), require.pose the body-part spatial sentence copied from the POSE
+ *  LEXICON register. Rides AFTER the band like the facts block (oneshot 0920
+ *  verified shape). Fable 0c636e9 fallback (94f8b74 floor lock): with no
+ *  packet freeze sentence the boards' own shot.action rides the same slot —
+ *  photo-qc gates on the action line either way, so the prompt must carry it. */
+export function actionBlock(shot: Shot): string {
+  const parts = [shot.require?.action, shot.require?.pose]
+    .map((s) => s?.trim())
+    .filter((s): s is string => Boolean(s))
+    .map((s) => (s.endsWith("。") ? s.slice(0, -1) : s));
+  if (parts.length === 0) {
+    const fallback = shot.action?.trim();
+    if (!fallback) return "";
+    return `【動作】${fallback.endsWith("。") ? fallback.slice(0, -1) : fallback}。`;
+  }
+  return `【動作】${parts.join("。")}。`;
+}
+
+/** The 【不變】 lock, assembled verbatim from require.unchanged — §0b 0920
+ *  background-creep law (Chau 批①, Editing PE「變咩＋保持咩不變」): every edit
+ *  hop names the walls / set dressing / object positions that must stay.
+ *  Rides AFTER the band with the other extras; empty when the packet carries
+ *  none — code never invents items. */
+export function unchangedBlock(shot: Shot): string {
+  const items = (shot.require?.unchanged ?? []).map((s) => s?.trim()).filter((s): s is string => Boolean(s));
+  if (items.length === 0) return "";
+  return `【不變】以下保持不變：\n${items.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
 }
 
 /** what photo QC requires of this shot's keyframe: the marks decide people_count;
@@ -275,12 +364,17 @@ export function keyframeRequire(shot: Shot): QcRequire {
   const cls = prop ? propNounClass(prop.name) : null;
   const heldTool = prop && (cls === "tool" || cls === "system") ? prop : undefined;
   const toolForbid = heldTool ? scrubSystemDisplayForbid(heldTool.name, heldTool.forbid) : undefined;
+  const facts = shot.require?.facts ?? [];
+  // the QC action key mirrors what actionBlock emits (require.action first,
+  // else the boards line) — prompt and gate must read one source (0c636e9)
+  const actionKey = shot.require?.action?.trim() || shot.action;
   return {
     people_count: new Set(shot.marks.map((m) => m.characterId)).size,
     grey_blocks: false,
     ...(shot.location ? { location: shot.location } : {}),
-    ...(shot.action ? { action: shot.action } : {}),
+    ...(actionKey ? { action: actionKey } : {}),
     ...(shot.size ? { size: shot.size } : {}),
     ...(heldTool ? { tool: heldTool.name, tool_shape: heldTool.shape, tool_forbid: toolForbid } : {}),
+    ...(facts.length ? { facts } : {}),
   };
 }

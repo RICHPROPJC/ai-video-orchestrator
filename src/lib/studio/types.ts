@@ -111,12 +111,60 @@ export type Character = {
 
 export type Stance = "stand" | "lean" | "crouch";
 
+/** §0b angle-ref law (Chau 0920): which angle version a shot's Image ref slots
+ *  carry — "45" = the three-quarter ref (a frontal ref on a sideways shot
+ *  drags the face back to camera). Absent = "front". 90° is prompt-forbidden,
+ *  never a value here. */
+export type RefAngle = "front" | "45";
+
 export type ShotProp = {
   name: string;
   /** characterId of the mark whose hands hold it */
   heldBy?: string;
   shape: string[];
   forbid: string[];
+};
+
+/** Chau 0919 search-first PE law: one evidence row behind every number a
+ *  frame puts on screen. Packet-authored (boards seat or the PE step writing
+ *  wigolo results back) — code assembles these verbatim, never authors them. */
+export type ShotFact = {
+  claim: string;
+  source: string;
+  /** YYYY-MM-DD, the day the evidence was fetched */
+  fetched_at: string;
+};
+
+export type ShotRequire = {
+  /** evidence rows for text/data screens; a facts-needing shot with none refuses to emit */
+  facts?: ShotFact[];
+  /** the seat marks this shot a text/data screen even when the action words don't say it */
+  factsRequired?: boolean;
+  /** packet scene room — the ONE scene truth source (Fable 1d9bb51):
+   *  keyframeEditPrompt reads require.location ?? shot.location, sheet tail
+   *  last. Prompt and photo-qc gate on this single field. Compound place
+   *  words are the point (地下室檔案室, not 地下室): the word the eye must
+   *  find is the word the packet wrote — never enum-locked to one room. */
+  location?: string;
+  /** B-lane freeze-frame sentence — the pose held at its instant, zero
+   *  process verbs. Packet-authored (boards copies the verified sentence);
+   *  the prompt carries it verbatim, riding after the brief band. */
+  action?: string;
+  /** body-part spatial sentence at 體重由邊度承住 grade (POSE_LEXICON
+   *  register) — the packet copies the lexicon sentence, code only assembles;
+   *  the vocabulary itself never moves into src. */
+  pose?: string;
+  /** background-creep lock (§0b 0920 編輯漂移, Chau 批①): the 【不變】 list —
+   *  background walls / set dressing / left-right object positions every edit
+   *  hop must hold unchanged. Packet-authored, one clause per item; rides
+   *  after the brief band with the other extras. */
+  unchanged?: string[];
+  /** T32 camera line — eye/high/low picks the still's light sentence
+   *  (keyframe-prompt 均勻/低位/頂光); boards-expand copies shot.angle in. */
+  angle?: "eye" | "high" | "low";
+  /** packet-authored ban list per 道具/場景類別 — keyframeEditPrompt
+   *  echoes it as 唔準/唔好 lines (Chau 17:48). */
+  negatives?: string[];
 };
 
 export type Shot = {
@@ -147,11 +195,15 @@ export type Shot = {
     stance?: Stance;
     stanceEnd?: Stance;
   }[];
+  /** callsheet column: the angle of the refs this shot's Image slots hold;
+   *  keyframeEditPrompt aims the facing sentence at the ref when "45".
+   *  Optional — absent reads as "front". */
+  refAngle?: RefAngle;
   props?: ShotProp[];
   /** T32 rev2: 阿圖 packet 場景 slot — boards author this per shot (sealed+zod);
    * the stills scene sentence reads it, sheet tail is only the fallback.
    * Chau 17:48: negatives are packet data (bans authored per 道具/場景類別). */
-  require?: { location: string; angle?: "eye" | "high" | "low"; negatives?: string[] };
+  require?: ShotRequire;
   stillPrompt: string;
   motionPrompt: string;
   /** which scene and beat the seats cut this shot from */
@@ -273,6 +325,8 @@ export type JobRecord = {
     qcReport?: string;
     cutPlan?: string;
     concatGate?: string;
+    /** h3-prose scene preview (lane/crew motion prose card): motion/scene-preview.mp4 */
+    scenePreview?: string;
   };
   error?: string;
 };

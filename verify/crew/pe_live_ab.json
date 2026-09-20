@@ -1,0 +1,36 @@
+{
+  "tool": "slatecrew.pe_step",
+  "ts": "2026-09-19T15:10:39.006Z",
+  "shot": "LIVE-AB",
+  "facts": [
+    {
+      "claim": "香港私人住宅售價指數最新走勢",
+      "source": "Century21香港樓巿研究",
+      "fetched_at": "2026-07-16"
+    },
+    {
+      "claim": "2026年7月二手私人住宅物業售價指數：321.5",
+      "source": "https://www.c21.hk/Marketing/Analysis?type=ResidentialPriceIndex",
+      "fetched_at": "2026-07-16"
+    },
+    {
+      "claim": "較6月份的323按月下跌0.46%",
+      "source": "https://www.c21.hk/Marketing/Analysis?type=ResidentialPriceIndex",
+      "fetched_at": "2026-07-16"
+    },
+    {
+      "claim": "較2025年7月份的288.1上升11.59%",
+      "source": "https://www.c21.hk/Marketing/Analysis?type=ResidentialPriceIndex",
+      "fetched_at": "2026-07-16"
+    },
+    {
+      "claim": "尚未公佈的8月份售價指數有機會橫行在320至322點之間徘徊",
+      "source": "https://www.c21.hk/Marketing/Analysis?type=ResidentialPriceIndex",
+      "fetched_at": "2026-07-16"
+    }
+  ],
+  "render": "{\"main\":\"香港私人住宅售價指數最新走勢數據卡\",\"visible_text\":[\"香港私人住宅售價指數最新走勢\",\"2026年7月二手私人住宅物業售價指數：321.5\",\"較6月份的323按月下跌0.46%\",\"較2025年7月份的288.1上升11.59%\",\"尚未公佈的8月份售價指數有機會橫行在320至322點之間徘徊\"],\"quantity\":{\"facts\":5,\"data_rows\":4},\"layout\":\"直式手機畫面，上方為標題與主數據，其下依次排列兩個比較數據及一個預測數據\",\"constraints\":\"只保留facts列出的5項資訊\",\"excluded\":[\"未列出的數據、日期及名稱\"]}",
+  "brain": "nex-n2.5",
+  "question": "手機畫面顯示香港私人住宅售價指數最新走勢數據卡",
+  "wigoloMs": 81718
+}

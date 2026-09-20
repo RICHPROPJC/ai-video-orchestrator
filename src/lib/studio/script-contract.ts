@@ -5,7 +5,19 @@ export const SCENE_ID_RE = /^SC\d{2}$/;
 export const BEAT_ID_RE = /^SC\d{2}\.B\d{2}$/;
 
 export const DIALOGUE_MAX_CHARS = 32;
-export const ACTION_MAX_CHARS = 120;
+/** T38: 120 let literary sentences through and T35's 0.5 gate killed the
+ *  37-gram SH01 action — a beat is one filmable move, short by construction. */
+export const ACTION_MAX_CHARS = 48;
+
+/** T38 visible-verb starter list (跪／押／提／畫／坐／站… curated, extensible
+ *  by card): an action must contain at least one verb a camera can see, so
+ *  description cannot pose as action. Lenient by design — any listed char
+ *  passes; the refine message teaches the fix on retry. */
+export const VISIBLE_ACTION_VERBS =
+  "站坐跪躺臥蹲企走跑行轉停退追拉推扯拖拽抓握提拎揹背扛抬舉伸縮放擱掛遞收拋扔擲撿拾掉按壓押指點畫寫塗擦抹掃洗倒灑撒撕拍打踢踏踩跳跌撲滾爬滑衝撞倚靠挨扶摟抱攬揮搖望看望瞧瞄盯聽聞嗅咬嚼吞喝咳嘆笑喊叫唱講哭戴脫著解鬆綁鎖扣";
+export function hasVisibleActionVerb(action: string): boolean {
+  return [...VISIBLE_ACTION_VERBS].some((v) => action.includes(v));
+}
 const BEATS_PER_SCENE_MIN = 4;
 const BEATS_PER_SCENE_MAX = 12;
 
@@ -156,7 +168,13 @@ export function outlineSchema(ctx: { targetSec: number; castRoster: string[]; ra
 
 const beatShape = z.object({
   id: z.string().regex(BEAT_ID_RE, "beat id must be SCxx.Byy"),
-  action: z.string().min(1).max(ACTION_MAX_CHARS),
+  action: z
+    .string()
+    .min(1)
+    .max(ACTION_MAX_CHARS)
+    .refine(hasVisibleActionVerb, {
+      message: `action 要有一個鏡頭見得到嘅動詞（跪／押／提／畫／坐／站…），唔係一段描寫`,
+    }),
   dialogue: omittable(z.string().max(DIALOGUE_MAX_CHARS)),
   speaker: omittable(z.string().min(1).max(12)),
   emotion: omittable(z.string().min(1).max(20)),

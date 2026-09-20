@@ -13,15 +13,21 @@ const CAST_PER_SHOT_MAX = 3;
  *  normalised before they get here, so holding every scene holds the film. */
 export const SCENE_BUDGET_TOLERANCE = 0.09;
 
+/** The b5/b6 narrow-slot vocabularies, exported so the boards desk's pre-send
+ *  self-check (padBoardDurations) repairs against the same enums zod gates. */
+export const SLOT_VALUES = ["L", "C", "R"] as const;
+export const DEPTH_VALUES = ["near", "mid", "far"] as const;
+export const STANCE_VALUES = ["stand", "lean", "crouch"] as const;
+
 const castSchema = z.object({
   characterId: z.string().regex(CHARACTER_ID_RE),
-  slot: z.enum(["L", "C", "R"]),
-  depth: z.enum(["near", "mid", "far"]),
+  slot: z.enum(SLOT_VALUES),
+  depth: z.enum(DEPTH_VALUES),
   facing: z.union([z.literal(1), z.literal(-1)]),
   gait: z.enum(["plant", "walk", "reach", "turn"]),
-  stance: z.enum(["stand", "lean", "crouch"]),
-  stanceEnd: omittable(z.enum(["stand", "lean", "crouch"])),
-  travelTo: omittable(z.enum(["L", "C", "R"])),
+  stance: z.enum(STANCE_VALUES),
+  stanceEnd: omittable(z.enum(STANCE_VALUES)),
+  travelTo: omittable(z.enum(SLOT_VALUES)),
 });
 
 const propSchema = z.object({
@@ -29,6 +35,14 @@ const propSchema = z.object({
   heldBy: omittable(z.string().regex(CHARACTER_ID_RE)),
   shape: z.array(z.string().min(1).max(12)).min(1).max(5),
   forbid: z.array(z.string().min(1).max(12)).max(8),
+});
+
+/** Card D 0919: an on-screen fact row. Packet-authored — 阿圖 may pre-author,
+ *  the search-first PE step writes wigolo evidence here; code only assembles. */
+const factSchema = z.object({
+  claim: z.string().min(1).max(200),
+  source: z.string().min(1).max(200),
+  fetched_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "fetched_at 要 YYYY-MM-DD"),
 });
 
 const boardShotShape = z.object({
@@ -43,16 +57,20 @@ const boardShotShape = z.object({
   cast: z.array(castSchema).min(1).max(CAST_PER_SHOT_MAX),
   props: omittable(z.array(propSchema).max(3)),
   /** T32 rev2: per-shot scene slot the boards seat authors — location (and
-   * optionally its own light angle) the stills prompt must follow. Chau 17:48:
-   * negatives 阿圖按道具/場景類別填；毒詞（霓虹/neon/night）連 negative 都落閘。
-   * T32b C5（Chau 22:24）：location 要係 2–8 字場所名詞，機構全名歸 heading。 */
+   *  optionally its own light angle) the stills prompt must follow. Chau 17:48:
+   *  negatives 阿圖按道具/場景類別填；毒詞（霓虹/neon/night）連 negative 都落閘。
+   *  T32b C5（Chau 22:24）：location 要係 2–8 字場所名詞，機構全名歸 heading。
+   *  Card D（MERGE_THREE union）：facts 同 factsRequired 同呢個 slot 一齊載
+   *  （文字圖冇 facts 唔准出）；location 讀填——facts-only require 係合法形。 */
   require: omittable(
     z.object({
-      location: z.string().min(2).max(8),
+      location: omittable(z.string().min(2).max(8)),
       angle: omittable(z.enum(["eye", "high", "low"])),
       negatives: omittable(z.array(z.string().min(1).max(12)).min(1).max(6)),
+      facts: omittable(z.array(factSchema).min(1).max(8)),
+      factsRequired: omittable(z.boolean()),
     })
-      .refine((req) => isRoomNoun(req.location), {
+      .refine((req) => req.location === undefined || isRoomNoun(req.location), {
         message: "location 要係 2–8 字場所名詞（地下室、宿舍、走廊），唔係機構全名",
         path: ["location"],
       })

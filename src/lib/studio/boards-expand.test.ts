@@ -63,7 +63,7 @@ function scriptOf(sceneCount: number, beatsPerScene: number, targetSec: number):
       const spoken = b % 2 === 0;
       return {
         id: `${scene.id}.B${String(b + 1).padStart(2, "0")}`,
-        action: `beat ${s + 1}-${b + 1} action`,
+        action: `行一步講一句 ${s + 1}-${b + 1}`,
         ...(spoken ? { dialogue: `line ${s + 1}-${b + 1}`, speaker: b % 4 === 0 ? "Cast-A" : "Cast-B" } : {}),
       };
     }),

@@ -19,6 +19,7 @@ import {
   pinQcAccepted,
   prepEyeLegs,
   resolveSecondEye,
+  factTokens,
   runPhotoQc,
   runSecondEye,
   sameRequire,
@@ -1244,6 +1245,51 @@ test("T43b: renderRequireLines arms the judge with the plain-background item", (
     whole: "x", TL: "", TR: "", BL: "", BR: "",
   });
   assert.ok(!still.includes("純色平面背景"), "keyframe stills prompt shape unchanged");
+});
+
+/** Card D 掣4: the judge's comparison target widens from the task text to the
+ *  facts text — numbers/dates/names verbatim against the blind description
+ *  (the 「今年2021年9月」screen slip is exactly this gate). */
+const FACT = { claim: "2026年6月私人住宅售價指數323.2點", source: "https://example.hk/rvd", fetched_at: "2026-09-19" };
+const FACT_DESC = "螢幕上面寫住2026年6月私人住宅售價指數323.2點，旁邊有走勢線。";
+
+test("factTokens: dates and numbers are lifted as written; name cores keep boundary chars out", () => {
+  const tokens = factTokens(FACT.claim);
+  assert.ok(tokens.includes("2026年6月"), "date atom in written form");
+  assert.ok(tokens.includes("323.2"), "number atom with decimal");
+  assert.ok(tokens.includes("私人住宅售價指數"), "name core without 月/點 pollution");
+  assert.ok(!tokens.includes("月私人住宅售價指數"), "no boundary-polluted run");
+});
+
+test("judge facts: every atom on screen verbatim → GREEN", () => {
+  const v = judge(FACT_DESC, { people_count: null }, { facts: [FACT] });
+  assert.equal(v.checks.facts, true);
+  assert.equal(v.status, "GREEN");
+});
+
+test("judge facts: one wrong number on screen → FAIL naming the missing atom", () => {
+  const wrongNumber = FACT_DESC.replace("323.2", "332.2");
+  const v = judge(wrongNumber, { people_count: null }, { facts: [FACT] });
+  assert.equal(v.checks.facts, false);
+  assert.equal(v.status, "FAIL");
+  assert.ok(v.checks.fail_reasons.some((r) => r.includes("323.2")), "the missing atom is named");
+});
+
+test("judge facts: a year slipped onto the screen (今年2021年9月 regression) → FAIL", () => {
+  const slipped = "螢幕寫住今年2021年9月私人住宅售價指數323.2點。";
+  const v = judge(slipped, { people_count: null }, { facts: [FACT] });
+  assert.equal(v.checks.facts, false);
+  assert.ok(v.checks.fail_reasons.some((r) => r.includes("2026年6月")), "the true date is demanded");
+});
+
+test("keyframeRequire carries packet facts into the QC require", () => {
+  const shot = {
+    id: "SH01",
+    marks: [{ characterId: "A" }],
+    require: { facts: [FACT] },
+  };
+  const req = keyframeRequire(shot as unknown as Parameters<typeof keyframeRequire>[0]);
+  assert.deepEqual(req.facts, [FACT]);
 });
 
 if (cases.length > 0) {

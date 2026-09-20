@@ -4,4 +4,4 @@
 - [g3] schema.missing field=summary saw=placeholders rule=Summary or description must not contain placeholder text; rewrite to remove any template tokens. hits=1 status=trial src=SC-0915-LD0F
 - [g4] machine.func field=loadBaseCast saw=undefined rule=Avoid calling import_keyframe_prompt.loadBaseCast directly; the function reference is broken in the current environment. hits=1 status=trial src=SC-0915-LD0F
 - [g5] machine.auth field=job_error saw=password rule=Ensure SSH password env vars are set before running scp routes. hits=1 status=trial src=SC-0915-LD0F
-- [g6] machine.check field=shot_list saw=Missing rule=Ensure all stills are generated before running picture QC; missing /edit inputs cause retry failures. hits=1 status=trial src=SC-0915-LD0F
+- [g6] machine.check field=shot_list saw=Missing rule=--scene hop 嗰陣，picture QC 嘅 geometry 預檢只可以對 hop 自己嗰幕嘅 shots（同 stills／QC lane 一齊 crop），唔可以用成個 slate 嘅 shot list 去判 missing stills——其餘幕嘅 stills 係其他 hop 嘅事。 hits=1 status=trial src=SC-0915-LD0F
