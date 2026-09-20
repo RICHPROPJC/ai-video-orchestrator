@@ -19,6 +19,8 @@ export type H3SubmitReceipt = {
   frames: number;
   steps: number;
   seed: number;
+  /** keyframe anchors as wired into H3Keyframes.positions (audit-visible) */
+  keyframe_positions: string;
   prompt_id: string | null;
   uploads: {
     wav: string;
@@ -26,6 +28,10 @@ export type H3SubmitReceipt = {
     kf_start: string;
     kf_end: string | null;
     ref_images: string[];
+    /** A-only UI/infographic photo refs (card ③b) */
+    ui_photos: string[];
+    /** A-only montage timing ref wav (card ③a); null = none */
+    audio_timing: string | null;
   };
   output?: { filename: string; subfolder?: string; bytes: number };
   graph: unknown;
@@ -66,8 +72,12 @@ export async function submitH3Shot(opts: {
   blockoutMp4: string;
   kfStart: string;
   kfEnd?: string;
-  /** B/BKF: still then portrait files on disk (live upload); dry-run uses names only */
+  /** B/BKF (documented fallback): still then portrait files on disk (live upload); dry-run uses names only */
   refImageFiles?: string[];
+  /** A only (card ③b): UI/infographic shot photo refs — mapping prose goes with them */
+  uiPhotoFiles?: string[];
+  /** A only (card ③a): montage beat-cut timing wav (sample #31) */
+  audioTimingFile?: string;
   outMp4: string;
   receiptJson: string;
   dryRun: boolean;
@@ -80,6 +90,12 @@ export async function submitH3Shot(opts: {
 }): Promise<{ receipt: H3SubmitReceipt; receiptFile: string }> {
   const cfg = loadConfig();
   const variant = opts.graphVariant ?? "a";
+  if ((opts.uiPhotoFiles?.length ?? 0) > 0 && variant !== "a") {
+    throw new Error("ui photos are the A-path law-d channel; B/BKF/C stay frozen for receipt comparability");
+  }
+  if (opts.audioTimingFile && variant !== "a") {
+    throw new Error("audio timing ref is the A-path montage channel; B/BKF/C stay frozen for receipt comparability");
+  }
   const promptText = `${SCRIPT_HEADER}\n${opts.prose}`;
   if (variant === "a") {
     validateProse(promptText, { requireQuote: opts.requireQuote !== false, wardrobe: opts.wardrobe });
@@ -105,9 +121,13 @@ export async function submitH3Shot(opts: {
     variant === "b" || variant === "bkf"
       ? (opts.refImageFiles ?? []).map((_, i) => `slatecrew_${tag}_ref_img_${i}.png`)
       : [];
+  const uiPhotoNames = variant === "a" ? (opts.uiPhotoFiles ?? []).map((_, i) => `slatecrew_${tag}_ui_${i}.png`) : [];
+  const audioTimingName = variant === "a" && opts.audioTimingFile ? `slatecrew_${tag}_timing.wav` : null;
   const models = modelsFromConfig();
   const shotTag = `${path.basename(opts.outMp4, ".mp4")}_${tag}`;
   const bindings = variant === "a" ? BINDINGS : "";
+  const keyframePositions =
+    kfEndName ? "0%, 100%" : "0%";
 
   const build = (names: {
     kfStart: string;
@@ -115,6 +135,8 @@ export async function submitH3Shot(opts: {
     blockout: string;
     wav: string;
     refImages: string[];
+    uiPhotos: string[];
+    audioTiming: string | null;
   }) =>
     buildH3Graph({
       script: promptText,
@@ -130,6 +152,8 @@ export async function submitH3Shot(opts: {
       models,
       variant,
       refImageNames: names.refImages,
+      uiPhotoNames: names.uiPhotos,
+      audioTimingRefName: names.audioTiming ?? undefined,
     });
 
   if (opts.dryRun) {
@@ -139,6 +163,8 @@ export async function submitH3Shot(opts: {
       blockout: blockoutName,
       wav: wavName,
       refImages: refImageNames,
+      uiPhotos: uiPhotoNames,
+      audioTiming: audioTimingName,
     });
     const receipt: H3SubmitReceipt = {
       dry_run: true,
@@ -150,6 +176,7 @@ export async function submitH3Shot(opts: {
       frames,
       steps,
       seed,
+      keyframe_positions: keyframePositions,
       prompt_id: null,
       uploads: {
         wav: wavName,
@@ -157,6 +184,8 @@ export async function submitH3Shot(opts: {
         kf_start: kfStartName,
         kf_end: kfEndName,
         ref_images: refImageNames,
+        ui_photos: uiPhotoNames,
+        audio_timing: audioTimingName,
       },
       graph,
     };
@@ -170,6 +199,8 @@ export async function submitH3Shot(opts: {
     opts.kfStart,
     ...(variant === "a" && opts.kfEnd ? [opts.kfEnd] : []),
     ...(variant === "b" || variant === "bkf" ? (opts.refImageFiles ?? []) : []),
+    ...(variant === "a" ? (opts.uiPhotoFiles ?? []) : []),
+    ...(variant === "a" && opts.audioTimingFile ? [opts.audioTimingFile] : []),
   ]) {
     if (!fs.existsSync(f)) throw new Error(`missing H3 input: ${f}`);
   }
@@ -189,6 +220,15 @@ export async function submitH3Shot(opts: {
       uploadedRefImages.push(await uploadComfyFile(cfg.motion.comfyUrl, file, name, "image/png"));
     }
   }
+  const uploadedUiPhotos: string[] = [];
+  for (const [i, file] of (opts.uiPhotoFiles ?? []).entries()) {
+    const name = `slatecrew_${tag}_ui_${i}.png`;
+    uploadedUiPhotos.push(await uploadComfyFile(cfg.motion.comfyUrl, file, name, "image/png"));
+  }
+  // LoadAudio reads the Comfy input dir, so the timing wav rides the scp lane
+  const uploadedTiming = opts.audioTimingFile && audioTimingName
+    ? (await scpToHost(host, cfg.ssh.user, opts.audioTimingFile, cfg.ssh.motionInputDir, audioTimingName), audioTimingName)
+    : null;
 
   const graph = build({
     kfStart: uploadedKfStart,
@@ -196,6 +236,8 @@ export async function submitH3Shot(opts: {
     blockout: uploadedBlockout,
     wav: wavName,
     refImages: uploadedRefImages,
+    uiPhotos: uploadedUiPhotos,
+    audioTiming: uploadedTiming,
   });
   const promptId = await queuePrompt(cfg.motion.comfyUrl, graph);
   const outputs = await waitHistory(cfg.motion.comfyUrl, promptId, { saveNode: "save" });
@@ -212,6 +254,7 @@ export async function submitH3Shot(opts: {
     frames,
     steps,
     seed,
+    keyframe_positions: keyframePositions,
     prompt_id: promptId,
     uploads: {
       wav: wavName,
@@ -219,6 +262,8 @@ export async function submitH3Shot(opts: {
       kf_start: uploadedKfStart,
       kf_end: uploadedKfEnd,
       ref_images: uploadedRefImages,
+      ui_photos: uploadedUiPhotos,
+      audio_timing: uploadedTiming,
     },
     output: { filename: item.filename, subfolder: item.subfolder, bytes: fs.statSync(opts.outMp4).size },
     graph,
