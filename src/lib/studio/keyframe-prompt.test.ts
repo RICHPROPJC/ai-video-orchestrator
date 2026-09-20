@@ -108,6 +108,23 @@ test("T41 E2: 六行電報薄 packet → 生成器拒出 prompt_too_thin", () =>
   assert.throws(() => keyframeEditPrompt(thinSheet, thin, { first: true }), /prompt_too_thin/, "薄 packet 拒出，唔交電報");
 });
 
+test("BUG3 follow: no-prop closeup (WR1Q SH04 class) still clears the 150 floor via 【動作】/景別 extras", () => {
+  // wr1q9: cookbook brief 140 < 150 after banned-phrase cut; packet fill refused —
+  // floor now counts the emitted prompt. Empty marks still throw (T41 E2).
+  const shot: Shot = {
+    ...shotWithProp(),
+    marks: [shotWithProp().marks[0]!],
+    props: undefined,
+    size: "closeup",
+    location: "地下室",
+    action: "五指收攏握向光框，藍光喺指縫間收細。",
+  };
+  const text = keyframeEditPrompt(baseSheet, shot, { first: true });
+  assert.ok(cjkCount(text) >= EDIT_MIN_CJK, `emitted ${cjkCount(text)} ≥ ${EDIT_MIN_CJK}`);
+  const brief = text.split(/\n\n【動作】/)[0]!;
+  assert.ok(cjkCount(brief) <= EDIT_MAX_CJK, "cookbook brief stays under 300");
+});
+
 test("T32b C5: isRoomNoun 收場所名詞、拒機構全名；zod 同判", () => {
   assert.equal(isRoomNoun("地下室"), true);
   assert.equal(isRoomNoun("宿舍"), true);
