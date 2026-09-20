@@ -6,14 +6,22 @@ import type { QcRequire } from "./photo-qc";
  *  noun-lint holds that line). Noun-class preservation: a garment is prompted
  *  as clothing, a flat paper document as a document, only a held tool gets
  *  the one-tool farm sentence. A document is not a held farm tool. */
-export type PropNounClass = "garment" | "document" | "tool";
+export type PropNounClass = "garment" | "document" | "tool" | "system";
 
 const GARMENT_RE = /外套|大衣|衫|衣|coat|jacket|cloak|robe/i;
 /** flat paper/board things carried, shown or read — never swung like a tool */
 const DOCUMENT_RE =
   /令|詔|旨|敕|書|信|箋|函|卷|軸|圖|紙|契|券|符|帖|牒|表|冊|decree|edict|letter|scroll|document|paper|map|warrant|pardon|deed|pass\b/i;
+/** §0c 系統形象法：光框／infograph／系統界面／全息投影——系統嘅螢幕係佢嘅
+ *  合法形態。WR1Q SH02 root cause：藍色光框跌入 tool 類，開咗 tool 閘連
+ *  forbid=[screen]，盲眼寫「全息螢幕」被禁詞殺自己人。 */
+const SYSTEM_RE = /光框|光幕|全息|投影|infograph|信息圖|系統|hologram|holographic/i;
 
+/** Class order is load-bearing: system first — a 光框-named prop is never a
+ *  held farm tool, and "數據圖表" riding the document class is why SYSTEM_RE
+ *  runs before DOCUMENT_RE. */
 export function propNounClass(name: string): PropNounClass {
+  if (SYSTEM_RE.test(name)) return "system";
   if (GARMENT_RE.test(name)) return "garment";
   if (DOCUMENT_RE.test(name)) return "document";
   return "tool";
@@ -48,6 +56,15 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
     lines.push(
       `${prop.name}係一張紙本文書：薄而平，可以喺手中展開、遞出或者攤開睇，上面有字有印；佢係文具唔係工具，畫面冇任何農具或者長柄器具。`,
     );
+  } else if (prop && cls === "system") {
+    // §0c 系統形象法: a system prop is a floating light projection — the frame
+    // must show all three layers (chart + UI frame + text labels); a bare text
+    // card is NOT an infograph (Chau pinned this three times). Never the plow
+    // sentence, and never a forbid echo: the screen is the system's legal
+    // shape, so screen words must not enter the /edit prompt at all.
+    lines.push(
+      `${prop.name}係一個懸浮喺半空嘅系統全息投影界面：半透明光造影像微微發光，畫面要見齊三層結構——數據圖表圖形、UI介面框線、細小文字標籤，全部懸浮喺角色手上方；佢係光造嘅投影，冇機身冇金屬邊框，唔係實體機器。`,
+    );
   } else if (prop) {
     // "one blade, one tool" — U1.5's default farm tool is a multi-tine rake
     lines.push(
@@ -64,13 +81,18 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
 }
 
 /** what photo QC requires of this shot's keyframe: the marks decide people_count;
- *  only a held tool (noun class "tool") adds the proven tool gate from data.
- *  Garments and documents are wardrobe/paper, not tools — no tool gate: blind QC
- *  can only describe shape words, never the sheet's proper name, so the name
- *  gate never turns GREEN. */
+ *  a held tool (noun class "tool") or a system prop (noun class "system" — the
+ *  WR1Q SH02 光框) adds the proven prop gate from data: the blind eye must name
+ *  the prop or hit its shape words. The require carries the callsheet forbid
+ *  list untouched — the screen-family exemption for system props lives in the
+ *  judge (photo-qc), so stale require.json from the old classifier is fixed at
+ *  judgement time too. Garments and documents are wardrobe/paper — no gate:
+ *  blind QC can only describe shape words, never the sheet's proper name, so
+ *  the name gate never turns GREEN. */
 export function keyframeRequire(shot: Shot): QcRequire {
   const prop = shot.props?.[0];
-  const heldTool = prop && propNounClass(prop.name) === "tool" ? prop : undefined;
+  const cls = prop ? propNounClass(prop.name) : null;
+  const heldTool = prop && (cls === "tool" || cls === "system") ? prop : undefined;
   return {
     people_count: new Set(shot.marks.map((m) => m.characterId)).size,
     grey_blocks: false,

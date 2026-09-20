@@ -117,7 +117,7 @@ test("tool prop (槍): not a garment or document, keeps the tool gate", () => {
   assert.equal(keyframeRequire(shotWithProp(spear)).tool, "長槍");
 });
 
-test("noun classes: garments and documents never take the held-tool gate; 犁/槍/鋤 do", () => {
+test("noun classes: garments and documents never take the held-tool gate; system props carry it; 犁/槍/鋤 do", () => {
   for (const name of ["軍大衣", "蓑衣", "斗篷 cloak", "leather jacket", "silk robe"]) {
     assert.equal(propNounClass(name), "garment", `${name} is a garment`);
     assert.equal("tool" in keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })), false);
@@ -126,10 +126,27 @@ test("noun classes: garments and documents never take the held-tool gate; 犁/�
     assert.equal(propNounClass(name), "document", `${name} is a document`);
     assert.equal("tool" in keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })), false);
   }
+  // §0c 系統形象法: the WR1Q SH02 class — a 光框-named prop is system, never tool
+  for (const name of ["藍色光框", "全息投影", "系統界面", "戰術infograph", "holographic frame"]) {
+    assert.equal(propNounClass(name), "system", `${name} is a system prop`);
+    assert.equal(keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })).tool, name, `${name} carries the prop gate`);
+  }
   for (const name of ["曲轅犁", "長槍", "鋤頭"]) {
     assert.equal(propNounClass(name), "tool", `${name} is a held tool`);
     assert.equal(keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })).tool, name);
   }
+});
+
+test("system prop (藍色光框, WR1Q SH02 class): infograph three-layer sentence, never the plow, no forbid echo", () => {
+  const frame: ShotProp = { name: "藍色光框", heldBy: "A", shape: ["光", "框"], forbid: ["phone", "screen", "book"] };
+  const text = keyframeEditPrompt(sheet, shotWithProp(frame), { first: false });
+  assert.ok(text.includes("藍色光框"), "prop name from sheet");
+  assert.ok(/圖表/.test(text), "§0c: chart layer written out");
+  assert.ok(/UI/.test(text), "§0c: UI frame layer written out");
+  assert.ok(/文字/.test(text), "§0c: text-label layer written out — bare text card is not an infograph");
+  assert.ok(!text.includes("犁"), "no plow vocabulary");
+  assert.ok(!text.includes("螢幕") && !text.includes("screen"), "no screen word in the /edit prompt at all — the screen is the system's legal shape");
+  assert.ok(!text.includes(frame.forbid.join("、")), "no forbid echo for system props");
 });
 
 if (bareBun) {
