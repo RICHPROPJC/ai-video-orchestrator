@@ -5,14 +5,18 @@ import path from "node:path";
 import * as nodeTest from "node:test";
 import {
   cjkCount,
+  EDIT_MAX_CJK,
+  EDIT_MIN_CJK,
   isIndoorLocation,
   isLocationFail,
   isRoomNoun,
   keyframeEditPrompt,
   keyframeRequire,
+  loadBaseCast,
   negativePoison,
   propNounClass,
   sceneLine,
+  sceneLocation,
   sceneRetryNormalize,
   sceneRetrySchema,
   sceneRetryUser,
@@ -79,18 +83,20 @@ test("T41 E1: fixture SH01 packet → /edit 150–300 中文字, require.locatio
   const { fx, sheet } = ldSheet();
   const shot: Shot = { ...fx.shots[0]!, require: { location: "地下室", angle: "high", negatives: PACKET_NEGS } };
   const text = keyframeEditPrompt({ ...sheet, shots: [shot] }, shot, { first: true });
-  const n = cjkCount(text);
+  const brief = text.split(/\n\n【動作】/)[0]!;
+  const n = cjkCount(brief);
   assert.ok(n >= 150, `≥150 中文字，got ${n}`);
   assert.ok(n <= 300, `≤300 中文字，got ${n}`);
   assert.ok(text.includes("地下室"), "require.location 原句全文");
-  assert.ok(text.includes("完全照 Image-1"), "Image-1 錨句");
+  assert.ok(text.includes("人偶嘅位置、姿勢、佔位保持照 Image-1"), "Image-1 錨句（BUG3 法1 準錨，唔再完全照）");
   assert.ok(text.includes(`；禁止${PACKET_NEGS.join("、")}`), "packet negatives 組裝");
+  assert.ok(text.includes("【動作】"), "packet action rides after the band");
 });
 
 test("T41 E2: 六行電報薄 packet → 生成器拒出 prompt_too_thin", () => {
   const thin: Shot = {
     ...shotWithProp(),
-    marks: [shotWithProp().marks[0]!],
+    marks: [],
     props: undefined,
     action: "",
     stillPrompt: "",
@@ -187,7 +193,7 @@ test("tool prop (槍): not a garment or document, keeps the tool gate", () => {
 test("T36 lock: prompts carry character names but never a refs filename", () => {
   // the stills lane's refs are runtime files (portraits/SH f0/prev keyframe);
   // their filenames must never leak into the prompt — character names stay
-  const prompt = keyframeEditPrompt(sheet, shotWithProp(coat), { first: true });
+  const prompt = keyframeEditPrompt(baseSheet, shotWithProp(coat), { first: true });
   assert.ok(prompt.includes("角色一") && prompt.includes("角色二"), "sheet-internal names stay");
   assert.ok(!/\.(png|jpe?g|webp)/i.test(prompt), `image filename leaked: ${prompt}`);
   assert.ok(!/(portraits|blockout|stills)\//.test(prompt), `lane path leaked: ${prompt}`);
@@ -318,13 +324,13 @@ test("T32 rev2 A1: packet require.location writes the scene line — prompt carr
   for (const poison of POISON) assert.ok(!text.includes(poison), `no "${poison}"`);
 });
 
-test("T32 Chau 17:48: 錨段 anchors background structure, walls and interior/exterior to Image-1", () => {
+test("BUG3 SUPERSEDE T32 17:48: Image-1 只錨人偶位置/姿勢/佔位 — 場景結構唔跟灰模", () => {
   const { fx, sheet } = ldSheet();
   const text = keyframeEditPrompt(sheet, fx.shots[0]!, { first: true });
-  assert.ok(
-    text.includes("人偶位置、姿勢、比例、鏡位、地平線、背景結構、牆面、室內外完全照 Image-1"),
-    "anchor line carries 背景結構、牆面、室內外",
-  );
+  assert.ok(text.includes("人偶嘅位置、姿勢、佔位保持照 Image-1"), "法1 準錨清單");
+  assert.ok(text.includes("變嘅係質感、材質同光線"), "法1 變邊");
+  assert.ok(!text.includes("地平線"), "banned 地平線");
+  assert.ok(!text.includes("完全照 Image-1"), "banned 完全照");
 });
 
 test("T32 Chau 17:48: sceneLine assembles packet negatives only — no packet negatives, no 禁止 clause", () => {
@@ -398,6 +404,103 @@ test("T32 classifier: fixture sets are indoor; outdoor markers override indoor-l
   assert.equal(isIndoorLocation(fx.sheet.location), false, "the sheet-wide open-country line is not indoor");
   assert.equal(isIndoorLocation("室外走廊"), false, "室外 outranks the 室 hit");
   assert.equal(isIndoorLocation("野外射擊場邊"), false, "野外 outranks any indoor char");
+});
+
+/** CARD_BUG3_0920: four banned sentences + families never appear in any /edit brief. */
+const BUG3_BANNED = [
+  "地平線",
+  "背景結構",
+  "室內外",
+  "完全照 Image-1",
+  "比例",
+  "鏡位",
+  "夜只由室內燈",
+  "身高照",
+  "只借五官",
+  "只借樣貌",
+  "髮際",
+  "正面肖像",
+  "唔好加第三人",
+  "唔好加人",
+];
+
+test("BUG3: the four Chau-banned sentences never appear (first/later, every prop class)", () => {
+  const texts = [
+    keyframeEditPrompt(baseSheet, shotWithProp(coat), { first: true }),
+    keyframeEditPrompt(baseSheet, shotWithProp(coat), { first: false }),
+    keyframeEditPrompt(baseSheet, shotWithProp(decree), { first: true }),
+    keyframeEditPrompt(baseSheet, shotWithProp(), { first: false }),
+  ];
+  for (const text of texts) {
+    for (const b of BUG3_BANNED) assert.ok(!text.includes(b), `banned phrase "${b}" leaked:\n${text}`);
+  }
+});
+
+test("BUG3: Image-N 對號 — each ref is the character's dressed body, facing follows Image-1", () => {
+  const text = keyframeEditPrompt(baseSheet, shotWithProp(coat), { first: true });
+  assert.ok(text.includes("左起第1個人偶＝Image-2 嘅角色角色一"), "puppet 1 → Image-2");
+  assert.ok(text.includes("左起第2個人偶＝Image-3 嘅角色角色二"), "puppet 2 → Image-3");
+  assert.ok(text.includes("面容、髮型同成套衫著照 Image-2"), "dressed-body ref");
+  assert.ok(text.includes("朝向同動作跟 Image-1 人偶"), "facing follows blockout");
+  assert.ok(text.includes("淨係得呢2個角色"), "people count anchored");
+});
+
+test("BUG3: scene truth source is ONE field — require.location, then shot.location, sheet tail last", () => {
+  const packet = shotWithProp();
+  packet.require = { location: "地下室" };
+  assert.ok(keyframeEditPrompt(baseSheet, packet, { first: false }).includes("【場景】地下室"), "packet require.location wins");
+  const ownRoom = shotWithProp();
+  ownRoom.location = "走廊";
+  assert.ok(keyframeEditPrompt(baseSheet, ownRoom, { first: false }).includes("【場景】走廊"), "shot's own room next");
+  assert.ok(
+    keyframeEditPrompt(baseSheet, shotWithProp(), { first: false }).includes("【場景】亂葬崗"),
+    "sheet tail only as the last fallback",
+  );
+  assert.equal(sceneLocation(baseSheet, packet), "地下室");
+});
+
+test("BUG3: the brief is 150–300 中文字 — thin refuses, fat refuses", () => {
+  const text = keyframeEditPrompt(baseSheet, shotWithProp(coat), { first: false });
+  const n = cjkCount(text);
+  assert.ok(n >= EDIT_MIN_CJK && n <= EDIT_MAX_CJK, `2-char brief in band: ${n}`);
+  const empty = shotWithProp();
+  empty.marks = [];
+  assert.throws(() => keyframeEditPrompt(baseSheet, empty, { first: true }), /prompt_too_thin/);
+  const many: Character[] = ["一", "二", "三", "四", "五"].map((suffix, i) => ({
+    id: `C${i}`,
+    name: `角色${suffix}`,
+    role: "舊同事",
+    wardrobe: "白襯衫",
+    palette: ["#111", "#222", "#333"] as [string, string, string],
+    voice: { pitchHz: 180, gender: "m" as const },
+  }));
+  const fatSheet: CallSheet = { ...baseSheet, characters: [...baseSheet.characters, ...many] };
+  const fat = shotWithProp();
+  fat.marks = fatSheet.characters.map((c, i) => ({
+    characterId: c.id,
+    start: { x: 10 + i * 20, y: 50 },
+    end: { x: 10 + i * 20, y: 50 },
+    facing: 1,
+    handL: { x: 12 + i * 20, y: 45 },
+    handR: { x: 14 + i * 20, y: 45 },
+    footL: { x: 8 + i * 20, y: 80 },
+    footR: { x: 12 + i * 20, y: 80 },
+    gait: "plant" as const,
+  }));
+  assert.throws(() => keyframeEditPrompt(fatSheet, fat, { first: true }), /prompt_too_thick/);
+});
+
+test("L1b loadBaseCast: missing file / empty roster = no override; wardrobe override lands in prompt", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "base-cast-"));
+  assert.equal(loadBaseCast(dir, "no-drama"), undefined);
+  const drama = path.join(dir, "d1", "base");
+  fs.mkdirSync(drama, { recursive: true });
+  fs.writeFileSync(path.join(drama, "cast.json"), JSON.stringify({ characters: [{ id: "A", wardrobe: "紅大衣" }] }));
+  const cast = loadBaseCast(dir, "d1");
+  assert.equal(cast?.characters[0]?.wardrobe, "紅大衣");
+  const text = keyframeEditPrompt(baseSheet, shotWithProp(coat), { first: true, cast });
+  assert.ok(text.includes("紅大衣"), "base-cast wardrobe overrides the sheet");
+  assert.ok(!text.includes("深藍乾濕褸"), "sheet wardrobe dropped when base-cast hits");
 });
 
 if (bareBun) {

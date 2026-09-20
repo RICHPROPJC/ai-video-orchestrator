@@ -613,18 +613,20 @@ export type SecondEyeOpts = { secondEndpoint?: string; secondModel?: string };
 export function resolveSecondEye(opts: SecondEyeOpts = {}): SecondEyeConfig | null {
   const endpoint = (opts.secondEndpoint ?? process.env.SLATECREW_SECOND_ENDPOINT ?? "").trim();
   if (!endpoint) return null;
-  const model = (opts.secondModel ?? process.env.SLATECREW_SECOND_MODEL ?? "glm-5.3-flash").trim();
+  const cfg = loadConfig();
+  const model = (opts.secondModel ?? process.env.SLATECREW_SECOND_MODEL ?? (cfg.pictureQc.secondModel || "glm-5.3-flash")).trim();
   return { endpoint, model };
 }
 
-/** T35 item 5: pipeline call sites pass eyes explicitly (audit-visible) instead of
- *  relying on ambient env inside runPhotoQc. Eye/judge endpoints come from config
- *  (nex :8017 / pictureQc :8015); env set → :4000 glm-5.3-flash second eye. */
+/** T35 item 5: pipeline call sites pass eyes explicitly (audit-visible).
+ *  Second eye: env SLATECREW_SECOND_* wins, else config.pictureQc.secondEndpoint
+ *  (CARD_BUG3 item4 — DEFAULTS empty; slatecrew.config.json arms live). */
 export function photoQcEyesFromEnv(): PhotoQcEyes {
+  const cfg = loadConfig();
   return {
     second: {
-      secondEndpoint: process.env.SLATECREW_SECOND_ENDPOINT ?? "",
-      secondModel: process.env.SLATECREW_SECOND_MODEL,
+      secondEndpoint: process.env.SLATECREW_SECOND_ENDPOINT ?? cfg.pictureQc.secondEndpoint ?? "",
+      secondModel: process.env.SLATECREW_SECOND_MODEL ?? cfg.pictureQc.secondModel,
     },
   };
 }

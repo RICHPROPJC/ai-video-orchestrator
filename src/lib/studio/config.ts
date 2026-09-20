@@ -26,7 +26,7 @@ export type SlateConfig = {
     seed: number;
   };
   tts: { endpoint: string; model: string; promptWav: string; seed: number };
-  pictureQc: { endpoint: string; model: string };
+  pictureQc: { endpoint: string; model: string; secondEndpoint: string; secondModel: string };
   /** PACKAGE-QC-0917 眼：nex-n2.5 五路 describe（判官先係 pictureQc 端點）。空 endpoint＝fleet UNCONFIG（唔係 QC skip），live :8017 由 slatecrew.config.json 提供。 */
   nex: { endpoint: string; model: string };
   soundQc: { endpoint: string; model: string };
@@ -65,7 +65,7 @@ const DEFAULTS: SlateConfig = {
     promptWav: "",
     seed: 20260914,
   },
-  pictureQc: { endpoint: "http://127.0.0.1:8015", model: "qwen38" },
+  pictureQc: { endpoint: "http://127.0.0.1:8015", model: "qwen38", secondEndpoint: "", secondModel: "" },
   nex: { endpoint: "", model: "nex-n2.5" },
   soundQc: { endpoint: "", model: "FunAudioLLM/SenseVoiceSmall" },
   ocr: { endpoint: "", model: "" },
@@ -105,6 +105,10 @@ export function loadConfig(): SlateConfig {
   if (u15) merged.stills.url = u15;
   const mars = process.env.MARS_URL?.trim();
   if (mars) merged.pictureQc.endpoint = mars;
+  const secondE = process.env.SLATECREW_SECOND_ENDPOINT?.trim();
+  if (secondE) merged.pictureQc.secondEndpoint = secondE;
+  const secondM = process.env.SLATECREW_SECOND_MODEL?.trim();
+  if (secondM) merged.pictureQc.secondModel = secondM;
   const nex = process.env.NEX_URL?.trim();
   if (nex) merged.nex.endpoint = nex;
   const crew = process.env.CREW_LLM_URL?.trim();

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 import { omittable } from "./script-contract";
 import type { CallSheet, Shot } from "./types";
@@ -65,6 +67,7 @@ export function cjkCount(text: string): number {
   return (text.match(/[一-鿿]/g) ?? []).length;
 }
 export const EDIT_MIN_CJK = 150;
+export const EDIT_MAX_CJK = 300;
 
 /** T32b 裁3: 阿圖 answers in BOARDS_CHARTER shape ({sceneId,thinking,shots}),
  * not in this lane's shape — map the first require-bearing shot onto the
@@ -97,14 +100,21 @@ export function sceneLine(sheet: CallSheet, shot: Shot): string {
   // keyframeRequire hands photo-qc — prompt and gate must read one source);
   // the sheet tail only when the shot has no room at all
   const loc = (shot.require?.location ?? shot.location)?.trim();
-  if (!loc) return `${sheet.location}，${sheet.timeOfDay}，${sheet.weather}。唔好加人。`;
+  if (!loc) return `${sheet.location}，${sheet.timeOfDay}，${sheet.weather}。`;
   const negs = shot.require?.negatives ?? [];
   const ban = negs.length ? `；禁止${negs.join("、")}` : "";
   if (isIndoorLocation(loc)) {
     const light = shot.require?.angle === "low" ? "低位室內光" : shot.require?.angle === "eye" ? "均勻室內光" : "頂光";
-    return `${loc}：室內、冇窗、${light}${ban}；夜只由室內燈表達。唔好加人。`;
+    return `${loc}：室內、冇窗、${light}${ban}。`;
   }
-  return `${loc}${ban}。唔好加人。`;
+  return `${loc}${ban}。`;
+}
+
+/** ONE scene truth source (Fable 1d9bb51): packet require.location first,
+ *  else the shot's own room; sheet tail only when the shot carries no room. */
+export function sceneLocation(sheet: CallSheet, shot: Shot): string {
+  const loc = (shot.require?.location ?? shot.location)?.trim();
+  return loc || sheet.location.trim();
 }
 
 /** T32b 裁1: the scene-retry request carries its own schema so 阿圖 doesn't
@@ -145,10 +155,6 @@ export const sceneRetrySchema = z.object({
   path: ["negatives"],
 });
 
-/** /edit prompt for one shot keyframe, Fable 00:20 U1.5=A form: 150–300 中文，
- *  ordered Image-1 錨 → require.location 原句 → 衫著 → 道具／防農具 → negatives
- *  （後兩者隨場景句）。PE 只潤色 — 呢度交出去嘅已經係完整 brief。薄 packet
- *  組唔夠 150 中文字就拒出（prompt_too_thin），唔交六行電報。 */
 /** shot.size → framing sentence, same scale words photo-qc measures (size_notes) */
 const SIZE_LINE: Record<string, string> = {
   wide: "景別 wide：全身連大片環境，人只佔畫面高度三成以下。",
@@ -158,7 +164,30 @@ const SIZE_LINE: Record<string, string> = {
   insert: "景別 insert：只見手同道具嘅局部特寫。",
 };
 
-export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: boolean }): string {
+/** L1b base cast: a drama's fixed wardrobe is a base fact on disk
+ *  (projects/<drama>/base/cast.json), never a playbook bullet. */
+export type BaseCastEntry = { id: string; wardrobe: string };
+export type BaseCast = { characters: BaseCastEntry[] };
+
+export function loadBaseCast(projectsRoot: string, drama: string): BaseCast | undefined {
+  const file = path.join(projectsRoot, drama, "base", "cast.json");
+  if (!fs.existsSync(file)) return undefined;
+  let raw: { characters?: BaseCastEntry[] };
+  try {
+    raw = JSON.parse(fs.readFileSync(file, "utf8")) as { characters?: BaseCastEntry[] };
+  } catch {
+    return undefined;
+  }
+  const characters = Array.isArray(raw.characters)
+    ? raw.characters.filter((c) => c && typeof c.id === "string" && typeof c.wardrobe === "string")
+    : [];
+  return characters.length > 0 ? { characters } : undefined;
+}
+
+/** BUG3 cookbook: Image-N 對號＋着衫 ref／變保對／人數錨。Chau 0917 法1/2/4/5
+ *  四句禁句唔准出。150–300 CJK。【動作】同景別跟 Fable 0c636e9（QC 要見原句）。
+ *  場景句走 sceneLine（T32 室內唔帶 sheet 天氣），唔抄 Wire 嗰句 sheet 尾拼接。 */
+export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: boolean; cast?: BaseCast }): string {
   const ordered = [...shot.marks].sort((a, b) => a.start.x - b.start.x);
   const chars = ordered.map((m) => {
     const hit = sheet.characters.find((c) => c.id === m.characterId);
@@ -167,38 +196,46 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
   });
   const prop = shot.props?.[0];
   const cls = prop ? propNounClass(prop.name) : null;
-  const carried = prop ? prop.name : "犁";
   const people = chars
-    .map((c, i) => `左起第${i + 1}個人偶＝Image-${i + 2} 嘅臉（${c.name}），衫著：${c.wardrobe}。`)
+    .map((c, i) => {
+      const wardrobe = opts.cast?.characters.find((e) => e.id === c.id)?.wardrobe ?? c.wardrobe;
+      return `左起第${i + 1}個人偶＝Image-${i + 2} 嘅角色${c.name}：面容、髮型同成套衫著照 Image-${i + 2}——${wardrobe}；朝向同動作跟 Image-1 人偶。`;
+    })
     .join("");
   let props = "";
   if (prop && cls === "garment") {
-    props = `【道具】${prop.name}係一件衣物：披上膊頭或者着住喺身嘅衣服，有領有袖，布料隨姿勢自然垂落。衣擺同身體、地面要有接觸同遮擋。`;
+    props = `【道具】${prop.name}係一件衣物：披上膊頭或者着住喺身嘅衣服，有領有袖，布料隨姿勢自然垂落，屬於角色造型一部分。`;
   } else if (prop && cls === "document") {
     props = `【道具】${prop.name}係薄而平嘅紙本文書，喺手中展開或者攤開，上面有字有印；佢係文具唔係工具，畫面冇農具或長柄器具。`;
   } else if (prop) {
     props = `【道具】人偶手中／兩人之間嘅長條係${prop.name}：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具；唔係${prop.forbid.join("、")}。`;
   }
   const keep = opts.first
-    ? "【保留】Image-2…Image-N 係上述角色嘅正面肖像，只借五官同髮際。唔好加第三人。"
-    : `【保留】Image-2 係上一鏡嘅定格：樣貌、衣服、${carried}、光線同色調跟 Image-2，唯獨姿勢跟 Image-1。`;
-  // photo-qc gates on require.action / require.size verbatim — the prompt must
-  // carry the same sentence, else the still is judged on words it never saw
-  const action = shot.action ? `【動作】${shot.action}` : "";
-  const text = [
-    "將 Image-1 灰模概念圖轉成 photoreal 實拍；人偶係角色佔位，唔係道具。人偶位置、姿勢、比例、鏡位、地平線、背景結構、牆面、室內外完全照 Image-1。",
+    ? `畫面人數照 Image-1 人偶：淨係得呢${chars.length}個角色，每個嘅面容同衫著照自己嗰張 Image。`
+    : `Image-2 係上一鏡嘅定格：樣貌、衣服${prop ? `、${prop.name}` : ""}、光線同色調照 Image-2；姿勢同企位跟 Image-1。`;
+  // 【動作】／景別 are packet facts (Fable 0c636e9: photo-qc gates on them).
+  // They ride AFTER the 150–300 band like Card D facts — long drama beats
+  // must not blow Chau 法11's brief ceiling.
+  const extras = [
+    shot.action ? `【動作】${shot.action}` : "",
+    SIZE_LINE[shot.size] ?? "",
+  ].filter((s) => s.length > 0).join("\n\n");
+  const brief = [
+    "【底圖】Image-1 係 Blender 灰模概念圖，人偶係角色佔位。轉 photoreal——變嘅係質感、材質同光線；人偶嘅位置、姿勢、佔位保持照 Image-1。",
+    `【人物】${people}`,
     `【場景】${sceneLine(sheet, shot)}`,
-    `【人物】${people}距離、身高照 Image-1。${SIZE_LINE[shot.size] ?? ""}`,
-    action,
     props,
-    "【材質】布料、紙、金屬各有質感；手、衣擺、道具同地面有接觸遮擋同影子。",
+    "【光影材質】布料、紙、金屬各有質感；手、衣擺、道具同地面有接觸遮擋。",
     keep,
   ].filter((s) => s.length > 0).join("\n\n");
-  const n = cjkCount(text);
+  const n = cjkCount(brief);
   if (n < EDIT_MIN_CJK) {
     throw new Error(`prompt_too_thin: ${shot.id} /edit 只組到 ${n} 中文字（最少 ${EDIT_MIN_CJK}）— packet 太薄，生成器拒出（Fable 00:20 U1.5=A）`);
   }
-  return text;
+  if (n > EDIT_MAX_CJK) {
+    throw new Error(`prompt_too_thick: ${shot.id} /edit 組到 ${n} 中文字（上限 ${EDIT_MAX_CJK}）— packet 太肥，prompt 只解釋底圖唔補償（Chau 0917 法11）；收細 packet 再出`);
+  }
+  return extras ? `${brief}\n\n${extras}` : brief;
 }
 
 /** what photo QC requires of this shot's keyframe: the marks decide people_count;

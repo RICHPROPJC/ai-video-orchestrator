@@ -36,7 +36,9 @@
   },
   "pictureQc": {
     "endpoint": "http://127.0.0.1:8015",
-    "model": "qwen38"
+    "model": "qwen38",
+    "secondEndpoint": "http://127.0.0.1:4000",
+    "secondModel": "glm-5.3-flash"
   },
   "nex": {
     "endpoint": "http://127.0.0.1:8017",
