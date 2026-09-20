@@ -15,6 +15,7 @@ import {
   loadBaseCast,
   negativePoison,
   propNounClass,
+  scrubSystemDisplayForbid,
   sceneLine,
   sceneLocation,
   sceneRetryNormalize,
@@ -216,7 +217,17 @@ test("T36 lock: prompts carry character names but never a refs filename", () => 
   assert.ok(!/(portraits|blockout|stills)\//.test(prompt), `lane path leaked: ${prompt}`);
 });
 
-test("noun classes: garments and documents never take the held-tool gate; 犁/槍/鋤 do", () => {
+test("system-display tool: require strips screen/螢幕 from tool_forbid (§0c)", () => {
+  const frame: ShotProp = { name: "全息光框", heldBy: "A", shape: ["glow", "rect"], forbid: ["phone", "screen", "book", "螢幕"] };
+  const req = keyframeRequire(shotWithProp(frame));
+  assert.equal(req.tool, "全息光框");
+  assert.deepEqual(req.tool_forbid, ["phone", "book"]);
+  assert.deepEqual(scrubSystemDisplayForbid("infograph", ["screen", "phone"]), ["phone"]);
+  const plow: ShotProp = { name: "曲轅犁", heldBy: "A", shape: ["弯"], forbid: ["screen", "锹"] };
+  assert.deepEqual(keyframeRequire(shotWithProp(plow)).tool_forbid, ["screen", "锹"]);
+});
+
+test("noun classes: garments and documents never take the held-tool gate; hologram props carry it; 犁/槍/鋤 do", () => {
   for (const name of ["軍大衣", "蓑衣", "斗篷 cloak", "leather jacket", "silk robe"]) {
     assert.equal(propNounClass(name), "garment", `${name} is a garment`);
     assert.equal("tool" in keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })), false);
@@ -225,10 +236,26 @@ test("noun classes: garments and documents never take the held-tool gate; 犁/�
     assert.equal(propNounClass(name), "document", `${name} is a document`);
     assert.equal("tool" in keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })), false);
   }
+  for (const name of ["藍色光框", "全息投影", "全息界面", "戰術infograph", "holographic frame"]) {
+    assert.equal(propNounClass(name), "system", `${name} is a hologram/infograph prop`);
+    assert.equal(keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })).tool, name, `${name} carries the prop gate`);
+  }
   for (const name of ["曲轅犁", "長槍", "鋤頭"]) {
     assert.equal(propNounClass(name), "tool", `${name} is a held tool`);
     assert.equal(keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })).tool, name);
   }
+});
+
+test("hologram prop (藍色光框, WR1Q SH02 class): infograph three-layer sentence, never the plow, no forbid echo", () => {
+  const frame: ShotProp = { name: "藍色光框", heldBy: "A", shape: ["光", "框"], forbid: ["phone", "screen", "book"] };
+  const text = keyframeEditPrompt(baseSheet, shotWithProp(frame), { first: false });
+  assert.ok(text.includes("藍色光框"), "prop name from sheet");
+  assert.ok(/圖表/.test(text), "§0c: chart layer written out");
+  assert.ok(/UI/.test(text), "§0c: UI frame layer written out");
+  assert.ok(/文字/.test(text), "§0c: text-label layer written out — bare text card is not an infograph");
+  assert.ok(!text.includes("犁"), "no plow vocabulary");
+  assert.ok(!text.includes("螢幕") && !text.includes("screen"), "no screen word in the /edit prompt");
+  assert.ok(!text.includes(frame.forbid.join("、")), "no forbid echo for hologram props");
 });
 
 /** T32 frozen LD0F excerpt (SH01–SH05, one indoor set, sheet tail night/neon).

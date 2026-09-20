@@ -415,6 +415,78 @@ test("people mismatch fails", () => {
   assert.ok(v.checks.fail_reasons.some((r) => r.includes("people_count")));
 });
 
+const HOLO_REQUIRE: QcRequire = {
+  people_count: 1,
+  grey_blocks: false,
+  tool: "藍色光框",
+  tool_shape: ["光"],
+  tool_forbid: ["phone", "screen", "book"],
+};
+
+test("§0c hologram prop: blind write says 螢幕 — screen-family forbid exempt, shot passes (WR1Q SH02)", () => {
+  const v = judge(
+    `${DESC} 佢掌心向上托住一個發住藍色光嘅全息螢幕。`,
+    { people_count: 1, grey_blocks: false, tool_as_written: "掌心托住一個發住藍色光嘅全息螢幕" },
+    HOLO_REQUIRE,
+  );
+  assert.equal(v.status, "GREEN", JSON.stringify(v.checks));
+});
+
+test("§0c hologram prop: non-screen forbid still kills", () => {
+  const v = judge(
+    `${DESC} 佢手上有一本book，旁邊仲浮住藍色光。`,
+    { people_count: 1, grey_blocks: false, tool_as_written: "手上有一本book" },
+    HOLO_REQUIRE,
+  );
+  assert.equal(v.status, "FAIL");
+  assert.ok(v.checks.fail_reasons.some((r) => r.includes("book")), "phone/book forbids are not exempt");
+});
+
+test("§0c non-hologram prop: blind write says 螢幕 — screen token family-kills", () => {
+  const v = judge(
+    `${DESC} 曲轅犁嘅弯刃插喺壟土，旁邊仲浮住一塊螢幕。`,
+    { people_count: 2, grey_blocks: false },
+    { people_count: 2, grey_blocks: false, tool: "曲轅犁", tool_shape: ["弯"], tool_forbid: ["phone", "screen", "book"] },
+  );
+  assert.equal(v.status, "FAIL", "a character growing a screen on a non-hologram prop still dies");
+  assert.ok(v.checks.fail_reasons.some((r) => r.includes("screen")), "killed by the screen forbid (螢幕↔screen family)");
+});
+
+test("§0c mixed form: shrunken hologram person-form is not an extra person", () => {
+  const ok = judge(
+    `${DESC} 掌心嘅藍色光框投影旁邊浮住一個縮細嘅全息人樣。`,
+    { people_count: 2, grey_blocks: false, tool_as_written: "掌心托住藍色光框投影" },
+    HOLO_REQUIRE,
+  );
+  assert.equal(ok.status, "GREEN", JSON.stringify(ok.checks));
+  assert.equal(ok.checks.people_count_system_form, true, "tolerance marker set");
+
+  const noForm = judge(
+    `${DESC} 掌心上方浮住一個藍色光框。`,
+    { people_count: 2, grey_blocks: false, tool_as_written: "藍色光框" },
+    HOLO_REQUIRE,
+  );
+  assert.equal(noForm.status, "FAIL", "no projection/shrunken wording — the extra head still fails");
+  assert.ok(noForm.checks.fail_reasons.some((r) => r.includes("people_count")));
+
+  const nonHolo = judge(
+    `${DESC} 旁邊企多咗一個人，拎住曲轅犁。`,
+    { people_count: 2, grey_blocks: false },
+    { people_count: 1, grey_blocks: false, tool: "曲轅犁", tool_shape: ["弯"], tool_forbid: ["phone", "screen", "book"] },
+  );
+  assert.equal(nonHolo.status, "FAIL", "non-hologram shot: extra person always fails");
+});
+
+test("§0c mixed form: fewer heads never passes, tolerance is more-heads only", () => {
+  const v = judge(
+    `${DESC} 掌心托住一個發住藍色光嘅全息螢幕，畫面冇其他人。`,
+    { people_count: 0, grey_blocks: false },
+    HOLO_REQUIRE,
+  );
+  assert.equal(v.status, "FAIL", "missing scene person still fails on a hologram shot");
+  assert.ok(v.checks.fail_reasons.some((r) => r.includes("people_count")));
+});
+
 test("灰色方块 in the write-up fails grey_blocks", () => {
   const v = judge(`${DESC} 左邊嗰個係灰色方块。`, { people_count: 2, grey_blocks: false }, { people_count: 2, grey_blocks: false });
   assert.equal(v.status, "FAIL");

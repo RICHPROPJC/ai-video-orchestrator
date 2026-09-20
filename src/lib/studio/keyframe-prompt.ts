@@ -10,17 +10,41 @@ import type { QcRequire } from "./photo-qc";
  *  noun-lint holds that line). Noun-class preservation: a garment is prompted
  *  as clothing, a flat paper document as a document, only a held tool gets
  *  the one-tool farm sentence. A document is not a held farm tool. */
-export type PropNounClass = "garment" | "document" | "tool";
+export type PropNounClass = "garment" | "document" | "tool" | "system";
 
 const GARMENT_RE = /外套|大衣|衫|衣|coat|jacket|cloak|robe/i;
 /** flat paper/board things carried, shown or read — never swung like a tool */
 const DOCUMENT_RE =
   /令|詔|旨|敕|書|信|箋|函|卷|軸|圖|紙|契|券|符|帖|牒|表|冊|文件|檔案|文書|decree|edict|letter|scroll|document|paper|map|warrant|pardon|deed|pass\b/i;
+/** §0c hologram/infograph class (WR1Q SH02: 光框 fell into tool + forbid=screen
+ *  and the blind eye's 全息螢幕 killed the legal form). The drama's proper name
+ *  for this class stays out of src (noun-lint); 光框／全息／infograph cover it. */
+const SYSTEM_RE = /光框|光幕|全息|投影|infograph|信息圖|hologram|holographic|數據卡/i;
 
+/** Class order is load-bearing: hologram/infograph first — a 光框-named prop is
+ *  never a held farm tool, and a 數據圖表 must not ride document. */
 export function propNounClass(name: string): PropNounClass {
+  if (SYSTEM_RE.test(name)) return "system";
   if (GARMENT_RE.test(name)) return "garment";
   if (DOCUMENT_RE.test(name)) return "document";
   return "tool";
+}
+
+/** FLOW_LAW §0c: hologram/infograph props ARE screens. Boards writing
+ *  screen/螢幕 into forbid makes QC kill the legal form (WR1Q SH02). */
+const SYSTEM_DISPLAY_SCREEN_FORBID_RE = /^(screen|螢幕)$/i;
+
+export function isSystemDisplayProp(name: string): boolean {
+  return propNounClass(name) === "system";
+}
+
+export function isSystemDisplayScreenForbid(tok: string): boolean {
+  return SYSTEM_DISPLAY_SCREEN_FORBID_RE.test(tok);
+}
+
+export function scrubSystemDisplayForbid(name: string, forbid: string[]): string[] {
+  if (!isSystemDisplayProp(name)) return forbid;
+  return forbid.filter((tok) => !isSystemDisplayScreenForbid(tok));
 }
 
 /** T32 scene slot. The sheet tail (`sheet.location, timeOfDay, weather`) is the
@@ -207,6 +231,9 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
     props = `【道具】${prop.name}係一件衣物：披上膊頭或者着住喺身嘅衣服，有領有袖，布料隨姿勢自然垂落，屬於角色造型一部分。`;
   } else if (prop && cls === "document") {
     props = `【道具】${prop.name}係薄而平嘅紙本文書，喺手中展開或者攤開，上面有字有印；佢係文具唔係工具，畫面冇農具或長柄器具。`;
+  } else if (prop && cls === "system") {
+    // chart + UI frame + text labels; never plow, never a screen/forbid echo
+    props = `【道具】${prop.name}係一個懸浮喺半空嘅全息投影界面：半透明光造影像微微發光，畫面要見齊三層結構——數據圖表圖形、UI介面框線、細小文字標籤，全部懸浮喺角色手上方；佢係光造嘅投影，冇機身冇金屬邊框，唔係實體機器。`;
   } else if (prop) {
     props = `【道具】人偶手中／兩人之間嘅長條係${prop.name}：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具；唔係${prop.forbid.join("、")}。`;
   }
@@ -240,19 +267,20 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
 }
 
 /** what photo QC requires of this shot's keyframe: the marks decide people_count;
- *  only a held tool (noun class "tool") adds the proven tool gate from data.
- *  Garments and documents are wardrobe/paper, not tools — no tool gate: blind QC
- *  can only describe shape words, never the sheet's proper name, so the name
- *  gate never turns GREEN. */
+ *  a held tool or a hologram/infograph prop (class "system") adds the prop gate.
+ *  Screen-family exemption lives in the judge; boards strip stays as upstream
+ *  hygiene. Garments and documents are wardrobe/paper — no gate. */
 export function keyframeRequire(shot: Shot): QcRequire {
   const prop = shot.props?.[0];
-  const heldTool = prop && propNounClass(prop.name) === "tool" ? prop : undefined;
+  const cls = prop ? propNounClass(prop.name) : null;
+  const heldTool = prop && (cls === "tool" || cls === "system") ? prop : undefined;
+  const toolForbid = heldTool ? scrubSystemDisplayForbid(heldTool.name, heldTool.forbid) : undefined;
   return {
     people_count: new Set(shot.marks.map((m) => m.characterId)).size,
     grey_blocks: false,
     ...(shot.location ? { location: shot.location } : {}),
     ...(shot.action ? { action: shot.action } : {}),
     ...(shot.size ? { size: shot.size } : {}),
-    ...(heldTool ? { tool: heldTool.name, tool_shape: heldTool.shape, tool_forbid: heldTool.forbid } : {}),
+    ...(heldTool ? { tool: heldTool.name, tool_shape: heldTool.shape, tool_forbid: toolForbid } : {}),
   };
 }

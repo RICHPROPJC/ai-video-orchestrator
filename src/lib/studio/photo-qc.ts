@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { loadConfig } from "./config";
+import { propNounClass } from "./keyframe-prompt";
 import { EMPTY_FRAME_MIN, judgePhotoGreyLeak, measureEmptyFrame } from "./workbench-grey-leak";
 
 // ─── PACKAGE-QC-FORMULA-0917（Chau 0917 收斂版，SUPERSEDE 16:08 引導式假fail）───
@@ -97,6 +98,13 @@ export type QcVerdict = {
 
 const GREY_RE =
   /灰色方块|灰色方塊|灰块|灰塊|占位人偶|灰色立方|灰色人形|人偶|i-?mannequin|mannequin|placard|標牌|看板|剪影|silhouette|grey cubes?|gray cubes?|grey blocks?/i;
+
+/** §0c hologram/infograph — screen-family: forbid token or blind write on
+ *  either side is the same family (螢幕↔screen). */
+const SCREEN_FAMILY_RE = /screen|螢幕|屏幕|萤幕|荧幕/i;
+/** §0c mixed form: extra head marked as projection / hologram / shrunken. */
+const SYSTEM_FORM_RE =
+  /縮細|縮小|縮咗|迷你|投影|全息|hologram|holographic|projection|miniature|shrunken|scaled.?down/i;
 
 /** GET /v1/models on an endpoint; resolves the exact model id or throws.
  *  0917 公版：唔再有 mars 模糊後備——眼＝nex-n2.5(:8017)、判官＝qwen38(:8015)，
@@ -488,8 +496,16 @@ export function judge(desc: string, summary: QcSummary, require: QcRequire, ctx:
 
   const wantN = require.people_count;
   const gotN = summary.people_count;
+  const systemProp = require.tool ? propNounClass(String(require.tool)) === "system" : false;
   if (wantN != null) {
-    const ok = gotN === wantN;
+    let ok = gotN === wantN;
+    if (
+      !ok && systemProp && typeof wantN === "number" && typeof gotN === "number" &&
+      gotN > wantN && SYSTEM_FORM_RE.test(blob)
+    ) {
+      ok = true;
+      checks.people_count_system_form = true;
+    }
     checks.people_count = ok;
     if (!ok) reasons.push(`people_count: write-up/summary=${JSON.stringify(gotN)} require=${wantN}`);
   }
@@ -509,7 +525,12 @@ export function judge(desc: string, summary: QcSummary, require: QcRequire, ctx:
     const forbid = require.tool_forbid ?? [];
     const named = blob.includes(String(wantTool));
     const shaped = shape.length > 0 && shape.every((tok) => blob.includes(tok));
-    const banned = forbid.filter((tok) => blob.includes(tok));
+    const banned = forbid.filter((tok) => {
+      if (SCREEN_FAMILY_RE.test(tok)) {
+        return !systemProp && (blob.includes(tok) || SCREEN_FAMILY_RE.test(blob));
+      }
+      return blob.includes(tok);
+    });
     const ok = (named || shaped) && banned.length === 0;
     checks.tool = ok;
     if (!ok) {
