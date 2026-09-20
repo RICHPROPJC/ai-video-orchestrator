@@ -128,7 +128,6 @@ export async function embedImage(file: string, fetchImpl: typeof fetch = fetch):
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       model: cfg.embed.model || undefined,
-      input_type: "image",
       images: [`data:${mime};base64,${b64}`],
     }),
     signal: AbortSignal.timeout(20_000),
