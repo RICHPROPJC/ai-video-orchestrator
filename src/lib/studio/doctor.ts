@@ -2,10 +2,11 @@ import fs from "node:fs";
 import { loadConfig, legacyComfyUrl, type SlateConfig } from "./config";
 import { runCommand } from "./audio";
 
-// node list the H3 R2V chain needs on node1 (h3-r2v-graph.ts wiring)
+// node list the H3 R2V chain needs on node1 (h3-r2v-graph.ts wiring; card C ①
+// switched the keyframe node — doctor must probe what the graph now emits)
 const H3_NODES = [
   "MiniMaxH3ReferenceToVideo",
-  "H3KeyframeInject",
+  "H3Keyframes",
   "H3EpisodeSplit",
   "H3LoraStack",
   "H3ReferenceAudio",
