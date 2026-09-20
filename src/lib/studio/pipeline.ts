@@ -28,7 +28,7 @@ import { buildCutPlan, type CutPlan } from "./cut-plan";
 import { checkGate } from "./concat-gate";
 import { writeAnchors } from "./dhash-anchors";
 import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "./blockout";
-import { isLocationFail, keyframeEditPrompt, keyframeRequire, sceneRetryNormalize, sceneRetrySchema, sceneRetryUser } from "./keyframe-prompt";
+import { isLocationFail, keyframeEditPrompt, keyframeRequire, loadBaseCast, sceneRetryNormalize, sceneRetrySchema, sceneRetryUser } from "./keyframe-prompt";
 import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
 import type { H3GraphVariant } from "./h3-r2v-graph";
@@ -628,10 +628,11 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // --scene hop composes only its own shots: an out-of-scene prompt_too_thin
     // throw must not fail the hop (WR1Q SC01 died on SH06)
     const planBoards = input.scene ? shotsForScene(continuity.boards, input.scene) : continuity.boards;
+    const baseCast = job.drama ? loadBaseCast(projectsDir(), job.drama) : undefined;
     const stillPlans = planBoards.map((boardShot) => {
       const shot = timed.shots.find((s) => s.id === boardShot.id)!;
       const first = firstFlags[continuity.boards.indexOf(boardShot)]!;
-      const prompt = keyframeEditPrompt(timed, shot, { first });
+      const prompt = keyframeEditPrompt(timed, shot, { first, ...(baseCast ? { cast: baseCast } : {}) });
       const require = keyframeRequire(shot);
       // D1a trace: soft edge invariants (boards→keyframe, keyframe→stills),
       // written for pass and fail alike, always before any QC gate can fail
@@ -711,7 +712,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     }
     let prevKeyframe: string | null = null;
     const editInputs = new Map<string, { prompt: string; nodePaths: string[]; base: string; refs: string[]; first: boolean }>();
-    const greenAlready = new Set<string>();
+    await think("pictureQc");
+    await speak("pictureQc", "Qwen 27B 盲測：人數、灰模、物件。每鏡 /edit 完即判（bug4），GREEN pin 先准做下鏡 Image-2。");
     // T39: earn out-earns us on this U1.5/H3 pair — before the first /edit
     // (and everything downstream) wait on earn's lock; dry-run and
     // boards/blockout runs never POST the pair, so they never wait
@@ -767,7 +769,6 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       if (input.resume && pinQcAccepted(stillDir, shot.id)) {
         prevKeyframe = out;
         stills.push(out);
-        greenAlready.add(shot.id);
         await speak("stills", `${shot.id} keyframe 照舊（QC 已 GREEN），唔重出。`);
         continue;
       }
@@ -824,8 +825,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           });
         }
         await speak("stills", `${shot.id} keyframe 照舊（未 QC），唔重 /edit。`);
-        continue;
-      }
+      } else {
       const stillStarted = Date.now();
       const memFiles = memHits
         .map((h) => path.join(jobDir(jobId), h.rel))
@@ -900,31 +900,19 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         seat: "stills",
         constraints_checked: ["prop-drift", "cast-drift", "require-keys"],
       });
-    }
-    job = patch(job, {
-      providers: trace,
-      vault: vaultStats(jobId),
-      progress: 45,
-      outputs: { ...job.outputs, stills: stills.map((f) => relInJob(jobId, f)) },
-    });
+      } // else: /edit this shot
 
-    // picture QC: plan geometry pre-check, then blind Qwen 27B per still — GREEN or fail
-    await think("pictureQc");
-    await speak("pictureQc", "Qwen 27B 盲測：人數、灰模、物件。本地 schema 只做走位預檢。");
-    // --scene hop: geometry vs hop stills only (full slate stills land across hops)
-    const qcSheet = input.scene
-      ? { ...timed, shots: shotsForScene(timed.shots, input.scene) }
-      : timed;
-    const geometry = localPictureQc({ stills, sheet: qcSheet, target: "stills" });
-    if (!geometry.pass) {
-      const detail = geometry.issues.map((i) => i.detail).join("; ");
-      // D1a: a hard QC fail is also a violation row, upstream soft rows already on disk
-      appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc-geometry", geometry.issues.map((i) => i.detail)));
-      throw new Error(`picture QC plan-geometry pre-check failed: ${detail}`);
-    }
-    for (const { shot, first, require } of hopStillPlans) {
-      if (greenAlready.has(shot.id)) continue;
-      const png = path.join(stillDir, `${shot.id}.png`);
+      // bug4: picture QC judges THIS still inside the same loop, immediately
+      // after /edit (or a reused un-QC png) — GREEN pin exists before the next
+      // shot asks for Image-2. T44 GREEN-only gate unchanged. Retry stays FAIL-only
+      // (PASS_UNCONFIRMED 唔自動當 FAIL 重出 — 報 SlateLead，唔自決).
+      const png = out;
+      const geometryShot = localPictureQc({ stills: [out], sheet: { ...timed, shots: [shot] }, target: "stills" });
+      if (!geometryShot.pass) {
+        const detail = geometryShot.issues.map((i) => i.detail).join("; ");
+        appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc-geometry", geometryShot.issues.map((i) => i.detail)));
+        throw new Error(`picture QC plan-geometry pre-check failed: ${detail}`);
+      }
       const qcStarted = Date.now();
       const qcJson = path.join(stillDir, `${shot.id}.photo_qc.json`);
       let result = await runPhotoQc(png, qcJson, require, {}, photoQcEyesFromEnv());
@@ -989,7 +977,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
             seat: "pictureQc",
             constraints_checked: ["photo-qc"],
           });
-          editInputs.set(shot.id, { ...inputs0, prompt: keyframeEditPrompt(timed, promptShot, { first }) });
+          editInputs.set(shot.id, { ...inputs0, prompt: keyframeEditPrompt(timed, promptShot, { first, ...(baseCast ? { cast: baseCast } : {}) }) });
         }
       }
       if (result.status === "FAIL") {
@@ -1147,6 +1135,17 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           rel: `stills/${shot.id}.png`,
         });
       }
+    }
+    // picture QC slate record: every hop still above is already GREEN-pinned
+    // in-loop (bug4). Whole-slate (or hop) plan-geometry is the receipt.
+    const qcSheet = input.scene
+      ? { ...timed, shots: shotsForScene(timed.shots, input.scene) }
+      : timed;
+    const geometry = localPictureQc({ stills, sheet: qcSheet, target: "stills" });
+    if (!geometry.pass) {
+      const detail = geometry.issues.map((i) => i.detail).join("; ");
+      appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc-geometry", geometry.issues.map((i) => i.detail)));
+      throw new Error(`picture QC plan-geometry pre-check failed: ${detail}`);
     }
     trace.mars = `qwen38 ${cfg.pictureQc.endpoint} (${cfg.pictureQc.model})`;
     job = patch(job, { pictureQcStills: geometry, providers: trace, progress: 55 });
