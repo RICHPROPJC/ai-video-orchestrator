@@ -228,14 +228,15 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
     "【光影材質】布料、紙、金屬各有質感；手、衣擺、道具同地面有接觸遮擋。",
     keep,
   ].filter((s) => s.length > 0).join("\n\n");
-  const n = cjkCount(brief);
-  if (n < EDIT_MIN_CJK) {
-    throw new Error(`prompt_too_thin: ${shot.id} /edit 只組到 ${n} 中文字（最少 ${EDIT_MIN_CJK}）— packet 太薄，生成器拒出（Fable 00:20 U1.5=A）`);
+  const nBrief = cjkCount(brief);
+  if (nBrief > EDIT_MAX_CJK) {
+    throw new Error(`prompt_too_thick: ${shot.id} /edit 組到 ${nBrief} 中文字（上限 ${EDIT_MAX_CJK}）— packet 太肥，prompt 只解釋底圖唔補償（Chau 0917 法11）；收細 packet 再出`);
   }
-  if (n > EDIT_MAX_CJK) {
-    throw new Error(`prompt_too_thick: ${shot.id} /edit 組到 ${n} 中文字（上限 ${EDIT_MAX_CJK}）— packet 太肥，prompt 只解釋底圖唔補償（Chau 0917 法11）；收細 packet 再出`);
+  const text = extras ? `${brief}\n\n${extras}` : brief;
+  if (cjkCount(text) < EDIT_MIN_CJK) {
+    throw new Error(`prompt_too_thin: ${shot.id} /edit 只組到 ${cjkCount(text)} 中文字（最少 ${EDIT_MIN_CJK}）— packet 太薄，生成器拒出（Fable 00:20 U1.5=A）`);
   }
-  return extras ? `${brief}\n\n${extras}` : brief;
+  return text;
 }
 
 /** what photo QC requires of this shot's keyframe: the marks decide people_count;

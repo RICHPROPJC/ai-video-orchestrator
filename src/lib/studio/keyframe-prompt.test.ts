@@ -461,8 +461,10 @@ test("BUG3: scene truth source is ONE field — require.location, then shot.loca
 
 test("BUG3: the brief is 150–300 中文字 — thin refuses, fat refuses", () => {
   const text = keyframeEditPrompt(baseSheet, shotWithProp(coat), { first: false });
-  const n = cjkCount(text);
-  assert.ok(n >= EDIT_MIN_CJK && n <= EDIT_MAX_CJK, `2-char brief in band: ${n}`);
+  const brief = text.split(/\n\n【動作】/)[0]!;
+  const n = cjkCount(brief);
+  assert.ok(n >= EDIT_MIN_CJK && n <= EDIT_MAX_CJK, `2-char cookbook brief in band: ${n}`);
+  assert.ok(cjkCount(text) >= EDIT_MIN_CJK, "emitted prompt (brief+action/size) clears the floor");
   const empty = shotWithProp();
   empty.marks = [];
   assert.throws(() => keyframeEditPrompt(baseSheet, empty, { first: true }), /prompt_too_thin/);
