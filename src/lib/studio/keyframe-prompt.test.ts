@@ -293,7 +293,7 @@ test("noun classes: garments and documents never take the held-tool gate; hologr
     assert.equal(propNounClass(name), "document", `${name} is a document`);
     assert.equal("tool" in keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })), false);
   }
-  for (const name of ["藍色光框", "全息投影", "全息界面", "系統界面", "戰術infograph", "holographic frame"]) {
+  for (const name of ["藍色光框", "全息投影", "全息界面", "戰術infograph", "holographic frame"]) {
     assert.equal(propNounClass(name), "system", `${name} is a hologram/infograph prop`);    assert.equal(keyframeRequire(shotWithProp({ name, shape: [], forbid: [] })).tool, name, `${name} carries the prop gate`);
   }
   for (const name of ["曲轅犁", "長槍", "鋤頭"]) {

@@ -101,12 +101,12 @@ export type QcVerdict = {
 const GREY_RE =
   /灰色方块|灰色方塊|灰块|灰塊|占位人偶|灰色立方|灰色人形|人偶|i-?mannequin|mannequin|placard|標牌|看板|剪影|silhouette|grey cubes?|gray cubes?|grey blocks?/i;
 
-/** §0c 系統形象法（WR1Q SH02 root cause）——screen 字族：forbid token 或者盲眼
+/** §0c 光框法（WR1Q SH02 root cause）——screen 字族：forbid token 或者盲眼
  *  描述任何一邊係 screen 族字，兩邊就同族（螢幕↔screen，繁簡都收）。 */
 const SCREEN_FAMILY_RE = /screen|螢幕|屏幕|萤幕|荧幕/i;
-/** §0c 混合形：盲眼寫到「多出嚟嗰個」係投影／全息／縮細系統人樣——唔算多一個人。 */
+/** §0c 混合形：盲眼寫到「多出嚟嗰個」係投影／全息／縮細人樣——唔算多一個人。 */
 const SYSTEM_FORM_RE =
-  /縮細|縮小|縮咗|迷你|投影|全息|系統人樣|hologram|holographic|projection|miniature|shrunken|scaled.?down/i;
+  /縮細|縮小|縮咗|迷你|投影|全息|hologram|holographic|projection|miniature|shrunken|scaled.?down/i;
 
 /** GET /v1/models on an endpoint; resolves the exact model id or throws.
  *  0917 公版：唔再有 mars 模糊後備——眼＝nex-n2.5(:8017)、判官＝qwen38(:8015)，
@@ -697,7 +697,7 @@ export function judge(desc: string, summary: QcSummary, require: QcRequire, ctx:
     const forbid = require.tool_forbid ?? [];
     const named = blob.includes(String(wantTool));
     const shaped = shape.length > 0 && shape.every((tok) => blob.includes(tok));
-    // §0c 系統形象法: a screen-family forbid token matches any screen-family
+    // §0c 光框法: a screen-family forbid token matches any screen-family
     // word in the write-up (螢幕↔screen). On a system prop the screen IS the
     // system — screen-family tokens are exempt outright; a character growing a
     // screen on a non-system prop still dies. phone/book etc. kill both ways.

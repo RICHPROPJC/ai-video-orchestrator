@@ -19,7 +19,7 @@ const DOCUMENT_RE =
 /** §0c hologram/infograph class (WR1Q SH02: 光框 fell into tool + forbid=screen
  *  and the blind eye's 全息螢幕 killed the legal form). The drama's proper name
  *  for this class stays out of src (noun-lint); 光框／全息／infograph cover it. */
-const SYSTEM_RE = /光框|光幕|全息|投影|infograph|信息圖|系統|hologram|holographic|數據卡/i;
+const SYSTEM_RE = /光框|光幕|全息|投影|infograph|信息圖|hologram|holographic|數據卡/i; /* 淨低嗰個 token 屬劇本實體（guojia entities），唔入 src（noun-lint 硬閘；4908bc8 同款紀律） */
 
 /** Class order is load-bearing: hologram/infograph first — a 光框-named prop is
  *  never a held farm tool, and a 數據圖表 must not ride document. */export function propNounClass(name: string): PropNounClass {
@@ -29,8 +29,8 @@ const SYSTEM_RE = /光框|光幕|全息|投影|infograph|信息圖|系統|hologr
   return "tool";
 }
 
-/** §0c law46（CHAU_FULL_FLOW_LAW 0917 QC豁免位）：系統出場 shot，TEXT_SCREEN_RE
- *  等「螢幕/screen」禁詞要豁免——系統＝螢幕合法，角色亂生螢幕先係犯規。
+/** FLOW_LAW §0c law46（QC豁免位）：光框／全息出場 shot，TEXT_SCREEN_RE 等
+ *  「螢幕/screen」禁詞要豁免——光框＝螢幕合法，角色亂生螢幕先係犯規。
  *  boards 寫 screen/螢幕 入 system prop 嘅 forbid＝禁詞殺自己人（WR1Q SH02
  *  「掌心托住全息螢幕＋道具描述包含被禁詞『螢幕/screen』」）。判詞族上限收
  *  全形字（螢幕／屏幕等）；boards 契約層（boards-contract）用呢度兩個 predicate

@@ -421,7 +421,7 @@ test("people mismatch fails", () => {
   assert.ok(v.checks.fail_reasons.some((r) => r.includes("people_count")));
 });
 
-// ─── §0c 系統形象法（WR1Q SH02 root cause：光框被歸 tool，forbid=screen 殺盲眼）───
+// ─── §0c 光框法（WR1Q SH02 root cause：光框被歸 tool，forbid=screen 殺盲眼）───
 
 const SYS_REQUIRE: QcRequire = {
   people_count: 1,
@@ -462,7 +462,7 @@ test("§0c non-system prop: blind write says 螢幕 — screen token family-kill
 
 test("§0c system hybrid form: shrunken system person-form is not an extra person", () => {
   const ok = judge(
-    `${DESC} 掌心嘅藍色光框投影旁邊浮住一個縮細嘅系統人樣。`,
+    `${DESC} 掌心嘅藍色光框投影旁邊浮住一個縮細嘅全息人樣。`,
     { people_count: 2, grey_blocks: false, tool_as_written: "掌心托住藍色光框投影" },
     SYS_REQUIRE,
   );

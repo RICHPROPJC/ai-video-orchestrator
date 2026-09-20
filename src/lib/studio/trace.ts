@@ -128,8 +128,8 @@ export function checkBoardsToKeyframe(
 
 /** keyframe→stills soft edge: require fields are derivable from the prompt —
  *  people_count matches the marks, and the tool gate exists exactly when the
- *  shot's prop is noun class "tool" or "system" (§0c 系統形象法: the system
- *  光框 carries the prop gate, the judge exempts its screen-family forbid;
+ *  shot's prop is noun class "tool" or "system" (§0c 光框法: the system
+ *  prop carries the prop gate, the judge exempts its screen-family forbid;
  *  garment ⇒ no tool gate; document ⇒ no tool gate — a document is not a held
  *  farm tool). */
 export function checkKeyframeToStills(shot: Shot, require: QcRequire): ViolationRow[] {
