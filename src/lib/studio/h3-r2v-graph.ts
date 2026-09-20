@@ -5,7 +5,7 @@ import type { ComfyGraph } from "./comfy";
 const WIDTH = 864;
 const HEIGHT = 480;
 const LORA_STRENGTH = 1.0;
-const SAMPLER = "euler"; // official turbo 4-step recipe
+const SAMPLER = "euler"; // turbo 8-step v1.0（Chau 0921裁）
 const SCHEDULER = "simple";
 const REF_IMAGE_SIZE = "max"; // 2048px short edge
 const SIGMA_VIDEO = 12.0;

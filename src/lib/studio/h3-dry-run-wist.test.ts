@@ -66,7 +66,7 @@ test("WIST verify/ab/dry receipts for A/B/BKF/C on SH01 and SH04", async (t) => 
       assert.equal(receiptFile, receiptJson);
       assert.equal(receipt.graph_variant, variant);
       assert.equal(receipt.dry_run, true);
-      assert.equal(receipt.steps, 4);
+      assert.equal(receipt.steps, 8); // turbo 8-step v1.0（Chau 0921裁；test鎖語義：receipt照config.steps）
 
       const graph = receipt.graph as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
       const r2v = graph.r2v.inputs;

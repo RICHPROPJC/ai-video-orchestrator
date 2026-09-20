@@ -19,7 +19,7 @@ const args = {
   script: "__PROMPT__",
   bindings: BINDINGS,
   frames: 260,
-  steps: 4,
+  steps: 8,
   seed: 42,
   filenamePrefix: "video/SLATECREW/__SHOT__",
   kfStartName: "__KF_START__",

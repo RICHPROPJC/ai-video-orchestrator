@@ -85,7 +85,7 @@ export async function submitH3Shot(opts: {
   requireQuote?: boolean;
   wardrobe?: ValidateProseOpts["wardrobe"];
   graphVariant?: H3GraphVariant;
-  /** test-only steps override; default remains config.motion.steps (4) */
+  /** test-only steps override; default remains config.motion.steps (8, turbo 8-step v1.0) */
   stepsOverride?: number;
 }): Promise<{ receipt: H3SubmitReceipt; receiptFile: string }> {
   const cfg = loadConfig();
