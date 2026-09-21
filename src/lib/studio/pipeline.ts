@@ -1564,7 +1564,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       // chained shot (run5 live: 124 + 124 = 248, ffprobe-verified)
       const wantFrames = isMsSegment
         ? segShots.reduce((a, id) => a + segFrames(id), 0)
-        : Math.round((cutPlan.shots.find((c) => c.id === shot.id)?.duration_s ?? -1) * 24)
+        : snapDurationToFrames(await wavSeconds(h3WavByShot.get(shot.id)!))
           + (chained.length ? msGridFrames(framesPerShot) * chained.length : 0);
       const frameSnap = fs.existsSync(doneMp4)
         && Math.round((await mediaSeconds(doneMp4)) * 24) === wantFrames;
