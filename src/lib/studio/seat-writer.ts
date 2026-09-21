@@ -132,6 +132,9 @@ export type SeatIo = {
   /** seats/ dir: set it and every writer system prompt carries the global +
    *  writer playbooks (charter untouched), and a PASS promotes their trials. */
   playbookDir?: string;
+  /** INSIDE_VISIBLE 卡A attempt燈: the pipeline wires this to a warn event —
+   *  a failed attempt is visible the moment it happens, not only in receipts. */
+  warn?: (message: string) => void | Promise<void>;
 };
 
 /** 阿文 works twice: the shape of the film, then the beats of one scene at a
@@ -142,9 +145,16 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
   const receipts: string[] = [];
   // system = charter (law) + global playbook + own playbook; charter never shrinks
   const book = assemblePlaybook("writer", io.playbookDir);
+  const attemptLamp = (unit: string) =>
+    io.warn &&
+    ((r: { attempt: number; valid: boolean; errors: string[] }) => {
+      if (!r.valid) void io.warn?.(`writer ${unit} attempt ${r.attempt} ✗ ${r.errors[0] ?? ""}`);
+    });
+
   const outlinePass = await chatJson<Outline>({
     seat: "writer",
     unit: "outline",
+    onAttempt: attemptLamp("outline"),
     model: io.model,
     crew: io.crew,
     system: WRITER_OUTLINE_CHARTER + book.text,
@@ -175,6 +185,7 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
     const pass = await chatJson({
       seat: "writer",
       unit: scene.id,
+      onAttempt: attemptLamp(scene.id),
       model: io.model,
       crew: io.crew,
       system: WRITER_BEATS_CHARTER + book.text,

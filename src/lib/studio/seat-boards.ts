@@ -238,6 +238,9 @@ export async function runBoards(
     const pass = await chatJson({
       seat: "boards",
       unit: scene.id,
+      onAttempt: io.warn && ((r: { attempt: number; valid: boolean; errors: string[] }) => {
+        if (!r.valid) void io.warn?.(`boards ${scene.id} attempt ${r.attempt} ✗ ${r.errors[0] ?? ""}`);
+      }),
       model: io.model,
       crew: io.crew,
       system: BOARDS_CHARTER + book.text,
