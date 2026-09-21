@@ -59,8 +59,9 @@ function cpSlice(s: string, start: number, end?: number): string {
   return [...s].slice(start, end).join("");
 }
 
-/** Python round(): half to even, on the exact double. */
-function pyRound(x: number): number {
+/** Python round(): half to even, on the exact double. Exported for the
+ *  environment port (combat-environment.ts), same semantics. */
+export function pyRound(x: number): number {
   const fl = Math.floor(x);
   const diff = x - fl;
   if (diff > 0.5) return fl + 1;
@@ -72,8 +73,9 @@ function pyRound(x: number): number {
  * Python f"{x:.2f}" — correctly rounded decimal of the exact double, ties to
  * even. Doubles ≥ 0.05 have decimal expansions terminating well within 60
  * digits, so toFixed(60) is the exact expansion for this engine's range.
+ * Exported for the environment port (combat-environment.ts).
  */
-function fmt2(x: number): string {
+export function fmt2(x: number): string {
   const neg = x < 0 || Object.is(x, -0);
   const t = Math.abs(x).toFixed(60);
   const dot = t.indexOf(".");

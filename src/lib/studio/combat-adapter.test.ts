@@ -109,6 +109,13 @@ test("applyCombatToSheet: two named fighters map to S1/S2 and back", () => {
   // screen-left fighter is S1: 陳師傅's mark is at x=20
   assert.equal(s1.actors.s1, "陳師傅");
   assert.equal(s1.actors.s2, "大強");
+  // unequal-length names must not swap roles: the first Beat's attacker is
+  // the screen-left fighter (陳師傅 3 chars vs 大強 2 — the length-sort trap)
+  const firstBeat = s1.action_chain.split("]")[1] ?? "";
+  assert.ok(
+    firstBeat.trim().startsWith("陳師傅 launches"),
+    `first-beat subject flipped: ${firstBeat.slice(0, 40)}`,
+  );
   // seven-column beats on every structured beat
   for (const beat of s1.beats) {
     for (const field of [
@@ -167,6 +174,27 @@ test("combatProseSpec: Physical Contact first, momentum-carry cut, weather sound
   );
   assert.ok(second.some((l) => l.kind === "soundscape" && l.line.includes("rainfall")));
   assert.ok(second.some((l) => l.kind === "relay" && l.line.includes("陳師傅")));
+});
+
+test("combat state carries environment inheritance and the prose persists damage", () => {
+  const fight = sheet([
+    shot("SH01", 0, "陳師傅 punches 大強 beside the crates. 大強 blocks and counters.", ["C1", "C2"]),
+    shot("SH02", 1, COUNTER, ["C2", "C1"]),
+  ]);
+  const { sheet: passed } = applyCombatToSheet(fight);
+  const env1 = passed.shots[0]!.combat!.environment;
+  assert.equal(env1.location, "後巷");
+  assert.ok(env1.incoming_state.startsWith("Location=後巷"));
+  assert.ok(env1.interaction.includes("cause_actor=陳師傅"), "actor token is name-substituted");
+  // prose: damage persistence line rides after the momentum-carry cut
+  const spec = combatProseSpec(passed, passed.shots[1]!, passed.shots[0]);
+  const envLine = spec.find((l) => l.kind === "environment");
+  assert.ok(envLine, "a combat shot with damage history carries the persistence line");
+  assert.ok(envLine!.line.startsWith("Earlier contact consequences persist unchanged"));
+  // and the built prose stays inside the T42 budget with the line riding
+  const prose = buildProse(passed, passed.shots[1]!, { form: "c", prevShot: passed.shots[0] });
+  assert.ok(prose.includes("Earlier contact consequences persist unchanged"));
+  assert.ok(countWords(prose) <= IDENTITY_LONG_MAX);
 });
 
 test("combatProseSpec: throw carrier adds Motion Discipline + Anatomy Lock", () => {

@@ -18,32 +18,15 @@ import fs from "node:fs";
 import type { CallSheet, Shot } from "./types";
 import { jobFile } from "./paths";
 import { action_risk, reconcile_combat_action_rows, type PyRow } from "./combat-action";
+import { environmentRelay, hasCombatCause, type EnvironmentRelayState } from "./combat-environment";
 import {
   CONSTRAINT_PRESETS,
   SOUNDSCAPE_PRESETS,
   TRANSITION_STYLE_PRESETS,
 } from "./combat-presets";
 
-/** Port of combat_environment_engine._has_combat_cause — the source's own
- *  "does this action carry a visible combat cause" predicate, reused here as
- *  the sheet-level combat signal. */
-const COMBAT_CAUSE_WORDS = [
-  "punch", "kick", "strike", "parry", "parries", "block", "throw", "takedown", "clinch",
-  "grip", "elbow", "forearm", "palm", "sweep", "slam", "drive", "driving", "ground", "bridge",
-  "attack", "defence", "defense", "impact", "contact", "exchange", "counter",
-  "拳", "踢", "击", "擊", "挡", "擋", "摔", "抱", "抓", "掌", "肘", "扫",
-  "掃", "攻", "防", "格斗", "格鬥", "反击", "反擊", "压制", "壓制",
-  "submission", "choke", "armbar", "wrist", "release", "recover",
-  "tap", "guarded base", "绞", "絞", "关节", "關節", "腕", "松开", "松開",
-  "hip-turn", "hip turn", "redirect", "brace", "latch", "gate",
-  "髋转", "髖轉", "转向", "轉向", "支撑", "支撐", "闸门", "閘門",
-];
-
-export function hasCombatCause(value: unknown): boolean {
-  const text = String(value ?? "").toLowerCase();
-  if (!text.trim()) return false;
-  return COMBAT_CAUSE_WORDS.some((word) => text.includes(word));
-}
+export { hasCombatCause };
+export type CombatEnvironmentState = EnvironmentRelayState;
 
 /** The sheet-level combat signal (foreman condition ②): a shot with at least
  *  two marked characters whose authored action carries a combat cause. */
@@ -80,6 +63,8 @@ export type CombatShotState = {
   risk: { status: string; flags: string[] };
   /** name↔S1/S2 map for prose rendering (screen-left fighter is S1) */
   actors: { s1: string; s2: string };
+  /** environment inheritance (S4): bounded persistent-damage ledger relay */
+  environment: CombatEnvironmentState;
   final: { action_resolution: string; camera_resolution: string; stable: boolean };
 };
 
@@ -108,11 +93,17 @@ function escapeRe(s: string): string {
 }
 
 function nameToEngine(text: string, s1: string, s2: string): string {
-  // longer name first so an overlapping pair substitutes cleanly
-  return [s2, s1]
-    .filter((n) => n.length > 0)
-    .sort((a, b) => b.length - a.length)
-    .reduce((acc, name, i) => acc.replace(new RegExp(escapeRe(name), "g"), i === 0 ? "S2" : "S1"), text);
+  // Replace longest name first so an overlapping pair (阿強 vs 強) substitutes
+  // cleanly — but each name keeps ITS OWN token: s1→S1, s2→S2. The sort orders
+  // substitution, never roles: with unequal-length names it used to bind the
+  // longer name to S2 and silently swap the fighters.
+  const pairs = ([["S1", s1], ["S2", s2]] as const).filter(([, name]) => name.length > 0)
+    .sort((a, b) => b[1].length - a[1].length);
+  let acc = text;
+  for (const [token, name] of pairs) {
+    acc = acc.replace(new RegExp(escapeRe(name), "g"), token);
+  }
+  return acc;
 }
 
 function engineToName(text: string, s1: string, s2: string): string {
@@ -176,6 +167,36 @@ export function applyCombatToSheet(sheet: CallSheet): CombatPassResult {
 
   const [rows] = reconcile_combat_action_rows(engineRows, total);
   summary.applied = true;
+
+  // environment inheritance (S4): relay the bounded persistent-damage ledger
+  // over each contiguous same-location run — a location change starts a fresh
+  // ledger (new place, new fixtures). Location truth order follows the
+  // scene-slot law: require.location ?? shot.location, sheet tail last.
+  const locationOf = (shot: Shot): string =>
+    (shot.require?.location ?? shot.location ?? sheet.location).trim();
+  const envStates: EnvironmentRelayState[] = [];
+  for (let i = 0; i < mapping.length; ) {
+    const location = locationOf(mapping[i]!.shot);
+    let j = i;
+    while (j < mapping.length && locationOf(mapping[j]!.shot) === location) j++;
+    const run = mapping.slice(i, j);
+    const states = environmentRelay(
+      run.map((m, k) => {
+        const row = rows[i + k]!;
+        const beats = (row.combat_action_beats as PyRow[] | undefined) ?? [];
+        return {
+          shotId: m.shot.id,
+          action: String(row.subject_action ?? ""),
+          actor: String(beats[0]?.attacker ?? "S1"),
+          forceVector: { ...((row.combat_force_vector as PyRow | undefined) ?? {}) },
+        };
+      }),
+      { location },
+    );
+    envStates.push(...states);
+    i = j;
+  }
+
   rows.forEach((row, i) => {
     const { shot, s1, s2 } = mapping[i]!;
     const risk = action_risk(row);
@@ -208,6 +229,10 @@ export function applyCombatToSheet(sheet: CallSheet): CombatPassResult {
       },
       risk,
       actors: { s1, s2 },
+      environment: {
+        ...envStates[i]!,
+        interaction: engineToName(envStates[i]!.interaction, s1, s2),
+      },
       final: {
         action_resolution: engineToName(String(row.final_action_resolution ?? ""), s1, s2),
         camera_resolution: engineToName(String(row.final_camera_resolution ?? ""), s1, s2),
@@ -228,7 +253,7 @@ export function applyCombatToSheet(sheet: CallSheet): CombatPassResult {
 
 // ---- prose flag layer (S3) --------------------------------------------------
 
-export type CombatLineKind = "constraint" | "relay" | "transition" | "soundscape";
+export type CombatLineKind = "constraint" | "relay" | "transition" | "environment" | "soundscape";
 
 export type CombatProseLine = {
   line: string;
@@ -255,8 +280,8 @@ export function combatProseSpec(sheet: CallSheet, shot: Shot, prev?: Shot): Comb
     {
       kind: "relay",
       line:
-        `The fight state carries across the cut: ${short(combat.incoming_state, 180)} ` +
-        `resolves into ${short(combat.outgoing_state, 180)}; ${short(combat.next_trigger, 160)}`,
+        `The fight state carries across the cut: ${short(combat.incoming_state, 110)} ` +
+        `resolves into ${short(combat.outgoing_state, 110)}; ${short(combat.next_trigger, 90)}`,
     },
   ];
   if (combat.carrier === "throw_takedown" || combat.carrier === "ground_control") {
@@ -268,6 +293,13 @@ export function combatProseSpec(sheet: CallSheet, shot: Shot, prev?: Shot): Comb
   if (prev?.combat) {
     // momentum carry across the shot boundary — the Match-on-Action preset
     lines.push({ kind: "transition", line: TRANSITION_STYLE_PRESETS["Match-on-Action"]! });
+  }
+  if (combat.environment && combat.environment.persistent.length > 0) {
+    // S4: damage persistence — displaced/dented/broken state never resets
+    lines.push({
+      kind: "environment",
+      line: `Earlier contact consequences persist unchanged into this shot: ${short(combat.environment.persistent.slice(-2).join("; "), 200)}`,
+    });
   }
   const soundscape = SOUNDSCAPE_BY_WEATHER[sheet.weather];
   if (soundscape) {
