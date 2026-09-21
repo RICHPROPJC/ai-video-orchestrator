@@ -21,6 +21,7 @@
   ],
   "n_candidates": 120
  },
+ "raw": "SH01 C13 | C29 C10 | covers the sequence of two punches followed by a turn and side kick\nSH02 C43 | C44 C45 | matches the action of walking forward a few steps and stopping\nSX1 C71 | C85 C78 | covers bending down to pick up an object and rising back up\nSX2 C58 | C59 C60 | matches the action of running at full speed towards a destination\nSX3 C101 | C102 C103 | matches sitting down on a stool and remaining still with hands on knees",
  "rows": [
   {
    "shot": "SH01",

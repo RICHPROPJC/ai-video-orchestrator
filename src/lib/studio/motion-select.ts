@@ -109,16 +109,23 @@ function clipIdOf(basename: string): string {
   return `${String(Number(m[1])).padStart(2, "0")}_${String(Number(m[2])).padStart(2, "0")}`;
 }
 
-/** BVH header `Frames:` count — read the first KB only, never the whole clip */
+/** BVH header `Frames:` count — read forward in chunks (the MOTION block sits
+ *  ~4KB in on CMU files), never the whole clip */
 export function bvhClipFrames(bvhRelToData: string, root = MOTION_LIB_ROOT): number | null {
   const file = path.join(root, "cmu-mocap", bvhRelToData);
   try {
     const fd = fs.openSync(file, "r");
     try {
-      const buf = Buffer.alloc(1024);
-      const n = fs.readSync(fd, buf, 0, 1024, 0);
-      const m = /Frames:\s*(\d+)/.exec(buf.subarray(0, n).toString("latin1"));
-      return m ? Number(m[1]) : null;
+      const buf = Buffer.alloc(8192);
+      let tail = "";
+      for (let off = 0; off < 65536; off += buf.length) {
+        const n = fs.readSync(fd, buf, 0, buf.length, off);
+        if (n <= 0) break;
+        const m = /Frames:\s*(\d+)/.exec(tail + buf.subarray(0, n).toString("latin1"));
+        if (m) return Number(m[1]);
+        tail = buf.subarray(0, n).toString("latin1").slice(-16);
+      }
+      return null;
     } finally {
       fs.closeSync(fd);
     }
@@ -518,8 +525,9 @@ export async function selectMotions(opts: {
     lastTokens = content.map((e) => normTok(e.token));
     rows = parseDecisionLines(lastRaw);
     const got = new Set(rows.map((r) => r.shot));
-    const complete = [...wantShots].every((id) => got.has(id)) && rows.length === wantShots.size;
-    if (complete) break;
+    // complete = every wanted shot answered (a replayed stream may carry extra
+    // lines; a live decider answers exactly what was asked)
+    if ([...wantShots].every((id) => got.has(id))) break;
   }
   const got = new Set(rows.map((r) => r.shot));
   const missing = [...wantShots].filter((id) => !got.has(id));
@@ -691,16 +699,16 @@ export function decideSelection(
     }
   }
   const finalRow = byId.get(chosen!) ?? chosenRow;
-  const runners = row.runner
-    .map((code) => shortlist.candidates.find((c) => c.code === code)?.id ?? code)
-    .filter((id) => id !== chosen);
+  // runners list every alternative the decider offered plus a demoted pick
+  const runnerIds = [...new Set([pickId, ...row.runner.map((code) => shortlist.candidates.find((c) => c.code === code)?.id ?? code)])]
+    .filter((id): id is string => Boolean(id) && id !== chosen);
   return {
     shot: shot.id,
     bvh: finalRow ? finalRow.bvh : "",
     conf,
     auto,
     bake: bakeFor(shot.durationSec),
-    runners,
+    runners: runnerIds,
     reason: row.reason,
     ...(needsHuman ? { needs_human: true } : {}),
     ...(tieBreak ? { tie_break: tieBreak } : {}),
