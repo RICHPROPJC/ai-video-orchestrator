@@ -32,7 +32,7 @@ import { runPeStep } from "./pe-step";
 import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
 import { submitH3Shot } from "./h3-submit";
 import type { H3GraphVariant } from "./h3-r2v-graph";
-import { assertH3Plan, assertH3SubmitWiring, planH3Shot } from "./h3-slots";
+import { assertH3Plan, assertH3SubmitWiring, planH3Shot, type AnglePortrait } from "./h3-slots";
 import { assertNativeFfmpeg, concatCopyArgs } from "./native-cut";
 import { checkHealth, buildEditPayload, u15Edit, MAX_IMAGES, type EditPayload, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
@@ -62,15 +62,32 @@ function writeH3Plan(
   jobId: string,
   timed: CallSheet,
   shot: Shot,
-  wiring: { wav: string; blockout: string; still: string; kfStart: string; kfEnd?: string; refImageFiles?: string[] },
+  wiring: {
+    wav: string;
+    blockout?: string;
+    still: string;
+    kfStart?: string;
+    kfEnd?: string;
+    refImageFiles?: string[];
+    anglePortraits?: AnglePortrait[];
+  },
 ) {
   const prev = prevShotOf(timed, shot);
+  // plugged portraits live outside the slate — keep their absolute path
+  const relOrAbs = (p: string) => {
+    try {
+      return relInJob(jobId, p);
+    } catch {
+      return p;
+    }
+  };
   const plan = planH3Shot({
     shot,
     prev,
     wav: relInJob(jobId, wiring.wav),
-    blockout: relInJob(jobId, wiring.blockout),
+    blockout: wiring.blockout ? relInJob(jobId, wiring.blockout) : undefined,
     ourStill: relInJob(jobId, wiring.still),
+    anglePortraits: wiring.anglePortraits?.map((p) => ({ ...p, file: relOrAbs(p.file) })),
   });
   assertH3Plan(plan);
   assertH3SubmitWiring(plan, {
@@ -86,31 +103,78 @@ function writeH3Plan(
   return plan;
 }
 
-export function h3MotionPack(  timed: CallSheet,
+/** §5b C-form identity refs: one angle-version portrait per marked character,
+ *  left-to-right, the refAngle column picking front/45°. A 45° shot without
+ *  its _45 portrait fails loud — the frontal version drags the face back to
+ *  camera (the B-lane regression). */
+export function anglePortraitsFor(
+  shot: Shot,
+  portraitFiles: Record<string, string>,
+  portraitDir?: string,
+): AnglePortrait[] {
+  const ordered = [...new Set([...shot.marks].sort((a, b) => a.start.x - b.start.x).map((m) => m.characterId))];
+  return ordered.map((id) => {
+    const angle: "front" | "45" = shot.refAngle === "45" ? "45" : "front";
+    if (angle === "45") {
+      const angled = portraitDir ? path.join(portraitDir, `${id}_45.png`) : "";
+      if (angled && fs.existsSync(angled)) return { characterId: id, angle, file: angled };
+      throw new Error(
+        `angle_portrait_missing: ${shot.id} refAngle=45 需要 ${id}_45.png（45°角度版肖像）— 正面版會將個面拉返向鏡頭（B-lane regression），唔准頂`,
+      );
+    }
+    const fromMap = portraitFiles[id];
+    if (fromMap && fs.existsSync(fromMap)) return { characterId: id, angle, file: fromMap };
+    const onDisk = portraitDir ? path.join(portraitDir, `${id}.png`) : "";
+    if (onDisk && fs.existsSync(onDisk)) return { characterId: id, angle, file: onDisk };
+    throw new Error(`${shot.id}: C-form 冇${id}肖像 — ref_image_0 身份ref缺件（首次出場要有肖像）`);
+  });
+}
+
+export function h3MotionPack(
+  timed: CallSheet,
   shot: Shot,
   variant: H3GraphVariant,
   stillPng: string,
   portraitFiles: Record<string, string>,
   prev?: Shot,
+  opts?: { hasVideo1?: boolean; portraitDir?: string },
 ) {
+  // §5b: the Video 1 asset routes the form. Motion shots carry a blockout
+  // (the blockout lane renders one per shot) → C-form; a shot with no Video 1
+  // asset stays A-form still-to-video (H3Keyframes 0%/100%).
+  const hasVideo1 = opts?.hasVideo1 !== false;
   if (variant === "a") {
     if (!shot.uiShot) {
-      // story shot: zero photo refs, zero ui prose — the channel stays shut
+      if (hasVideo1) {
+        // story motion shot, C-form: identity = angle portraits on ref_images
+        const anglePortraits = anglePortraitsFor(shot, portraitFiles, opts?.portraitDir);
+        return {
+          prose: buildProse(timed, shot, { prevLocation: prev?.location, form: "c" }),
+          refImageFiles: anglePortraits.map((p) => p.file),
+          anglePortraits,
+          uiPhotoFiles: undefined as string[] | undefined,
+          kfEnd: undefined as string | undefined,
+        };
+      }
+      // no Video 1 asset: still-to-video — keyframes two ends, zero refs
       return {
-        prose: buildProse(timed, shot, { prevLocation: prev?.location }),
+        prose: buildProse(timed, shot, { prevLocation: prev?.location, form: "a" }),
         refImageFiles: undefined as string[] | undefined,
+        anglePortraits: [] as AnglePortrait[],
         uiPhotoFiles: undefined as string[] | undefined,
         kfEnd: stillPng,
       };
     }
     // card ③b: UI/infographic shot — photo refs ride ref_images (law: 文字圖／
-    // 手機畫面等 UI 反而可以俾 H3 ref) and the prose carries the mapping table.
-    // uiShot is the only gate: story shots with stray uiRefs stay ref-free.
+    // 手機畫面等 UI 反而可以俾 H3 ref) and the prose carries the mapping
+    // table. uiShot is the only gate: story shots with stray uiRefs stay
+    // ref-free. On the C-form the ui board keeps <Picture 1>; no keyframes.
     return {
-      prose: buildProse(timed, shot, { ui: shot.uiSpec ?? {} }),
+      prose: buildProse(timed, shot, { ui: shot.uiSpec ?? {}, form: hasVideo1 ? "c" : "a" }),
       refImageFiles: undefined as string[] | undefined,
+      anglePortraits: [] as AnglePortrait[],
       uiPhotoFiles: shot.uiRefs ?? [] as string[],
-      kfEnd: stillPng,
+      kfEnd: hasVideo1 ? undefined : stillPng,
     };
   }
   const ids = [...new Set(shot.marks.map((m) => m.characterId))];
@@ -127,6 +191,7 @@ export function h3MotionPack(  timed: CallSheet,
   return {
     prose: buildProsePositive(timed, shot, { motionOnly: variant === "c", portraits }),
     refImageFiles,
+    anglePortraits: [] as AnglePortrait[],
     uiPhotoFiles: undefined as string[] | undefined,
     kfEnd: undefined as string | undefined,
   };
@@ -686,21 +751,27 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       for (const { shot } of stillPlans) {
         const stillPng = path.join(stillDir, `${shot.id}.png`);
         const prev = prevShotOf(timed, shot);
-        const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files, prev);
         const blockoutMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
+        // §5b routing field: the Video 1 asset on disk decides the form
+        const hasVideo1 = fs.existsSync(blockoutMp4);
+        const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files, prev, {
+          hasVideo1,
+          portraitDir: path.join(jobDir(jobId), "portraits"),
+        });
         writeH3Plan(jobId, timed, shot, {
           wav: h3WavByShot.get(shot.id)!,
-          blockout: blockoutMp4,
+          blockout: hasVideo1 ? blockoutMp4 : undefined,
           still: stillPng,
-          kfStart: stillPng,
+          kfStart: hasVideo1 ? undefined : stillPng,
           kfEnd: pack.kfEnd,
           refImageFiles: pack.refImageFiles,
+          anglePortraits: pack.anglePortraits,
         });
         const { receiptFile } = await submitH3Shot({
           prose: pack.prose,
           wavFile: h3WavByShot.get(shot.id)!,
-          blockoutMp4,
-          kfStart: stillPng,
+          blockoutMp4: hasVideo1 ? blockoutMp4 : undefined,
+          kfStart: hasVideo1 ? undefined : stillPng,
           kfEnd: pack.kfEnd,
           refImageFiles: pack.refImageFiles,
           uiPhotoFiles: pack.uiPhotoFiles,
@@ -1272,7 +1343,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     await think("motion");
     open(toMotion, { slate: jobId, to: "motion" });
     await speak("motion", packetLine(toMotion));
-    await speak("motion", `H3 R2V ${cfg.motion.comfyUrl} · <Video 1> motion only · 零 ref_images · 一鏡一 submit。`);
+    await speak("motion", `H3 R2V ${cfg.motion.comfyUrl} · §5b：有Video1→C形（零keyframes＋ref_image_0角度肖像）；冇Video1→A形（keyframes兩端）· 一鏡一 submit。`);
     // C-scene-hop: the scene flag crops the stills/QC lanes above and this
     // motion loop; a no-match scene throws before any H3 is burned
     const motionShots = shotsForScene(stillPlans.map((p) => p.shot), input.scene);
@@ -1286,7 +1357,13 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       const variant = h3GraphVariant(input);
       const stillPng = path.join(stillDir, `${shot.id}.png`);
       const prev = prevShotOf(timed, shot);
-      const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files, prev);
+      const blockoutMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
+      // §5b routing field: the Video 1 asset on disk decides the form
+      const hasVideo1 = fs.existsSync(blockoutMp4);
+      const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files, prev, {
+        hasVideo1,
+        portraitDir: path.join(jobDir(jobId), "portraits"),
+      });
       const prose = pack.prose;
       if (variant === "a") {
         validateProse(`${SCRIPT_HEADER}\n${prose}`, {
@@ -1325,20 +1402,20 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         );
       }
       const motionStarted = Date.now();
-      const blockoutMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
       writeH3Plan(jobId, timed, shot, {
         wav: h3WavByShot.get(shot.id)!,
-        blockout: blockoutMp4,
+        blockout: hasVideo1 ? blockoutMp4 : undefined,
         still: stillPng,
-        kfStart: stillPng,
+        kfStart: hasVideo1 ? undefined : stillPng,
         kfEnd: pack.kfEnd,
         refImageFiles: pack.refImageFiles,
+        anglePortraits: pack.anglePortraits,
       });
       const { receiptFile } = await submitH3Shot({
         prose,
         wavFile: h3WavByShot.get(shot.id)!,
-        blockoutMp4,
-        kfStart: stillPng,
+        blockoutMp4: hasVideo1 ? blockoutMp4 : undefined,
+        kfStart: hasVideo1 ? undefined : stillPng,
         kfEnd: pack.kfEnd,
         refImageFiles: pack.refImageFiles,
         uiPhotoFiles: pack.uiPhotoFiles,

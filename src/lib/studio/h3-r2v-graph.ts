@@ -25,12 +25,23 @@ const BLOCKOUT_VHS = {
   select_every_nth: 10,
 };
 
-/** copied from shotdag h3_submit.BINDINGS — the grey-model <Video 1> contract */
+/** copied from shotdag h3_submit.BINDINGS — the grey-model <Video 1> contract.
+ *  A-form (no Video 1, keyframes two ends) only: it names the start/end
+ *  keyframe images, which the C-form graph never wires. */
 export const BINDINGS =
   "The start and end keyframe images are the physical beginning and near-end of this " +
   "shot: faces, costumes and props come only from them and continue exactly. " +
   "The grey placeholders of <Video 1> are motion-only: follow positions and timing, " +
   "ignore their appearance. Do not add people.";
+
+/** C-form contract (§5b, E2E SC-0921-9V4Y SH01.c8, tg 17976 — verbatim minus
+ *  the scene sentence, which rides the prose): <Picture 1> (the angle portrait
+ *  in ref_image_0) is the identity reference; <Video 1> is motion only. */
+export const BINDINGS_CFORM =
+  "<Picture 1> is the sole appearance and identity reference. " +
+  "<Video 1> is motion only: follow its positions, choreography and timing, " +
+  "ignore its appearance, clothing, background and lighting entirely — " +
+  "it is never a look reference. Do not add people.";
 
 export type H3GraphModels = {
   textEncoder: string;
@@ -51,19 +62,27 @@ export type BuildH3GraphOpts = {
   steps: number;
   seed: number;
   filenamePrefix: string;
-  kfStartName: string;
+  /** A-form only (no Video 1): the U1.5 still anchoring H3Keyframes at 0%. */
+  kfStartName?: string;
   kfEndName?: string;
-  blockoutName: string;
+  /** §5b routing field: a Video 1 asset present → C-form (zero H3Keyframes,
+   *  ref_images.ref_image_0 = angle portrait); absent → A-form (H3Keyframes
+   *  0%/100%). Passing keyframe names together with a Video 1 throws. */
+  blockoutName?: string;
   wavName: string;
   models: H3GraphModels;
-  /** default A — official path: Video 1 motion-only + H3Keyframes anchors.
-   *  B/BKF are DOCUMENTED FALLBACK (card C ②, 0919): the character-image ref
-   *  path is officially legitimate (samples #17/#22/#23/#31/#34), but on the
-   *  A path identity is already burned into the still via U1.5 /edit, so the
-   *  ref lock moves earlier — B/BKF serve shots with NO still-pinned identity.
-   *  C stays a verify alternate (zero refs). */
+  /** default A — the production path; §5b splits it by the Video 1 asset:
+   *  with Video 1 the graph is C-form (zero keyframes, ref_image_0 = angle
+   *  portrait, Video 1 motion-only); without it A-form still-to-video
+   *  (H3Keyframes 0%/100%). B/BKF are DOCUMENTED FALLBACK (card C ②, 0919):
+   *  the character-image ref path is officially legitimate (samples
+   *  #17/#22/#23/#31/#34), but on the A path identity is already burned into
+   *  the still via U1.5 /edit, so the ref lock moves earlier — B/BKF serve
+   *  shots with NO still-pinned identity. C stays a verify alternate (zero
+   *  refs). B/BKF/C never take a Video 1. */
   variant?: H3GraphVariant;
-  /** B/BKF: still first, then portrait upload names for ref_images.ref_image_N */
+  /** ref_images.ref_image_N upload names — C-form: angle portrait(s) first
+   *  (per refAngle); B/BKF: still first, then portraits. */
   refImageNames?: string[];
   /** A only (card C ③b): UI/infographic shot photo refs — the law-d channel
    *  (text/screen shots MAY feed H3 refs). Mapping prose goes with them
@@ -82,14 +101,24 @@ export type BuildH3GraphOpts = {
   proseMode?: "action-short" | "identity-long";
 };
 
-const KEYFRAME_VARIANTS = new Set<H3GraphVariant>(["a", "bkf", "c"]);
-
-/** v6-parity R2V graph: turbo LoRA via H3LoraStack, SolAttn+FBC+SigmaShift
- *  model chain, H3EpisodeSplit script, H3FreeTextEncoder+H3ConditionStrength
- *  conditioning, voice via LoadAudio->H3ReferenceAudio, blockout via
- *  VHS_LoadVideo — all constants identical to shotdag h3_submit (0919 card C ①
- *  swapped ONLY the keyframe mechanism: H3KeyframeInject start/end → official
- *  H3Keyframes node).
+/** v6-parity R2V graph in two §5b forms, routed by the Video 1 asset:
+ *
+ *  C-form (Video 1 present — the motion-shot production recipe, E2E
+ *  SC-0921-9V4Y SH01.c8, tg 17976): zero H3Keyframes nodes, identity rides
+ *  ref_images.ref_image_0 = the character's angle portrait (per refAngle),
+ *  <Video 1> blockout via VHS_LoadVideo carries motion only, BINDINGS_CFORM
+ *  on the split node, and the guider's conditioning is cond_cs alone.
+ *
+ *  A-form (no Video 1 — still-to-video): official H3Keyframes anchors 0%
+ *  (and 100% with kfEnd), combined with the r2v conditioning via
+ *  ConditioningCombine, zero story ref_images, BINDINGS names the stills.
+ *
+ *  Shared: turbo LoRA via H3LoraStack, SigmaShift model chain (FBC/SolAttn
+ *  only on the 4-step road), H3EpisodeSplit script, H3FreeTextEncoder +
+ *  H3ConditionStrength conditioning, voice via LoadAudio->H3ReferenceAudio —
+ *  all constants identical to shotdag h3_submit (0919 card C ① swapped ONLY
+ *  the keyframe mechanism: H3KeyframeInject start/end → official H3Keyframes
+ *  node; CFORM_0921 then split the two forms).
  *
  *  H3Keyframes (live node1 object_info, ComfyUI-H3-Multishot h3_keyframes.py):
  *  required clip/vae/prompt/width/height/length/positions, optional image_1–6
@@ -100,18 +129,30 @@ const KEYFRAME_VARIANTS = new Set<H3GraphVariant>(["a", "bkf", "c"]);
  *  source video — NOT a slot for arbitrary stills; when it is ever wired,
  *  one positions entry per anchor across both (anchors batch comes AFTER the
  *  image_N slots). % positioning is native to positions, so no percent field
- *  exists anywhere else.
- *
- *  Composition (unverified at runtime until Chau's first real burn): the
- *  official H3_Keyframes example is standalone (no refs); our law keeps the
- *  dialogue wav (ref_audio_0) + <Video 1> blockout, which only r2v consumes,
- *  and H3Keyframes takes no upstream conditioning — so the two positives are
- *  joined with stock ConditioningCombine (cond_cs entry + keyframes entry,
- *  each carrying its own H3ConditionStrength). Dry-run/golden proves the
- *  shape; the two-entry payload merge is the burn gate. */
+ *  exists anywhere else. */
 export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   const variant = opts.variant ?? "a";
   const m = opts.models;
+  // §5b (CHAU_FULL_FLOW_LAW, E2E SC-0921-9V4Y six-way A/B): H3Keyframes ×
+  // <Video 1> coexistence is a model-level fight — 4/8/20 steps all failed
+  // (double exposure / identity morph). The Video 1 asset is THE routing
+  // field: present → C-form (zero keyframes, ref_image_0 = angle portrait),
+  // absent → A-form still-to-video (H3Keyframes 0%/100%). Refuse to emit the
+  // dead coexistence shape — same refuse-to-emit family as prompt_too_thin.
+  const hasVideo1 = Boolean(opts.blockoutName);
+  if (hasVideo1 && (opts.kfStartName || opts.kfEndName)) {
+    throw new Error(
+      `keyframes_video1_coexist: <Video 1> (${opts.blockoutName}) and H3Keyframes ` +
+        `(${opts.kfStartName ?? ""}${opts.kfEndName ? " + kf_end" : ""}) cannot ride one graph — ` +
+        `model-level double exposure (§5b, E2E SC-0921-9V4Y 4/8/20步全滅); ` +
+        `Video 1 in → C-form zero keyframes, keyframes in → no Video 1`,
+    );
+  }
+  if (variant === "a" && !hasVideo1 && !opts.kfStartName) {
+    throw new Error(
+      `a-form requires kfStartName: no Video 1 asset means still-to-video — H3Keyframes anchors 0% on the U1.5 still`,
+    );
+  }
   const g: ComfyGraph = {
     clip: { class_type: "H3ClipLoaderAny", inputs: { clip_name: m.textEncoder, type: m.encoderType } },
     vvae: { class_type: "VAELoader", inputs: { vae_name: m.videoVae } },
@@ -120,24 +161,30 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     fl2va: { class_type: "H3ModelLoaderAny", inputs: { model_name: m.fl2va } },
     split: { class_type: "H3EpisodeSplit", inputs: { script: opts.script, bindings: opts.bindings } },
   };
-  // model chain per loader: H3ModelLoaderAny -> H3FirstBlockCache -> SolAttn ->
-  // H3LoraStack(lora_1 = turbo LoRA) -> MiniMaxH3SigmaShift
+  // model chain per loader: turbo-4 road keeps the accel patch
+  // (H3ModelLoaderAny -> H3FirstBlockCache -> SolAttn -> H3LoraStack ->
+  // MiniMaxH3SigmaShift); any other step count (8-step v1.0, §5b B1v3) skips
+  // FBC/SolAttn entirely — the patch is hard-locked to the 4-step schedule
+  // and crashes structurally off it (tensor 17428≠17418).
+  const turbo4 = opts.steps === 4;
   for (const [tag, loader] of [["lora_a", "ref2va"], ["lora_b", "fl2va"]] as const) {
-    g[`fbc_${loader}`] = {
-      class_type: "H3FirstBlockCache",
-      inputs: {
-        model: [loader, 0],
-        threshold: FBC_THRESHOLD,
-        start_step: FBC_START,
-        end_dense_steps: FBC_END,
-        max_consecutive_skips: FBC_SKIP,
-      },
-    };
-    g[`solattn_${loader}`] = {
-      class_type: "SolAttnMiniMaxH3Patcher",
-      inputs: { model: [`fbc_${loader}`, 0], enabled: true, tau: SOLATTN_TAU, thresh_type: "diag" },
-    };
-    const loraInputs: Record<string, unknown> = { model: [`solattn_${loader}`, 0] };
+    if (turbo4) {
+      g[`fbc_${loader}`] = {
+        class_type: "H3FirstBlockCache",
+        inputs: {
+          model: [loader, 0],
+          threshold: FBC_THRESHOLD,
+          start_step: FBC_START,
+          end_dense_steps: FBC_END,
+          max_consecutive_skips: FBC_SKIP,
+        },
+      };
+      g[`solattn_${loader}`] = {
+        class_type: "SolAttnMiniMaxH3Patcher",
+        inputs: { model: [`fbc_${loader}`, 0], enabled: true, tau: SOLATTN_TAU, thresh_type: "diag" },
+      };
+    }
+    const loraInputs: Record<string, unknown> = { model: [turbo4 ? `solattn_${loader}` : loader, 0] };
     for (let i = 1; i <= 4; i += 1) {
       loraInputs[`lora_${i}`] = i === 1 ? m.turboLora : "None";
       loraInputs[`strength_${i}`] = LORA_STRENGTH;
@@ -155,10 +202,10 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     class_type: "H3ReferenceAudio",
     inputs: { audio: ["voice_in", 0], max_seconds: VOICE_MAX_SECONDS },
   };
-  if (variant === "a") {
+  if (variant === "a" && hasVideo1) {
     g.blender_vid = {
       class_type: "VHS_LoadVideo",
-      inputs: { video: opts.blockoutName, custom_width: WIDTH, custom_height: HEIGHT, ...BLOCKOUT_VHS },
+      inputs: { video: opts.blockoutName!, custom_width: WIDTH, custom_height: HEIGHT, ...BLOCKOUT_VHS },
     };
   }
   const r2vInputs: Record<string, unknown> = {
@@ -172,7 +219,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     ref_image_size: REF_IMAGE_SIZE,
     "ref_audios.ref_audio_0": ["voice_guard", 0],
   };
-  if (variant === "a") {
+  if (variant === "a" && hasVideo1) {
     r2vInputs["ref_videos.ref_video_0"] = ["blender_vid", 0];
     if (opts.audioTimingRefName) {
       // card ③a (sample #31): the montage beat-cut timing reference. It rides
@@ -205,10 +252,14 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     },
   };
   let condOut: [string, number] = ["cond_cs", 0];
-  if (KEYFRAME_VARIANTS.has(variant)) {
+  // keyframes lane: BKF/C alternates plus A-form (variant a WITHOUT Video 1 —
+  // §5b: the H3Keyframes lane belongs to still-to-video; a Video 1 shot is
+  // C-form and never wires keyframes).
+  const keyform = variant === "bkf" || variant === "c" || (variant === "a" && !hasVideo1);
+  if (keyform) {
     // official H3Keyframes (card C ①): the anchors ARE the clip's own frames,
     // pinned by positions — % is native here. One positions entry per anchor.
-    g.kf_start_in = { class_type: "LoadImage", inputs: { image: opts.kfStartName } };
+    g.kf_start_in = { class_type: "LoadImage", inputs: { image: opts.kfStartName! } };
     const kfInputs: Record<string, unknown> = {
       clip: ["clip", 0],
       vae: ["vvae", 0],
