@@ -217,6 +217,19 @@ export function h3MotionPack(
   };
 }
 
+/** CFORM7: the motion eye judges the take's own timeline. require.json.action is
+ *  the boards' freeze sentence (企定零過程動詞，B-lane keyframe discipline — right
+ *  for stills), but the clip runs the callsheet action script: motion-select
+ *  verbGated the bake against it and the prose anchors it verbatim. Judging a
+ *  moving take against the freeze line fails exactly the frames that moved
+ *  (run6 SH01 f61/f123 misses 企定全句). So the motion QC require's action key
+ *  is written from the clip action — shot.action first, motionPrompt fallback;
+ *  every other key (location/size/people) rides the keyframe require unchanged. */
+export function motionClipRequire(base: QcRequire, shot: Shot | undefined): QcRequire {
+  const clipAction = shot?.action?.trim() || shot?.motionPrompt?.trim();
+  return clipAction ? { ...base, action: clipAction } : base;
+}
+
 async function raster(svg: string, outFile: string) {
   ensureDir(path.dirname(outFile));
   const png = new Resvg(svg, {
@@ -1679,7 +1692,12 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       const prevShot = stillPlans.map((p) => p.shot).find((s, i, arr) => arr[i + 1]?.id === shot.id);
       for (const b of sliceBounds) {
         const reqPath = path.join(stillDir, `${b.id}.require.json`);
-        const shotRequire: QcRequire = JSON.parse(fs.readFileSync(reqPath, "utf8"));
+        // CFORM7: the slice's require keeps the keyframe keys but its action is
+        // the clip's temporal script, not the freeze line (motionClipRequire)
+        const shotRequire: QcRequire = motionClipRequire(
+          JSON.parse(fs.readFileSync(reqPath, "utf8")) as QcRequire,
+          timed.shots.find((s) => s.id === b.id),
+        );
         const sliceJson = path.join(motionDir, `${b.id}.video_qc.json`);
         let sliceMp4 = mp4;
         if (segShots.length > 1) {
