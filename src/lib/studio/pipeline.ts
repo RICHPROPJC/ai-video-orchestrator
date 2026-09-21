@@ -1455,7 +1455,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       for (const id of shots.slice(1)) followerOf.set(id, shots[0]!);
     }
     const segmentsFile = path.join(motionDir, "segments.json");
-    const hasMulti = segments.some((s) => (s.kind === "cform" ? s.chain.length : s.shots.length) > 1);
+    // multi = any segment rendering MORE than one shot (a C-form anchor with
+    // even ONE chained follower, or a multishot run of 2+)
+    const hasMulti = segments.some((s) => (s.kind === "cform" ? s.chain.length > 0 : s.shots.length > 1));
     if (hasMulti) {
       fs.writeFileSync(
         segmentsFile,
