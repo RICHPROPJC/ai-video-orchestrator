@@ -153,3 +153,64 @@ test("events name the character and the seed that worked", async () => {
   assert.ok(seen.some((m) => m.includes("A 肖像未過")));
   assert.ok(seen.some((m) => m.includes("A 肖像 GREEN（seed 43）")));
 });
+
+/** W4: real small pngs for the board chain (16² fronts, 64² boards) */
+async function makePng(file: string, size: number, rgba = false) {
+  const args = ["-y", "-f", "lavfi", "-i", `color=c=gray:s=${size}x${size}`, "-frames:v", "1"];
+  if (rgba) args.push("-pix_fmt", "rgba");
+  args.push(file);
+  const { runCommand } = await import("./audio");
+  const r = await runCommand("ffmpeg", args);
+  assert.equal(r.code, 0, r.stderr);
+}
+
+test("W4 批量資產板：angleBoard mode per character — 四角度 RGBA pin 入 portraits/，唔開就零改動", async () => {
+  const outDir = tmpDir();
+  const portrait = fakeLane(["GREEN", "GREEN"]);
+  const boardLane = {
+    edit: async (o: { outFile: string }) => makePng(o.outFile, 64),
+    qc: async (png: string, outJson: string, _require: unknown) => {
+      void png;
+      void _require;
+      fs.writeFileSync(outJson, JSON.stringify({ tool: "slatecrew.photo_qc", status: "GREEN", checks: { status: "GREEN", fail_reasons: [] } }));
+      return { status: "GREEN" as const, checks: { status: "GREEN", fail_reasons: [] as string[] } };
+    },
+    cut: async (boardPng: string, cells: { file: string; x: number; y: number; w: number; h: number }[]) => {
+      const { runCommand } = await import("./audio");
+      for (const c of cells) {
+        const r = await runCommand("ffmpeg", ["-y", "-i", boardPng, "-vf", `crop=${c.w}:${c.h}:${c.x}:${c.y}`, "-frames:v", "1", c.file]);
+        assert.equal(r.code, 0, r.stderr);
+      }
+    },
+    rembg: async (input: string, output: string) => {
+      const { runCommand } = await import("./audio");
+      const r = await runCommand("ffmpeg", ["-y", "-i", input, "-pix_fmt", "rgba", output]);
+      assert.equal(r.code, 0, r.stderr);
+    },
+  };
+  const res = await ensurePortraits({
+    sheet,
+    outDir,
+    seed: 7,
+    lane: portrait.lane,
+    angleBoard: true,
+    boardLane,
+  });
+  for (const id of ["A", "B"]) {
+    for (const a of ["front", "45", "side", "back"] as const) {
+      const f = res.anglePins?.[id]?.[a];
+      assert.ok(f && fs.existsSync(f), `${id}.${a} RGBA pin 入庫`);
+      const { runCommand } = await import("./audio");
+      const probe = await runCommand("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt", "-of", "json", f!]);
+      assert.match(probe.stdout, /rgba/, `${id}.${a} 係 RGBA`);
+    }
+  }
+  assert.ok(fs.existsSync(path.join(outDir, "boards", "A.angles.png")), "成張板只住 boards/（SHEETREF 紅線）");
+
+  // default mode untouched: no angleBoard flag → no boards dir, no pins
+  const plain = tmpDir();
+  const plainLane = fakeLane(["GREEN", "GREEN"]);
+  const resPlain = await ensurePortraits({ sheet, outDir: plain, seed: 7, lane: plainLane.lane });
+  assert.equal(resPlain.anglePins && Object.keys(resPlain.anglePins).length, 0);
+  assert.ok(!fs.existsSync(path.join(plain, "boards")));
+});

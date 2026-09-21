@@ -598,7 +598,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         "stills",
         input.until === "blockout" ? "肖像跳過：--until blockout，唔叫畫檢眼" : "肖像跳過：stills 已全 GREEN，肖像唔再守門",
       );
-      portraits = { files: {}, made: [], plugged: [], kept: [] };
+      portraits = { files: {}, made: [], plugged: [], anglePins: {} };
     } else {
       await think("stills");
       const hopCast = input.scene
@@ -611,9 +611,13 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         server: cfg.stills.url,
         seed: cfg.motion.seed,
         onlyIds: hopCast,
+        angleBoard: true,
         onEvent: (message, data) => emit(jobId, { agent: "stills", level: "info", message, data }),
       });
-      await speak("stills", `肖像齊：plug ${portraits.plugged.length}、新做 ${portraits.made.length}${hopCast ? `（hop ${hopCast.join(",")}）` : ""}。`);
+      await speak(
+        "stills",
+        `肖像齊：plug ${portraits.plugged.length}、新做 ${portraits.made.length}${hopCast ? `（hop ${hopCast.join(",")}）` : ""}；角度板釘 ${Object.values(portraits.anglePins ?? {}).reduce((n, m) => n + Object.keys(m).length, 0)} 張 RGBA 角度肖像（{角度}檔入 portraits/）。`,
+      );
     }
 
     await think("art");
