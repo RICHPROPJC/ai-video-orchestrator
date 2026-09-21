@@ -101,6 +101,42 @@ function fixture() {
   return { script, boards: boardsOf(script) };
 }
 
+
+test("ECOM1A: a 16s ad brief rides the whole chain — 3 beats, 3 shots @5.33s, 9:16 callsheet", () => {
+  const script = scriptOf(1, 3, 16);
+  const boards: BoardsScene[] = script.scenes.map((scene) => ({
+    sceneId: scene.sceneId,
+    thinking: "一拍一鏡，三鏡到底。",
+    shots: scene.beats.map((beat, b) => ({
+      beatId: beat.id,
+      size: (["wide", "medium", "closeup"] as const)[b]!,
+      angle: "eye" as const,
+      side: (["frontal", "leftQuarter", "rightQuarter"] as const)[b]!,
+      durationSec: 16 / 3,
+      action: beat.action,
+      dialogue: beat.dialogue ?? "",
+      ...(beat.speaker ? { speaker: beat.speaker } : {}),
+      cast: [
+        { characterId: "A", slot: "L" as const, depth: "mid" as const, facing: 1 as const, gait: "plant" as const, stance: "stand" as const },
+        { characterId: "B", slot: "R" as const, depth: "near" as const, facing: -1 as const, gait: "plant" as const, stance: "stand" as const },
+      ],
+    })),
+  }));
+  for (const scene of boards) {
+    const parsed = boardsSceneSchema({
+      sceneId: scene.sceneId,
+      beats: script.scenes[0]!.beats,
+      characters: script.outline.characters,
+      budgetSec: 16,
+    }).safeParse(scene);
+    assert.equal(parsed.success, true, JSON.stringify(parsed.success ? null : parsed.error!.issues));
+  }
+  const sheet = expandBoards({ script, boards, targetSec: 16, aspect: "9:16" });
+  assert.equal(sheet.aspect, "9:16");
+  assert.equal(sheet.shots.length, 3);
+  assert.doesNotThrow(() => assertSheetGates(sheet, { script, targetSec: 16 }));
+});
+
 test("SH ids run in cut order across every scene, two digits, never restarting", () => {
   const { script, boards } = fixture();
   const sheet = expandBoards({ script, boards, targetSec: TARGET });

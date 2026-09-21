@@ -3,6 +3,7 @@ import * as nodeTest from "node:test";
 import {
   EPISODE_RANGES,
   FEATURE_RANGES,
+  maxBeatsIn,
   ACTION_MAX_CHARS,
   assertBeatTotal,
   hasVisibleActionVerb,
@@ -110,6 +111,56 @@ test("assertBeatTotal at 300s wants 28–60 beats across the covered scenes", ()
   assertBeatTotal(beats([6, 6, 6, 6, 6]), rangesFor(300)); // 30 in 28–60
   assert.throws(() => assertBeatTotal(beats([4, 4, 4, 4, 4]), rangesFor(300)), /20 beats; a 300s slate wants 28–60/);
   assert.throws(() => assertBeatTotal(beats([13, 13, 13, 13, 13]), rangesFor(300)), /65 beats; a 300s slate wants 28–60/);
+});
+
+
+test("ECOM1A: rangesFor sprouts the ad band — ≤30s is one scene / 3–6 beats, episode & feature untouched", () => {
+  assert.deepEqual(rangesFor(16), { scenes: [1, 1], totalBeats: [3, 6] });
+  assert.deepEqual(rangesFor(30), { scenes: [1, 1], totalBeats: [3, 6] });
+  assert.equal(rangesFor(31), EPISODE_RANGES);
+  assert.equal(rangesFor(154), EPISODE_RANGES);
+  assert.equal(rangesFor(360), EPISODE_RANGES);
+  assert.equal(rangesFor(361), FEATURE_RANGES);
+});
+
+test("ECOM1A: a 16s ad writes 3 beats — old episode mechanics rejected exactly this brief", () => {
+  assert.equal(maxBeatsIn(16), 3); // 5.0s ad beat floor: 3×5.33s fills the 16s target
+  assert.equal(maxBeatsIn(30), 6);
+  assert.equal(maxBeatsIn(24), 4); // episode floor 5.5s unchanged
+  const schema = sceneBeatsSchema({ sceneId: "SC01", speakingNames: [], targetSec: 16 });
+  const beatsOf = (n: number) => ({
+    sceneId: "SC01",
+    thinking: "一句。",
+    beats: Array.from({ length: n }, (_, b) => ({
+      id: `SC01.B${String(b + 1).padStart(2, "0")}`,
+      action: "行一步講一句",
+    })),
+  });
+  assert.equal(schema.safeParse(beatsOf(3)).success, true, JSON.stringify(schema.safeParse(beatsOf(3)).success ? null : schema.safeParse(beatsOf(3)).error!.issues));
+  assert.equal(schema.safeParse(beatsOf(2)).success, false, "below the band's 3-beat floor");
+  assert.equal(schema.safeParse(beatsOf(7)).success, false, "16s holds at most 3 beats");
+});
+
+test("ECOM1A: outlineSchema at 16s wants exactly one scene; assertBeatTotal wants 3–6 beats", () => {
+  const ok = outlineSchema({ targetSec: 16, castRoster: [], ranges: rangesFor(16) }).safeParse(outlineWith(1, 16));
+  assert.equal(ok.success, true, JSON.stringify(ok.success ? null : ok.error!.issues));
+  const two = outlineSchema({ targetSec: 16, castRoster: [], ranges: rangesFor(16) }).safeParse(outlineWith(2, 16, 8));
+  assert.equal(two.success, false);
+  assert.match(two.error!.issues.map((i) => i.message).join(" "), /1–1 scenes, got 2/);
+
+  const outline = outlineWith(1, 16);
+  const scenes = (n: number) => [
+    {
+      sceneId: "SC01",
+      thinking: "廣告三拍。",
+      beats: Array.from({ length: n }, (_, b) => ({
+        id: `SC01.B${String(b + 1).padStart(2, "0")}`,
+        action: "行一步講一句",
+      })),
+    },
+  ];
+  assert.doesNotThrow(() => assertBeatTotal({ outline, scenes: scenes(3) }, rangesFor(16)));
+  assert.throws(() => assertBeatTotal({ outline, scenes: scenes(2) }, rangesFor(16)), /2 beats; a 16s slate wants 3–6/);
 });
 
 test("T38: a long literary action is rejected — a beat is one short filmable move", () => {

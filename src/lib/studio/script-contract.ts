@@ -20,6 +20,8 @@ export function hasVisibleActionVerb(action: string): boolean {
 }
 const BEATS_PER_SCENE_MIN = 4;
 const BEATS_PER_SCENE_MAX = 12;
+/** ECOM1A 廣告帶：一場三拍起（EPISODE/FEATURE 嘅 4–12 唔變）。 */
+const AD_BEATS_PER_SCENE_MIN = 3;
 
 /** The shape of a 10-minute slate. A fixture may ask for a smaller one, so the
  *  counts are a knob with this default rather than a constant in the schema. */
@@ -30,8 +32,31 @@ export const FEATURE_RANGES: ScriptRanges = { scenes: [6, 14], totalBeats: [60, 
 export const EPISODE_RANGES: ScriptRanges = { scenes: [4, 8], totalBeats: [28, 60] };
 export const EPISODE_MAX_SEC = 360;
 
+/** ECOM1A 廣告帶：≤30s 係另一種 slate——一場一景，3–6 拍。力學：grid 最短
+ *  實鏡 124f≈5.17s，AD beat floor 釘 5.0s → 3拍×5.33=16s 寫得入（beatCeiling(16)=3），
+ *  6拍×5.0=30s 貼帶邊；<15s 短brief物理上裝唔落三拍，schema 大聲死。 */
+export const AD_RANGES: ScriptRanges = { scenes: [1, 1], totalBeats: [3, 6] };
+export const AD_MAX_SEC = 30;
+/** AD beat floor：16s 目標三鏡每鏡 5.33s，過 grid 5.17s 但入唔到 5.5 嘅 episode floor。 */
+export const AD_SECONDS_PER_BEAT_FLOOR = 5.0;
+/** AD 場景 clamp 下限 = 三拍最短場（3×5.0）；episode/feature 嘅 24s 不變。 */
+export const AD_SCENE_TARGET_MIN = 15;
+
 export function rangesFor(targetSec: number): ScriptRanges {
+  if (targetSec <= AD_MAX_SEC) return AD_RANGES;
   return targetSec <= EPISODE_MAX_SEC ? EPISODE_RANGES : FEATURE_RANGES;
+}
+
+/** beats-per-second floor by band: ads run 5.0s, episode/feature stay 5.5s. */
+export function beatsFloorFor(targetSec: number): number {
+  return targetSec <= AD_MAX_SEC ? AD_SECONDS_PER_BEAT_FLOOR : SECONDS_PER_BEAT_FLOOR;
+}
+
+/** scene targetSec clamp bounds by band. */
+export function sceneClampBounds(targetSec: number): { min: number; max: number } {
+  return targetSec <= AD_MAX_SEC
+    ? { min: AD_SCENE_TARGET_MIN, max: AD_MAX_SEC }
+    : { min: SCENE_TARGET_MIN, max: SCENE_TARGET_MAX };
 }
 export const SCENE_TARGET_MIN = 24;
 export const SCENE_TARGET_MAX = 120;
@@ -42,7 +67,7 @@ const TARGET_TOLERANCE = 0.1;
 export const SECONDS_PER_BEAT_FLOOR = 5.5;
 
 export function maxBeatsIn(sceneTargetSec: number): number {
-  return Math.floor(sceneTargetSec / SECONDS_PER_BEAT_FLOOR);
+  return Math.floor(sceneTargetSec / beatsFloorFor(sceneTargetSec));
 }
 
 /** The wav is the clock; this is the estimate the seats budget against. */
@@ -86,7 +111,9 @@ export const sceneSchema = z.object({
   timeOfDay: z.enum(["dawn", "day", "dusk", "night"]),
   weather: z.enum(["clear", "rain", "wind", "neon"]),
   summary: z.string().min(1).max(200),
-  targetSec: z.number().min(SCENE_TARGET_MIN).max(SCENE_TARGET_MAX),
+  // band bounds live in sceneClampBounds / outlineSchema — the shape only
+  // guards the sanity floor so ad slates (15–30s scenes) parse too
+  targetSec: z.number().min(1).max(SCENE_TARGET_MAX),
 });
 
 export const worldSchema = z.object({
@@ -180,19 +207,22 @@ const beatShape = z.object({
   emotion: omittable(z.string().min(1).max(20)),
 });
 
-const sceneBeatsShape = z.object({
-  sceneId: z.string().regex(SCENE_ID_RE),
-  thinking: z.string().min(1).max(600),
-  beats: z.array(beatShape).min(BEATS_PER_SCENE_MIN).max(BEATS_PER_SCENE_MAX),
-});
+const sceneBeatsShape = (min: number) =>
+  z.object({
+    sceneId: z.string().regex(SCENE_ID_RE),
+    thinking: z.string().min(1).max(600),
+    beats: z.array(beatShape).min(min).max(BEATS_PER_SCENE_MAX),
+  });
 
-export type SceneBeats = z.infer<typeof sceneBeatsShape>;
+export type SceneBeats = z.infer<ReturnType<typeof sceneBeatsShape>>;
 export type Beat = z.infer<typeof beatShape>;
 
 export function sceneBeatsSchema(ctx: { sceneId: string; speakingNames: string[]; targetSec: number }) {
   const speaking = new Set(ctx.speakingNames);
+  // ECOM1A: the ad band (≤30s scenes) runs three beats up; episode/feature stay 4–12
+  const beatsMin = ctx.targetSec <= AD_MAX_SEC ? AD_BEATS_PER_SCENE_MIN : BEATS_PER_SCENE_MIN;
   const beatCeiling = maxBeatsIn(ctx.targetSec);
-  return sceneBeatsShape.superRefine((scene, report) => {
+  return sceneBeatsShape(beatsMin).superRefine((scene, report) => {
     if (scene.sceneId !== ctx.sceneId) {
       report.addIssue({ code: "custom", path: ["sceneId"], message: `this envelope is scene ${ctx.sceneId}, not ${scene.sceneId}` });
     }

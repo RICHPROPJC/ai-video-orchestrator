@@ -2,12 +2,11 @@ import { chatJsonSeat, type CrewConfig, type RepairNote } from "./crew-llm";
 import { WRITER_BEATS_CHARTER, WRITER_OUTLINE_CHARTER } from "./seat-charters";
 import { assemblePlaybook, markPass } from "./playbook";
 import {
-  SCENE_TARGET_MAX,
-  SCENE_TARGET_MIN,
   assertBeatTotal,
   outlineSchema,
   rangesFor,
   sceneBeatsSchema,
+  sceneClampBounds,
   type Outline,
   type Script,
   type ScriptRanges,
@@ -25,9 +24,11 @@ export type SeatDoc = { id: string; text: string; shotId?: string };
 
 export type WriterResult = { script: Script; model: string; receipts: string[] };
 
-function clampSceneSec(n: number): number {
-  if (!Number.isFinite(n)) return SCENE_TARGET_MIN;
-  return Math.min(SCENE_TARGET_MAX, Math.max(SCENE_TARGET_MIN, n));
+function clampSceneSec(n: number, slateSec?: number): number {
+  // ECOM1A: band-aware bounds — ad slates (≤30s) clamp 15–30, episode/feature stay 24–120
+  const { min, max } = sceneClampBounds(slateSec ?? Infinity);
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
 }
 
 function coerceLang(raw: unknown): "zh-Hant" | "yue" | "en" {
@@ -95,9 +96,10 @@ export function coerceOutline(raw: unknown, slateSec?: number, note?: RepairNote
       if ("timeOfDay" in s) s.timeOfDay = coerceTimeOfDay(s.timeOfDay, (saw, became) => repair(`repair: scenes[${i}].timeOfDay saw ${JSON.stringify(saw)} became ${JSON.stringify(became)}`));
       if ("weather" in s) s.weather = coerceWeather(s.weather, (saw, became) => repair(`repair: scenes[${i}].weather saw ${JSON.stringify(saw)} became ${JSON.stringify(became)}`));
       if ("targetSec" in s) {
-        const clamped = clampSceneSec(Number(s.targetSec));
+        const clamped = clampSceneSec(Number(s.targetSec), slateSec);
         if (clamped !== s.targetSec) {
-          repair(`repair: scenes[${i}].targetSec saw ${JSON.stringify(s.targetSec)} became ${clamped} (clamp ${SCENE_TARGET_MIN}–${SCENE_TARGET_MAX})`);
+          const { min, max } = sceneClampBounds(slateSec ?? Infinity);
+          repair(`repair: scenes[${i}].targetSec saw ${JSON.stringify(s.targetSec)} became ${clamped} (clamp ${min}–${max})`);
         }
         s.targetSec = clamped;
       }
@@ -112,7 +114,7 @@ export function coerceOutline(raw: unknown, slateSec?: number, note?: RepairNote
         const scale = slateSec / sum;
         let after = 0;
         for (const s of scenes) {
-          if (typeof s.targetSec === "number") s.targetSec = clampSceneSec(s.targetSec * scale);
+          if (typeof s.targetSec === "number") s.targetSec = clampSceneSec(s.targetSec * scale, slateSec);
           after += typeof s.targetSec === "number" ? s.targetSec : 0;
         }
         repair(`repair: scenes[].targetSec saw sum ${sum.toFixed(1)} became sum ${after.toFixed(1)} (slate ${slateSec}s ±10%)`);
