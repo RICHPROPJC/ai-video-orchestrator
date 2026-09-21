@@ -1,0 +1,189 @@
+{
+ "verb_gate_all_pass": true,
+ "rows": [
+  {
+   "shot": "SH01",
+   "pick": "111_19",
+   "code": "C13",
+   "conf": 0.7502,
+   "desc": "Punch Kick",
+   "subject": 111,
+   "category": "Pregnant Woman",
+   "bvh": "data/111/111_19.bvh",
+   "bvh_frames": 1025,
+   "clip_len_s": 8.54,
+   "shot_len_s": 4.82,
+   "arm_axis": {
+    "rank": 13,
+    "frames": 1025,
+    "mean_deg": 29.1,
+    "min_deg": 2.4
+   },
+   "verb_hits": {
+    "need_any": [
+     "punch",
+     "box",
+     "strike",
+     "fight"
+    ],
+    "hit_any": [
+     "punch"
+    ],
+    "need_all": [
+     "kick"
+    ],
+    "hit_all": [
+     "kick"
+    ]
+   },
+   "reason": "covers the sequence of two punches followed by a turn and side kick",
+   "runners": [
+    "113_13",
+    "86_01"
+   ],
+   "flags": [
+    "subject-metadata: Pregnant Woman (decider did not see category)"
+   ]
+  },
+  {
+   "shot": "SH02",
+   "pick": "07_01",
+   "code": "C43",
+   "conf": 0.1501,
+   "desc": "walk",
+   "subject": 7,
+   "category": "walk",
+   "bvh": "data/007/07_01.bvh",
+   "bvh_frames": 317,
+   "clip_len_s": 2.64,
+   "shot_len_s": 4.82,
+   "arm_axis": null,
+   "verb_hits": {
+    "need_any": [
+     "walk"
+    ],
+    "hit_any": [
+     "walk"
+    ],
+    "need_all": [],
+    "hit_all": []
+   },
+   "reason": "matches the action of walking forward a few steps and stopping",
+   "runners": [
+    "07_02",
+    "07_03"
+   ],
+   "flags": [
+    "clip-short: 2.64s < shot 4.82s"
+   ]
+  },
+  {
+   "shot": "SX1",
+   "pick": "02_06",
+   "code": "C71",
+   "conf": 0.8354,
+   "desc": "bend over, scoop up, rise, lift arm",
+   "subject": 2,
+   "category": "various expressions and human behaviors",
+   "bvh": "data/002/02_06.bvh",
+   "bvh_frames": 2236,
+   "clip_len_s": 18.63,
+   "shot_len_s": 4.0,
+   "arm_axis": null,
+   "verb_hits": {
+    "need_any": [
+     "bend",
+     "squat",
+     "kneel",
+     "crouch"
+    ],
+    "hit_any": [
+     "bend"
+    ],
+    "need_all": [
+     "rise",
+     "stand up",
+     "scoop",
+     "pick"
+    ],
+    "hit_all": [
+     "rise",
+     "scoop"
+    ]
+   },
+   "reason": "covers bending down to pick up an object and rising back up",
+   "runners": [
+    "14_20",
+    "13_29"
+   ],
+   "flags": [
+    "verb-partial: only ['rise', 'scoop'] of ['rise', 'stand up', 'scoop', 'pick']"
+   ]
+  },
+  {
+   "shot": "SX2",
+   "pick": "09_01",
+   "code": "C58",
+   "conf": 0.7485,
+   "desc": "run",
+   "subject": 9,
+   "category": "run",
+   "bvh": "data/009/09_01.bvh",
+   "bvh_frames": 149,
+   "clip_len_s": 1.24,
+   "shot_len_s": 4.0,
+   "arm_axis": null,
+   "verb_hits": {
+    "need_any": [
+     "run",
+     "jog",
+     "sprint"
+    ],
+    "hit_any": [
+     "run"
+    ],
+    "need_all": [],
+    "hit_all": []
+   },
+   "reason": "matches the action of running at full speed towards a destination",
+   "runners": [
+    "09_02",
+    "09_03"
+   ],
+   "flags": [
+    "clip-short: 1.24s < shot 4.00s"
+   ]
+  },
+  {
+   "shot": "SX3",
+   "pick": "13_04",
+   "code": "C101",
+   "conf": 0.3274,
+   "desc": "sit on stepstool, chin in hand",
+   "subject": 13,
+   "category": "various everyday behaviors",
+   "bvh": "data/013/13_04.bvh",
+   "bvh_frames": 4760,
+   "clip_len_s": 39.67,
+   "shot_len_s": 4.0,
+   "arm_axis": null,
+   "verb_hits": {
+    "need_any": [
+     "sit",
+     "seated"
+    ],
+    "hit_any": [
+     "sit"
+    ],
+    "need_all": [],
+    "hit_all": []
+   },
+   "reason": "matches sitting down on a stool and remaining still with hands on knees",
+   "runners": [
+    "13_05",
+    "13_06"
+   ],
+   "flags": []
+  }
+ ]
+}

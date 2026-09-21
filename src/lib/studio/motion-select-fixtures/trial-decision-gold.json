@@ -1,0 +1,365 @@
+{
+ "meta": {
+  "model": "qwen38",
+  "endpoint": "http://127.0.0.1:8015/v1/chat/completions",
+  "one_call": true,
+  "params": {
+   "max_tokens": 700,
+   "temperature": 0.0,
+   "top_logprobs": 20
+  },
+  "prompt_chars": 7158,
+  "prompt_tokens": 3295,
+  "completion_tokens": 135,
+  "latency_s": 10.2,
+  "shots": [
+   "SH01",
+   "SH02",
+   "SX1",
+   "SX2",
+   "SX3"
+  ],
+  "n_candidates": 120
+ },
+ "rows": [
+  {
+   "shot": "SH01",
+   "pick": "C13",
+   "runner": [
+    "C29",
+    "C10"
+   ],
+   "reason": "covers the sequence of two punches followed by a turn and side kick",
+   "conf": 0.7502,
+   "conf_chain": [
+    {
+     "pos": 4,
+     "digit": "1",
+     "p": 0.7807,
+     "floor": false,
+     "alts": {
+      "1": 0.7807,
+      "2": 0.2037,
+      "3": 0.0081,
+      "0": 0.0068,
+      "4": 0.0004,
+      "9": 0.0001
+     }
+    },
+    {
+     "pos": 5,
+     "digit": "3",
+     "p": 0.9609,
+     "floor": false,
+     "alts": {
+      "3": 0.9609,
+      "0": 0.0295,
+      "6": 0.0042,
+      "1": 0.0035,
+      "9": 0.0013,
+      "2": 0.0004
+     }
+    }
+   ],
+   "first_digit_group_alts": {
+    "1": 0.7807,
+    "2": 0.2037,
+    "3": 0.0081,
+    "0": 0.0068,
+    "4": 0.0004,
+    "9": 0.0001
+   },
+   "pick_id": "111_19",
+   "pick_desc": "Punch Kick",
+   "pick_family": "martial",
+   "pick_bvh": "data/111/111_19.bvh",
+   "pick_arm": "[arm-axis mean 29deg, min 2deg, 1025f]",
+   "runner_detail": [
+    {
+     "code": "C29",
+     "id": "113_13",
+     "desc": "Punch and kick"
+    },
+    {
+     "code": "C10",
+     "id": "86_01",
+     "desc": "jumps kicks and punches"
+    }
+   ]
+  },
+  {
+   "shot": "SH02",
+   "pick": "C43",
+   "runner": [
+    "C44",
+    "C45"
+   ],
+   "reason": "matches the action of walking forward a few steps and stopping",
+   "conf": 0.1501,
+   "conf_chain": [
+    {
+     "pos": 32,
+     "digit": "4",
+     "p": 0.414,
+     "floor": false,
+     "alts": {
+      "4": 0.414,
+      "1": 0.3224,
+      "5": 0.1523,
+      "3": 0.0766,
+      "0": 0.0256,
+      "2": 0.0058
+     }
+    },
+    {
+     "pos": 33,
+     "digit": "3",
+     "p": 0.3625,
+     "floor": false,
+     "alts": {
+      "3": 0.3625,
+      "2": 0.194,
+      "8": 0.1634,
+      "6": 0.1072,
+      "9": 0.0692,
+      "4": 0.04
+     }
+    }
+   ],
+   "first_digit_group_alts": {
+    "4": 0.414,
+    "1": 0.3224,
+    "5": 0.1523,
+    "3": 0.0766,
+    "0": 0.0256,
+    "2": 0.0058
+   },
+   "pick_id": "07_01",
+   "pick_desc": "walk",
+   "pick_family": "walk",
+   "pick_bvh": "data/007/07_01.bvh",
+   "pick_arm": "",
+   "runner_detail": [
+    {
+     "code": "C44",
+     "id": "07_02",
+     "desc": "walk"
+    },
+    {
+     "code": "C45",
+     "id": "07_03",
+     "desc": "walk"
+    }
+   ]
+  },
+  {
+   "shot": "SX1",
+   "pick": "C71",
+   "runner": [
+    "C85",
+    "C78"
+   ],
+   "reason": "covers bending down to pick up an object and rising back up",
+   "conf": 0.8354,
+   "conf_chain": [
+    {
+     "pos": 57,
+     "digit": "7",
+     "p": 0.8892,
+     "floor": false,
+     "alts": {
+      "7": 0.8892,
+      "8": 0.0596,
+      "9": 0.0329,
+      "1": 0.0127,
+      "0": 0.0039,
+      "6": 0.0007
+     }
+    },
+    {
+     "pos": 58,
+     "digit": "1",
+     "p": 0.9394,
+     "floor": false,
+     "alts": {
+      "1": 0.9394,
+      "6": 0.0348,
+      "8": 0.0211,
+      "9": 0.0019,
+      "7": 0.0011,
+      "2": 0.0009
+     }
+    }
+   ],
+   "first_digit_group_alts": {
+    "7": 0.8892,
+    "8": 0.0596,
+    "9": 0.0329,
+    "1": 0.0127,
+    "0": 0.0039,
+    "6": 0.0007
+   },
+   "pick_id": "02_06",
+   "pick_desc": "bend over, scoop up, rise, lift arm",
+   "pick_family": "bend_pick",
+   "pick_bvh": "data/002/02_06.bvh",
+   "pick_arm": "",
+   "runner_detail": [
+    {
+     "code": "C85",
+     "id": "14_20",
+     "desc": "jumping jacks, side twists, reach up, bend over"
+    },
+    {
+     "code": "C78",
+     "id": "13_29",
+     "desc": "jumping jacks, side twists, bend over, squats"
+    }
+   ]
+  },
+  {
+   "shot": "SX2",
+   "pick": "C58",
+   "runner": [
+    "C59",
+    "C60"
+   ],
+   "reason": "matches the action of running at full speed towards a destination",
+   "conf": 0.7485,
+   "conf_chain": [
+    {
+     "pos": 83,
+     "digit": "5",
+     "p": 0.8431,
+     "floor": false,
+     "alts": {
+      "5": 0.8431,
+      "6": 0.1535,
+      "0": 0.0021,
+      "7": 0.0003,
+      "9": 0.0003,
+      "1": 0.0002
+     }
+    },
+    {
+     "pos": 84,
+     "digit": "8",
+     "p": 0.8877,
+     "floor": false,
+     "alts": {
+      "8": 0.8877,
+      "9": 0.0813,
+      "7": 0.0299,
+      "4": 0.0008,
+      "5": 0.0001,
+      "6": 0.0001
+     }
+    }
+   ],
+   "first_digit_group_alts": {
+    "5": 0.8431,
+    "6": 0.1535,
+    "0": 0.0021,
+    "7": 0.0003,
+    "9": 0.0003,
+    "1": 0.0002
+   },
+   "pick_id": "09_01",
+   "pick_desc": "run",
+   "pick_family": "run",
+   "pick_bvh": "data/009/09_01.bvh",
+   "pick_arm": "",
+   "runner_detail": [
+    {
+     "code": "C59",
+     "id": "09_02",
+     "desc": "run"
+    },
+    {
+     "code": "C60",
+     "id": "09_03",
+     "desc": "run"
+    }
+   ]
+  },
+  {
+   "shot": "SX3",
+   "pick": "C101",
+   "runner": [
+    "C102",
+    "C103"
+   ],
+   "reason": "matches sitting down on a stool and remaining still with hands on knees",
+   "conf": 0.3274,
+   "conf_chain": [
+    {
+     "pos": 108,
+     "digit": "1",
+     "p": 0.765,
+     "floor": false,
+     "alts": {
+      "1": 0.765,
+      "9": 0.2226,
+      "8": 0.0093,
+      "0": 0.0009,
+      "3": 0.0008,
+      "7": 0.0005
+     }
+    },
+    {
+     "pos": 109,
+     "digit": "0",
+     "p": 0.9323,
+     "floor": false,
+     "alts": {
+      "0": 0.9323,
+      "1": 0.0605,
+      "2": 0.0034,
+      "3": 0.0031,
+      "4": 0.0004,
+      "8": 0.0001
+     }
+    },
+    {
+     "pos": 110,
+     "digit": "1",
+     "p": 0.459,
+     "floor": false,
+     "alts": {
+      "1": 0.459,
+      "2": 0.2698,
+      "7": 0.1315,
+      "3": 0.0651,
+      "6": 0.0276,
+      "4": 0.0218
+     }
+    }
+   ],
+   "first_digit_group_alts": {
+    "1": 0.765,
+    "9": 0.2226,
+    "8": 0.0093,
+    "0": 0.0009,
+    "3": 0.0008,
+    "7": 0.0005
+   },
+   "pick_id": "13_04",
+   "pick_desc": "sit on stepstool, chin in hand",
+   "pick_family": "sit",
+   "pick_bvh": "data/013/13_04.bvh",
+   "pick_arm": "",
+   "runner_detail": [
+    {
+     "code": "C102",
+     "id": "13_05",
+     "desc": "sit on stepstool, hands against chin, fidget, stand up"
+    },
+    {
+     "code": "C103",
+     "id": "13_06",
+     "desc": "sit on stepstool, hands against chin, elbow out, stand up"
+    }
+   ]
+  }
+ ]
+}
