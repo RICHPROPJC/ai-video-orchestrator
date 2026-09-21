@@ -733,6 +733,10 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           await ffmpeg([
             "-framerate", "60",
             "-i", path.join(framesDir, "frame_%04d.png"),
+            // bake renders at 60fps; every other blockout consumer (anchors,
+            // resume snap, plug contract) speaks 24fps snapped frames — drop
+            // to 24 at the same wall duration
+            "-r", "24",
             "-c:v", "libx264", "-pix_fmt", "yuv420p",
             outMp4,
           ]);
