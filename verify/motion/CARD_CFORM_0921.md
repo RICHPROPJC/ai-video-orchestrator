@@ -63,12 +63,13 @@ bun run typecheck                                          # → 非測試錯4�
 WIST C形收據樣本（worktree內副本`data/jobs/SC-0913-WIST/verify/ab/dry/SH01.A.json`）：
 `graph_variant=a, motion_form=c, steps=8, keyframe_positions="", uploads.kf_start=null, ref_images=[...ref_img_0.png], graph零keyframes node, 零FBC, ref_image_0=["ref_img_0",0], bindings=<Picture 1> is the sole appearance..., prompt pin=Faces and clothes continue exactly from <Picture 1>`。
 
-tsc（`bun run typecheck`）：非測試錯**4個＝0229bca基線同名**（`scripts/nex-blender-real-call.ts` TS5097×2、`memory.ts` node:sqlite、`pipeline.ts` PortraitResult kept——基線實跑15錯清單對拍過）。worktree要`npm ci`＋`npx next typegen`（gitignore咗嘅next-env/.next types係生成物，基線樹有、新worktree冇——LayoutProps個假錯係咩嚟，typegen後消失）。
+tsc（`bun run typecheck`）：**5錯全部＝0229bca基線同名**（`scripts/nex-blender-real-call.ts` TS5097×2、`memory.ts` node:sqlite、`pipeline.test.ts` bun:test、`pipeline.ts` PortraitResult kept——基線實跑清單逐個對過名）。worktree要`npm ci`＋`npx next typegen`（gitignore咗嘅next-env/.next types係生成物，基線樹有、新worktree冇——LayoutProps個假錯係咩嚟，typegen後消失）。
 
-S4全套實數：
-- worktree（lane/motion-cform）：__CFORM_SUITE__
-- 基線（0229bca同名套件）：__BASELINE_SUITE__
-- 對拍結論：__CFORM_VS_BASELINE__
+S4全套實數（`tsx --test --test-force-exit src/lib/studio/*.test.ts`——`--test-force-exit`係必須嘅：photo-qc.test.ts §7 hang→retry個fixture server嘅`close()`等緊吊住嘅socket，成個test child永不退場（基線同樣，001a6c6帶入嘅pre-existing test-infra漏；test本身72/72綠，單檔實證）：
+- worktree（lane/motion-cform 5532d10+收尾commit）：**485 tests / 480 pass / 5 fail**
+- 基線（crew-seats 0229bca，同機同時實跑）：**480 tests / 473 pass / 7 fail**（＝0229bca自報「全套480/473pass/7紅」實數重現）
+- 紅名對拍：我5紅（noun-lint、resume/bun:test、27B-fake-fetch、no-seat-grave、Chau-home-paths）**全部係基線同名紅，零新增**（名單逐一對過：`comm` diff兩個log嘅test名）
+- 基線多出嘅test全部來自基線樹**untracked WIP檔**（`git status`＝`??`）：`still-h3-proxy.test.ts`（3 test，2紅——件WIP import唔存在嘅STILLS_EDIT所以紅）＋`blender-bin.test.ts`（2 test綠）——唔係0229bca嘅內容，我worktree由git 0229bca開所以冇呢啲檔。剝走後：**基線git檔案集＝475 test/5紅；我＝485 test/5紅＝+10 test（graph+2、slots+3、submit+1、wist+1、prose+1、pipeline+2）、紅名零新增**。
 
 ## 未做咩
 - **真render驗證冇做**（卡禁自己開render job）——C形graph嘅實物驗證係E2E SH01.c8（tg 17976，NEX三問全過＋五問乾淨）；呢卡只做pipeline出同一形狀graph（golden＋WIST dry receipt對拍）。燒掣喺Chau/Vera。
