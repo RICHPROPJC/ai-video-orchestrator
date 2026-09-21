@@ -208,3 +208,97 @@ test("prose that fails validateProse throws before anything else", async () => {
     /Photoreal|motion-only/,
   );
 });
+
+test("MULTISHOT_WIRE dry-run: chain rides the C-form receipt (true-endframe start, flatten, seed_per_shot)", async () => {
+  const dir = shotDir();
+  const { receipt } = await submitH3Shot({
+    prose: validProse(),
+    wavFile: path.join(dir, "SH01.wav"),
+    blockoutMp4: path.join(dir, "SH01.mp4"),
+    refImageFiles: [path.join(dir, "A.png")],
+    chain: {
+      script: "MEDIUM / 檔案室：行前兩步停低，收拳定神。Same person as <Picture 1>.",
+      shots: ["SH02"],
+      framesPerShot: 119,
+      referenceImageFile: path.join(dir, "A.png"),
+    },
+    outMp4: path.join(dir, "motion", "SH01-SH02.mp4"),
+    receiptJson: path.join(dir, "motion", "SH01-SH02.h3_submit_dryrun.json"),
+    dryRun: true,
+    shot: "SH01-SH02",
+    requireQuote: true,
+  });
+  assert.equal(receipt.motion_form, "c");
+  assert.equal(receipt.shot, "SH01-SH02");
+  assert.ok(receipt.chain);
+  assert.deepEqual(receipt.chain!.shots, ["SH02"]);
+  assert.equal(receipt.chain!.frames_per_shot, 119);
+  assert.equal(receipt.chain!.seed_per_shot, true);
+  assert.equal(receipt.chain!.chain_gain_control, "flatten");
+  assert.equal(receipt.chain!.start_image, "h3_last_frame(this render)");
+  assert.match(receipt.uploads.ms_reference!, /_ms_ref\.png$/);
+  const graph = receipt.graph as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+  assert.equal(graph.ms.class_type, "H3MultishotSampler");
+  assert.deepEqual(graph.ms.inputs.start_image, ["lastf", 0]);
+  assert.deepEqual(graph.lastf.inputs.images, ["dec_v", 0]);
+  assert.equal(graph.concat.class_type, "H3ConcatAV");
+  assert.deepEqual(graph.cv.inputs.images, ["concat", 0]);
+});
+
+test("MULTISHOT_WIRE dry-run: standalone multishot (MS-A shape, motion_form=ms)", async () => {
+  const dir = shotDir();
+  const { receipt } = await submitH3Shot({
+    prose: "line A\n---\nline B",
+    wavFile: path.join(dir, "SH01.wav"),
+    multishot: {
+      script: "line A\n---\nline B",
+      shots: ["SH01", "SH02"],
+      framesPerShot: 119,
+      referenceImageFile: path.join(dir, "A.png"),
+    },
+    outMp4: path.join(dir, "motion", "SH01-SH02.mp4"),
+    receiptJson: path.join(dir, "motion", "SH01-SH02.h3_submit_dryrun.json"),
+    dryRun: true,
+    shot: "SH01-SH02",
+  });
+  assert.equal(receipt.motion_form, "ms");
+  assert.equal(receipt.multishot!.shot_count, 2);
+  assert.equal(receipt.multishot!.frames_per_shot, 119);
+  assert.equal(receipt.multishot!.start_image, null);
+  assert.equal(receipt.uploads.blockout, null);
+  assert.equal(receipt.uploads.ms_start, null);
+  const graph = receipt.graph as Record<string, { class_type: string }>;
+  assert.equal(graph.ms.class_type, "H3MultishotSampler");
+  assert.equal("r2v" in graph, false);
+  assert.equal("keyframes" in graph, false);
+});
+
+test("MULTISHOT_WIRE refuse: chain without a Video 1; multishot with r2v refs", async () => {
+  const dir = shotDir();
+  await assert.rejects(
+    () =>
+      submitH3Shot({
+        prose: validProse(),
+        wavFile: path.join(dir, "SH01.wav"),
+        kfStart: path.join(dir, "SH01.png"),
+        chain: { script: "x", shots: ["SH02"], framesPerShot: 119, referenceImageFile: path.join(dir, "A.png") },
+        outMp4: path.join(dir, "motion", "x.mp4"),
+        receiptJson: path.join(dir, "motion", "x.json"),
+        dryRun: true,
+      }),
+    /chain_requires_cform/,
+  );
+  await assert.rejects(
+    () =>
+      submitH3Shot({
+        prose: "x",
+        wavFile: path.join(dir, "SH01.wav"),
+        refImageFiles: [path.join(dir, "A.png")],
+        multishot: { script: "x", shots: ["SH01"], framesPerShot: 119, referenceImageFile: path.join(dir, "A.png") },
+        outMp4: path.join(dir, "motion", "x.mp4"),
+        receiptJson: path.join(dir, "motion", "x.json"),
+        dryRun: true,
+      }),
+    /multishot is standalone/,
+  );
+});

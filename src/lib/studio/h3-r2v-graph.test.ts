@@ -250,3 +250,94 @@ test("C8b knob: visualStrength override reaches every cond entry; 0.999 default 
   assert.equal(lowA.cond_cs.inputs.visual_strength, 0.4);
   assert.equal(lowA.kf_strength.inputs.visual_strength, 0.4);
 });
+
+/** MULTISHOT_WIRE_0921: cross-shot shapes — golden + pack-topology wiring +
+ *  the refuse matrix. MS-A = chain_s2 build_graph verbatim; chained topology
+ *  = pack H3_HardMode_Chained links (dec_v→H3LastFrame→ms.start_image,
+ *  ConcatAV match_to_a). */
+test("chained golden deep-equals + pack topology wiring (H3LastFrame→ms.start_image, ConcatAV)", () => {
+  const golden = JSON.parse(
+    fs.readFileSync(path.resolve(process.cwd(), "workflows/h3-r2v-chained.api.json"), "utf8"),
+  );
+  const built = buildH3Graph({
+    ...cform,
+    chain: { script: "__MS_P2__\n---\n__MS_P3__", shotCount: 2, framesPerShot: 119, referenceImageName: "__MS_PORTRAIT__", voiceRefName: "__MS_WAV__" },
+  });
+  assert.deepEqual(built, golden);
+  // pack wiring: shot 1's decoded video → H3LastFrame → ms.start_image
+  assert.deepEqual(built.lastf.inputs.images, ["dec_v", 0]);
+  assert.deepEqual(built.ms.inputs.start_image, ["lastf", 0]);
+  // MS-A params
+  assert.equal(built.ms.inputs.seed_per_shot, true);
+  assert.equal(built.ms.inputs.chain_gain_control, "flatten");
+  assert.equal(built.ms.inputs.self_anchor_voice, false);
+  assert.equal(built.ms.inputs.two_pass_upscale, false);
+  assert.equal(built.ms.inputs.steps, 8);
+  assert.equal(built.ms.inputs.sampler_name, "euler");
+  assert.deepEqual(built.ms.inputs.model, ["sigma_lora_a", 0], "ref2va chain (fl2va has no reference rows)");
+  assert.equal(built.ms.inputs.shot_count, 2);
+  assert.equal(built.ms.inputs.frames_per_shot, 119);
+  assert.deepEqual(built.ms.inputs.reference_images, ["ms_hero_in", 0]);
+  assert.deepEqual(built.ms.inputs.voice_ref, ["ms_voice_guard", 0]);
+  // seam: stage B matched to stage A (pack default match_to_a)
+  assert.deepEqual(built.concat.inputs.images_a, ["dec_v", 0]);
+  assert.deepEqual(built.concat.inputs.audio_a, ["dec_a", 0]);
+  assert.deepEqual(built.concat.inputs.images_b, ["ms", 0]);
+  assert.deepEqual(built.concat.inputs.audio_b, ["ms", 1]);
+  assert.equal(built.concat.inputs.match_b, "match_to_a");
+  // the final take IS the concat
+  assert.deepEqual(built.cv.inputs.images, ["concat", 0]);
+  assert.deepEqual(built.cv.inputs.audio, ["concat", 1]);
+  assert.deepEqual(built.save.inputs.video, ["cv", 0]);
+});
+
+test("standalone multishot golden = the MS-A 13-node shape", () => {
+  const golden = JSON.parse(
+    fs.readFileSync(path.resolve(process.cwd(), "workflows/h3-r2v-multishot.api.json"), "utf8"),
+  );
+  const built = buildH3Graph({
+    ...base,
+    script: "",
+    bindings: "",
+    blockoutName: undefined,
+    multishot: { script: "__MS_P1__\n---\n__MS_P2__", shotCount: 2, framesPerShot: 119, referenceImageName: "__MS_PORTRAIT__", startImageName: "__MS_ENDFRAME__" },
+  });
+  assert.deepEqual(built, golden);
+  assert.deepEqual(
+    Object.keys(built).sort(),
+    ["avae", "clip", "cv", "lora_a", "ms", "ms_hero_in", "ms_start_in", "ref2va", "save", "sigma_lora_a", "vvae", "voice_guard", "voice_in"].sort(),
+    "exactly the MS-A node set (chain_s2 build_graph)",
+  );
+  assert.deepEqual(built.ms.inputs.start_image, ["ms_start_in", 0]);
+  assert.deepEqual(built.ms.inputs.voice_ref, ["voice_guard", 0]);
+  assert.deepEqual(built.cv.inputs.images, ["ms", 0]);
+  assert.deepEqual(built.cv.inputs.audio, ["ms", 1]);
+  // no r2v block, no Video 1, no keyframes, no FBC anywhere
+  for (const key of ["r2v", "blender_vid", "keyframes", "split", "fl2va", "lora_b", "fbc_ref2va", "solattn_ref2va", "cond_cs"]) {
+    assert.equal(key in built, false, `${key} must not exist on the standalone multishot shape`);
+  }
+});
+
+test("multishot refuse matrix: chain needs C-form; chain×multishot; standalone purity", () => {
+  assert.throws(
+    () => buildH3Graph({ ...aform, chain: { script: "x", shotCount: 1, framesPerShot: 119, referenceImageName: "__P__" } }),
+    /chain_requires_cform/,
+  );
+  assert.throws(
+    () =>
+      buildH3Graph({
+        ...cform,
+        chain: { script: "x", shotCount: 1, framesPerShot: 119, referenceImageName: "__P__" },
+        multishot: { script: "x", shotCount: 1, framesPerShot: 119, referenceImageName: "__P__" },
+      }),
+    /exclusive/,
+  );
+  assert.throws(
+    () =>
+      buildH3Graph({
+        ...cform,
+        multishot: { script: "x", shotCount: 1, framesPerShot: 119, referenceImageName: "__P__" },
+      }),
+    /multishot is standalone.*no Video 1/,
+  );
+});

@@ -199,7 +199,9 @@ export const SHORTLIST_CAP = 120;
  *  them — a Chinese action enriches nothing (CMU descs are English), an
  *  English action verb widens its family's net) */
 const ACTION_VERB_TO_FAMILY: ReadonlyArray<readonly [string, string]> = [
-  ["打", "martial"], ["拳", "martial"], ["踢", "martial"], ["擊", "martial"], ["擋", "martial"],
+  // 打/踢/擊 are ACTION verbs; bare 拳 is a noun (收拳 = withdrawing fists,
+  // the MS-A simple join shot) and must NOT flag a shot motion-heavy
+  ["打", "martial"], ["踢", "martial"], ["擊", "martial"], ["擋", "martial"],
   ["punch", "martial"], ["kick", "martial"], ["box", "martial"], ["fight", "martial"], ["spar", "martial"],
   ["行", "walk"], ["走", "walk"], ["漫步", "walk"], ["walk", "walk"], ["stroll", "walk"], ["step", "walk"],
   ["跑", "run"], ["追", "run"], ["衝", "run"], ["run", "run"], ["jog", "run"], ["sprint", "run"], ["chase", "run"],
