@@ -86,7 +86,7 @@ test("T41 E1: fixture SH01 packet → /edit 150–300 中文字, require.locatio
   const { fx, sheet } = ldSheet();
   const shot: Shot = { ...fx.shots[0]!, require: { location: "地下室", angle: "high", negatives: PACKET_NEGS } };
   const text = keyframeEditPrompt({ ...sheet, shots: [shot] }, shot, { first: true });
-  const brief = text.split(/\n\n【動作】/)[0]!;
+  const brief = text.split(/\n\n【(?:風格光照|動作)/)[0]!;
   const n = cjkCount(brief);
   assert.ok(n >= 150, `≥150 中文字，got ${n}`);
   assert.ok(n <= 300, `≤300 中文字，got ${n}`);
@@ -124,7 +124,7 @@ test("BUG3 follow: no-prop closeup (WR1Q SH04 class) still clears the 150 floor 
   };
   const text = keyframeEditPrompt(baseSheet, shot, { first: true });
   assert.ok(cjkCount(text) >= EDIT_MIN_CJK, `emitted ${cjkCount(text)} ≥ ${EDIT_MIN_CJK}`);
-  const brief = text.split(/\n\n【動作】/)[0]!;
+  const brief = text.split(/\n\n【(?:風格光照|動作)/)[0]!;
   assert.ok(cjkCount(brief) <= EDIT_MAX_CJK, "cookbook brief stays under 300");
 });
 
@@ -583,13 +583,14 @@ test("BUG3: scene truth source is ONE field — require.location, then shot.loca
 
 test("BUG3: the brief is 150–300 中文字 — thin refuses, fat refuses", () => {
   const text = keyframeEditPrompt(baseSheet, shotWithProp(coat), { first: false });
-  const brief = text.split(/\n\n【動作】/)[0]!;
+  const brief = text.split(/\n\n【(?:風格光照|動作)/)[0]!;
   const n = cjkCount(brief);
   assert.ok(n >= EDIT_MIN_CJK && n <= EDIT_MAX_CJK, `2-char cookbook brief in band: ${n}`);
   assert.ok(cjkCount(text) >= EDIT_MIN_CJK, "emitted prompt (brief+action/size) clears the floor");
   const empty = shotWithProp();
   empty.marks = [];
-  assert.throws(() => keyframeEditPrompt(baseSheet, empty, { first: true }), /prompt_too_thin/);
+  const noGrade: CallSheet = { ...baseSheet, styleBible: { ...baseSheet.styleBible, grade: "" } };
+  assert.throws(() => keyframeEditPrompt(noGrade, empty, { first: true }), /prompt_too_thin/);
   const many: Character[] = ["一", "二", "三", "四", "五"].map((suffix, i) => ({
     id: `C${i}`,
     name: `角色${suffix}`,
