@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runPipeline, describeFloor } from "./lib/studio/pipeline";
-import { newSlateId, writeJob, readJob, listJobs, readEvents, readEpEvents, runningBlocker } from "./lib/studio/store";
+import { newSlateId, writeJob, readJob, listJobs, readEvents, readEpEvents, runningBlocker, failedRecent, failedRecentLines } from "./lib/studio/store";
 import { projectsDir } from "./lib/studio/paths";
 import { loadConfig, setConfigPath } from "./lib/studio/config";
 import { doctor, formatDoctor } from "./lib/studio/doctor";
@@ -181,6 +181,9 @@ async function produce(brief: string, tui: boolean) {
   }
   // serial floor: refuse a second concurrent slate before any job is touched
   const resumeSlate = arg("--resume");
+  // 開工掃墓 (INSIDE_VISIBLE 卡B): any unswept corpse surfaces before a new
+  // produce — listed loud, never blocking (the serial floor still governs).
+  for (const line of failedRecentLines(failedRecent())) console.error(line);
   const blocker = runningBlocker(resumeSlate);
   if (blocker) {
     console.error(`一次一份：slate ${blocker.id} 仲行緊（running）。等佢完先開新工，或者 --resume ${blocker.id} 接返呢份。`);
@@ -410,6 +413,7 @@ async function main() {
   if (cmd === "status") {
     const id = process.argv[3];
     if (!id) {
+      for (const line of failedRecentLines(failedRecent())) console.log(line);
       for (const j of listJobs().slice(0, 8)) {
         console.log(`${j.slate}  ${j.status.padEnd(8)}  ${(j.callSheet?.title ?? j.input.brief).slice(0, 40)}`);
       }

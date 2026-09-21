@@ -38,6 +38,29 @@ export function runningBlocker(resumeSlate?: string): JobRecord | null {
   return null;
 }
 
+/** INSIDE_VISIBLE 卡B 開工掃墓: corpses a fresh produce/status must trip over —
+ *  failed jobs never swept, plus running jobs gone quiet past half an hour
+ *  (STALE). Same listJobs sweep as runningBlocker; surfaced, never blocking. */
+export type FailedRecentRow = { job: JobRecord; quietMin: number; stale: boolean };
+
+export function failedRecent(nowMs = Date.now()): FailedRecentRow[] {
+  const out: FailedRecentRow[] = [];
+  for (const j of listJobs()) {
+    const updated = Date.parse(j.updatedAt || j.createdAt);
+    if (Number.isNaN(updated)) continue;
+    const quietMin = Math.round((nowMs - updated) / 60_000);
+    if (j.status === "failed") out.push({ job: j, quietMin, stale: quietMin > 30 });
+    else if (j.status === "running" && quietMin > 30) out.push({ job: j, quietMin, stale: true });
+  }
+  return out;
+}
+
+/** One ⚠ line per corpse (dig format): slate · status · quiet time · error head. */
+export function failedRecentLines(rows: FailedRecentRow[]): string[] {
+  return rows.map((r) => `${r.stale ? "⚠ STALE " : "⚠ "}${r.job.slate} ${r.job.status} ${r.quietMin} 分鐘前：${(r.job.error ?? "").slice(0, 60)}（未收屍）`);
+}
+
+
 export function subscribe(id: string, fn: (e: JobEvent) => void) {
   const set = listeners.get(id) ?? new Set();
   set.add(fn);

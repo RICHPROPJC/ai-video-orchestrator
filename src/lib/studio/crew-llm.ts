@@ -217,7 +217,10 @@ export type ChatJsonOpts<T> = {
   /** test clock: receives every backoff wait instead of really sleeping */
   sleepImpl?: (ms: number) => Promise<void>;
   /** Nex only: none=fast pass · medium|high=深判斷。Default none（見 nexReasoningEffort）。 */
-  reasoningEffort?: NexReasoningEffort | string;
+  reasoningEffort?: NexReasoningEffort | string;  /** INSIDE_VISIBLE 卡A attempt燈: fires the moment an attempt's receipt
+   *  lands — failures light a warn through events.jsonl immediately (A4 one
+   *  log), not only in the receipt file hours later. */
+  onAttempt?: (r: { attempt: number; valid: boolean; errors: string[] }) => void;
 };
 
 export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult<T>> {
@@ -345,6 +348,7 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
     const file = path.join(opts.receiptDir, `${opts.seat}.${opts.unit}.${seq}.json`);
     fs.writeFileSync(file, JSON.stringify(receipt, null, 2));
     receipts.push(path.basename(file));
+    opts.onAttempt?.({ attempt, valid: errors.length === 0, errors });
 
     if (errors.length === 0) return { value: value as T, model: opts.model, receipts };
 
