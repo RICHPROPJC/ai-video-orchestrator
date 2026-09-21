@@ -4,6 +4,31 @@ import type { ComfyGraph } from "./comfy";
 // NOTES_h3_graph.md "v6 parity"). Defaults with receipts, not locked numbers.
 const WIDTH = 864;
 const HEIGHT = 480;
+
+/** ECOM1A: per-callsheet canvas. node1 probe (verify/motion/H3.object_info.node1.CFORM-ECOM.json,
+ *  0922): the H3 node family declares width/height INT min 32 step 32 max 4096+ — no aspect
+ *  restriction — and the pack ships portrait defaults of its own (H3KeyframeInject 544×960,
+ *  H3MultishotSampler/H3StudioControls 768×1344). 544×960 is the pixel-exact twin of the
+ *  README-measured native 960×544 (same 522,240 px — "render native, then upscale"), and it
+ *  is the size the pack itself defaults to in portrait. Landscape stays v6-parity 864×480. */
+export const H3_GRAPH_SIZES = {
+  "16:9": { width: WIDTH, height: HEIGHT },
+  "9:16": { width: 544, height: 960 },
+} as const;
+export type H3GraphAspect = keyof typeof H3_GRAPH_SIZES;
+
+/** callsheet.aspect → graph canvas. Undefined keeps the v6 default; an unknown
+ *  non-empty string is a refuse-to-emit (a wrong-size bake burns the take). */
+export function h3SizeForAspect(aspect: string | undefined): { width: number; height: number } {
+  if (!aspect) return { ...H3_GRAPH_SIZES["16:9"] };
+  const size = (H3_GRAPH_SIZES as Record<string, { width: number; height: number }>)[aspect];
+  if (!size) {
+    throw new Error(
+      `aspect_unsupported: ${JSON.stringify(aspect)} — H3 graph sizes are ${Object.keys(H3_GRAPH_SIZES).join(", ")}`,
+    );
+  }
+  return { ...size };
+}
 const LORA_STRENGTH = 1.0;
 const SAMPLER = "euler"; // turbo 8-step v1.0（Chau 0921裁）
 const SCHEDULER = "simple";
@@ -108,6 +133,12 @@ export type BuildH3GraphOpts = {
   steps: number;
   seed: number;
   filenamePrefix: string;
+  /** ECOM1A: canvas by callsheet aspect — undefined keeps the v6-parity
+   *  864×480. Both values must ride together on the /32 grid (every node in
+   *  the graph — r2v, keyframes, multishot, VHS_LoadVideo — gets the same
+   *  pair, or the latent and the motion ref disagree). */
+  width?: number;
+  height?: number;
   /** A-form only (no Video 1): the U1.5 still anchoring H3Keyframes at 0%. */
   kfStartName?: string;
   kfEndName?: string;
@@ -186,6 +217,23 @@ export type BuildH3GraphOpts = {
 export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   const variant = opts.variant ?? "a";
   const m = opts.models;
+  // ECOM1A: one canvas for every node in the graph — r2v, H3Keyframes, the
+  // multishot samplers and VHS_LoadVideo (the <Video 1> motion ref) must all
+  // agree, or the latent and the motion source fight.
+  const width = opts.width ?? WIDTH;
+  const height = opts.height ?? HEIGHT;
+  if ((opts.width === undefined) !== (opts.height === undefined)) {
+    throw new Error(`graph_size_invalid: width and height ride together (got ${JSON.stringify({ width: opts.width, height: opts.height })})`);
+  }
+  if (
+    !Number.isInteger(width) || !Number.isInteger(height) ||
+    width < 32 || height < 32 || width % 32 !== 0 || height % 32 !== 0 ||
+    width > 4096 || height > 4096
+  ) {
+    throw new Error(
+      `graph_size_invalid: ${width}x${height} — H3 canvas needs two /32 ints in 32–4096 (node1 object_info step 32)`,
+    );
+  }
   // §5b (CHAU_FULL_FLOW_LAW, E2E SC-0921-9V4Y six-way A/B): H3Keyframes ×
   // <Video 1> coexistence is a model-level fight — 4/8/20 steps all failed
   // (double exposure / identity morph). The Video 1 asset is THE routing
@@ -256,8 +304,8 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       audio_vae: ["avae", 0],
       script: ms.script,
       shot_count: ms.shotCount,
-      width: WIDTH,
-      height: HEIGHT,
+      width: width,
+      height: height,
       frames_per_shot: ms.framesPerShot,
       seed: opts.seed,
       steps: opts.steps,
@@ -336,7 +384,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   if (variant === "a" && hasVideo1) {
     g.blender_vid = {
       class_type: "VHS_LoadVideo",
-      inputs: { video: opts.blockoutName!, custom_width: WIDTH, custom_height: HEIGHT, ...BLOCKOUT_VHS },
+      inputs: { video: opts.blockoutName!, custom_width: width, custom_height: height, ...BLOCKOUT_VHS },
     };
   }
   const r2vInputs: Record<string, unknown> = {
@@ -344,8 +392,8 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     vae: ["vvae", 0],
     audio_vae: ["avae", 0],
     prompt: ["split", 0],
-    width: WIDTH,
-    height: HEIGHT,
+    width: width,
+    height: height,
     length: opts.frames,
     ref_image_size: REF_IMAGE_SIZE,
     "ref_audios.ref_audio_0": ["voice_guard", 0],
@@ -395,8 +443,8 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       clip: ["clip", 0],
       vae: ["vvae", 0],
       prompt: ["split", 0],
-      width: WIDTH,
-      height: HEIGHT,
+      width: width,
+      height: height,
       length: opts.frames,
       positions: "0%",
       image_1: ["kf_start_in", 0],
@@ -465,8 +513,8 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       audio_vae: ["avae", 0],
       script: c.script,
       shot_count: c.shotCount,
-      width: WIDTH,
-      height: HEIGHT,
+      width: width,
+      height: height,
       frames_per_shot: c.framesPerShot,
       seed: opts.seed,
       steps: opts.steps,

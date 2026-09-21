@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { buildH3Graph, BINDINGS, BINDINGS_CFORM, COND_VISUAL } from "./h3-r2v-graph";
+import { buildH3Graph, h3SizeForAspect, BINDINGS, BINDINGS_CFORM, COND_VISUAL } from "./h3-r2v-graph";
 import { defaultConfig } from "./config";
 
 const models = {
@@ -44,6 +44,33 @@ test("C-form deep-equals the production golden (§5b, CFORM_0921)", () => {
   );
   const built = buildH3Graph({ ...cform });
   assert.deepEqual(built, golden);
+});
+
+/** ECOM1A: callsheet aspect 9:16 — the 544×960 portrait canvas rides EVERY node
+ *  (r2v + VHS_LoadVideo motion ref), golden-locked like the 16:9 recipe. */
+test("9:16 C-form deep-equals the portrait golden (ECOM1A probe: verify/motion/H3.object_info.node1.CFORM-ECOM.json)", () => {
+  const golden = JSON.parse(
+    fs.readFileSync(path.resolve(process.cwd(), "workflows/h3-r2v-916.api.json"), "utf8"),
+  );
+  const built = buildH3Graph({ ...cform, width: 544, height: 960 });
+  assert.deepEqual(built, golden);
+});
+
+test("ECOM1A: VHS_LoadVideo __VIDEO__ canvas stays in sync with the sampler canvas", () => {
+  const g = buildH3Graph({ ...cform, width: 544, height: 960 });
+  assert.equal(g.blender_vid.inputs.custom_width, g.r2v.inputs.width);
+  assert.equal(g.blender_vid.inputs.custom_height, g.r2v.inputs.height);
+  assert.equal(g.blender_vid.inputs.video, "__VIDEO__");
+  // half-sized opts are refused: latent and motion ref must agree on one canvas
+  assert.throws(() => buildH3Graph({ ...cform, width: 500, height: 880 }), /graph_size_invalid/);
+  assert.throws(() => buildH3Graph({ ...cform, width: 544 }), /graph_size_invalid/);
+});
+
+test("ECOM1A: h3SizeForAspect — probe-backed sizes, default 16:9, unknown refuses", () => {
+  assert.deepEqual(h3SizeForAspect("9:16"), { width: 544, height: 960 });
+  assert.deepEqual(h3SizeForAspect("16:9"), { width: 864, height: 480 });
+  assert.deepEqual(h3SizeForAspect(undefined), { width: 864, height: 480 });
+  assert.throws(() => h3SizeForAspect("4:5"), /aspect_unsupported/);
 });
 
 test("A-form deep-equals the still-to-video golden (§5b keyframes lane)", () => {

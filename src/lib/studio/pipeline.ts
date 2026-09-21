@@ -903,6 +903,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           shot: shot.id,
           requireQuote: Boolean(shot.dialogue.trim()),
           wardrobe: wardrobeClauses(timed),
+          aspect: timed.aspect,
           graphVariant: variant,
           stepsOverride: input.steps,
         });
@@ -1675,6 +1676,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           shot: segId,
           requireQuote: Boolean(shot.dialogue.trim()),
           wardrobe: wardrobeClauses(timed),
+          aspect: timed.aspect,
           graphVariant: variant,
           stepsOverride: input.steps,
         });

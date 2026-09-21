@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { loadConfig } from "./config";
 import { snapDurationToFrames, wavSeconds } from "./frame-grid";
 import { SCRIPT_HEADER, validateProse, type ValidateProseOpts } from "./h3-prose";
-import { buildH3Graph, BINDINGS, BINDINGS_CFORM, type H3GraphModels, type H3GraphVariant } from "./h3-r2v-graph";
+import { buildH3Graph, h3SizeForAspect, BINDINGS, BINDINGS_CFORM, type H3GraphModels, type H3GraphVariant } from "./h3-r2v-graph";
 import { validateProsePositive } from "./h3-prose";
 import { scpToHost } from "./scp-upload";
 import { queuePrompt, waitHistory, downloadView, uploadComfyFile } from "./comfy";
@@ -151,6 +151,9 @@ export async function submitH3Shot(opts: {
   requireQuote?: boolean;
   wardrobe?: ValidateProseOpts["wardrobe"];
   graphVariant?: H3GraphVariant;
+  /** ECOM1A: callsheet aspect — resolved to the graph canvas (h3SizeForAspect);
+ *    undefined keeps the v6-parity 864×480. Unknown strings refuse to emit. */
+  aspect?: string;
   /** test-only steps override; default remains config.motion.steps (8, turbo 8-step v1.0) */
   stepsOverride?: number;
 }): Promise<{ receipt: H3SubmitReceipt; receiptFile: string }> {
@@ -255,6 +258,7 @@ export async function submitH3Shot(opts: {
       wavName: names.wav,
       models,
       variant,
+      ...h3SizeForAspect(opts.aspect),
       refImageNames: names.refImages,
       uiPhotoNames: names.uiPhotos,
       audioTimingRefName: names.audioTiming ?? undefined,
