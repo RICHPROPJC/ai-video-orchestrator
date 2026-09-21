@@ -12,6 +12,7 @@ import {
   judgeSecondEye,
   sameRequire,
   summarize,
+  gramMatch,
   type QcRequire,
   type QcSummary,
   type QcVerdict,
@@ -56,13 +57,51 @@ function frameDigest(file: string): string {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
 
-/** Aggregate per-frame MARS verdicts — any FAIL fails the clip. */
+/** CFORM7B: the clip action is a timeline sentence (企定→出拳→轉身踢→收勢) — no
+ *  single frame shows every beat, so per-frame judging with the whole sentence
+ *  kills every frame (run7 SH01 f48/f96, SH02 f0-f96 all miss one beat). The
+ *  action gate moves to clip level: pool the take's write-ups, threshold
+ *  unchanged — every beat token must surface somewhere in the take or the clip
+ *  dies. location/size/people/tool stay per-frame gates. */
+export function frameRequireWithoutAction(require: QcRequire): QcRequire {
+  const rest = { ...require };
+  delete rest.action;
+  return rest;
+}
+
+function frameEvidenceBlob(f: {
+  blind: string;
+  summary: QcSummary | { parse_error: string; raw: string };
+}): string {
+  const s = f.summary as Partial<QcSummary> | undefined;
+  return [f.blind, s?.location_notes, s?.action_notes, s?.pose_notes]
+    .filter((x): x is string => typeof x === "string")
+    .join("\n");
+}
+
+/** Clip-level action verdict — undefined when the require carries no action. */
+export function clipActionCheck(
+  frames: Array<{ blind: string; summary: QcSummary | { parse_error: string; raw: string } }>,
+  require: QcRequire,
+): { ok: boolean; reason?: string } | undefined {
+  const action = require.action?.trim();
+  if (!action) return undefined;
+  const { hits, total, need } = gramMatch(action, frames.map(frameEvidenceBlob).join("\n"));
+  if (total < 2) return { ok: false, reason: "action: require unparseable — no judgeable bigrams" };
+  if (hits < need) {
+    return { ok: false, reason: `action(clip): hits ${hits}/${need} — misses ${JSON.stringify(action)}` };
+  }
+  return { ok: true };
+}
+
+/** Aggregate per-frame MARS verdicts — any FAIL fails the clip. The action
+ *  sentence judges once at clip level, not per frame. */
 export function judgeVideoFrames(
   frames: Array<{ frame: number; t_s: number; file: string; blind: string; summary: QcSummary }>,
   require: QcRequire,
 ): Pick<VideoQcRecord, "status" | "frames" | "checks"> {
   const judged: VideoFrameQc[] = frames.map((f) => {
-    const verdict = judge(f.blind, f.summary, require);
+    const verdict = judge(f.blind, f.summary, frameRequireWithoutAction(require));
     return {
       frame: f.frame,
       t_s: f.t_s,
@@ -77,13 +116,19 @@ export function judgeVideoFrames(
   const failReasons = judged.flatMap((f) =>
     (f.checks.fail_reasons ?? []).map((r) => `f${f.frame}: ${r}`),
   );
+  const clipAction = clipActionCheck(frames, require);
+  if (clipAction && !clipAction.ok) failReasons.push(clipAction.reason!);
   if (Object.keys(require).length === 0) failReasons.push("no require: cannot accept");
   const status: "GREEN" | "FAIL" =
     judged.length > 0 && failReasons.length === 0 ? "GREEN" : "FAIL";
   return {
     status,
     frames: judged,
-    checks: { status, fail_reasons: failReasons },
+    checks: {
+      ...(clipAction ? { action: clipAction.ok } : {}),
+      status,
+      fail_reasons: failReasons,
+    },
   };
 }
 
@@ -183,12 +228,15 @@ export async function runVideoQc(opts: {
   const url = cfg.pictureQc.endpoint;
   const model = await probeVisionEndpoint(url, cfg.pictureQc.model);
   const frameResults: VideoFrameQc[] = [];
+  const frameRequire = frameRequireWithoutAction(opts.require);
   for (const { frame, t_s, file } of extracted) {
-    frameResults.push(await qcOneFrame(url, model, file, opts.require, frame, t_s));
+    frameResults.push(await qcOneFrame(url, model, file, frameRequire, frame, t_s));
   }
   const failReasons = frameResults.flatMap((f) =>
     (f.checks.fail_reasons ?? []).map((r) => `f${f.frame}: ${r}`),
   );
+  const clipAction = clipActionCheck(frameResults, opts.require);
+  if (clipAction && !clipAction.ok) failReasons.push(clipAction.reason!);
   let second: (SecondEyeRecord & { frame: number }) | undefined;
   if (secondCfg && frameResults.length > 0) {
     const mid = frameResults[Math.floor(frameResults.length / 2)]!; // one mid frame — no fan-out
@@ -210,7 +258,11 @@ export async function runVideoQc(opts: {
     require: opts.require,
     status,
     frames: frameResults,
-    checks: { status, fail_reasons: failReasons },
+    checks: {
+      ...(clipAction ? { action: clipAction.ok } : {}),
+      status,
+      fail_reasons: failReasons,
+    },
     ...(second ? { second } : {}),
   };
   fs.mkdirSync(path.dirname(opts.outJson), { recursive: true });

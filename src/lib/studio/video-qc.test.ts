@@ -22,6 +22,20 @@ const test = bareBun
 
 const WIST_REQUIRE: QcRequire = { people_count: 1, grey_blocks: false };
 
+/** CFORM7B fixture: run7 SH01嘅時序句 — 企定→出拳→轉身側踢→收勢。 */
+const CLIP_ACTION =
+  "沈北辰喺兩排金屬檔案架之間嘅空地企定，雙手握拳收腰，連環打出兩記右直拳；隨即轉身起左腳側踢，腳刀掃過濕漉地面；落地收勢立正，肩線沉定，眼神堅定望前。";
+
+function beatFrame(frame: number, actionNotes: string) {
+  return {
+    frame,
+    t_s: frame / 24,
+    file: `f${frame}.png`,
+    blind: actionNotes,
+    summary: { people_count: 1, grey_blocks: false, action_notes: actionNotes },
+  };
+}
+
 test("pickMotionFrameIndices: first, mid, last, every 2s at 24fps", () => {
   const idx = pickMotionFrameIndices(124, 24);
   assert.ok(idx.includes(0));
@@ -63,7 +77,7 @@ test("WIST SH01 kfend + sheet location also FAIL location (S2)", () => {
   });
   assert.equal(morgue.status, "FAIL");
   assert.ok(morgue.checks.fail_reasons.some((r) => r.includes("location:")));
-  assert.ok(morgue.checks.fail_reasons.some((r) => r.includes("action:")));
+  assert.ok(morgue.checks.fail_reasons.some((r) => r.includes("action")));
 });
 
 test("WIST SH01 kfend recordings FAIL grey_blocks (fixture, no network)", () => {
@@ -227,6 +241,36 @@ test("runVideoQc second eye sees ONE mid frame when MARS_URL + SLATECREW_SECOND_
   const mid = record.frames[Math.floor(record.frames.length / 2)]!.frame;
   assert.equal(record.second.frame, mid, "second eye ran on the mid frame only — no fan-out");
   assert.equal(record.status, "FAIL");
+});
+
+test("CFORM7B: action timing sentence judges at clip level — beats split across frames", () => {
+  const require: QcRequire = { people_count: 1, grey_blocks: false, action: CLIP_ACTION };
+  // run7 SH01 shape: each frame shows ONE beat — per-frame bigram hits stay under need(5)
+  const frames = [
+    beatFrame(0, "沈北辰企定"),
+    beatFrame(48, "打出兩記右直拳"),
+    beatFrame(96, "轉身側踢"),
+    beatFrame(123, "收勢立正"),
+  ];
+  const judged = judgeVideoFrames(frames, require);
+  assert.equal(judged.status, "GREEN", judged.checks.fail_reasons.join(" | "));
+  assert.equal(judged.checks.action, true, "clip-level action gate pooled the take's beats");
+  assert.ok(
+    judged.frames.every((f) => !("action" in f.checks)),
+    "frame gates carry no action key — the sentence is the take's script, not one frame's",
+  );
+});
+
+test("CFORM7B: clip action still fails when a beat never shows — threshold untouched, require not dropped", () => {
+  const require: QcRequire = { people_count: 1, grey_blocks: false, action: CLIP_ACTION };
+  const frames = [beatFrame(0, "沈北辰企定"), beatFrame(48, "沈北辰企定"), beatFrame(96, "沈北辰企定")];
+  const judged = judgeVideoFrames(frames, require);
+  assert.equal(judged.status, "FAIL");
+  assert.equal(judged.checks.action, false);
+  assert.ok(
+    judged.checks.fail_reasons.some((r) => r.startsWith("action(clip):")),
+    judged.checks.fail_reasons.join(" | "),
+  );
 });
 
 if (bareBun) {
