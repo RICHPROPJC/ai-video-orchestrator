@@ -18,12 +18,12 @@
 ### 0921 新法
 
 - **C 形（動作 shot 帶 Video1 嘅正路）**：零 keyframes＋`ref_image_0` 身份 ref（45° 角度版）＋Video1 motion-only＋**turbo 8-step v1.0 @ steps 8、無 FBC／SolAttn**（8-step LoRA 行 FBC 爆 tensor，結構性）。**Video1 × H3Keyframes 並存＝必疊影**（五路實證：4/8/20 步、LoRA、FBC 全救唔到）——H3Keyframes lane 留畀冇 Video1 嘅 shot。
-- **跨 shot 接駁＝原生 Multishot 真尾幀**：`H3MultishotSampler`（start_image＝前一 shot 真 endframe、角度肖像每 shot 帶入、seed_per_shot 鎖面）；等效後備＝KFE 手動鏈。過渡形態全部 hard cut。
+- **跨 shot 接駁（同場連續）＝`H3MultishotSampler` 原生鏈成梳延續**：上一梳輸出直接餵下一梳（frame-0 keyframe latent＋anchor_frames／memory_frames＋chain_gain），同時自己嗰梳 reference_images 照擺（混合制）；角度肖像每 shot 帶入、seed_per_shot 鎖面。**「真 endframe 做 start_image」只係兩段分開燒（HardMode 兩段式／KFE 手動鏈）嘅入口接駁媒介，唔係同場連續本身**。過渡形態全部 hard cut。
 
 ### 條界（唔係「續接弱」，係「換場唔食舊尾」）
 
 - **換場（location hop）→ 禁食舊鏡尾幀**（身份被食就係呢度；0915 四線原則不變）
-- **同場連續 → chain 得**（multishot 真尾幀；同 render 同源先融得到）
+- **同場連續 → chain 得**（`H3MultishotSampler` 原生鏈成梳延續——上一梳 latent 直落下一梳，唔係靠食 endframe）
 
 同一 take 續 45–120s 嗰套（靠上一窗 latent／尾幀）係另一條題，我哋明文禁止。
 
