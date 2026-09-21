@@ -284,6 +284,20 @@ test("system-display tool: require strips screen/螢幕 from tool_forbid (§0c)"
   const plow: ShotProp = { name: "曲轅犁", heldBy: "A", shape: ["弯"], forbid: ["screen", "锹"] };
   assert.deepEqual(keyframeRequire(shotWithProp(plow)).tool_forbid, ["screen", "锹"]);
 });
+test("W3: the style grade mounts as the 風格光照 section, riding after the band; empty grade mounts nothing", () => {
+  const graded: CallSheet = { ...sheet, styleBible: { ...sheet.styleBible, grade: "慘白光管冷青底色低飽和" } };
+  const withAction: Shot = { ...shotWithProp(coat), require: { action: "扯過件外套披上肩定格。" } };
+  const text = keyframeEditPrompt(graded, withAction, { first: true });
+  assert.match(text, /【風格光照】成格畫面嘅色調、光源、飽和度跟呢句 style grade：「慘白光管冷青底色低飽和」/);
+  assert.ok(text.indexOf("【風格光照】") > text.indexOf("【光影材質】"), "style rides after the band (extras, not brief)");
+  assert.ok(text.indexOf("【風格光照】") < text.indexOf("【動作】"), "style rides before the action block");
+
+  const bare = keyframeEditPrompt({ ...sheet, styleBible: { ...sheet.styleBible, grade: "  " } }, shotWithProp(coat), { first: true });
+  assert.ok(!bare.includes("【風格光照】"), "empty grade mounts no section");
+
+  // the fixture sheet's 1-char grade must also ride (default path unchanged)
+  assert.match(keyframeEditPrompt(sheet, shotWithProp(coat), { first: true }), /「g」/);
+});
 
 test("noun classes: garments and documents never take the held-tool gate; hologram props carry it; 犁/槍/鋤 do", () => {  for (const name of ["軍大衣", "蓑衣", "斗篷 cloak", "leather jacket", "silk robe"]) {
     assert.equal(propNounClass(name), "garment", `${name} is a garment`);

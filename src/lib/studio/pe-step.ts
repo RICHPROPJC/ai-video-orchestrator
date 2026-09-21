@@ -54,7 +54,7 @@ const PE_SYSTEM = [
   "1. 只准用證據入面嘅數字／日期／名。證據冇嘅嘢一律唔准上屏，唔准估、唔准靠記憶補。",
   '2. 輸出只係一個 JSON object（冇 markdown、冇解釋）：{"facts":[{"claim":"…","source":"…","fetched_at":"YYYY-MM-DD"}],"render":"…"}',
   "3. facts 最多 8 行，只列會上屏嘅關鍵數字／日期／名（唔係成個證據表）；claim 係會逐字上屏嘅文案；source 係證據 URL 或標題；fetched_at 係證據日期（報告冇就俾今天）。",
-  "4. render 係一個 JSON object（唔係字串）：描述成個畫面——主體、可見文案（同 facts 逐字一致）、數量、版式約束、排除項。",
+  "4. render 係一個 JSON object（唔係字串），U1.5 結構化配方四要素齊口，四個 key 一個唔准漏：\"主體\"（邊個／邊樣嘢做主角）、\"場景\"（地點、時段、環境）、\"風格光照\"（色調、光源、質感、飽和度）、\"約束\"（可見文案—同 facts 逐字一致、數量、版式、排除項；一串文字）。",
   "5. render 入面出現嘅數字／日期／名必須同 facts 完全一致，一個字都唔准差。",
 ].join("\n");
 
@@ -113,6 +113,13 @@ export async function runWigolo(question: string, clientPath: string, timeoutMs:
 }
 
 type BrainCall = { endpoint: string; model: string; effortNone: boolean };
+
+/** U1.5 結構化配方四要素 — the render object must carry all four, non-empty. */
+const RENDER_KEYS = ["主體", "場景", "風格光照", "約束"] as const;
+
+function renderMissingKeys(renderObj: Record<string, unknown>): string[] {
+  return RENDER_KEYS.filter((k) => typeof renderObj[k] !== "string" || !(renderObj[k] as string).trim());
+}
 
 async function callBrain(
   brain: BrainCall,
@@ -225,6 +232,12 @@ export async function runPeStep(opts: {
       const gotRender = renderObj ? JSON.stringify(renderObj) : "";
       if (got.length === 0) throw new Error(`PE brain ${brain.model} returned 0 valid fact rows — refuse (evidence-less screen)`);
       if (!gotRender) throw new Error(`PE brain ${brain.model} returned empty render`);
+      // U1.5 官方配方：擴寫要齊 場景+風格+約束（Nell #32 四掣同方向）— a render
+      // missing a structural key is refused to the backup brain, never mounted
+      const missing = renderMissingKeys(renderObj as Record<string, unknown>);
+      if (missing.length > 0) {
+        throw new Error(`PE brain ${brain.model} render 缺結構四要素：${missing.join("、")}（U1.5 官方：主體/場景/風格光照/約束）`);
+      }
       // facts ride the QC judge as the on-screen contract, so only rows the
       // render actually paints may stay (the wire receipts showed PE dumping
       // the whole evidence table — 45 rows — which the blind eye can never

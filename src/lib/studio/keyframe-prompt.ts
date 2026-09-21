@@ -313,11 +313,13 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
     throw new Error(`prompt_too_thick: ${shot.id} /edit 組到 ${nBrief} 中文字（上限 ${EDIT_MAX_CJK}）— packet 太肥，prompt 只解釋底圖唔補償（Chau 0917 法11）；收細 packet 再出`);
   }
   // extras ride after the band (packet data, not brief prose):
-  // 動作 → 不變 → 景別 → facts (freeze sentence, background lock, framing, screen copy)
+  // 風格光照 → 動作 → 不變 → 景別 → facts
+  const style = styleLightingBlock(sheet);
   const action = actionBlock(shot);
   const lock = unchangedBlock(shot);
   const sizeLine = SIZE_LINE[shot.size] ?? "";
-  let text = action ? `${brief}\n\n${action}` : brief;
+  let text = style ? `${brief}\n\n${style}` : brief;
+  if (action) text = `${text}\n\n${action}`;
   if (lock) text = `${text}\n\n${lock}`;
   if (sizeLine) text = `${text}\n\n${sizeLine}`;
   if (facts.length > 0) text = `${text}\n\n${factsBlock(facts)}`;
@@ -325,6 +327,16 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
     throw new Error(`prompt_too_thin: ${shot.id} /edit 只組到 ${cjkCount(text)} 中文字（最少 ${EDIT_MIN_CJK}）— packet 太薄，生成器拒出（Fable 00:20 U1.5=A）`);
   }
   return text;
+}
+
+/** U1.5 結構化配方嘅「風格光照」節 — mounted verbatim from the sheet's style
+ *  grade (boards/art own the sentence; code only assembles the mount). Rides
+ *  AFTER the band with the other extras so the 150–300 brief gate stays put;
+ *  empty grade mounts nothing. */
+export function styleLightingBlock(sheet: CallSheet): string {
+  const grade = sheet.styleBible.grade.trim();
+  if (!grade) return "";
+  return `【風格光照】成格畫面嘅色調、光源、飽和度跟呢句 style grade：「${grade}」；光照方向同【場景】時段一致，人物面容唔好俾調色漂走。`;
 }
 
 /** The 【動作】 line, assembled verbatim from the packet: require.action is the

@@ -34,7 +34,12 @@ const EVIDENCE: WigoloReport = {
 
 const BRAIN_OK = JSON.stringify({
   facts: [{ claim: "2026年6月私人住宅售價指數323.2點", source: "https://example.hk/rvd", fetched_at: "2026-09-19" }],
-  render: { subject: "樓價指數數據卡", copy: ["2026年6月 私人住宅售價指數 323.2點", "連升13個月"] },
+  render: {
+    主體: "樓價指數數據卡",
+    場景: "辦公室桌面螢幕，日光",
+    風格光照: "冷白屏光，低對比，無濾鏡",
+    約束: "可見文案逐字：「2026年6月 私人住宅售價指數 323.2點」「連升13個月」；單一數據卡版式；排除其他文字",
+  },
 });
 
 type Wire = { url: string; body: Record<string, unknown> };
@@ -76,6 +81,10 @@ test("PE step: mock wigolo → nex brain, official call-shape on the wire, facts
   // the law's call-shape, asserted on the actual wire body
   const wire = wires[0]!;
   assert.equal(wire.url, "http://127.0.0.1:8017/v1/chat/completions");
+  const system = (wire.body.messages as { role: string; content: string }[])[0]!.content;
+  for (const key of ["主體", "場景", "風格光照", "約束"]) {
+    assert.ok(system.includes(key), `PE 結構要求帶四要素 key：${key}（U1.5 官方配方）`);
+  }
   assert.deepEqual(wire.body.chat_template_kwargs, { reasoning_effort: "none" }, "nex effort none");
   assert.equal(wire.body.temperature, 0.7);
   assert.equal(wire.body.top_p, 0.95);
@@ -151,7 +160,12 @@ test("PE step: facts are cut to what the render actually paints (evidence table 
       { claim: "2026年6月私人住宅售價指數323.2點", source: "https://example.hk/rvd", fetched_at: "2026-09-19" },
       { claim: "2025年全年註冊量約33,500宗從未上屏", source: "https://example.hk/other", fetched_at: "2026-09-19" },
     ],
-    render: { subject: "樓價指數數據卡", copy: ["2026年6月 私人住宅售價指數 323.2點"] },
+    render: {
+      主體: "樓價指數數據卡",
+      場景: "辦公室桌面螢幕，日光",
+      風格光照: "冷白屏光，低對比",
+      約束: "文案逐字：「2026年6月 私人住宅售價指數 323.2點」；單一數據卡版式；排除其他文字",
+    },
   });
   const res = await runPeStep({
     shotId: "SH03",
@@ -168,6 +182,47 @@ test("PE step: facts are cut to what the render actually paints (evidence table 
   });
   assert.equal(res.facts.length, 1, "only the painted row survives");
   assert.equal(res.facts[0]!.claim, "2026年6月私人住宅售價指數323.2點");
+});
+
+test("W3: render missing a structural key (場景/風格光照/約束) is refused — falls to backup or throws", async () => {
+  const half = JSON.stringify({
+    facts: [{ claim: "2026年6月私人住宅售價指數323.2點", source: "https://example.hk/rvd", fetched_at: "2026-09-19" }],
+    render: { 主體: "樓價指數數據卡", copy: ["323.2"] },
+  });
+  // primary incomplete → backup (BRAIN_OK) answers; the note carries the miss
+  const res = await runPeStep({
+    shotId: "SH03",
+    action: "螢幕顯示樓價指數圖表",
+    context: "fixture",
+    config: CONFIG,
+    deps: {
+      wigolo: async () => EVIDENCE,
+      fetchImpl: (async (url: string, init?: RequestInit) => {
+        void init;
+        return okResponse(String(url).includes("8017") ? half : BRAIN_OK) as unknown as Response;
+      }) as unknown as typeof fetch,
+    },
+  });
+  assert.equal(res.brain, "qwen38", "incomplete render falls to the backup brain");
+  assert.match(res.notes ?? "", /缺結構四要素.*風格光照/);
+
+  // both brains incomplete → fail loud, never a structure-less mount
+  await assert.rejects(
+    runPeStep({
+      shotId: "SH03",
+      action: "螢幕顯示樓價指數圖表",
+      context: "fixture",
+      config: CONFIG,
+      deps: {
+        wigolo: async () => EVIDENCE,
+        fetchImpl: (async (_url: string, init?: RequestInit) => {
+          void init;
+          return okResponse(half) as unknown as Response;
+        }) as unknown as typeof fetch,
+      },
+    }),
+    /缺結構四要素：場景、風格光照、約束/,
+  );
 });
 
 test("validateFacts: drops rows without claim/source, repairs fetched_at to the run date", () => {

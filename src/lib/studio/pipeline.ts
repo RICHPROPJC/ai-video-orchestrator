@@ -842,7 +842,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         const res = await runPeStep({
           shotId: shot.id,
           action: shot.action,
-          context: `${timed.title}｜${timed.location}｜${timed.timeOfDay}｜${timed.mood}`,
+          context: `${timed.title}｜${timed.location}｜${timed.timeOfDay}｜${timed.mood}｜風格 grade：${timed.styleBible.grade}`,
           config: cfg.pe,
           receiptFile: path.join(stillDir, `${shot.id}.pe_step.json`),
         });
