@@ -1,0 +1,3665 @@
+{
+ "source": "segment_engine.py",
+ "h3studio_commit": "2bc8c90755161d15536a23b35714103a7d532e5c",
+ "cases": [
+  {
+   "name": "plan_within_native_single",
+   "fn": "plan_render_segments",
+   "args": [
+    0.0,
+    10.0
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "segment_001_000000000_000010000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 10.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    }
+   ]
+  },
+  {
+   "name": "plan_exactly_native_single",
+   "fn": "plan_render_segments",
+   "args": [
+    0.0,
+    15.0
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "segment_001_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    }
+   ]
+  },
+  {
+   "name": "plan_45s_overlap_split",
+   "fn": "plan_render_segments",
+   "args": [
+    0.0,
+    45.0
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "segment_001_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 1.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "segment_002_000014000_000029000",
+     "index": 1,
+     "start_seconds": 14.0,
+     "end_seconds": 29.0,
+     "overlap_before_seconds": 1.0,
+     "overlap_after_seconds": 1.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    },
+    {
+     "segment_id": "segment_003_000028000_000043000",
+     "index": 2,
+     "start_seconds": 28.0,
+     "end_seconds": 43.0,
+     "overlap_before_seconds": 1.0,
+     "overlap_after_seconds": 1.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    },
+    {
+     "segment_id": "segment_004_000042000_000045000",
+     "index": 3,
+     "start_seconds": 42.0,
+     "end_seconds": 45.0,
+     "overlap_before_seconds": 1.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "plan_17s_overlap_split",
+   "fn": "plan_render_segments",
+   "args": [
+    0.0,
+    17.0
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "segment_001_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 1.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "segment_002_000014000_000017000",
+     "index": 1,
+     "start_seconds": 14.0,
+     "end_seconds": 17.0,
+     "overlap_before_seconds": 1.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "plan_grid_snap_bankers",
+   "fn": "plan_render_segments",
+   "args": [
+    0.25,
+    30.75
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "segment_001_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 1.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "segment_002_000014000_000029000",
+     "index": 1,
+     "start_seconds": 14.0,
+     "end_seconds": 29.0,
+     "overlap_before_seconds": 1.0,
+     "overlap_after_seconds": 1.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    },
+    {
+     "segment_id": "segment_003_000028000_000031000",
+     "index": 2,
+     "start_seconds": 28.0,
+     "end_seconds": 31.0,
+     "overlap_before_seconds": 1.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "plan_end_not_later",
+   "fn": "plan_render_segments",
+   "args": [
+    5.0,
+    5.0
+   ],
+   "kwargs": {},
+   "error": "ValueError: Work-area end must be later than its start."
+  },
+  {
+   "name": "plan_bad_overlap",
+   "fn": "plan_render_segments",
+   "args": [
+    0.0,
+    30.0
+   ],
+   "kwargs": {
+    "overlap_seconds": 15.0
+   },
+   "error": "ValueError: Segment overlap must be at least zero and shorter than a segment."
+  },
+  {
+   "name": "shotplan_short_beat_merged_forward",
+   "fn": "plan_shot_render_segments",
+   "args": [
+    0.0,
+    12.0,
+    [
+     {
+      "id": "S1",
+      "start_seconds": 0.0,
+      "end_seconds": 1.0,
+      "subject_action": "S1 bullet-time cue, one heartbeat."
+     },
+     {
+      "id": "S2",
+      "start_seconds": 1.0,
+      "end_seconds": 12.0,
+      "subject_action": "S2 recovers and circles left."
+     }
+    ]
+   ],
+   "kwargs": {},
+   "error": "ValueError: Shot-less render Segment 0.00-12.00s. Repair the Director Shot lane so it covers the complete Timeline."
+  },
+  {
+   "name": "shotplan_gap_covered",
+   "fn": "plan_shot_render_segments",
+   "args": [
+    0.0,
+    20.0,
+    [
+     {
+      "id": "S1",
+      "start_seconds": 0.0,
+      "end_seconds": 5.0,
+      "subject_action": "S1 advances through the alley."
+     },
+     {
+      "id": "S2",
+      "start_seconds": 8.0,
+      "end_seconds": 15.0,
+      "subject_action": "S2 vaults the crate and lands."
+     }
+    ]
+   ],
+   "kwargs": {},
+   "error": "ValueError: Shot-less render Segment 0.00-5.00s. Repair the Director Shot lane so it covers the complete Timeline."
+  },
+  {
+   "name": "shotplan_long_shot_split",
+   "fn": "plan_shot_render_segments",
+   "args": [
+    0.0,
+    40.0,
+    [
+     {
+      "id": "S1",
+      "start_seconds": 0.0,
+      "end_seconds": 40.0,
+      "subject_action": "S1 and S2 circle each other across the rooftop."
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "segment_001_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 1.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "segment_002_000014000_000029000",
+     "index": 1,
+     "start_seconds": 14.0,
+     "end_seconds": 29.0,
+     "overlap_before_seconds": 1.0,
+     "overlap_after_seconds": 1.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    },
+    {
+     "segment_id": "segment_003_000028000_000040000",
+     "index": 2,
+     "start_seconds": 28.0,
+     "end_seconds": 40.0,
+     "overlap_before_seconds": 1.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "shotplan_no_shots_fallback",
+   "fn": "plan_shot_render_segments",
+   "args": [
+    0.0,
+    30.0,
+    []
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "segment_001_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 1.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "segment_002_000014000_000029000",
+     "index": 1,
+     "start_seconds": 14.0,
+     "end_seconds": 29.0,
+     "overlap_before_seconds": 1.0,
+     "overlap_after_seconds": 1.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    },
+    {
+     "segment_id": "segment_003_000028000_000030000",
+     "index": 2,
+     "start_seconds": 28.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 1.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": null,
+     "core_end_seconds": null,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "shotplan_shotless_error",
+   "fn": "plan_shot_render_segments",
+   "args": [
+    0.0,
+    12.0,
+    [
+     {
+      "id": "S1",
+      "start_seconds": 0.0,
+      "end_seconds": 4.0,
+      "subject_action": "S1 advances through the alley."
+     }
+    ]
+   ],
+   "kwargs": {},
+   "error": "ValueError: Shot-less render Segment 0.00-4.00s. Repair the Director Shot lane so it covers the complete Timeline."
+  },
+  {
+   "name": "shotplan_shot_larger_than_max",
+   "fn": "plan_shot_render_segments",
+   "args": [
+    0.0,
+    18.0,
+    [
+     {
+      "id": "S1",
+      "start_seconds": 0.0,
+      "end_seconds": 16.0,
+      "subject_action": "S1 unleashes the ultimate finisher."
+     },
+     {
+      "id": "S2",
+      "start_seconds": 16.0,
+      "end_seconds": 18.0,
+      "subject_action": "S2 collapses to one knee."
+     }
+    ]
+   ],
+   "kwargs": {},
+   "error": "ValueError: Shot-less render Segment 0.00-15.00s. Repair the Director Shot lane so it covers the complete Timeline."
+  },
+  {
+   "name": "speech_long_line_crossing_boundary",
+   "fn": "protect_segment_boundaries_from_speech",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 10.0,
+      "end_seconds": 22.0,
+      "speaker": "S1",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000010000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 10.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 10.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000010000_000025000",
+     "index": 1,
+     "start_seconds": 10.0,
+     "end_seconds": 25.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 10.0,
+     "core_end_seconds": 25.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    },
+    {
+     "segment_id": "shot_000025000_000030000",
+     "index": 2,
+     "start_seconds": 25.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 25.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    }
+   ]
+  },
+  {
+   "name": "speech_hard_block_forward",
+   "fn": "protect_segment_boundaries_from_speech",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 13.0,
+      "end_seconds": 17.0,
+      "speaker": "S1",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000013000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 13.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 13.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000013000_000028000",
+     "index": 1,
+     "start_seconds": 13.0,
+     "end_seconds": 28.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 13.0,
+     "core_end_seconds": 28.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    },
+    {
+     "segment_id": "shot_000028000_000030000",
+     "index": 2,
+     "start_seconds": 28.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 28.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    }
+   ]
+  },
+  {
+   "name": "speech_tail_block",
+   "fn": "protect_segment_boundaries_from_speech",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 12.0,
+      "end_seconds": 15.0,
+      "speaker": "S1",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000012000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 12.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 12.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000012000_000027000",
+     "index": 1,
+     "start_seconds": 12.0,
+     "end_seconds": 27.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 12.0,
+     "core_end_seconds": 27.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    },
+    {
+     "segment_id": "shot_000027000_000030000",
+     "index": 2,
+     "start_seconds": 27.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 27.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    }
+   ]
+  },
+  {
+   "name": "speech_tail_respects_next_line",
+   "fn": "protect_segment_boundaries_from_speech",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 12.0,
+      "end_seconds": 15.0,
+      "speaker": "S1",
+      "lip_sync": true
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 15.5,
+      "end_seconds": 18.0,
+      "speaker": "S2",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 15.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000015000_000030000",
+     "index": 1,
+     "start_seconds": 15.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 15.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "speech_packed_dense_dialogue",
+   "fn": "protect_segment_boundaries_from_speech",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      },
+      {
+       "segment_id": "shot_000030000_000045000",
+       "index": 2,
+       "start_seconds": 30.0,
+       "end_seconds": 45.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 30.0,
+       "core_end_seconds": 45.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 0.0,
+      "end_seconds": 14.0,
+      "speaker": "S1",
+      "lip_sync": true
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 14.0,
+      "end_seconds": 29.0,
+      "speaker": "S2",
+      "lip_sync": true
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 29.0,
+      "end_seconds": 44.0,
+      "speaker": "S1",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000014000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 14.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 14.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000014000_000029000",
+     "index": 1,
+     "start_seconds": 14.0,
+     "end_seconds": 29.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 14.0,
+     "core_end_seconds": 29.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    },
+    {
+     "segment_id": "shot_000029000_000044000",
+     "index": 2,
+     "start_seconds": 29.0,
+     "end_seconds": 44.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 29.0,
+     "core_end_seconds": 44.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    },
+    {
+     "segment_id": "shot_000044000_000045000",
+     "index": 3,
+     "start_seconds": 44.0,
+     "end_seconds": 45.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 44.0,
+     "core_end_seconds": 45.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    }
+   ]
+  },
+  {
+   "name": "speech_non_speech_roles_ignored",
+   "fn": "protect_segment_boundaries_from_speech",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "sfx",
+      "start_seconds": 13.0,
+      "end_seconds": 17.0,
+      "speaker": "S1",
+      "lip_sync": true
+     },
+     {
+      "content_role": "music",
+      "start_seconds": 14.0,
+      "end_seconds": 16.0,
+      "speaker": "S1",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 15.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000015000_000030000",
+     "index": 1,
+     "start_seconds": 15.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 15.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "speech_empty_rows_unchanged",
+   "fn": "protect_segment_boundaries_from_speech",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    []
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 15.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000015000_000030000",
+     "index": 1,
+     "start_seconds": 15.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 15.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "speech_multi_speaker_sequence",
+   "fn": "protect_segment_boundaries_from_speech",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 2.0,
+      "end_seconds": 5.0,
+      "speaker": "S1",
+      "lip_sync": true
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 5.5,
+      "end_seconds": 9.0,
+      "speaker": "S2",
+      "lip_sync": true
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 14.0,
+      "end_seconds": 17.0,
+      "speaker": "S3",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000014000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 14.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 14.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000014000_000029000",
+     "index": 1,
+     "start_seconds": 14.0,
+     "end_seconds": 29.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 14.0,
+     "core_end_seconds": 29.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    },
+    {
+     "segment_id": "shot_000029000_000030000",
+     "index": 2,
+     "start_seconds": 29.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 29.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    }
+   ]
+  },
+  {
+   "name": "atomic_signature_move_boundary",
+   "fn": "protect_segment_boundaries_from_atomic_shots",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "id": "S1",
+      "start_seconds": 0.0,
+      "end_seconds": 8.0,
+      "subject_action": "S1 advances, guarding high."
+     },
+     {
+      "id": "S2",
+      "start_seconds": 8.0,
+      "end_seconds": 16.0,
+      "subject_action": "S1 unleashes the ultimate finisher."
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000008000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 8.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 8.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000008000_000023000",
+     "index": 1,
+     "start_seconds": 8.0,
+     "end_seconds": 23.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 8.0,
+     "core_end_seconds": 23.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    },
+    {
+     "segment_id": "shot_000023000_000030000",
+     "index": 2,
+     "start_seconds": 23.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 23.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    }
+   ]
+  },
+  {
+   "name": "atomic_flag_field",
+   "fn": "protect_segment_boundaries_from_atomic_shots",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "id": "S1",
+      "start_seconds": 8.0,
+      "end_seconds": 16.0,
+      "subject_action": "S1 presses the attack.",
+      "atomic_render": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000008000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 8.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 8.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000008000_000023000",
+     "index": 1,
+     "start_seconds": 8.0,
+     "end_seconds": 23.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 8.0,
+     "core_end_seconds": 23.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    },
+    {
+     "segment_id": "shot_000023000_000030000",
+     "index": 2,
+     "start_seconds": 23.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 23.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    }
+   ]
+  },
+  {
+   "name": "atomic_cjk_named_technique",
+   "fn": "protect_segment_boundaries_from_atomic_shots",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "id": "S1",
+      "start_seconds": 8.0,
+      "end_seconds": 16.0,
+      "subject_action": "無界紫電拳 全開。"
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000008000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 8.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 8.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000008000_000023000",
+     "index": 1,
+     "start_seconds": 8.0,
+     "end_seconds": 23.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 8.0,
+     "core_end_seconds": 23.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    },
+    {
+     "segment_id": "shot_000023000_000030000",
+     "index": 2,
+     "start_seconds": 23.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 23.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    }
+   ]
+  },
+  {
+   "name": "atomic_text_layer_overlap",
+   "fn": "protect_segment_boundaries_from_atomic_shots",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "id": "S1",
+      "start_seconds": 8.0,
+      "end_seconds": 16.0,
+      "subject_action": "S1 presses the attack."
+     }
+    ]
+   ],
+   "kwargs": {
+    "text_layers": [
+     {
+      "shot_id": "S1",
+      "content": "絕招: 無界紫電拳",
+      "start_seconds": 9.0,
+      "end_seconds": 15.0
+     }
+    ]
+   },
+   "output": [
+    {
+     "segment_id": "shot_000000000_000008000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 8.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 8.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000008000_000023000",
+     "index": 1,
+     "start_seconds": 8.0,
+     "end_seconds": 23.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 8.0,
+     "core_end_seconds": 23.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    },
+    {
+     "segment_id": "shot_000023000_000030000",
+     "index": 2,
+     "start_seconds": 23.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 23.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    }
+   ]
+  },
+  {
+   "name": "atomic_longer_than_native_stays_splittable",
+   "fn": "protect_segment_boundaries_from_atomic_shots",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "id": "S1",
+      "start_seconds": 0.0,
+      "end_seconds": 20.0,
+      "subject_action": "S1 unleashes the ultimate finisher."
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 15.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000015000_000030000",
+     "index": 1,
+     "start_seconds": 15.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 15.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "atomic_none_unchanged",
+   "fn": "protect_segment_boundaries_from_atomic_shots",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "id": "S1",
+      "start_seconds": 0.0,
+      "end_seconds": 16.0,
+      "subject_action": "S1 circles left."
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 15.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000015000_000030000",
+     "index": 1,
+     "start_seconds": 15.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 15.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "align_short_dialogue_single_segment",
+   "fn": "align_segments_to_dialogue_turns",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000010000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 10.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 10.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 2.0,
+      "end_seconds": 4.5,
+      "speaker": "S1",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000010000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 10.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 10.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    }
+   ]
+  },
+  {
+   "name": "align_boundary_moves_to_first_turn",
+   "fn": "align_segments_to_dialogue_turns",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000006000_000015000",
+       "index": 0,
+       "start_seconds": 6.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 6.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 7.0,
+      "end_seconds": 9.0,
+      "speaker": "S1",
+      "lip_sync": true
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 15.5,
+      "end_seconds": 18.0,
+      "speaker": "S2",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000006000_000015500",
+     "index": 0,
+     "start_seconds": 6.0,
+     "end_seconds": 15.5,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 6.0,
+     "core_end_seconds": 15.5,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000015500_000030000",
+     "index": 1,
+     "start_seconds": 15.5,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 15.5,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    }
+   ]
+  },
+  {
+   "name": "align_boundary_stays_when_turn_beyond_native",
+   "fn": "align_segments_to_dialogue_turns",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 1.0,
+      "end_seconds": 3.0,
+      "speaker": "S1",
+      "lip_sync": true
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 15.5,
+      "end_seconds": 18.0,
+      "speaker": "S2",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 15.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000015000_000030000",
+     "index": 1,
+     "start_seconds": 15.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 15.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "align_multi_speaker_inserts",
+   "fn": "align_segments_to_dialogue_turns",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000030000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 1.0,
+      "end_seconds": 4.0,
+      "speaker": "S1",
+      "lip_sync": true
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 6.0,
+      "end_seconds": 9.0,
+      "speaker": "S2",
+      "lip_sync": true
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 11.0,
+      "end_seconds": 14.0,
+      "speaker": "S1",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000006000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 6.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 6.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000006000_000011000",
+     "index": 1,
+     "start_seconds": 6.0,
+     "end_seconds": 11.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 6.0,
+     "core_end_seconds": 11.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    },
+    {
+     "segment_id": "shot_000011000_000030000",
+     "index": 2,
+     "start_seconds": 11.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 11.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    }
+   ]
+  },
+  {
+   "name": "align_same_speaker_long_silence",
+   "fn": "align_segments_to_dialogue_turns",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000030000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 1.0,
+      "end_seconds": 4.0,
+      "speaker": "S1",
+      "lip_sync": true
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 8.0,
+      "end_seconds": 11.0,
+      "speaker": "S1",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000008000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 8.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 8.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000008000_000030000",
+     "index": 1,
+     "start_seconds": 8.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 8.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "motion_reference"
+    }
+   ]
+  },
+  {
+   "name": "align_interrupting_overlap_stays",
+   "fn": "align_segments_to_dialogue_turns",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000030000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 1.0,
+      "end_seconds": 8.0,
+      "speaker": "S1",
+      "lip_sync": true
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 5.0,
+      "end_seconds": 12.0,
+      "speaker": "S2",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000030000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    }
+   ]
+  },
+  {
+   "name": "align_non_lipsync_exertion_ignored",
+   "fn": "align_segments_to_dialogue_turns",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 2.0,
+      "end_seconds": 4.0,
+      "speaker": "S1",
+      "lip_sync": false
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 18.0,
+      "end_seconds": 20.0,
+      "speaker": "S2",
+      "lip_sync": false
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 15.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000015000_000030000",
+     "index": 1,
+     "start_seconds": 15.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 15.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "align_voice_over_only_unchanged",
+   "fn": "align_segments_to_dialogue_turns",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000030000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      }
+     ]
+    },
+    [
+     {
+      "content_role": "voice_over",
+      "start_seconds": 2.0,
+      "end_seconds": 6.0,
+      "speaker": "S1",
+      "lip_sync": true
+     },
+     {
+      "content_role": "lyrics",
+      "start_seconds": 10.0,
+      "end_seconds": 14.0,
+      "speaker": "S1",
+      "lip_sync": true
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000030000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    }
+   ]
+  },
+  {
+   "name": "align_empty_rows_unchanged",
+   "fn": "align_segments_to_dialogue_turns",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    []
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 15.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000015000_000030000",
+     "index": 1,
+     "start_seconds": 15.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 15.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  },
+  {
+   "name": "lanes_overlap_second_clip_new_lane",
+   "fn": "plan_speech_track_lanes",
+   "args": [
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 1.0,
+      "end_seconds": 5.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "d1"
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 3.0,
+      "end_seconds": 7.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "d2"
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "source_index": 0,
+     "layer_id": "d1",
+     "content_role": "dialogue",
+     "start_seconds": 1.0,
+     "end_seconds": 5.0,
+     "overlap_policy": "auto",
+     "lane_number": 1,
+     "timing_adjusted": false
+    },
+    {
+     "source_index": 1,
+     "layer_id": "d2",
+     "content_role": "dialogue",
+     "start_seconds": 3.0,
+     "end_seconds": 7.0,
+     "overlap_policy": "auto",
+     "lane_number": 2,
+     "timing_adjusted": false
+    }
+   ]
+  },
+  {
+   "name": "lanes_sequential_policy_moves",
+   "fn": "plan_speech_track_lanes",
+   "args": [
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 1.0,
+      "end_seconds": 5.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "d1"
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 3.0,
+      "end_seconds": 7.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "d2",
+      "overlap_policy": "sequential"
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "source_index": 0,
+     "layer_id": "d1",
+     "content_role": "dialogue",
+     "start_seconds": 1.0,
+     "end_seconds": 5.0,
+     "overlap_policy": "auto",
+     "lane_number": 1,
+     "timing_adjusted": false
+    },
+    {
+     "source_index": 1,
+     "layer_id": "d2",
+     "content_role": "dialogue",
+     "start_seconds": 5.0,
+     "end_seconds": 9.0,
+     "overlap_policy": "sequential",
+     "lane_number": 1,
+     "timing_adjusted": true
+    }
+   ]
+  },
+  {
+   "name": "lanes_roles_independent",
+   "fn": "plan_speech_track_lanes",
+   "args": [
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 1.0,
+      "end_seconds": 5.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "d1"
+     },
+     {
+      "content_role": "voice_over",
+      "start_seconds": 1.0,
+      "end_seconds": 5.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "v1"
+     },
+     {
+      "content_role": "lyrics",
+      "start_seconds": 1.0,
+      "end_seconds": 5.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "l1"
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "source_index": 0,
+     "layer_id": "d1",
+     "content_role": "dialogue",
+     "start_seconds": 1.0,
+     "end_seconds": 5.0,
+     "overlap_policy": "auto",
+     "lane_number": 1,
+     "timing_adjusted": false
+    },
+    {
+     "source_index": 1,
+     "layer_id": "v1",
+     "content_role": "voice_over",
+     "start_seconds": 1.0,
+     "end_seconds": 5.0,
+     "overlap_policy": "auto",
+     "lane_number": 1,
+     "timing_adjusted": false
+    },
+    {
+     "source_index": 2,
+     "layer_id": "l1",
+     "content_role": "lyrics",
+     "start_seconds": 1.0,
+     "end_seconds": 5.0,
+     "overlap_policy": "auto",
+     "lane_number": 1,
+     "timing_adjusted": false
+    }
+   ]
+  },
+  {
+   "name": "lanes_breath_guard",
+   "fn": "plan_speech_track_lanes",
+   "args": [
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 1.0,
+      "end_seconds": 5.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "d1"
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 5.5,
+      "end_seconds": 9.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "d2"
+     }
+    ]
+   ],
+   "kwargs": {
+    "guard_seconds": 1.0
+   },
+   "output": [
+    {
+     "source_index": 0,
+     "layer_id": "d1",
+     "content_role": "dialogue",
+     "start_seconds": 1.0,
+     "end_seconds": 5.0,
+     "overlap_policy": "auto",
+     "lane_number": 1,
+     "timing_adjusted": false
+    },
+    {
+     "source_index": 1,
+     "layer_id": "d2",
+     "content_role": "dialogue",
+     "start_seconds": 5.5,
+     "end_seconds": 9.0,
+     "overlap_policy": "auto",
+     "lane_number": 2,
+     "timing_adjusted": false
+    }
+   ]
+  },
+  {
+   "name": "lanes_non_speech_ignored",
+   "fn": "plan_speech_track_lanes",
+   "args": [
+    [
+     {
+      "content_role": "sfx",
+      "start_seconds": 1.0,
+      "end_seconds": 5.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "x1"
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 1.0,
+      "end_seconds": 5.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "d1"
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "source_index": 1,
+     "layer_id": "d1",
+     "content_role": "dialogue",
+     "start_seconds": 1.0,
+     "end_seconds": 5.0,
+     "overlap_policy": "auto",
+     "lane_number": 1,
+     "timing_adjusted": false
+    }
+   ]
+  },
+  {
+   "name": "lanes_alias_normalization",
+   "fn": "plan_speech_track_lanes",
+   "args": [
+    [
+     {
+      "content_role": "dialogue",
+      "start_seconds": 1.0,
+      "end_seconds": 5.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "d1"
+     },
+     {
+      "content_role": "dialogue",
+      "start_seconds": 3.0,
+      "end_seconds": 7.0,
+      "speaker": "S1",
+      "lip_sync": true,
+      "layer_id": "d2",
+      "overlap_policy": "no-overlap"
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "source_index": 0,
+     "layer_id": "d1",
+     "content_role": "dialogue",
+     "start_seconds": 1.0,
+     "end_seconds": 5.0,
+     "overlap_policy": "auto",
+     "lane_number": 1,
+     "timing_adjusted": false
+    },
+    {
+     "source_index": 1,
+     "layer_id": "d2",
+     "content_role": "dialogue",
+     "start_seconds": 5.0,
+     "end_seconds": 9.0,
+     "overlap_policy": "sequential",
+     "lane_number": 1,
+     "timing_adjusted": true
+    }
+   ]
+  },
+  {
+   "name": "normalize_default",
+   "fn": "normalize_speech_overlap_policy",
+   "args": [
+    null
+   ],
+   "kwargs": {},
+   "output": "auto"
+  },
+  {
+   "name": "normalize_auto",
+   "fn": "normalize_speech_overlap_policy",
+   "args": [
+    "auto"
+   ],
+   "kwargs": {},
+   "output": "auto"
+  },
+  {
+   "name": "normalize_allow_alias",
+   "fn": "normalize_speech_overlap_policy",
+   "args": [
+    "Allow Overlap"
+   ],
+   "kwargs": {},
+   "output": "overlap"
+  },
+  {
+   "name": "normalize_no_overlap_alias",
+   "fn": "normalize_speech_overlap_policy",
+   "args": [
+    "no-overlap"
+   ],
+   "kwargs": {},
+   "output": "sequential"
+  },
+  {
+   "name": "normalize_sequence_alias",
+   "fn": "normalize_speech_overlap_policy",
+   "args": [
+    "Sequence"
+   ],
+   "kwargs": {},
+   "output": "sequential"
+  },
+  {
+   "name": "normalize_unknown_falls_back",
+   "fn": "normalize_speech_overlap_policy",
+   "args": [
+    "whenever"
+   ],
+   "kwargs": {},
+   "output": "auto"
+  },
+  {
+   "name": "scope_two_phase_range_window_tail",
+   "fn": "scope_timed_prompt_text",
+   "args": [
+    "daylight cotton fields (0-16s) transitioning to a night rubber plantation (16-30s)",
+    20.0,
+    30.0
+   ],
+   "kwargs": {},
+   "output": "SEGMENT-LOCAL DIRECTION SCHEDULE (authoritative, 00:00.000–00:10.000): a night rubber plantation [segment-local 00:00.000–00:10.000] The retained timed phase overrides every untimed modifier in this field; apply an untimed modifier only when it is compatible with that active phase. Off-window earlier and later phases were removed; do not depict, replay, foreshadow or blend any omitted phase into this segment."
+  },
+  {
+   "name": "scope_range_head_half_clipped",
+   "fn": "scope_timed_prompt_text",
+   "args": [
+    "daylight cotton fields (0-16s) then a night rubber plantation (16-30s)",
+    10.0,
+    20.0
+   ],
+   "kwargs": {},
+   "output": "SEGMENT-LOCAL DIRECTION SCHEDULE (authoritative, 00:00.000–00:10.000): daylight cotton fields [segment-local 00:00.000–00:06.000] a night rubber plantation [segment-local 00:06.000–00:10.000] The retained timed phase overrides every untimed modifier in this field; apply an untimed modifier only when it is compatible with that active phase. Off-window earlier and later phases were removed; do not depict, replay, foreshadow or blend any omitted phase into this segment."
+  },
+  {
+   "name": "scope_point_at_seconds",
+   "fn": "scope_timed_prompt_text",
+   "args": [
+    "at 25s the camera pans across the harbour",
+    20.0,
+    30.0
+   ],
+   "kwargs": {},
+   "output": "SEGMENT-LOCAL DIRECTION SCHEDULE (authoritative, 00:00.000–00:10.000): at [segment-local 00:05.000] the camera pans across the harbour The retained timed phase overrides every untimed modifier in this field; apply an untimed modifier only when it is compatible with that active phase. Off-window earlier and later phases were removed; do not depict, replay, foreshadow or blend any omitted phase into this segment."
+  },
+  {
+   "name": "scope_colon_units_clipped",
+   "fn": "scope_timed_prompt_text",
+   "args": [
+    "close conversation (1:30-2:00) by the window",
+    80.0,
+    100.0
+   ],
+   "kwargs": {},
+   "output": "SEGMENT-LOCAL DIRECTION SCHEDULE (authoritative, 00:00.000–00:20.000): close conversation [segment-local 00:10.000–00:20.000] by the window The retained timed phase overrides every untimed modifier in this field; apply an untimed modifier only when it is compatible with that active phase. Off-window earlier and later phases were removed; do not depict, replay, foreshadow or blend any omitted phase into this segment."
+  },
+  {
+   "name": "scope_cn_seconds_point",
+   "fn": "scope_timed_prompt_text",
+   "args": [
+    "25秒處搖鏡過碼頭",
+    20.0,
+    30.0
+   ],
+   "kwargs": {},
+   "output": "SEGMENT-LOCAL DIRECTION SCHEDULE (authoritative, 00:00.000–00:10.000): at [segment-local 00:05.000]搖鏡過碼頭 The retained timed phase overrides every untimed modifier in this field; apply an untimed modifier only when it is compatible with that active phase. Off-window earlier and later phases were removed; do not depict, replay, foreshadow or blend any omitted phase into this segment."
+  },
+  {
+   "name": "scope_cn_range",
+   "fn": "scope_timed_prompt_text",
+   "args": [
+    "白天棉田(0至16秒)轉為夜間膠園(16到30秒)",
+    20.0,
+    30.0
+   ],
+   "kwargs": {},
+   "output": "SEGMENT-LOCAL DIRECTION SCHEDULE (authoritative, 00:00.000–00:10.000): 轉為夜間膠園[segment-local 00:00.000–00:10.000] The retained timed phase overrides every untimed modifier in this field; apply an untimed modifier only when it is compatible with that active phase. Off-window earlier and later phases were removed; do not depict, replay, foreshadow or blend any omitted phase into this segment."
+  },
+  {
+   "name": "scope_geometry_rejected",
+   "fn": "scope_timed_prompt_text",
+   "args": [
+    "the crane pulls back from 10 to 20 degrees above the street",
+    20.0,
+    30.0
+   ],
+   "kwargs": {},
+   "output": "the crane pulls back from 10 to 20 degrees above the street"
+  },
+  {
+   "name": "scope_off_window_all_removed",
+   "fn": "scope_timed_prompt_text",
+   "args": [
+    "morning market bustle (0-8s) and evening lantern rows (40-60s)",
+    15.0,
+    30.0
+   ],
+   "kwargs": {},
+   "output": ""
+  },
+  {
+   "name": "scope_multiline_mixed",
+   "fn": "scope_timed_prompt_text",
+   "args": [
+    "rain hardens after dusk (0-10s)\nlongstatic harbour shot without any schedule\ndawn ferries unload (50-60s)",
+    12.0,
+    24.0
+   ],
+   "kwargs": {},
+   "output": "SEGMENT-LOCAL DIRECTION SCHEDULE (authoritative, 00:00.000–00:12.000): longstatic harbour shot without any schedule No time-scoped phase from this field is active in this segment; do not infer one from an earlier or later phase."
+  },
+  {
+   "name": "scope_no_schedule_passthrough",
+   "fn": "scope_timed_prompt_text",
+   "args": [
+    "a quiet courtyard with a single lantern",
+    0.0,
+    15.0
+   ],
+   "kwargs": {},
+   "output": "a quiet courtyard with a single lantern"
+  },
+  {
+   "name": "scope_empty_window_passthrough",
+   "fn": "scope_timed_prompt_text",
+   "args": [
+    "anything (0-30s)",
+    15.0,
+    15.0
+   ],
+   "kwargs": {},
+   "output": "anything (0-30s)"
+  },
+  {
+   "name": "scope_custom_field_name",
+   "fn": "scope_timed_prompt_text",
+   "args": [
+    "daylight cotton fields (0-16s) then night rubber (16-30s)",
+    18.0,
+    28.0
+   ],
+   "kwargs": {
+    "field_name": "environment"
+   },
+   "output": "SEGMENT-LOCAL ENVIRONMENT SCHEDULE (authoritative, 00:00.000–00:10.000): night rubber [segment-local 00:00.000–00:10.000] The retained timed phase overrides every untimed modifier in this field; apply an untimed modifier only when it is compatible with that active phase. Off-window earlier and later phases were removed; do not depict, replay, foreshadow or blend any omitted phase into this segment."
+  },
+  {
+   "name": "seed_by_index",
+   "fn": "derive_segment_seed",
+   "args": [
+    42,
+    0
+   ],
+   "kwargs": {},
+   "output": "7113268905430134776"
+  },
+  {
+   "name": "seed_by_index_1",
+   "fn": "derive_segment_seed",
+   "args": [
+    42,
+    1
+   ],
+   "kwargs": {},
+   "output": "2925395782885265791"
+  },
+  {
+   "name": "seed_by_index_7",
+   "fn": "derive_segment_seed",
+   "args": [
+    123456789,
+    7
+   ],
+   "kwargs": {},
+   "output": "1035951946637433370"
+  },
+  {
+   "name": "intersect_plain_overlap",
+   "fn": "ranges_intersect",
+   "args": [
+    1.0,
+    3.0,
+    2.0,
+    5.0
+   ],
+   "kwargs": {},
+   "output": true
+  },
+  {
+   "name": "intersect_touch_only",
+   "fn": "ranges_intersect",
+   "args": [
+    1.0,
+    3.0,
+    3.0,
+    5.0
+   ],
+   "kwargs": {},
+   "output": false
+  },
+  {
+   "name": "intersect_zero_marker_inside",
+   "fn": "ranges_intersect",
+   "args": [
+    3.0,
+    3.0,
+    1.0,
+    5.0
+   ],
+   "kwargs": {},
+   "output": true
+  },
+  {
+   "name": "intersect_zero_marker_outside",
+   "fn": "ranges_intersect",
+   "args": [
+    3.0,
+    3.0,
+    5.0,
+    9.0
+   ],
+   "kwargs": {},
+   "output": false
+  },
+  {
+   "name": "dirty_middle_only",
+   "fn": "dirty_segment_indexes",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      },
+      {
+       "segment_id": "shot_000030000_000045000",
+       "index": 2,
+       "start_seconds": 30.0,
+       "end_seconds": 45.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 30.0,
+       "core_end_seconds": 45.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    14.0,
+    16.5
+   ],
+   "kwargs": {},
+   "output": [
+    0,
+    1
+   ]
+  },
+  {
+   "name": "dirty_swapped_range",
+   "fn": "dirty_segment_indexes",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      },
+      {
+       "segment_id": "shot_000030000_000045000",
+       "index": 2,
+       "start_seconds": 30.0,
+       "end_seconds": 45.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 30.0,
+       "core_end_seconds": 45.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    16.5,
+    14.0
+   ],
+   "kwargs": {},
+   "output": [
+    0,
+    1
+   ]
+  },
+  {
+   "name": "dirty_zero_edit_marker",
+   "fn": "dirty_segment_indexes",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      },
+      {
+       "segment_id": "shot_000030000_000045000",
+       "index": 2,
+       "start_seconds": 30.0,
+       "end_seconds": 45.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 30.0,
+       "core_end_seconds": 45.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    30.0,
+    30.0
+   ],
+   "kwargs": {},
+   "output": [
+    2
+   ]
+  },
+  {
+   "name": "rebase_clamped",
+   "fn": "rebase_timed_rows",
+   "args": [
+    [
+     {
+      "start_seconds": 14.0,
+      "end_seconds": 18.0,
+      "text": "line"
+     }
+    ],
+    15.0,
+    30.0
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "start_seconds": 0.0,
+     "end_seconds": 3.0,
+     "text": "line"
+    }
+   ]
+  },
+  {
+   "name": "rebase_unclamped",
+   "fn": "rebase_timed_rows",
+   "args": [
+    [
+     {
+      "start_seconds": 14.0,
+      "end_seconds": 18.0,
+      "text": "line"
+     }
+    ],
+    15.0,
+    30.0
+   ],
+   "kwargs": {
+    "clamp": false
+   },
+   "output": [
+    {
+     "start_seconds": 0.0,
+     "end_seconds": 3.0,
+     "text": "line"
+    }
+   ]
+  },
+  {
+   "name": "rebase_disjoint_dropped",
+   "fn": "rebase_timed_rows",
+   "args": [
+    [
+     {
+      "start_seconds": 1.0,
+      "end_seconds": 2.0
+     }
+    ],
+    15.0,
+    30.0
+   ],
+   "kwargs": {},
+   "output": []
+  },
+  {
+   "name": "fingerprint_nested",
+   "fn": "content_fingerprint",
+   "args": [
+    {
+     "seed": 42,
+     "steps": 8,
+     "prompt": "夜市場景",
+     "nested": {
+      "b": 1,
+      "a": [
+       1,
+       2.5,
+       true,
+       null
+      ]
+     }
+    }
+   ],
+   "kwargs": {},
+   "output": "72fe99bcb7f26b2f4407dfa5d75f64e75be8b9a0f263fedcddeefced4fa01fd6"
+  },
+  {
+   "name": "reuse_keeps_matching_cache",
+   "fn": "reuse_cached_segments",
+   "args": [
+    {
+     "__segments__": [
+      {
+       "segment_id": "shot_000000000_000015000",
+       "index": 0,
+       "start_seconds": 0.0,
+       "end_seconds": 15.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 0.0,
+       "core_end_seconds": 15.0,
+       "shot_ids": null,
+       "continuity_mode": "none"
+      },
+      {
+       "segment_id": "shot_000015000_000030000",
+       "index": 1,
+       "start_seconds": 15.0,
+       "end_seconds": 30.0,
+       "overlap_before_seconds": 0.0,
+       "overlap_after_seconds": 0.0,
+       "seed": null,
+       "fingerprint": "",
+       "status": "pending",
+       "output_path": "",
+       "error": "",
+       "core_start_seconds": 15.0,
+       "core_end_seconds": 30.0,
+       "shot_ids": null,
+       "continuity_mode": "match_action"
+      }
+     ]
+    },
+    [
+     {
+      "segment_id": "shot_000000000_015000000",
+      "fingerprint": "abc",
+      "output_path": "/out/a.mp4"
+     },
+     {
+      "segment_id": "shot_015000000_030000000",
+      "fingerprint": "zzz",
+      "output_path": "/out/stale.mp4"
+     }
+    ]
+   ],
+   "kwargs": {},
+   "output": [
+    {
+     "segment_id": "shot_000000000_000015000",
+     "index": 0,
+     "start_seconds": 0.0,
+     "end_seconds": 15.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 0.0,
+     "core_end_seconds": 15.0,
+     "shot_ids": null,
+     "continuity_mode": "none"
+    },
+    {
+     "segment_id": "shot_000015000_000030000",
+     "index": 1,
+     "start_seconds": 15.0,
+     "end_seconds": 30.0,
+     "overlap_before_seconds": 0.0,
+     "overlap_after_seconds": 0.0,
+     "seed": null,
+     "fingerprint": "",
+     "status": "pending",
+     "output_path": "",
+     "error": "",
+     "core_start_seconds": 15.0,
+     "core_end_seconds": 30.0,
+     "shot_ids": null,
+     "continuity_mode": "match_action"
+    }
+   ]
+  }
+ ]
+}
