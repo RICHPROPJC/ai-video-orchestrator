@@ -67,7 +67,7 @@ test("WIST SH01 kfend + sheet location also FAIL location (S2)", () => {
   });
   assert.equal(tea.status, "FAIL");
   assert.ok(tea.checks.fail_reasons.some((r) => r.includes("grey_blocks")));
-  assert.ok(tea.checks.fail_reasons.some((r) => r.includes("location:")));
+  assert.ok(tea.checks.fail_reasons.some((r) => r.includes("location")));
   const morgue = judgeVideoFrames(frames, {
     people_count: 1,
     grey_blocks: false,
@@ -76,7 +76,7 @@ test("WIST SH01 kfend + sheet location also FAIL location (S2)", () => {
     size: "medium",
   });
   assert.equal(morgue.status, "FAIL");
-  assert.ok(morgue.checks.fail_reasons.some((r) => r.includes("location:")));
+  assert.ok(morgue.checks.fail_reasons.some((r) => r.includes("location")));
   assert.ok(morgue.checks.fail_reasons.some((r) => r.includes("action")));
 });
 
@@ -269,6 +269,91 @@ test("CFORM7B: clip action still fails when a beat never shows — threshold unt
   assert.equal(judged.checks.action, false);
   assert.ok(
     judged.checks.fail_reasons.some((r) => r.startsWith("action(clip):")),
+    judged.checks.fail_reasons.join(" | "),
+  );
+});
+
+/** CFORM7C fixture frame: per-frame notes mirror the live write-up shape. */
+function notesFrame(
+  frame: number,
+  opts: { blind: string; loc: string; size?: string },
+) {
+  return {
+    frame,
+    t_s: frame / 24,
+    file: `f${frame}.png`,
+    blind: opts.blind,
+    summary: {
+      people_count: 1,
+      grey_blocks: false,
+      location_notes: opts.loc,
+      ...(opts.size ? { size_notes: opts.size } : {}),
+    },
+  };
+}
+
+test("CFORM7C: size+location judge at clip level — run8 SH02 f0 full-inherit and f123 ambiguity pass", () => {
+  const require: QcRequire = {
+    people_count: 1,
+    grey_blocks: false,
+    location: "金屬檔案櫃",
+    size: "medium",
+  };
+  // run8 SH02 shape: slice start inherits SH01's full framing; one frame's
+  // location write-up hedges in English ("cabinets or server racks")
+  const frames = [
+    notesFrame(0, { blind: "對稱構圖，兩排金屬儲物櫃走廊延伸", loc: "endless corridor of metal lockers", size: "full" }),
+    notesFrame(48, { blind: "中年男人企喺走廊中央", loc: "兩排金屬檔案櫃之間嘅窄走廊", size: "medium" }),
+    notesFrame(96, { blind: "男人收拳定神", loc: "深色金屬櫃或檔案架長廊", size: "medium" }),
+    notesFrame(123, { blind: "目光掃向深處，眼神銳利", loc: "dark cabinets or server racks", size: "medium" }),
+  ];
+  const judged = judgeVideoFrames(frames, require);
+  assert.equal(judged.status, "GREEN", judged.checks.fail_reasons.join(" | "));
+  assert.equal(judged.checks.size, true, "majority medium note wins over the inherited full");
+  assert.equal(judged.checks.location, true, "pooled CJK evidence beats one English hedge");
+  assert.ok(
+    judged.frames.every((f) => !("size" in f.checks || "location" in f.checks)),
+    "frame gates carry no size/location keys",
+  );
+});
+
+test("CFORM7C: location hop still dies — half the take in another set fails, so does a fully wrong set", () => {
+  const require: QcRequire = { people_count: 1, grey_blocks: false, location: "金屬檔案櫃" };
+  const mixed = [
+    notesFrame(0, { blind: "企定", loc: "兩排金屬檔案櫃之間" }),
+    notesFrame(48, { blind: "行前", loc: "金屬檔案櫃前" }),
+    notesFrame(96, { blind: "坐低", loc: "茶餐廳卡位" }),
+    notesFrame(123, { blind: "望枱面", loc: "茶餐廳櫃枱" }),
+  ];
+  const hop = judgeVideoFrames(mixed, require);
+  assert.equal(hop.status, "FAIL");
+  assert.equal(hop.checks.location, false);
+  assert.ok(
+    hop.checks.fail_reasons.some((r) => r.startsWith("location(clip): hop")),
+    hop.checks.fail_reasons.join(" | "),
+  );
+  const away = judgeVideoFrames(
+    mixed.map((f) => notesFrame(f.frame, { blind: f.blind, loc: "茶餐廳卡位" })),
+    require,
+  );
+  assert.equal(away.status, "FAIL");
+  assert.ok(
+    away.checks.fail_reasons.some((r) => r.startsWith("location(clip): hits")),
+    away.checks.fail_reasons.join(" | "),
+  );
+});
+
+test("CFORM7C: size clip gate still dies when every frame measures another scale", () => {
+  const require: QcRequire = { people_count: 1, grey_blocks: false, size: "medium" };
+  const frames = [
+    notesFrame(0, { blind: "成個空間睇晒", loc: "", size: "full" }),
+    notesFrame(48, { blind: "全景，人細過環境", loc: "", size: "full" }),
+  ];
+  const judged = judgeVideoFrames(frames, require);
+  assert.equal(judged.status, "FAIL");
+  assert.equal(judged.checks.size, false);
+  assert.ok(
+    judged.checks.fail_reasons.some((r) => r.startsWith("size(clip):")),
     judged.checks.fail_reasons.join(" | "),
   );
 });

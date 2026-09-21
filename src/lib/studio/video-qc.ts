@@ -13,6 +13,7 @@ import {
   sameRequire,
   summarize,
   gramMatch,
+  sceneGrams,
   type QcRequire,
   type QcSummary,
   type QcVerdict,
@@ -57,15 +58,18 @@ function frameDigest(file: string): string {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
 
-/** CFORM7B: the clip action is a timeline sentence (企定→出拳→轉身踢→收勢) — no
- *  single frame shows every beat, so per-frame judging with the whole sentence
- *  kills every frame (run7 SH01 f48/f96, SH02 f0-f96 all miss one beat). The
- *  action gate moves to clip level: pool the take's write-ups, threshold
- *  unchanged — every beat token must surface somewhere in the take or the clip
- *  dies. location/size/people/tool stay per-frame gates. */
-export function frameRequireWithoutAction(require: QcRequire): QcRequire {
+/** CFORM7B+C: the clip's action sentence (企定→出拳→轉身踢→收勢), location and
+ *  size are take-level facts — no single frame carries them all. run7 killed
+ *  every frame on action beats; run8 killed f0 on size (slice start inherits
+ *  the previous shot's full framing) and f123 on location (write-up hedged in
+ *  English: "cabinets or server racks"). Those three gates judge ONCE at clip
+ *  level over the pooled write-ups, thresholds unchanged; per-frame gates keep
+ *  the frame atomics — people/grey/tool (+facts, screen claims are per-frame). */
+export function frameGateRequire(require: QcRequire): QcRequire {
   const rest = { ...require };
   delete rest.action;
+  delete rest.location;
+  delete rest.size;
   return rest;
 }
 
@@ -79,6 +83,12 @@ function frameEvidenceBlob(f: {
     .join("\n");
 }
 
+function pooledEvidence(
+  frames: Array<{ blind: string; summary: QcSummary | { parse_error: string; raw: string } }>,
+): string {
+  return frames.map(frameEvidenceBlob).join("\n");
+}
+
 /** Clip-level action verdict — undefined when the require carries no action. */
 export function clipActionCheck(
   frames: Array<{ blind: string; summary: QcSummary | { parse_error: string; raw: string } }>,
@@ -86,7 +96,7 @@ export function clipActionCheck(
 ): { ok: boolean; reason?: string } | undefined {
   const action = require.action?.trim();
   if (!action) return undefined;
-  const { hits, total, need } = gramMatch(action, frames.map(frameEvidenceBlob).join("\n"));
+  const { hits, total, need } = gramMatch(action, pooledEvidence(frames));
   if (total < 2) return { ok: false, reason: "action: require unparseable — no judgeable bigrams" };
   if (hits < need) {
     return { ok: false, reason: `action(clip): hits ${hits}/${need} — misses ${JSON.stringify(action)}` };
@@ -94,14 +104,76 @@ export function clipActionCheck(
   return { ok: true };
 }
 
-/** Aggregate per-frame MARS verdicts — any FAIL fails the clip. The action
- *  sentence judges once at clip level, not per frame. */
+/** Clip-level location verdict. Pool proves the set shows up; the hop guard
+ *  stops the pool from absorbing a take that changed place — when half the
+ *  frames describe a scene the require's words never touch, the set moved.
+ *  A single zero-hit frame is write-up noise (run8 f123 "cabinets or server
+ *  racks"), not a hop, and passes. */
+export function clipLocationCheck(
+  frames: Array<{ frame: number; blind: string; summary: QcSummary | { parse_error: string; raw: string } }>,
+  require: QcRequire,
+): { ok: boolean; reason?: string } | undefined {
+  const location = require.location?.trim();
+  if (!location) return undefined;
+  const { hits, total, need } = gramMatch(location, pooledEvidence(frames));
+  if (total < 2) return { ok: false, reason: "location: require unparseable — no judgeable bigrams" };
+  if (hits < need) {
+    return { ok: false, reason: `location(clip): hits ${hits}/${need} — misses ${JSON.stringify(location)}` };
+  }
+  const place = (f: { blind: string; summary: QcSummary | { parse_error: string; raw: string } }) =>
+    `${f.blind}\n${String((f.summary as Partial<QcSummary>)?.location_notes ?? "")}`;
+  const substantial = frames.filter((f) => sceneGrams(place(f)).length >= 2);
+  const dissenters = substantial.filter((f) => gramMatch(location, place(f)).hits === 0);
+  if (substantial.length > 0 && dissenters.length >= Math.max(2, Math.ceil(substantial.length / 2))) {
+    return {
+      ok: false,
+      reason: `location(clip): hop — ${dissenters.map((d) => `f${d.frame}`).join("+")} carry no ${JSON.stringify(location)} grams`,
+    };
+  }
+  return { ok: true };
+}
+
+/** Clip-level size verdict: the take's framing is one fact; the slice's first
+ *  frame inheriting the previous shot's scale (run8 f0 "full") must not kill
+ *  it. Majority explicit size note wins; a split vote falls through to the
+ *  judge's own body/ground evidence path on the pooled write-up. Reuses
+ *  photo-qc's judge with a size-only require — zero threshold drift. */
+export function clipSizeCheck(
+  frames: Array<{ blind: string; summary: QcSummary | { parse_error: string; raw: string } }>,
+  require: QcRequire,
+): { ok: boolean; reason?: string } | undefined {
+  const size = require.size?.trim();
+  if (!size) return undefined;
+  const votes = new Map<string, number>();
+  for (const f of frames) {
+    const note = String((f.summary as Partial<QcSummary>)?.size_notes ?? "").toLowerCase().trim();
+    if (note) votes.set(note, (votes.get(note) ?? 0) + 1);
+  }
+  let chosen = "";
+  let best = 0;
+  let tied = false;
+  for (const [note, n] of votes) {
+    if (n > best) {
+      chosen = note;
+      best = n;
+      tied = false;
+    } else if (n === best) tied = true;
+  }
+  if (tied) chosen = "";
+  const v = judge(pooledEvidence(frames), { size_notes: chosen } as QcSummary, { size });
+  if (v.checks.size === true) return { ok: true };
+  const sizeReason = (v.checks.fail_reasons ?? []).find((r) => r.startsWith("size:"));
+  return { ok: false, reason: sizeReason ? `size(clip):${sizeReason.slice(5)}` : `size(clip): require ${size}` };
+}
+
+/** Aggregate per-frame MARS verdicts — any FAIL fails the clip. Action,
+ *  location and size judge once at clip level, not per frame. */
 export function judgeVideoFrames(
   frames: Array<{ frame: number; t_s: number; file: string; blind: string; summary: QcSummary }>,
   require: QcRequire,
 ): Pick<VideoQcRecord, "status" | "frames" | "checks"> {
   const judged: VideoFrameQc[] = frames.map((f) => {
-    const verdict = judge(f.blind, f.summary, frameRequireWithoutAction(require));
+    const verdict = judge(f.blind, f.summary, frameGateRequire(require));
     return {
       frame: f.frame,
       t_s: f.t_s,
@@ -117,7 +189,11 @@ export function judgeVideoFrames(
     (f.checks.fail_reasons ?? []).map((r) => `f${f.frame}: ${r}`),
   );
   const clipAction = clipActionCheck(frames, require);
-  if (clipAction && !clipAction.ok) failReasons.push(clipAction.reason!);
+  const clipLocation = clipLocationCheck(frames, require);
+  const clipSize = clipSizeCheck(frames, require);
+  for (const c of [clipAction, clipLocation, clipSize]) {
+    if (c && !c.ok) failReasons.push(c.reason!);
+  }
   if (Object.keys(require).length === 0) failReasons.push("no require: cannot accept");
   const status: "GREEN" | "FAIL" =
     judged.length > 0 && failReasons.length === 0 ? "GREEN" : "FAIL";
@@ -126,6 +202,8 @@ export function judgeVideoFrames(
     frames: judged,
     checks: {
       ...(clipAction ? { action: clipAction.ok } : {}),
+      ...(clipLocation ? { location: clipLocation.ok } : {}),
+      ...(clipSize ? { size: clipSize.ok } : {}),
       status,
       fail_reasons: failReasons,
     },
@@ -228,7 +306,7 @@ export async function runVideoQc(opts: {
   const url = cfg.pictureQc.endpoint;
   const model = await probeVisionEndpoint(url, cfg.pictureQc.model);
   const frameResults: VideoFrameQc[] = [];
-  const frameRequire = frameRequireWithoutAction(opts.require);
+  const frameRequire = frameGateRequire(opts.require);
   for (const { frame, t_s, file } of extracted) {
     frameResults.push(await qcOneFrame(url, model, file, frameRequire, frame, t_s));
   }
@@ -236,7 +314,11 @@ export async function runVideoQc(opts: {
     (f.checks.fail_reasons ?? []).map((r) => `f${f.frame}: ${r}`),
   );
   const clipAction = clipActionCheck(frameResults, opts.require);
-  if (clipAction && !clipAction.ok) failReasons.push(clipAction.reason!);
+  const clipLocation = clipLocationCheck(frameResults, opts.require);
+  const clipSize = clipSizeCheck(frameResults, opts.require);
+  for (const c of [clipAction, clipLocation, clipSize]) {
+    if (c && !c.ok) failReasons.push(c.reason!);
+  }
   let second: (SecondEyeRecord & { frame: number }) | undefined;
   if (secondCfg && frameResults.length > 0) {
     const mid = frameResults[Math.floor(frameResults.length / 2)]!; // one mid frame — no fan-out
@@ -260,6 +342,8 @@ export async function runVideoQc(opts: {
     frames: frameResults,
     checks: {
       ...(clipAction ? { action: clipAction.ok } : {}),
+      ...(clipLocation ? { location: clipLocation.ok } : {}),
+      ...(clipSize ? { size: clipSize.ok } : {}),
       status,
       fail_reasons: failReasons,
     },
