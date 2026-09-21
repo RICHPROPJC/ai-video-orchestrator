@@ -41,7 +41,8 @@ Commands
 Flags
   --duration 12  --aspect 16:9|9:16|1:1  --clone ref.wav  --lang yue
   --wav-dir <dir>       每鏡 SHxx.wav（可加 spine.wav 全片聲軌）；除 --until boards 外必需
-  --portraits <dir>     角色肖像 A.png/B.png（首次出場 /edit 參考圖）
+  --portraits <dir>     角色肖像 A.png/B.png（首次出場 /edit 參考圖；45°用A_45.png）
+  --no-motion-select    跳過motion-select（唔叫decider、唔bake mocap，workbench灰模照舊）
   --blockout-dir <dir>  預渲染 blockout SHxx.mp4（864x480 24fps，frames=wav snap）
   --callsheet <json>    載入現成 callsheet，跳過兩張檯（結構唔齊即刻 fail）
   --cast-roster <json>  可出聲角色名單（有聲音檔嘅名），編劇檯只准用呢批名
@@ -79,6 +80,7 @@ async function makeJob(brief: string) {
     portraitsDir: arg("--portraits"),
     blockoutDir: arg("--blockout-dir"),
     gapSec: Number(arg("--gap", "0")),
+    noMotionSelect: process.argv.includes("--no-motion-select"),
     dryRun: process.argv.includes("--dry-run"),
     until: arg("--until") as ProduceInput["until"],
     scene: arg("--scene"),
@@ -133,6 +135,7 @@ function resumeJob(slate: string) {
     portraitsDir: arg("--portraits") ?? job.input.portraitsDir,
     blockoutDir: arg("--blockout-dir") ?? job.input.blockoutDir,
     gapSec: process.argv.includes("--gap") ? Number(arg("--gap", "0")) : job.input.gapSec,
+    noMotionSelect: process.argv.includes("--no-motion-select") || job.input.noMotionSelect,
     dryRun: process.argv.includes("--dry-run"),
     until: (arg("--until") as ProduceInput["until"]) ?? undefined,
     scene: arg("--scene") ?? undefined,

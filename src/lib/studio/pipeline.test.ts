@@ -534,6 +534,30 @@ test("card ③b end-to-end: C-form dry receipts — ui photos ride ref_images, s
 
 });
 
+test("CFORM7: motionClipRequire swaps the freeze line for the clip's temporal action, other keys untouched", async () => {
+  const { motionClipRequire } = await import("./pipeline");
+  const base = {
+    people_count: 1,
+    grey_blocks: false,
+    location: "地下室檔案室",
+    action: "沈北辰企定喺兩排金屬檔案架之間嘅空地，雙拳收腰提喺腰側，肩線沉定，眼神堅定望向前方",
+    size: "full",
+  };
+  const clip = { ...resumeSheet().shots[0]!, action: "企定，連環兩記右直拳，側踢，落地收勢立正", motionPrompt: "motion script" };
+  const out = motionClipRequire(base, clip);
+  assert.equal(out.action, clip.action, "motion require reads the clip's temporal script");
+  assert.equal(out.location, base.location, "location gate rides the keyframe require");
+  assert.equal(out.size, base.size, "size gate rides the keyframe require");
+  assert.equal(out.people_count, base.people_count);
+  // motionPrompt stands in when the action line is blank
+  const bare = motionClipRequire(base, { ...clip, action: "  " });
+  assert.equal(bare.action, "motion script");
+  // no shot / no script at all → keyframe require verbatim (no invented action)
+  assert.equal(motionClipRequire(base, undefined), base);
+  const noAction = motionClipRequire({ people_count: 1, grey_blocks: false }, { ...clip, action: "", motionPrompt: "" });
+  assert.equal("action" in noAction, false);
+});
+
 if (bareBun) {
   // IIFE, not top-level await: tsx transpiles this file as CJS
   void (async () => {

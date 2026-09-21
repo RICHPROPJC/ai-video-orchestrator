@@ -33,6 +33,22 @@ import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_
 import { submitH3Shot } from "./h3-submit";
 import type { H3GraphVariant } from "./h3-r2v-graph";
 import { assertH3Plan, assertH3SubmitWiring, planH3Shot, type AnglePortrait } from "./h3-slots";
+import {
+  DECIDER_DEFAULTS,
+  MOTION_LIB_ROOT,
+  bakeSelectionFrames,
+  buildCmuIndex,
+  buildShortlist,
+  decideSelection,
+  motionSegments,
+  parseCombatSweepRanking,
+  selectMotions,
+  msGridFrames,
+  snapFramesPerShot,
+  writeSelections,
+  type MotionSelection,
+  type MotionShotLine,
+} from "./motion-select";
 import { assertNativeFfmpeg, concatCopyArgs } from "./native-cut";
 import { checkHealth, buildEditPayload, u15Edit, MAX_IMAGES, type EditPayload, type U15EditRecord } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
@@ -199,6 +215,19 @@ export function h3MotionPack(
     uiPhotoFiles: undefined as string[] | undefined,
     kfEnd: undefined as string | undefined,
   };
+}
+
+/** CFORM7: the motion eye judges the take's own timeline. require.json.action is
+ *  the boards' freeze sentence (企定零過程動詞，B-lane keyframe discipline — right
+ *  for stills), but the clip runs the callsheet action script: motion-select
+ *  verbGated the bake against it and the prose anchors it verbatim. Judging a
+ *  moving take against the freeze line fails exactly the frames that moved
+ *  (run6 SH01 f61/f123 misses 企定全句). So the motion QC require's action key
+ *  is written from the clip action — shot.action first, motionPrompt fallback;
+ *  every other key (location/size/people) rides the keyframe require unchanged. */
+export function motionClipRequire(base: QcRequire, shot: Shot | undefined): QcRequire {
+  const clipAction = shot?.action?.trim() || shot?.motionPrompt?.trim();
+  return clipAction ? { ...base, action: clipAction } : base;
 }
 
 async function raster(svg: string, outFile: string) {
@@ -635,7 +664,59 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       })),
     };
 
-    // per-shot grey blockout (plug or WORKBENCH render), frame 0, dHash anchors
+    // MULTISHOT_WIRE_0921: motion-select — ONE decider call casts every shot's
+    // motion from the CMU library; the baked mocap blockouts then override the
+    // workbench grey puppets wherever a selection lands (§5b C-form supply:
+    // selection.json → bake → blockout/{shot}.mp4 → the C-form router)
+    const motionSelections = new Map<string, MotionSelection>();
+    {
+      const idxFile = path.join(MOTION_LIB_ROOT, "cmu-mocap/cmu-mocap-index-text.txt");
+      if (!fs.existsSync(idxFile)) {
+        await speak("layout", "motion-select 跳過：motion library index 唔在盤（workbench 灰模照舊）。", "warn");
+      } else if (input.noMotionSelect) {
+        await speak("layout", "motion-select 關咗（--no-motion-select）：workbench 灰模照舊。");
+      } else if (input.dryRun) {
+        // --dry-run promises zero sockets — the decider POST waits for a live run
+        await speak("layout", "motion-select 跳過：--dry-run 零 socket（decider call 留畀 live run）。");
+      } else {
+        await think("layout");
+        const idx = buildCmuIndex(MOTION_LIB_ROOT);
+        const rankFile = path.join(MOTION_LIB_ROOT, "out/combat_sweep_ranking.txt");
+        const rank = fs.existsSync(rankFile)
+          ? parseCombatSweepRanking(fs.readFileSync(rankFile, "utf8"))
+          : new Map();
+        const selShots = shotsForScene(locked.shots, input.scene);
+        const shortlist = buildShortlist(idx, rank, selShots.map((s) => s.action));
+        const lines: MotionShotLine[] = selShots.map((s) => ({
+          id: s.id,
+          heading: s.heading,
+          action: s.action,
+          durationSec: s.durationSec,
+          gait: s.marks[0]?.gait,
+          stance: s.marks[0]?.stance,
+        }));
+        const { rows, calls } = await selectMotions({ shots: lines, shortlist });
+        const sels = lines.map((s) =>
+          decideSelection(rows.find((r) => r.shot === s.id)!, shortlist, rank, s, null),
+        );
+        writeSelections(path.join(jobDir(jobId), "motion"), sels, {
+          job: jobId,
+          one_call: true,
+          calls,
+          n_candidates: shortlist.nCandidates,
+          decider_model: DECIDER_DEFAULTS.model,
+        });
+        for (const sel of sels) motionSelections.set(sel.shot, sel);
+        const auto = sels.filter((s) => s.auto).length;
+        const human = sels.filter((s) => s.needs_human).length;
+        await speak(
+          "layout",
+          `motion-select：${calls} 個 decider call 揀齊 ${sels.length} 鏡 → motion/selection.json（${auto} auto${human ? `、${human} needs_human` : ""}；120候選）。`,
+        );
+      }
+    }
+
+    // per-shot grey blockout (plug, mocap bake, or WORKBENCH render), frame 0, dHash anchors
     // --scene hop: only render that scene's blockouts (rest wait for their hop)
     const blockoutDir = path.join(jobDir(jobId), "blockout");
     ensureDir(blockoutDir);
@@ -658,13 +739,33 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         fs.copyFileSync(plugged, outMp4);
         trace.blender = "blockout plug";
       } else {
-        const done = await renderBlockout({
-          sheet: timed,
-          shot,
-          frames,
-          outMp4,
-        });
-        trace.blender = `blender-workbench ${done.frames}f`;
+        const sel = motionSelections.get(shot.id);
+        if (sel) {
+          // MULTISHOT_WIRE: the selected mocap clip IS the blockout — a grey
+          // bake of the real motion, the §5b C-form's Video 1
+          const { framesDir, frames: baked } = await bakeSelectionFrames(sel, outMp4);
+          await ffmpeg([
+            "-framerate", "60",
+            "-i", path.join(framesDir, "frame_%04d.png"),
+            // bake renders at 60fps; every other blockout consumer (anchors,
+            // resume snap, plug contract) speaks 24fps snapped frames — drop
+            // to 24 at the same wall duration
+            "-r", "24",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            outMp4,
+          ]);
+          fs.rmSync(framesDir, { recursive: true, force: true });
+          trace.blender = `mocap-bake ${sel.bvh} ${baked}f`;
+          await speak("layout", `${shot.id} blockout＝motion-select bake ${sel.bvh}（win ${sel.bake.start}+${sel.bake.len} step${sel.bake.step} → ${baked}f@60fps）。`);
+        } else {
+          const done = await renderBlockout({
+            sheet: timed,
+            shot,
+            frames,
+            outMp4,
+          });
+          trace.blender = `blender-workbench ${done.frames}f`;
+        }
       }
       const f0png = path.join(blockoutDir, `${shot.id}.f0.png`);
       await extractFrame0(outMp4, f0png, stillFrameFor(shot, frames));
@@ -1355,131 +1456,295 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     if (input.scene) {
       await speak("motion", `--scene ${input.scene} hop：燒 ${motionShots.length}/${stillPlans.length} 鏡，其餘唔郁。`);
     }
+    // MULTISHOT_WIRE cross-shot scheduling: motion-heavy shots (martial/run)
+    // anchor C-form renders; trailing simple shots chain onto the anchor
+    // (true-endframe multishot); a leading run of simple shots is ONE
+    // standalone multishot call. Solo shots keep the single-shot path.
+    const segments = motionSegments(motionShots.map((s) => ({ id: s.id, action: s.action })));
+    const segShotsOf = new Map<string, string[]>(); // first shot id -> all segment shots
+    const followerOf = new Map<string, string>(); // follower id -> anchor/first id
+    for (const seg of segments) {
+      const shots = seg.kind === "cform" ? [seg.anchor, ...seg.chain] : seg.shots;
+      segShotsOf.set(shots[0]!, shots);
+      for (const id of shots.slice(1)) followerOf.set(id, shots[0]!);
+    }
+    const segmentsFile = path.join(motionDir, "segments.json");
+    // multi = any segment rendering MORE than one shot (a C-form anchor with
+    // even ONE chained follower, or a multishot run of 2+)
+    const hasMulti = segments.some((s) => (s.kind === "cform" ? s.chain.length > 0 : s.shots.length > 1));
+    if (hasMulti) {
+      fs.writeFileSync(
+        segmentsFile,
+        JSON.stringify(
+          {
+            policy: "martial/run anchors C-form; trailing simple shots chain (true-endframe multishot); leading simple runs = one multishot call",
+            segments: segments.map((s) => ({
+              kind: s.kind,
+              shots: s.kind === "cform" ? [s.anchor, ...s.chain] : s.shots,
+              segId: (s.kind === "cform" ? [s.anchor, ...s.chain] : s.shots).join("-"),
+            })),
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    }
+    const segManifest = fs.existsSync(segmentsFile)
+      ? (JSON.parse(fs.readFileSync(segmentsFile, "utf8")) as { segments: { kind: string; shots: string[] }[] }).segments
+      : null;
+    await speak(
+      "motion",
+      hasMulti
+        ? `跨shot接駁：${segments.length} 個 render段（${segments.filter((s) => s.kind === "cform" && s.chain.length).length} 段C形+multishot鏈、${segments.filter((s) => s.kind === "multishot" && s.shots.length > 1).length} 段純multishot）→ segments.json。`
+        : `跨shot接駁：${segments.length} 鏡全部單鏡render（冇鏈）。`,
+    );
     for (const shot of motionShots) {
       if (!pinQcAccepted(stillDir, shot.id)) {
         throw new Error(`${shot.id}: photo_qc 未 GREEN（sha 或 schema 唔吻合）— 唔准燒 H3`);
       }
+      if (followerOf.has(shot.id)) {
+        // chained/simple follower: its motion rides the segment's one render
+        emit(jobId, {
+          agent: "motion",
+          level: "info",
+          message: `${shot.id} 行跨shot段（跟 ${followerOf.get(shot.id)} 一齊 render）— 唔單獨燒。`,
+          data: { shot: shot.id, stage: "motion", segment: followerOf.get(shot.id) },
+        });
+        continue;
+      }
+      const segList = segShotsOf.get(shot.id) ?? [shot.id];
+      const segId = segList.join("-");
+      const segIsMultishot = segments.find(
+        (s) => (s.kind === "cform" ? s.anchor : s.shots[0]) === shot.id && s.kind === "multishot",
+      );
       const variant = h3GraphVariant(input);
       const stillPng = path.join(stillDir, `${shot.id}.png`);
       const prev = prevShotOf(timed, shot);
       const blockoutMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
       // §5b routing field: the Video 1 asset on disk decides the form
       const hasVideo1 = fs.existsSync(blockoutMp4);
-      const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files, prev, {
-        hasVideo1,
-        portraitDir: path.join(jobDir(jobId), "portraits"),
-        plugDir: input.portraitsDir,
-      });
-      const prose = pack.prose;
-      if (variant === "a") {
+      // MULTISHOT_WIRE: this shot's segment — solo keeps the single-shot path;
+      // a multishot segment renders the whole run inside H3MultishotSampler
+      const segShots = segList; // [first, ...rest] of the segment
+      const chained = segShots.slice(1);
+      const isMsSegment = Boolean(segIsMultishot);
+      const framesPerShot = chained.length
+        ? snapFramesPerShot(Math.max(...chained.map((id) =>
+            cutPlan.shots.find((c) => c.id === id)?.duration_s ?? timed.shots.find((s) => s.id === id)?.durationSec ?? 0,
+          )))
+        : 0;
+      const msLine = (id: string) => {
+        const s = timed.shots.find((x) => x.id === id)!;
+        const cast = [...new Set(s.marks.map((m) => m.characterId))]
+          .map((cid) => timed.characters.find((c) => c.id === cid)?.name ?? cid)
+          .join("、");
+        return `${s.heading}. ${cast}：${s.action} Same person and wardrobe as <Picture 1>. No new people.`;
+      };
+      const msScript = (isMsSegment ? segShots : chained).map(msLine).join("\n---\n");
+      const msPortraitFile = (() => {
+        const first = timed.shots.find((x) => x.id === segShots[0])!;
+        try {
+          return anglePortraitsFor(first, portraits.files, path.join(jobDir(jobId), "portraits"), input.portraitsDir)[0]?.file;
+        } catch {
+          return undefined;
+        }
+      })();
+      const pack = isMsSegment
+        ? null
+        : h3MotionPack(timed, shot, variant, stillPng, portraits.files, prev, {
+            hasVideo1,
+            portraitDir: path.join(jobDir(jobId), "portraits"),
+            plugDir: input.portraitsDir,
+          });
+      const prose = isMsSegment ? msScript : pack!.prose;
+      if (variant === "a" && !isMsSegment) {
         validateProse(`${SCRIPT_HEADER}\n${prose}`, {
           requireQuote: Boolean(shot.dialogue.trim()),
           wardrobe: wardrobeClauses(timed),
         });
       }
-      const doneMp4 = path.join(motionDir, `${shot.id}.mp4`);
-      const doneReceipt = path.join(motionDir, `${shot.id}.h3_submit.json`);
-      const requirePath = path.join(stillDir, `${shot.id}.require.json`);
-      const require = JSON.parse(fs.readFileSync(requirePath, "utf8")) as QcRequire;
-      const videoQcJson = path.join(motionDir, `${shot.id}.video_qc.json`);
-      const wantFrames = Math.round(
-        (cutPlan.shots.find((c) => c.id === shot.id)?.duration_s ?? -1) * 24,
-      );
+      if ((chained.length || isMsSegment) && !msPortraitFile) {
+        throw new Error(`${segId}: multishot段要一張身份肖像（<Picture 1>）— 角度肖像缺件`);
+      }
+      const doneMp4 = path.join(motionDir, `${segId}.mp4`);
+      const doneReceipt = path.join(motionDir, `${segId}.h3_submit.json`);
+      const segFrames = (id: string) =>
+        isMsSegment
+          ? snapFramesPerShot(cutPlan.shots.find((c) => c.id === id)?.duration_s ?? 0)
+          : Math.round((cutPlan.shots.find((c) => c.id === id)?.duration_s ?? -1) * 24);
+      // the multishot node DELIVERS on H3's 17k+5 grid (a 119 request lands
+      // as 124) — actuals: r2v anchor snap + one grid-snapped count per
+      // chained shot (run5 live: 124 + 124 = 248, ffprobe-verified)
+      const wantFrames = isMsSegment
+        ? segShots.reduce((a, id) => a + segFrames(id), 0)
+        : snapDurationToFrames(await wavSeconds(h3WavByShot.get(shot.id)!))
+          + (chained.length ? msGridFrames(framesPerShot) * chained.length : 0);
       const frameSnap = fs.existsSync(doneMp4)
         && Math.round((await mediaSeconds(doneMp4)) * 24) === wantFrames;
+      // per-shot QC pins: a multi-shot segment slices per shot so each shot
+      // judges against its OWN require (the anchor's require over the whole
+      // take punished the chained shots' frames — run5 live lesson)
+      const qcIds = segShots; // slice pins are per shot id, solo = the shot itself
+      const allPinned = qcIds.every((id) => pinVideoQcAccepted(motionDir, id));
       // resume keeps an mp4 only when frame clock matches AND blind MARS video_qc is GREEN
       const kept =
         input.resume
         && fs.existsSync(doneMp4)
         && fs.existsSync(doneReceipt)
         && frameSnap
-        && pinVideoQcAccepted(motionDir, shot.id);
+        && allPinned;
       if (kept) {
         shotVideos.push(doneMp4);
         receipts.push(relInJob(jobId, doneReceipt));
-        await speak("motion", `${shot.id} 照舊，唔重燒 H3（video_qc GREEN）。`);
+        await speak("motion", `${segId} 照舊，唔重燒 H3（video_qc GREEN）。`);
         continue;
       }
-      if (input.resume && fs.existsSync(doneMp4) && fs.existsSync(doneReceipt) && frameSnap) {
-        await speak(
-          "motion",
-          `${shot.id} mp4 時鐘啱但 video_qc 未 GREEN — 下一跳重燒。`,
-          "warn",
-        );
+      // clock-correct render with missing/stale pins → QC-only resume: re-judge
+      // the take, never re-burn the same seed for a QC reason
+      const qcOnly =
+        input.resume && fs.existsSync(doneMp4) && fs.existsSync(doneReceipt) && frameSnap && !allPinned;
+      if (qcOnly) {
+        await speak("motion", `${segId} mp4 時鐘啱但 pin 未齊 — 只重判QC，唔重燒。`, "warn");
+      } else if (input.resume && fs.existsSync(doneMp4)) {
+        await speak("motion", `${segId} mp4 時鐘唔啱 — 重燒。`, "warn");
       }
       const motionStarted = Date.now();
-      writeH3Plan(jobId, timed, shot, {
-        wav: h3WavByShot.get(shot.id)!,
-        blockout: hasVideo1 ? blockoutMp4 : undefined,
-        still: stillPng,
-        kfStart: hasVideo1 ? undefined : stillPng,
-        kfEnd: pack.kfEnd,
-        refImageFiles: pack.refImageFiles,
-        anglePortraits: pack.anglePortraits,
-      });
-      const { receiptFile } = await submitH3Shot({
-        prose,
-        wavFile: h3WavByShot.get(shot.id)!,
-        blockoutMp4: hasVideo1 ? blockoutMp4 : undefined,
-        kfStart: hasVideo1 ? undefined : stillPng,
-        kfEnd: pack.kfEnd,
-        refImageFiles: pack.refImageFiles,
-        uiPhotoFiles: pack.uiPhotoFiles,
-        outMp4: path.join(motionDir, `${shot.id}.mp4`),
-        receiptJson: path.join(motionDir, `${shot.id}.h3_submit.json`),
-        dryRun: false,
-        shot: shot.id,
-        requireQuote: Boolean(shot.dialogue.trim()),
-        wardrobe: wardrobeClauses(timed),
-        graphVariant: variant,
-        stepsOverride: input.steps,
-      });
-      const mp4 = path.join(motionDir, `${shot.id}.mp4`);
+      if (!qcOnly) {
+        if (!isMsSegment) {
+          writeH3Plan(jobId, timed, shot, {
+            wav: h3WavByShot.get(shot.id)!,
+            blockout: hasVideo1 ? blockoutMp4 : undefined,
+            still: stillPng,
+            kfStart: hasVideo1 ? undefined : stillPng,
+            kfEnd: pack!.kfEnd,
+            refImageFiles: pack!.refImageFiles,
+            anglePortraits: pack!.anglePortraits,
+          });
+        }
+        const { receiptFile } = await submitH3Shot({
+          prose,
+          wavFile: h3WavByShot.get(shot.id)!,
+          blockoutMp4: hasVideo1 && !isMsSegment ? blockoutMp4 : undefined,
+          kfStart: hasVideo1 || isMsSegment ? undefined : stillPng,
+          kfEnd: pack?.kfEnd,
+          refImageFiles: pack?.refImageFiles,
+          uiPhotoFiles: pack?.uiPhotoFiles,
+          ...(chained.length
+            ? {
+                chain: {
+                  script: msScript,
+                  shots: chained,
+                  framesPerShot,
+                  referenceImageFile: msPortraitFile!,
+                },
+              }
+            : {}),
+          ...(isMsSegment
+            ? {
+                multishot: {
+                  script: msScript,
+                  shots: segShots,
+                  framesPerShot: snapFramesPerShot(
+                    Math.max(...segShots.map((id) =>
+                      cutPlan.shots.find((c) => c.id === id)?.duration_s ?? 0,
+                    )),
+                  ),
+                  referenceImageFile: msPortraitFile!,
+                },
+              }
+            : {}),
+          outMp4: doneMp4,
+          receiptJson: doneReceipt,
+          dryRun: false,
+          shot: segId,
+          requireQuote: Boolean(shot.dialogue.trim()),
+          wardrobe: wardrobeClauses(timed),
+          graphVariant: variant,
+          stepsOverride: input.steps,
+        });
+        receipts.push(relInJob(jobId, receiptFile));
+      }
+      const mp4 = doneMp4;
       shotVideos.push(mp4);
-      receipts.push(relInJob(jobId, receiptFile));
       upsertDoc({
-        id: `video:${shot.id}`,
+        id: `video:${segId}`,
         slate: jobId,
         modality: "video",
-        shotId: shot.id,
+        shotId: segId,
         text: prose,
         absPath: mp4,
       });
       await think("pictureQc");
-      let videoQc = await runVideoQc({
-        mp4,
-        outJson: videoQcJson,
-        require,
-        shotId: shot.id,
-      });
-      const prevShot = stillPlans.map((p) => p.shot).find((s, i, arr) => arr[i + 1]?.id === shot.id);
-      videoQc = await attachMemoryDistances(videoQc, {
-        ep: job.slate,
-        shot: shot.id,
-        outJson: videoQcJson,
-        character: shot.marks[0]?.characterId,
-        prevStill: prevShot ? path.join(stillDir, `${prevShot.id}.png`) : undefined,
-        blockoutF0: path.join(blockoutDir, `${shot.id}.f0.png`),
-        midFrame: videoQc.frames[Math.floor(videoQc.frames.length / 2)]?.file,
-      });
-      if (videoQc.status !== "GREEN") {
-        const reasons = videoQc.checks.fail_reasons.join("; ") || "not GREEN";
-        await speak("motion", `${shot.id} motion 眼 FAIL（${reasons}）— clip 留低。`, "fail");
-      } else {
-        await speak("motion", `${shot.id} motion 眼 GREEN`, "pass");
+      // per-shot QC over the take: a multi-shot segment slices per shot so
+      // each shot's require judges its OWN frames (the anchor's require over
+      // the whole take punished the chained shots — run5 live lesson); a solo
+      // take judges whole
+      const anchorLen = isMsSegment
+        ? snapFramesPerShot(cutPlan.shots.find((c) => c.id === shot.id)?.duration_s ?? 0)
+        : snapDurationToFrames(await wavSeconds(h3WavByShot.get(shot.id)!));
+      const sliceBounds: { id: string; start: number; len: number }[] = [];
+      let cursor = 0;
+      for (const id of segShots) {
+        const len = id === shot.id ? anchorLen : msGridFrames(framesPerShot);
+        sliceBounds.push({ id, start: cursor, len });
+        cursor += len;
       }
-      emit(jobId, {
-        agent: "motion",
-        level: "info",
-        message: `${shot.id} motion 完成`,
-        data: {
-          shot: shot.id, stage: "motion", eye: "motion", verdict: videoQc.status === "GREEN" ? "pass" : "fail",
-          proof: `motion/${shot.id}.mp4`, ms: Date.now() - motionStarted,
-        },
-        step_id: "motion",
-        parent_steps: ["require"],
-        seat: "motion",
-      });
+      const prevShot = stillPlans.map((p) => p.shot).find((s, i, arr) => arr[i + 1]?.id === shot.id);
+      for (const b of sliceBounds) {
+        const reqPath = path.join(stillDir, `${b.id}.require.json`);
+        // CFORM7: the slice's require keeps the keyframe keys but its action is
+        // the clip's temporal script, not the freeze line (motionClipRequire)
+        const shotRequire: QcRequire = motionClipRequire(
+          JSON.parse(fs.readFileSync(reqPath, "utf8")) as QcRequire,
+          timed.shots.find((s) => s.id === b.id),
+        );
+        const sliceJson = path.join(motionDir, `${b.id}.video_qc.json`);
+        let sliceMp4 = mp4;
+        if (segShots.length > 1) {
+          sliceMp4 = path.join(motionDir, `${b.id}.qc.mp4`);
+          await ffmpeg([
+            "-i", mp4,
+            "-vf", `trim=start_frame=${b.start}:end_frame=${b.start + b.len},setpts=PTS-STARTPTS`,
+            "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            sliceMp4,
+          ]);
+        }
+        let videoQc = await runVideoQc({
+          mp4: sliceMp4,
+          outJson: sliceJson,
+          require: shotRequire,
+          shotId: b.id,
+        });
+        if (b.id === shot.id) {
+          videoQc = await attachMemoryDistances(videoQc, {
+            ep: job.slate,
+            shot: b.id,
+            outJson: sliceJson,
+            character: shot.marks[0]?.characterId,
+            prevStill: prevShot ? path.join(stillDir, `${prevShot.id}.png`) : undefined,
+            blockoutF0: path.join(blockoutDir, `${shot.id}.f0.png`),
+            midFrame: videoQc.frames[Math.floor(videoQc.frames.length / 2)]?.file,
+          });
+        }
+        if (videoQc.status !== "GREEN") {
+          const reasons = videoQc.checks.fail_reasons.join("; ") || "not GREEN";
+          await speak("motion", `${b.id} motion 眼 FAIL（${reasons}）— clip 留低。`, "fail");
+        } else {
+          await speak("motion", `${b.id} motion 眼 GREEN`, "pass");
+        }
+        emit(jobId, {
+          agent: "motion",
+          level: "info",
+          message: `${b.id} motion 完成${segShots.length > 1 ? `（跨shot段 ${segId} 切片 ${b.start}+${b.len}f）` : ""}`,
+          data: {
+            shot: b.id, stage: "motion", eye: "motion", verdict: videoQc.status === "GREEN" ? "pass" : "fail",
+            proof: `motion/${segId}.mp4`, ms: Date.now() - motionStarted,
+          },
+          step_id: "motion",
+          parent_steps: ["require"],
+          seat: "motion",
+        });
+      }
     }
     job = patch(job, {
       providers: trace,
@@ -1505,11 +1770,29 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       const previewDir = path.join(jobDir(jobId), "preview");
       ensureDir(previewDir);
       const muxed: string[] = [];
-      for (const shot of motionShots) {
-        const mp4 = shotVideos.find((v) => path.basename(v, ".mp4") === shot.id);
-        if (!mp4) throw new Error(`--scene ${input.scene}: motion 缺 ${shot.id}`);
-        const out = path.join(motionDir, `${shot.id}.muxed.mp4`);
-        await ffmpeg(muxArgs(mp4, h3WavByShot.get(shot.id)!, out));
+      const concatWavHop = async (wavs: string[], out: string): Promise<string> => {
+        const list = out.replace(/\.wav$/, ".wavlist.txt");
+        fs.writeFileSync(list, wavs.map((w) => `file '${w.replaceAll("'", "'\\''")}'`).join("\n"));
+        await ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", out]);
+        return out;
+      };
+      // hop targets: manifest segments touching this scene, then solo shots
+      const hopSet = new Set(motionShots.map((s) => s.id));
+      const targets: { id: string; shots: string[] }[] = [];
+      for (const seg of segManifest ?? []) {
+        if (seg.shots.some((id) => hopSet.has(id))) targets.push({ id: seg.shots.join("-"), shots: seg.shots });
+      }
+      for (const id of motionShots.map((s) => s.id)) {
+        if (!(segManifest ?? []).some((seg) => seg.shots.includes(id))) targets.push({ id, shots: [id] });
+      }
+      for (const t of targets) {
+        const mp4 = shotVideos.find((v) => path.basename(v, ".mp4") === t.id);
+        if (!mp4) throw new Error(`--scene ${input.scene}: motion 缺 ${t.id}`);
+        const wav = t.shots.length === 1
+          ? h3WavByShot.get(t.shots[0]!)!
+          : await concatWavHop(t.shots.map((sid) => h3WavByShot.get(sid)!), path.join(motionDir, `${t.id}.wav`));
+        const out = path.join(motionDir, `${t.id}.muxed.mp4`);
+        await ffmpeg(muxArgs(mp4, wav, out));
         muxed.push(out);
       }
       const muxList = path.join(previewDir, "mux-list.txt");
@@ -1610,6 +1893,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     await speak("soundQc", `Sound QC ${sound.pass ? "PASS" : "FAIL"}  peak ${sound.peak.toFixed(2)}  silence ${sound.silenceRatio.toFixed(2)}`, sound.pass ? "pass" : "fail");
 
     // editor: machine gate, per-shot mux (own wav, drop H3 audio), concat only after gate
+    // MULTISHOT_WIRE: a multi-shot segment muxes ONCE against its concatenated
+    // wav — the segment is one continuous take
     await think("editor");
     const toEditor = seal({
       slate: jobId,
@@ -1619,21 +1904,39 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     });
     const { cut } = open(toEditor, { slate: jobId, to: "editor" });
     await speak("editor", `${packetLine(toEditor)} · 照分鏡接：${cut.join(" → ")}。唔重排。`);
+    const segGateSegments = segManifest?.length ? segManifest : undefined;
     const gate = await checkGate({
       plan: cutPlan,
       motionDir,
       spineWav: fs.existsSync(spineFile) ? spineFile : undefined,
       outFile: jobFile(jobId, "concat_gate.json"),
+      ...(segGateSegments ? { segments: segGateSegments.map((s) => ({ shots: s.shots })) } : {}),
     });
     if (!gate.ok) {
       throw new Error(`concat gate FAIL: ${gate.reason}`);
     }
+    const concatWav = async (wavs: string[], out: string): Promise<string> => {
+      const list = out.replace(/\.wav$/, ".wavlist.txt");
+      fs.writeFileSync(list, wavs.map((w) => `file '${w.replaceAll("'", "'\\''")}'`).join("\n"));
+      await ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", out]);
+      return out;
+    };
+    // mux targets in cut order: manifest segments first, then legacy solo files
+    const inManifest = new Set((segManifest ?? []).flatMap((s) => s.shots));
+    const muxTargets = [
+      ...(segManifest ?? []).map((s) => ({ id: s.shots.join("-"), shots: s.shots })),
+      ...cut.filter((id) => !inManifest.has(id)).map((id) => ({ id, shots: [id] })),
+    ].sort((a, b) => cut.indexOf(a.shots[0]!) - cut.indexOf(b.shots[0]!));
     const muxed: string[] = [];
-    for (const shotId of cut) {
-      const mp4 = shotVideos.find((v) => path.basename(v, ".mp4") === shotId);
-      if (!mp4) throw new Error(`cut ${shotId} missing from motion`);
-      const out = path.join(motionDir, `${shotId}.muxed.mp4`);
-      await ffmpeg(muxArgs(mp4, h3WavByShot.get(shotId)!, out));
+    for (const t of muxTargets) {
+      const mp4 = shotVideos.find((v) => path.basename(v, ".mp4") === t.id)
+        ?? path.join(motionDir, `${t.id}.mp4`);
+      if (!fs.existsSync(mp4)) throw new Error(`cut ${t.id} missing from motion`);
+      const wav = t.shots.length === 1
+        ? h3WavByShot.get(t.shots[0]!)!
+        : await concatWav(t.shots.map((id) => h3WavByShot.get(id)!), path.join(motionDir, `${t.id}.wav`));
+      const out = path.join(motionDir, `${t.id}.muxed.mp4`);
+      await ffmpeg(muxArgs(mp4, wav, out));
       muxed.push(out);
     }
     const muxList = jobFile(jobId, "motion", "mux-list.txt");
@@ -1646,6 +1949,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       sheet: input.scene ? { ...timed, shots: shotsForScene(timed.shots, input.scene) } : timed,
       target: "video",
     });
+    // video_qc pins are per SHOT (segment slices pin under their own ids)
     const videoQcPass = cut.every((id) => pinVideoQcAccepted(motionDir, id));
     job = patch(job, {
       pictureQcVideo: markGeometry,

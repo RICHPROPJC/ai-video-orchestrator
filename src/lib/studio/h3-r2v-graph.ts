@@ -55,6 +55,52 @@ export type H3GraphModels = {
 
 export type H3GraphVariant = "a" | "b" | "bkf" | "c";
 
+/** MS-A verified chain params (CHAIN_MS_0921 SHCC.msA, Chau eye "good" =
+ *  跨shot接駁定案; node tooltips carry the measurements):
+ *  - seed_per_shot ON: one seed per shot holds the face; one seed for all
+ *    shots drifted BOTH face and voice
+ *  - chain_gain_control "flatten": chained tails anchor the next shot and the
+ *    model returns ~1.25-1.47x anchor texture energy — sharpness ratchets
+ *    (3.3x over 6 shots) unless flattened per block
+ *  - ref2va checkpoint (voice-ref/reference rows were not trained on fl2va) */
+export const MS_PARAMS = {
+  seedPerShot: true,
+  chainGainControl: "flatten",
+  selfAnchorVoice: false,
+  twoPassUpscale: false,
+} as const;
+
+/** cross-shot chain riding a C-form first shot (MULTISHOT_WIRE_0921): the
+ *  shots AFTER the first render inside the same graph via H3MultishotSampler,
+ *  seeded by shot 1's true endframe (H3LastFrame→start_image — pack
+ *  H3_HardMode_Chained topology), H3ConcatAV seam-matching the take. */
+export type H3ChainOpts = {
+  /** "---"-separated prompt per chained shot (shots 2..N of the segment) */
+  script: string;
+  /** number of chained shots (the script's prompt count) */
+  shotCount: number;
+  /** frames per chained shot on H3's 17k+5 grid (119 ≈ 4.96s, step 17) */
+  framesPerShot: number;
+  /** the identity portrait carried into EVERY chained shot (<Picture 1>) —
+   *  exactly one image; multiple refs need a batch node the graph does not own */
+  referenceImageName: string;
+  /** optional voice anchor wav (<Audio 1> in every chained shot) */
+  voiceRefName?: string;
+};
+
+/** standalone multishot call (簡單接駁 — no first C-form shot, MS-A shape):
+ *  the WHOLE segment renders inside H3MultishotSampler; start_image is the
+ *  PREVIOUS segment's true endframe when one exists (uploaded). The node has
+ *  no ref_videos input — motion rides the script text and frame chaining. */
+export type H3MultishotOpts = {
+  script: string;
+  shotCount: number;
+  framesPerShot: number;
+  referenceImageName: string;
+  startImageName?: string;
+  voiceRefName?: string;
+};
+
 export type BuildH3GraphOpts = {
   script: string;
   bindings: string;
@@ -99,6 +145,13 @@ export type BuildH3GraphOpts = {
    *  node ids and values stay identical to the v6 golden in BOTH modes;
    *  prose text reaches the graph via the split node input, not here. */
   proseMode?: "action-short" | "identity-long";
+  /** MULTISHOT_WIRE_0921: chain the shots after this C-form first shot via
+   *  H3MultishotSampler (true-endframe start) + H3ConcatAV. C-form only. */
+  chain?: H3ChainOpts;
+  /** MULTISHOT_WIRE_0921 standalone multishot (簡單接駁, MS-A shape): the
+   *  whole segment renders inside H3MultishotSampler — no r2v block, no
+   *  Video 1, no keyframes. Mutually exclusive with chain/blockout/kf. */
+  multishot?: H3MultishotOpts;
 };
 
 /** v6-parity R2V graph in two §5b forms, routed by the Video 1 asset:
@@ -147,6 +200,84 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
         `model-level double exposure (§5b, E2E SC-0921-9V4Y 4/8/20步全滅); ` +
         `Video 1 in → C-form zero keyframes, keyframes in → no Video 1`,
     );
+  }
+  // MULTISHOT_WIRE: the two cross-shot shapes are exclusive with everything
+  // else the builder knows
+  if (opts.chain && opts.multishot) {
+    throw new Error("chain and multishot are exclusive: chain rides a C-form first shot, multishot is standalone");
+  }
+  if (opts.chain && (!opts.blockoutName || variant !== "a")) {
+    throw new Error("chain_requires_cform: the chained topology's shot 1 IS the C-form render (Video 1 motion + portrait identity)");
+  }
+  if (opts.chain && opts.chain.shotCount < 1) {
+    throw new Error("chain.shotCount must be ≥1 (the shots after the C-form first shot)");
+  }
+  if (opts.multishot) {
+    if (opts.blockoutName || opts.kfStartName || opts.kfEndName) {
+      throw new Error("multishot is standalone: no Video 1 (the node has no ref_videos input) and no keyframes");
+    }
+    if (variant !== "a") throw new Error("multishot runs on the production path only (variant a)");
+  }
+  if (opts.multishot) {
+    // standalone multishot (MS-A shape, chain_s2 build_graph verbatim): the
+    // ref2va chain carries the reference rows (fl2va was not trained with
+    // them); no H3EpisodeSplit — the node takes the raw "---" script, and
+    // opts.bindings is unused on this shape
+    const ms = opts.multishot;
+    const g: ComfyGraph = {
+      clip: { class_type: "H3ClipLoaderAny", inputs: { clip_name: m.textEncoder, type: m.encoderType } },
+      vvae: { class_type: "VAELoader", inputs: { vae_name: m.videoVae } },
+      avae: { class_type: "VAELoader", inputs: { vae_name: m.audioVae } },
+      ref2va: { class_type: "H3ModelLoaderAny", inputs: { model_name: m.ref2va } },
+    };
+    const loraInputs: Record<string, unknown> = { model: ["ref2va", 0] };
+    for (let i = 1; i <= 4; i += 1) {
+      loraInputs[`lora_${i}`] = i === 1 ? m.turboLora : "None";
+      loraInputs[`strength_${i}`] = LORA_STRENGTH;
+    }
+    g.lora_a = { class_type: "H3LoraStack", inputs: loraInputs };
+    g.sigma_lora_a = {
+      class_type: "MiniMaxH3SigmaShift",
+      inputs: { model: ["lora_a", 0], shift_video: SIGMA_VIDEO, shift_audio: SIGMA_AUDIO },
+    };
+    g.voice_in = { class_type: "LoadAudio", inputs: { audio: opts.wavName } };
+    g.voice_guard = {
+      class_type: "H3ReferenceAudio",
+      inputs: { audio: ["voice_in", 0], max_seconds: VOICE_MAX_SECONDS },
+    };
+    if (ms.startImageName) {
+      g.ms_start_in = { class_type: "LoadImage", inputs: { image: ms.startImageName } };
+    }
+    g.ms_hero_in = { class_type: "LoadImage", inputs: { image: ms.referenceImageName } };
+    const msInputs: Record<string, unknown> = {
+      model: ["sigma_lora_a", 0],
+      clip: ["clip", 0],
+      video_vae: ["vvae", 0],
+      audio_vae: ["avae", 0],
+      script: ms.script,
+      shot_count: ms.shotCount,
+      width: WIDTH,
+      height: HEIGHT,
+      frames_per_shot: ms.framesPerShot,
+      seed: opts.seed,
+      steps: opts.steps,
+      seed_per_shot: MS_PARAMS.seedPerShot,
+      reference_images: ["ms_hero_in", 0],
+      voice_ref: ["voice_guard", 0],
+      sampler_name: SAMPLER,
+      scheduler: SCHEDULER,
+      self_anchor_voice: MS_PARAMS.selfAnchorVoice,
+      two_pass_upscale: MS_PARAMS.twoPassUpscale,
+      chain_gain_control: MS_PARAMS.chainGainControl,
+    };
+    if (ms.startImageName) msInputs.start_image = ["ms_start_in", 0];
+    g.ms = { class_type: "H3MultishotSampler", inputs: msInputs };
+    g.cv = { class_type: "CreateVideo", inputs: { images: ["ms", 0], audio: ["ms", 1], fps: 24 } };
+    g.save = {
+      class_type: "SaveVideo",
+      inputs: { video: ["cv", 0], filename_prefix: opts.filenamePrefix, format: "auto", codec: "auto" },
+    };
+    return g;
   }
   if (variant === "a" && !hasVideo1 && !opts.kfStartName) {
     throw new Error(
@@ -312,8 +443,59 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   };
   g.dec_v = { class_type: "VAEDecode", inputs: { samples: ["samp_a", 0], vae: ["vvae", 0] } };
   g.dec_a = { class_type: "VAEDecodeAudio", inputs: { samples: ["samp_a", 0], vae: ["avae", 0] } };
-  g.lastf = { class_type: "H3LastFrame", inputs: { images: ["dec_v", 0] } }; // orphan: inspect after render, never next kf_start
-  g.cv = { class_type: "CreateVideo", inputs: { images: ["dec_v", 0], fps: 24, audio: ["dec_a", 0] } };
+  // single shot: orphan (inspect after render, never next kf_start); chained:
+  // the TRUE endframe seeding H3MultishotSampler (H3_HardMode_Chained wiring)
+  g.lastf = { class_type: "H3LastFrame", inputs: { images: ["dec_v", 0] } };
+  let takeImages: [string, number] = ["dec_v", 0];
+  let takeAudio: [string, number] = ["dec_a", 0];
+  if (opts.chain) {
+    const c = opts.chain;
+    g.ms_hero_in = { class_type: "LoadImage", inputs: { image: c.referenceImageName } };
+    if (c.voiceRefName) {
+      g.ms_voice_in = { class_type: "LoadAudio", inputs: { audio: c.voiceRefName } };
+      g.ms_voice_guard = {
+        class_type: "H3ReferenceAudio",
+        inputs: { audio: ["ms_voice_in", 0], max_seconds: VOICE_MAX_SECONDS },
+      };
+    }
+    const msInputs: Record<string, unknown> = {
+      model: ["sigma_lora_a", 0], // ref2va chain (MS-A): reference rows live here
+      clip: ["clip", 0],
+      video_vae: ["vvae", 0],
+      audio_vae: ["avae", 0],
+      script: c.script,
+      shot_count: c.shotCount,
+      width: WIDTH,
+      height: HEIGHT,
+      frames_per_shot: c.framesPerShot,
+      seed: opts.seed,
+      steps: opts.steps,
+      seed_per_shot: MS_PARAMS.seedPerShot,
+      start_image: ["lastf", 0], // shot 1's true endframe
+      reference_images: ["ms_hero_in", 0],
+      sampler_name: SAMPLER,
+      scheduler: SCHEDULER,
+      self_anchor_voice: MS_PARAMS.selfAnchorVoice,
+      two_pass_upscale: MS_PARAMS.twoPassUpscale,
+      chain_gain_control: MS_PARAMS.chainGainControl,
+    };
+    if (c.voiceRefName) msInputs.voice_ref = ["ms_voice_guard", 0];
+    g.ms = { class_type: "H3MultishotSampler", inputs: msInputs };
+    // seam: stage B (multishot) matched to stage A's texture (pack default)
+    g.concat = {
+      class_type: "H3ConcatAV",
+      inputs: {
+        images_a: ["dec_v", 0],
+        audio_a: ["dec_a", 0],
+        images_b: ["ms", 0],
+        audio_b: ["ms", 1],
+        match_b: "match_to_a",
+      },
+    };
+    takeImages = ["concat", 0];
+    takeAudio = ["concat", 1];
+  }
+  g.cv = { class_type: "CreateVideo", inputs: { images: takeImages, fps: 24, audio: takeAudio } };
   g.save = {
     class_type: "SaveVideo",
     inputs: { video: ["cv", 0], filename_prefix: opts.filenamePrefix, format: "auto", codec: "auto" },

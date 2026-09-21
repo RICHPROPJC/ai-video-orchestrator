@@ -21,6 +21,9 @@ import {
   decideSelection,
   writeSelections,
   blockoutPathFor,
+  motionSegments,
+  msGridFrames,
+  snapFramesPerShot,
   type Shortlist,
   type MotionShotLine,
   type CmuIndex,
@@ -404,4 +407,49 @@ test("F4 dry-run: SC-0921-9V4Y callsheet → selection.json (SH01=111_19 auto, S
     assert.ok(!s.bvh.startsWith("data/data/"));
     assert.equal(blockoutPathFor(outDir, s.shot), path.join(outDir, `${s.shot}.mp4`));
   }
+});
+
+// ---- MULTISHOT_WIRE_0921: cross-shot scheduling ---------------------------
+
+test("motionSegments: martial/run anchor C-form, trailing simples chain, leading simples = one multishot", () => {
+  const segs = motionSegments([
+    { id: "SH01", action: "沈北辰打出兩記右直拳，轉身起左腳側踢" }, // martial
+    { id: "SH02", action: "行前兩步停低，收拳定神" }, // simple walk
+    { id: "SH03", action: "拖椅坐低嘆氣" }, // simple sit
+    { id: "SH04", action: "全速跑向門口" }, // run
+    { id: "SH05", action: "企定望前" }, // simple stand
+  ]);
+  assert.deepEqual(segs, [
+    { kind: "cform", anchor: "SH01", chain: ["SH02", "SH03"] },
+    { kind: "cform", anchor: "SH04", chain: ["SH05"] },
+  ]);
+  // leading run of simples (no anchor before them) = ONE standalone multishot
+  const lead = motionSegments([
+    { id: "SA", action: "行前兩步停低" },
+    { id: "SB", action: "坐低嘆氣" },
+    { id: "SC", action: "打出兩拳" },
+  ]);
+  assert.deepEqual(lead, [
+    { kind: "multishot", shots: ["SA", "SB"] },
+    { kind: "cform", anchor: "SC", chain: [] },
+  ]);
+  // single shot slate keeps the plain C-form path (no manifest, no chain)
+  assert.deepEqual(motionSegments([{ id: "SOLO", action: "打出兩拳" }]), [
+    { kind: "cform", anchor: "SOLO", chain: [] },
+  ]);
+  assert.deepEqual(motionSegments([{ id: "SOLO", action: "行兩步" }]), [
+    { kind: "multishot", shots: ["SOLO"] },
+  ]);
+});
+
+test("snapFramesPerShot: 17-frame grid nearest the shot clock (4.82s → 119)", () => {
+  assert.equal(snapFramesPerShot(4.82), 119);
+  assert.equal(snapFramesPerShot(4.0), 102); // 96 → 6×17
+  assert.equal(snapFramesPerShot(0.5), 17);
+});
+
+test("msGridFrames: multishot delivers on the 17k+5 grid (119 → 124, run5 live)", () => {
+  assert.equal(msGridFrames(119), 124);
+  assert.equal(msGridFrames(102), 107);
+  assert.equal(msGridFrames(124), 124);
 });
