@@ -842,3 +842,9 @@ export async function bakeSelectionFrames(
   fs.rmSync(src, { recursive: true, force: true });
   return { framesDir, frames: got, log: r.stdout };
 }
+
+/** frames a multishot shot actually DELIVERS: H3's 17k+5 grid up-snap (a 119
+ *  request lands as 124 — run5 live, ffprobe 248 = 124+124 on a 124+119 ask) */
+export function msGridFrames(n: number): number {
+  return Math.max(5, Math.ceil((n - 5) / 17) * 17 + 5);
+}

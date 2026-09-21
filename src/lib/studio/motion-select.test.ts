@@ -22,6 +22,7 @@ import {
   writeSelections,
   blockoutPathFor,
   motionSegments,
+  msGridFrames,
   snapFramesPerShot,
   type Shortlist,
   type MotionShotLine,
@@ -445,4 +446,10 @@ test("snapFramesPerShot: 17-frame grid nearest the shot clock (4.82s → 119)", 
   assert.equal(snapFramesPerShot(4.82), 119);
   assert.equal(snapFramesPerShot(4.0), 102); // 96 → 6×17
   assert.equal(snapFramesPerShot(0.5), 17);
+});
+
+test("msGridFrames: multishot delivers on the 17k+5 grid (119 → 124, run5 live)", () => {
+  assert.equal(msGridFrames(119), 124);
+  assert.equal(msGridFrames(102), 107);
+  assert.equal(msGridFrames(124), 124);
 });
