@@ -837,7 +837,8 @@ export async function bakeSelectionFrames(
   const want = Math.ceil(sel.bake.len / sel.bake.step);
   const got = Number(done[2]!);
   if (got !== want) throw new Error(`bake frames ${got} != window ${sel.bake.len}/${sel.bake.step} = ${want}`);
-  for (const f of fs.readdirSync(src)) fs.renameSync(path.join(src, f), path.join(framesDir, f));
+  // /tmp and the job dir live on different devices — copy, never rename (EXDEV)
+  for (const f of fs.readdirSync(src)) fs.copyFileSync(path.join(src, f), path.join(framesDir, f));
   fs.rmSync(src, { recursive: true, force: true });
   return { framesDir, frames: got, log: r.stdout };
 }
