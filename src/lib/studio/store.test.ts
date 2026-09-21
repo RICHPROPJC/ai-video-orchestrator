@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as nodeTest from "node:test";
-import { listJobs, newSlateId, readEpEvents, readEvents, readJob, runningBlocker, writeJob, emit } from "./store";
+import { listJobs, newSlateId, readEpEvents, readEvents, readJob, runningBlocker, writeJob, emit, failedRecent, failedRecentLines } from "./store";
 import type { JobEvent, JobRecord, StageFacts } from "./types";
 
 /** One file, three doors: bun's node:test shim only works under `bun test`,
@@ -111,6 +111,54 @@ test("A4: emit before writeJob still lands the job log, no ep line, no crash", a
     emit("SC-0914-NOJOB", { agent: "system", level: "info", message: "開工" });
     assert.equal(readEvents("SC-0914-NOJOB").length, 1);
     assert.deepEqual(readEpEvents("SC-0914-NOJOB"), []);
+  }));
+
+test("INSIDE_VISIBLE 卡B 開工掃墓: failedRecent lists corpses, STALE-flags >30min, spares the living", async () =>
+  scratch(() => {
+    const fresh = job("SC-0921-FA", "failed");
+    fresh.error = "seat writer could not parse";
+    const old = job("SC-0921-FB", "failed");
+    old.updatedAt = new Date(Date.now() - 26 * 3_600_000).toISOString();
+    const staleRun = job("SC-0921-FC", "running");
+    staleRun.updatedAt = new Date(Date.now() - 45 * 60_000).toISOString();
+    writeJob(fresh);
+    writeJob(old);
+    writeJob(staleRun);
+    writeJob(job("SC-0921-FD", "running")); // live and well — never listed
+    // writeJob stamps updatedAt=now; real corpses are files nobody touched
+    // since — backdate them on disk the way abandonment looks
+    const backdate = (id: string, iso: string) => {
+      const file = path.join(process.cwd(), "data", "jobs", id, "job.json");
+      const rec = JSON.parse(fs.readFileSync(file, "utf8")) as { updatedAt: string };
+      rec.updatedAt = iso;
+      fs.writeFileSync(file, JSON.stringify(rec, null, 2));
+    };
+    backdate("SC-0921-FB", new Date(Date.now() - 26 * 3_600_000).toISOString());
+    backdate("SC-0921-FC", new Date(Date.now() - 45 * 60_000).toISOString());
+    const rows = failedRecent().sort((a, b) => a.job.slate.localeCompare(b.job.slate));
+    assert.deepEqual(
+      rows.map((r) => [r.job.slate, r.stale]),
+      [
+        ["SC-0921-FA", false],
+        ["SC-0921-FB", true],
+        ["SC-0921-FC", true],
+      ],
+    );
+    const lines = failedRecentLines(rows);
+    assert.ok(lines.some((l) => l.includes("SC-0921-FB") && l.includes("STALE")), "26h-old corpse is STALE");
+    assert.ok(lines.every((l) => l.includes("（未收屍）")), "dig format（未收屍）");
+    assert.ok(lines.some((l) => l.includes("seat writer could not parse")), "error head surfaces");
+  }));
+
+test("INSIDE_VISIBLE 卡A wiring: the warn event a failed attempt produces lands in events.jsonl", async () =>
+  scratch(() => {
+    writeJob(job("SC-0921-LAMP", "running"));
+    // exactly what pipeline's io.warn → io.speak(warn) emits for a failed attempt
+    emit("SC-0921-LAMP", { agent: "writer", level: "warn", message: "阿文／編劇 · writer SC01 attempt 1 ✗ Invalid" });
+    const rows = readEvents("SC-0921-LAMP");
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.level, "warn");
+    assert.ok(String(rows[0]!.message).includes("attempt 1 ✗"), rows[0]!.message);
   }));
 
 if (bareBun) {

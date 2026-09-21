@@ -89,6 +89,34 @@ function call(opts: {
   });
 }
 
+test("INSIDE_VISIBLE 卡A attempt燈: every attempt fires onAttempt the moment its receipt lands", async () => {
+  const seen: { attempt: number; valid: boolean; errors: string[] }[] = [];
+  const reply = (content: string) =>
+    new Response(JSON.stringify({ choices: [{ message: { content, reasoning_content: "" } }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  let n = 0;
+  const impl = (async () => reply(n++ === 2 ? '{"title":"片","beats":["a","b"]}' : '{"title":"缺拍"}')) as unknown as typeof fetch;
+  const out = await chatJson({
+    seat: "writer",
+    unit: "outline",
+    model: "kimi-k3",
+    crew,
+    system: "你係編劇檯。",
+    user: "{\"brief\":\"x\"}",
+    schema,
+    receiptDir: tmpDir(),
+    fetchImpl: impl,
+    onAttempt: (r) => seen.push({ ...r }),
+  });
+  assert.equal(out.value.beats.length, 2, "third reply parses");
+  assert.equal(seen.length, 3, "one onAttempt per attempt, receipt-adjacent");
+  assert.deepEqual(seen.map((r) => [r.attempt, r.valid]), [[1, false], [2, false], [3, true]]);
+  assert.ok(seen[0]!.errors.length > 0, "failed attempt carries its error lines");
+  assert.deepEqual(seen[2]!.errors, [], "the valid attempt reports clean");
+});
+
 test("stripThink drops a leaked leading think block", () => {
   assert.equal(stripThink("<think>諗緊</think>\n{\"a\":1}"), '{"a":1}');
   assert.equal(stripThink('{"a":1}'), '{"a":1}');
