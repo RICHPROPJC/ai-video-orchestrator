@@ -44,6 +44,9 @@ export type ProduceInput = {
   portraitsDir?: string;
   blockoutDir?: string;
   gapSec?: number;
+  /** MULTISHOT_WIRE: skip the motion-select step (no decider call, no mocap
+   *  bake — the workbench grey blockouts stand). */
+  noMotionSelect?: boolean;
   dryRun?: boolean;
   /** stop early: boards = seats have written the callsheet (no wavs yet),
    *  blockout = grey blockout + f0 done (no U1.5 / QC / H3),

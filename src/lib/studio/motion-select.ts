@@ -736,3 +736,106 @@ export function writeSelections(jobMotionDir: string, selections: MotionSelectio
 export function blockoutPathFor(jobBlockoutDir: string, shotId: string): string {
   return path.join(jobBlockoutDir, `${shotId}.mp4`);
 }
+
+// ---------------------------------------------------------------------------
+// MULTISHOT_WIRE_0921 — cross-shot scheduling + the bake executor
+// ---------------------------------------------------------------------------
+
+export type MotionSegment =
+  /** a motion-heavy shot anchors its own C-form render (Video 1 motion +
+ *  portrait identity); trailing simple shots chain onto it via multishot */
+  | { kind: "cform"; anchor: string; chain: string[] }
+  /** a LEADING run of simple shots: one standalone multishot call (no first
+ *  C-form shot, MS-A shape — motion rides the script, no Video 1 exists on
+ *  the node) */
+  | { kind: "multishot"; shots: string[] };
+
+/** §5b cross-shot scheduling (今日實證): martial/run shots are motion-heavy —
+ *  each anchors a C-form render with the following simple shots chained onto
+ *  it (true-endframe multishot); a leading run of simple shots renders as one
+ *  standalone multishot call. Single-shot slates stay a plain C-form render. */
+export function motionSegments(shots: { id: string; action: string }[]): MotionSegment[] {
+  const heavy = (action: string) => {
+    const fams = familiesForAction(action);
+    return fams.includes("martial") || fams.includes("run");
+  };
+  const out: MotionSegment[] = [];
+  let pendingSimple: string[] = [];
+  const flushSimple = () => {
+    if (pendingSimple.length) {
+      out.push({ kind: "multishot", shots: pendingSimple });
+      pendingSimple = [];
+    }
+  };
+  for (const shot of shots) {
+    if (heavy(shot.action)) {
+      flushSimple();
+      out.push({ kind: "cform", anchor: shot.id, chain: [] });
+    } else {
+      // attach to the previous C-form anchor if one is open, else queue a
+      // leading standalone multishot
+      const last = out[out.length - 1];
+      if (last && last.kind === "cform") last.chain.push(shot.id);
+      else pendingSimple.push(shot.id);
+    }
+  }
+  flushSimple();
+  // an anchor with no followers is a plain single-shot C-form render
+  return out;
+}
+
+/** frames per chained multishot shot on H3's 17k+5 grid, nearest the shot's
+ *  clock (trial: 4.82s → 119f = 7×17 ≈ 4.96s) */
+export function snapFramesPerShot(durationSec: number): number {
+  const target = Math.round(durationSec * 24);
+  return Math.min(462, Math.max(17, Math.round(target / 17) * 17));
+}
+
+/** bake one selection's clip to a grey blockout: repo-external
+ *  motion_library/scripts/bake_combat.py under headless blender (cwd MUST be
+ *  the lib root, script path absolute — the relative-path compound trap; the
+ *  --bvh path is data/-RELATIVE, never data/data/). Renders PNG frames to
+ *  <outMp4>.frames/ and returns them — the caller owns the ffmpeg assembly. */
+export async function bakeSelectionFrames(
+  sel: MotionSelection,
+  outMp4: string,
+  opts?: { blenderBin?: string; libRoot?: string; runCmd?: typeof import("./audio").runCommand },
+): Promise<{ framesDir: string; frames: number; log: string }> {
+  const run = opts?.runCmd ?? (await import("./audio")).runCommand;
+  const blender = opts?.blenderBin || process.env.BLENDER_BIN || "blender";
+  const libRoot = opts?.libRoot ?? MOTION_LIB_ROOT;
+  const script = path.join(libRoot, "scripts", "bake_combat.py");
+  if (!fs.existsSync(script)) throw new Error(`bake script missing: ${script}`);
+  const name = path.basename(outMp4, ".mp4");
+  const framesDir = outMp4.replace(/\.mp4$/, ".frames");
+  fs.mkdirSync(framesDir, { recursive: true });
+  const bvh = sel.bvh.replace(/^data\//, ""); // bake prepends data/ itself
+  const r = await run(
+    blender,
+    [
+      "-b", "-noaudio", "--factory-startup",
+      "-P", script, "--",
+      "--solo", "--bvh", bvh,
+      "--start", String(sel.bake.start),
+      "--len", String(sel.bake.len),
+      "--step", String(sel.bake.step),
+      "--auto-anchor",
+      "--name", name,
+      // frames land in /tmp/{name}_frames — move them under the job so the
+      // assembly is self-contained: the script has no --out flag (repo-external)
+    ],
+    libRoot,
+    { DISPLAY: undefined, WAYLAND_DISPLAY: undefined, LIBGL_ALWAYS_SOFTWARE: "1" },
+  );
+  const done = /FULL_DONE dir=(\S+) frames=(\d+)/.exec(r.stdout);
+  if (r.code !== 0 || !done) {
+    throw new Error(`bake failed for ${sel.shot} (${sel.bvh}, exit ${r.code}): ${(r.stderr || r.stdout).slice(-400)}`);
+  }
+  const src = done[1]!;
+  const want = Math.ceil(sel.bake.len / sel.bake.step);
+  const got = Number(done[2]!);
+  if (got !== want) throw new Error(`bake frames ${got} != window ${sel.bake.len}/${sel.bake.step} = ${want}`);
+  for (const f of fs.readdirSync(src)) fs.renameSync(path.join(src, f), path.join(framesDir, f));
+  fs.rmSync(src, { recursive: true, force: true });
+  return { framesDir, frames: got, log: r.stdout };
+}

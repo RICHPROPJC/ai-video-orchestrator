@@ -14,9 +14,10 @@ export type H3SubmitReceipt = {
   shot: string | null;
   graph_variant: H3GraphVariant;
   /** §5b form of a variant-a submit: "c" = Video 1 present (zero keyframes,
-   *  ref_image_0 = angle portrait); "a" = still-to-video keyframes lane.
-   *  null on the b/bkf/c alternates (no production form). */
-  motion_form: "a" | "c" | null;
+   *  ref_image_0 = angle portrait); "a" = still-to-video keyframes lane;
+   *  "ms" = standalone multishot (MULTISHOT_WIRE_0921). null on the b/bkf/c
+   *  alternates (no production form). */
+  motion_form: "a" | "c" | "ms" | null;
   server: string;
   prompt: string;
   seconds: number;
@@ -26,6 +27,29 @@ export type H3SubmitReceipt = {
   /** keyframe anchors as wired into H3Keyframes.positions (audit-visible);
    *  "" on the C-form — zero keyframe nodes in the graph. */
   keyframe_positions: string;
+  /** MULTISHOT_WIRE: the cross-shot chain riding a C-form first shot
+   *  (true-endframe start via H3LastFrame, seed_per_shot, flatten gain);
+   *  null = single-shot render. */
+  chain: {
+    shot_count: number;
+    shots: string[];
+    frames_per_shot: number;
+    seed_per_shot: boolean;
+    chain_gain_control: string;
+    start_image: string;
+    reference_image: string;
+    voice_ref: string | null;
+  } | null;
+  /** MULTISHOT_WIRE: standalone multishot call (簡單接駁, MS-A shape). */
+  multishot: {
+    shot_count: number;
+    shots: string[];
+    frames_per_shot: number;
+    seed_per_shot: boolean;
+    chain_gain_control: string;
+    start_image: string | null;
+    reference_image: string;
+  } | null;
   prompt_id: string | null;
   uploads: {
     wav: string;
@@ -39,6 +63,10 @@ export type H3SubmitReceipt = {
     ui_photos: string[];
     /** A-only montage timing ref wav (card ③a); null = none */
     audio_timing: string | null;
+    /** MULTISHOT_WIRE chain uploads (portrait/voice for the chained shots) */
+    ms_reference: string | null;
+    ms_voice: string | null;
+    ms_start: string | null;
   };
   output?: { filename: string; subfolder?: string; bytes: number };
   graph: unknown;
@@ -96,6 +124,26 @@ export async function submitH3Shot(opts: {
   uiPhotoFiles?: string[];
   /** A only (card ③a): montage beat-cut timing wav (sample #31) */
   audioTimingFile?: string;
+  /** MULTISHOT_WIRE: cross-shot chain riding this C-form first shot — the
+   *  shots after it render via H3MultishotSampler inside the same graph. */
+  chain?: {
+    script: string;
+    shots: string[];
+    framesPerShot: number;
+    /** exactly one identity portrait, carried into every chained shot */
+    referenceImageFile: string;
+    voiceRefFile?: string;
+  };
+  /** MULTISHOT_WIRE: standalone multishot call (簡單接駁) — the whole segment
+   *  renders inside H3MultishotSampler; prose rides the --- script. */
+  multishot?: {
+    script: string;
+    shots: string[];
+    framesPerShot: number;
+    referenceImageFile: string;
+    startImageFile?: string;
+    voiceRefFile?: string;
+  };
   outMp4: string;
   receiptJson: string;
   dryRun: boolean;
@@ -109,8 +157,21 @@ export async function submitH3Shot(opts: {
   const cfg = loadConfig();
   const variant = opts.graphVariant ?? "a";
   const cform = variant === "a" && Boolean(opts.blockoutMp4);
+  const isMultishot = Boolean(opts.multishot);
   if (variant !== "a" && opts.blockoutMp4) {
     throw new Error("only the A production path may carry a Video 1; B/BKF/C stay frozen for receipt comparability");
+  }
+  if (opts.chain && opts.multishot) {
+    throw new Error("chain and multishot are exclusive: chain rides a C-form first shot, multishot is standalone");
+  }
+  if (opts.chain && !cform) {
+    throw new Error("chain_requires_cform: the chained topology's shot 1 IS the C-form render (blockoutMp4 required)");
+  }
+  if (isMultishot && (opts.blockoutMp4 || opts.kfStart || opts.kfEnd || (opts.refImageFiles?.length ?? 0) > 0)) {
+    throw new Error("multishot is standalone: no Video 1, no keyframes, no r2v ref_images — its inputs are the script/portrait/voice only");
+  }
+  if (isMultishot && variant !== "a") {
+    throw new Error("multishot runs on the production path only (variant a)");
   }
   // §5b refuse-to-emit: keyframe stills handed in together with a Video 1 are
   // the dead coexistence shape — the intent must fail here, not silently drop
@@ -128,7 +189,10 @@ export async function submitH3Shot(opts: {
     throw new Error("audio timing ref is the A-path montage channel; B/BKF/C stay frozen for receipt comparability");
   }
   const promptText = `${SCRIPT_HEADER}\n${opts.prose}`;
-  if (variant === "a") {
+  if (isMultishot) {
+    // the multishot script is "---"-separated packet prose built upstream —
+    // the single-shot prose gates do not apply to this shape
+  } else if (variant === "a") {
     validateProse(promptText, { requireQuote: opts.requireQuote !== false, wardrobe: opts.wardrobe });
   } else {
     validateProsePositive(promptText, {
@@ -157,10 +221,14 @@ export async function submitH3Shot(opts: {
       : [];
   const uiPhotoNames = variant === "a" ? (opts.uiPhotoFiles ?? []).map((_, i) => `slatecrew_${tag}_ui_${i}.png`) : [];
   const audioTimingName = variant === "a" && opts.audioTimingFile ? `slatecrew_${tag}_timing.wav` : null;
+  // MULTISHOT_WIRE upload names (chain + standalone share the naming)
+  const msRefName = opts.chain || opts.multishot ? `slatecrew_${tag}_ms_ref.png` : null;
+  const msVoiceName = (opts.chain?.voiceRefFile || opts.multishot?.voiceRefFile) ? `slatecrew_${tag}_ms_voice.wav` : null;
+  const msStartName = opts.multishot?.startImageFile ? `slatecrew_${tag}_ms_start.png` : null;
   const models = modelsFromConfig();
   const shotTag = `${path.basename(opts.outMp4, ".mp4")}_${tag}`;
   const bindings = cform ? BINDINGS_CFORM : variant === "a" ? BINDINGS : "";
-  const keyframePositions = cform ? "" : kfEndName ? "0%, 100%" : "0%";
+  const keyframePositions = cform || opts.chain || isMultishot ? "" : kfEndName ? "0%, 100%" : "0%";
 
   const build = (names: {
     kfStart: string | null;
@@ -170,6 +238,9 @@ export async function submitH3Shot(opts: {
     refImages: string[];
     uiPhotos: string[];
     audioTiming: string | null;
+    msRef: string | null;
+    msVoice: string | null;
+    msStart: string | null;
   }) =>
     buildH3Graph({
       script: promptText,
@@ -187,7 +258,61 @@ export async function submitH3Shot(opts: {
       refImageNames: names.refImages,
       uiPhotoNames: names.uiPhotos,
       audioTimingRefName: names.audioTiming ?? undefined,
+      ...(opts.chain
+        ? {
+            chain: {
+              script: opts.chain.script,
+              shotCount: opts.chain.shots.length,
+              framesPerShot: opts.chain.framesPerShot,
+              referenceImageName: names.msRef!,
+              ...(opts.chain.voiceRefFile ? { voiceRefName: names.msVoice! } : {}),
+            },
+          }
+        : {}),
+      ...(opts.multishot
+        ? {
+            multishot: {
+              script: opts.multishot.script,
+              shotCount: opts.multishot.shots.length,
+              framesPerShot: opts.multishot.framesPerShot,
+              referenceImageName: names.msRef!,
+              ...(opts.multishot.startImageFile ? { startImageName: names.msStart! } : {}),
+              ...(opts.multishot.voiceRefFile ? { voiceRefName: names.msVoice! } : {}),
+            },
+          }
+        : {}),
     });
+
+  const chainReceipt =
+    opts.chain && cform
+      ? {
+          shot_count: opts.chain.shots.length,
+          shots: opts.chain.shots,
+          frames_per_shot: opts.chain.framesPerShot,
+          seed_per_shot: true,
+          chain_gain_control: "flatten",
+          start_image: "h3_last_frame(this render)",
+          reference_image: msRefName!,
+          voice_ref: msVoiceName,
+        }
+      : null;
+  const multishotReceipt =
+    opts.multishot
+      ? {
+          shot_count: opts.multishot.shots.length,
+          shots: opts.multishot.shots,
+          frames_per_shot: opts.multishot.framesPerShot,
+          seed_per_shot: true,
+          chain_gain_control: "flatten",
+          start_image: msStartName,
+          reference_image: msRefName!,
+        }
+      : null;
+  const motionForm: H3SubmitReceipt["motion_form"] = isMultishot
+    ? "ms"
+    : variant === "a"
+      ? cform ? "c" : "a"
+      : null;
 
   if (opts.dryRun) {
     const graph = build({
@@ -198,12 +323,15 @@ export async function submitH3Shot(opts: {
       refImages: refImageNames,
       uiPhotos: uiPhotoNames,
       audioTiming: audioTimingName,
+      msRef: msRefName,
+      msVoice: msVoiceName,
+      msStart: msStartName,
     });
     const receipt: H3SubmitReceipt = {
       dry_run: true,
       shot: opts.shot ?? null,
       graph_variant: variant,
-      motion_form: variant === "a" ? (cform ? "c" : "a") : null,
+      motion_form: motionForm,
       server: cfg.motion.comfyUrl,
       prompt: promptText,
       seconds: Math.round(seconds * 1000) / 1000,
@@ -211,6 +339,8 @@ export async function submitH3Shot(opts: {
       steps,
       seed,
       keyframe_positions: keyframePositions,
+      chain: chainReceipt,
+      multishot: multishotReceipt,
       prompt_id: null,
       uploads: {
         wav: wavName,
@@ -220,6 +350,9 @@ export async function submitH3Shot(opts: {
         ref_images: refImageNames,
         ui_photos: uiPhotoNames,
         audio_timing: audioTimingName,
+        ms_reference: msRefName,
+        ms_voice: msVoiceName,
+        ms_start: msStartName,
       },
       graph,
     };
@@ -235,6 +368,14 @@ export async function submitH3Shot(opts: {
     ...(cform || variant === "b" || variant === "bkf" ? (opts.refImageFiles ?? []) : []),
     ...(variant === "a" ? (opts.uiPhotoFiles ?? []) : []),
     ...(variant === "a" && opts.audioTimingFile ? [opts.audioTimingFile] : []),
+    ...(opts.chain ? [opts.chain.referenceImageFile, ...(opts.chain.voiceRefFile ? [opts.chain.voiceRefFile] : [])] : []),
+    ...(opts.multishot
+      ? [
+          opts.multishot.referenceImageFile,
+          ...(opts.multishot.startImageFile ? [opts.multishot.startImageFile] : []),
+          ...(opts.multishot.voiceRefFile ? [opts.multishot.voiceRefFile] : []),
+        ]
+      : []),
   ]) {
     if (!fs.existsSync(f)) throw new Error(`missing H3 input: ${f}`);
   }
@@ -265,6 +406,28 @@ export async function submitH3Shot(opts: {
   const uploadedTiming = opts.audioTimingFile && audioTimingName
     ? (await scpToHost(host, cfg.ssh.user, opts.audioTimingFile, cfg.ssh.motionInputDir, audioTimingName), audioTimingName)
     : null;
+  // MULTISHOT_WIRE uploads: portrait/start ride /upload/image, the ms voice
+  // wav rides the scp lane (LoadAudio reads the input dir)
+  const uploadedMsRef = msRefName
+    ? await uploadComfyFile(
+        cfg.motion.comfyUrl,
+        (opts.chain ?? opts.multishot)!.referenceImageFile,
+        msRefName,
+        "image/png",
+      )
+    : null;
+  const uploadedMsStart = msStartName
+    ? await uploadComfyFile(cfg.motion.comfyUrl, opts.multishot!.startImageFile!, msStartName, "image/png")
+    : null;
+  const uploadedMsVoice = msVoiceName
+    ? (await scpToHost(
+        host,
+        cfg.ssh.user,
+        (opts.chain?.voiceRefFile ?? opts.multishot?.voiceRefFile)!,
+        cfg.ssh.motionInputDir,
+        msVoiceName,
+      ), msVoiceName)
+    : null;
 
   const graph = build({
     kfStart: uploadedKfStart,
@@ -274,6 +437,9 @@ export async function submitH3Shot(opts: {
     refImages: uploadedRefImages,
     uiPhotos: uploadedUiPhotos,
     audioTiming: uploadedTiming,
+    msRef: uploadedMsRef,
+    msVoice: uploadedMsVoice,
+    msStart: uploadedMsStart,
   });
   const promptId = await queuePrompt(cfg.motion.comfyUrl, graph);
   const outputs = await waitHistory(cfg.motion.comfyUrl, promptId, { saveNode: "save" });
@@ -284,7 +450,7 @@ export async function submitH3Shot(opts: {
     dry_run: false,
     shot: opts.shot ?? null,
     graph_variant: variant,
-    motion_form: variant === "a" ? (cform ? "c" : "a") : null,
+    motion_form: motionForm,
     server: cfg.motion.comfyUrl,
     prompt: promptText,
     seconds: Math.round(seconds * 1000) / 1000,
@@ -292,6 +458,8 @@ export async function submitH3Shot(opts: {
     steps,
     seed,
     keyframe_positions: keyframePositions,
+    chain: chainReceipt,
+    multishot: multishotReceipt,
     prompt_id: promptId,
     uploads: {
       wav: wavName,
@@ -301,6 +469,9 @@ export async function submitH3Shot(opts: {
       ref_images: uploadedRefImages,
       ui_photos: uploadedUiPhotos,
       audio_timing: uploadedTiming,
+      ms_reference: uploadedMsRef,
+      ms_voice: uploadedMsVoice,
+      ms_start: uploadedMsStart,
     },
     output: { filename: item.filename, subfolder: item.subfolder, bytes: fs.statSync(opts.outMp4).size },
     graph,

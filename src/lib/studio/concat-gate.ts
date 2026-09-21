@@ -30,27 +30,46 @@ export async function checkGate(opts: {
   motionDir: string;
   spineWav?: string;
   outFile?: string;
+  /** MULTISHOT_WIRE: multi-shot renders — when a segment covers shots
+   *  [A,B], ONE mp4 {A}-{B}.mp4 must carry the pair's summed frame count
+   *  (chained multishot shots quantise to the 17-frame grid, so the expected
+   *  count is the sum of each shot's own snapped frames). Shots not covered
+   *  by any segment keep the per-shot check. */
+  segments?: { shots: string[] }[];
 }): Promise<GateResult> {
   const { plan, motionDir } = opts;
   const shots = plan.shots ?? [];
   const fail = (reason: string): GateResult => ({ ok: false, reason });
 
   if (!shots.length) return fail("cut_plan has no shots");
+  const segOf = new Map<string, string[]>();
+  for (const seg of opts.segments ?? []) {
+    for (const id of seg.shots) segOf.set(id, seg.shots);
+  }
+  const checked = new Set<string>();
   for (const shot of shots) {
-    const mp4 = path.join(motionDir, `${shot.id}.mp4`);
-    if (!fs.existsSync(mp4)) return fail(`missing ${mp4}`);
     if (!fs.existsSync(shot.wav)) return fail(`missing slice ${shot.wav}`);
     const got = await wavSeconds(shot.wav);
     if (Math.abs(got - shot.duration_s) > FRAME_TOL) {
       return fail(`shot ${shot.id}: ${path.basename(shot.wav)} ${got.toFixed(6)}s != plan ${shot.duration_s.toFixed(6)}s`);
     }
-    const frames = snapDurationToFrames(got);
+    const seg = segOf.get(shot.id);
+    const fileId = seg ? seg.join("-") : shot.id;
+    if (checked.has(fileId)) continue; // one probe per file, frames summed across its shots
+    checked.add(fileId);
+    const mp4 = path.join(motionDir, `${fileId}.mp4`);
+    if (!fs.existsSync(mp4)) return fail(`missing ${mp4}`);
+    const frameIds = seg ?? [shot.id];
+    const frames = frameIds.reduce(
+      (a, id) => a + snapDurationToFrames(shots.find((s) => s.id === id)?.duration_s ?? 0),
+      0,
+    );
     const probe = await probeVideo(mp4);
     if (probe.nbFrames !== frames) {
-      return fail(`shot ${shot.id}: ${mp4} has ${probe.nbFrames} frames != wav snap ${frames}`);
+      return fail(`${fileId}: ${mp4} has ${probe.nbFrames} frames != summed wav snap ${frames}`);
     }
     if (probe.frameRate !== "24/1") {
-      return fail(`shot ${shot.id}: r_frame_rate ${probe.frameRate} != 24/1`);
+      return fail(`${fileId}: r_frame_rate ${probe.frameRate} != 24/1`);
     }
   }
   let prevEnd = -1;
