@@ -232,6 +232,11 @@ export type Shot = {
    *  uploads them to ref_images.ref_image_N, dry-run names them. Paths are
    *  used as given; live submit throws on a missing file. */
   uiRefs?: string[];
+  /** COMBAT_PORT_0921: causal combat state attached by the boards-stage
+   *  combat pass (combat-adapter) — Beat七欄/state relay/ACTION_RISK. Absent
+   *  on every non-combat shot; type-only import, erased at runtime
+   *  (UiShotSpec precedent). */
+  combat?: import("./combat-adapter").CombatShotState;
 };
 
 /** Which seat wrote the sheet, on which model, with the receipts to prove it. */
