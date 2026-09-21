@@ -40,7 +40,7 @@ Commands
 
 Flags
   --duration 12  --aspect 16:9|9:16|1:1  --clone ref.wav  --lang yue
-  --wav-dir <dir>       每鏡 SHxx.wav（可加 spine.wav 全片聲軌）；除 --until boards 外必需
+  --wav-dir <dir>       每鏡 SHxx.wav（可加 spine.wav 全片聲軌）；缺＝voice 席用 AuK :9882 自動出 VO（要 tts.promptWav／--clone）
   --portraits <dir>     角色肖像 A.png/B.png（首次出場 /edit 參考圖；45°用A_45.png）
   --no-motion-select    跳過motion-select（唔叫decider、唔bake mocap，workbench灰模照舊）
   --blockout-dir <dir>  預渲染 blockout SHxx.mp4（864x480 24fps，frames=wav snap）
@@ -161,10 +161,10 @@ function resumeJob(slate: string) {
 }
 
 async function produce(brief: string, tui: boolean) {
-  // boards stops before the wav is the clock, so it is the one gate that runs dry
-  if (!arg("--wav-dir") && arg("--until") !== "boards") {
-    console.error('produce/tui 需要 --wav-dir <dir>（每鏡 SHxx.wav，可加 spine.wav）；只出分鏡用 --until boards');
-    process.exit(1);
+  // boards stops before the wav is the clock; without --wav-dir the voice seat
+  // speaks the VO through AuK (pipeline fails loud when tts is not armed)
+  if (!arg("--wav-dir") && arg("--until") !== "boards" && !arg("--clone")) {
+    console.error("提示：無 --wav-dir，voice 席會用 AuK :9882 自動出 VO（要 tts.promptWav 或 --clone ref.wav）");
   }
   const fleet = await probeFleet(loadConfig());
   const gate: FleetGate =

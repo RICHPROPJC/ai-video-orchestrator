@@ -25,6 +25,9 @@ export type SlateConfig = {
     steps: number;
     seed: number;
   };
+  /** AuK :9882 verbatim clone (CosyVoice :9880 is dead). promptWav = the clone
+   *  ref whose speaker the /tts output follows; empty = env AUK_REF_WAV or
+   *  job-level --clone upload must supply it, else the voice hop fails loud. */
   tts: { endpoint: string; model: string; promptWav: string; seed: number };
   /** CARD_BUG3_0920 item4 (Fable): the photo-qc second eye now lives in config,
    *  not just env. Empty secondEndpoint = not armed — judge GREEN stays capped

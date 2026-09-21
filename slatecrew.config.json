@@ -5,7 +5,8 @@
     "boardsModel": "glm-5.3-flash",
     "blenderModel": "nex-n2.5",
     "blenderFallback": "glm-5.3-flash",
-    "reflectorModel": "qwen38"
+    "reflectorModel": "qwen38",
+    "secondFallback": "qwen38"
   },
   "stills": {
     "url": "http://100.76.131.19:8097",

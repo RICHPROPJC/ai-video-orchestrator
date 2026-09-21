@@ -23,6 +23,7 @@ import { ensurePortraits } from "./portraits";
 import { ensureDir, jobDir, jobFile, projectsDir, seatsDir } from "./paths";
 import { runReflector } from "./reflector";
 import { snapDurationToFrames, wavSeconds } from "./frame-grid";
+import { plugShotWavs } from "./shot-wav-plug";
 import { buildCutPlan, type CutPlan } from "./cut-plan";
 import { checkGate } from "./concat-gate";
 import { writeAnchors } from "./dhash-anchors";
@@ -452,11 +453,12 @@ async function authorCallSheet(
 export async function runPipeline(jobId: string, input: ProduceInput) {
   const initial = readJob(jobId);
   if (!initial) throw new Error("missing job");
-  if (!input.wavDir && input.until !== "boards") {
-    throw new Error("--wav-dir <dir> is required (one SHxx.wav per shot)");
-  }
   let job: JobRecord = initial;
   const cfg = loadConfig();
+  // no plug wavs ⇒ voice seat speaks the VO through AuK — the door must be armed up front
+  if (!input.wavDir && input.until !== "boards" && !cfg.tts.endpoint.trim()) {
+    throw new Error("--wav-dir 缺，而 tts.endpoint 未接（AuK http://127.0.0.1:9882）：無聲軌來源");
+  }
   const trace: ProviderTrace = {
     stills: `U1.5 /edit ${cfg.stills.url}`,
     motion: `H3 R2V ${cfg.motion.comfyUrl}`,
@@ -627,18 +629,23 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       await raster(renderBlockingSvg(locked, shot), path.join(blockingDir, `${shot.id}.png`));
     }
 
-    // wav plug: copy SHxx.wav (+ optional spine.wav) into the job, cut plan from real clocks
+    // voice hop: copy the given SHxx.wav plugs, or AuK speaks the continuity
+    // dialogue (clone ref = job --clone upload, else tts.promptWav)
     const gapSec = input.gapSec ?? 0;
     const audioDir = path.join(jobDir(jobId), "audio");
     ensureDir(audioDir);
+    const cloneRef = input.voiceClonePath && fs.existsSync(input.voiceClonePath) ? input.voiceClonePath : undefined;
+    const plugged = await plugShotWavs({
+      boards: continuity.boards,
+      wavDir: input.wavDir || undefined,
+      audioDir,
+      cloneRef,
+    });
     const wavByShot = new Map<string, string>();
     const h3WavByShot = new Map<string, string>();
     const gapDelivered = new Map<string, number>();
     for (const shot of continuity.boards) {
-      const src = path.join(input.wavDir, `${shot.id}.wav`);
-      if (!fs.existsSync(src)) throw new Error(`--wav-dir 缺 ${shot.id}.wav（${src}）`);
-      const dst = path.join(audioDir, `${shot.id}.wav`);
-      fs.copyFileSync(src, dst);
+      const dst = plugged.find((p) => p.shotId === shot.id)!.file;
       wavByShot.set(shot.id, dst);
       const frames = snapDurationToFrames(await wavSeconds(dst));
       const h3Wav = path.join(audioDir, `${shot.id}.h3.wav`);
@@ -646,9 +653,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       h3WavByShot.set(shot.id, h3Wav);
       gapDelivered.set(shot.id, Math.round((frames / 24 - (await wavSeconds(dst))) * 1e4) / 1e4);
     }
-    const spineGiven = path.join(input.wavDir, "spine.wav");
-    const spineWav = fs.existsSync(spineGiven) ? path.join(audioDir, "spine.wav") : undefined;
-    if (spineWav) fs.copyFileSync(spineGiven, spineWav);
+    const spineGiven = input.wavDir ? path.join(input.wavDir, "spine.wav") : undefined;
+    const spineWav = spineGiven && fs.existsSync(spineGiven) ? path.join(audioDir, "spine.wav") : undefined;
+    if (spineGiven && spineWav) fs.copyFileSync(spineGiven, spineWav);
     const cutPlan = await buildCutPlan({
       cut: continuity.cut,
       wavDir: audioDir,
@@ -1828,9 +1835,15 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       return;
     }
 
-    // voice: wav plug only — spine given, or concat slices with gap silence
+    // voice: spine given, or concat slices with gap silence; plugs may be AuK takes
     await think("voice");
-    await speak("voice", "聲軌係 wav plug：spine.wav 或者逐鏡切片加 gap。");
+    const aukShots = plugged.filter((p) => p.source === "auk");
+    await speak(
+      "voice",
+      aukShots.length
+        ? `聲軌 wav plug＋AuK 出 ${aukShots.length} 鏡 VO（對白跟 continuity，clone 跟 ${cloneRef ? "job ref" : "tts.promptWav"}）：${aukShots.map((s) => s.shotId).join("、")}`
+        : "聲軌係 wav plug：spine.wav 或者逐鏡切片加 gap。",
+    );
     let spineFile = spineWav;
     if (!spineFile) {
       spineFile = path.join(audioDir, "spine.wav");
@@ -1858,9 +1871,11 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         await ffmpeg(["-f", "concat", "-safe", "0", "-i", concatList, "-c", "copy", spineFile]);
       }
     }
-    trace.tts = fs.existsSync(path.join(input.wavDir, "sentences.json"))
-      ? "wav plug (AuK slices, natural pace)"
-      : "wav plug";
+    trace.tts = plugged.some((p) => p.source === "auk")
+      ? `AuK auto VO ×${plugged.filter((p) => p.source === "auk").length}${input.wavDir && fs.existsSync(path.join(input.wavDir, "sentences.json")) ? " + plug slices" : ""}`
+      : input.wavDir && fs.existsSync(path.join(input.wavDir, "sentences.json"))
+        ? "wav plug (AuK slices, natural pace)"
+        : "wav plug";
     job = patch(job, { providers: trace, progress: 76, outputs: { ...job.outputs, voice: "audio/spine.wav" } });
     upsertDoc({
       id: "audio:vo",
