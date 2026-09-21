@@ -661,6 +661,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         await speak("layout", "motion-select 跳過：motion library index 唔在盤（workbench 灰模照舊）。", "warn");
       } else if (input.noMotionSelect) {
         await speak("layout", "motion-select 關咗（--no-motion-select）：workbench 灰模照舊。");
+      } else if (input.dryRun) {
+        // --dry-run promises zero sockets — the decider POST waits for a live run
+        await speak("layout", "motion-select 跳過：--dry-run 零 socket（decider call 留畀 live run）。");
       } else {
         await think("layout");
         const idx = buildCmuIndex(MOTION_LIB_ROOT);
