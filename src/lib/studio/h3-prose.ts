@@ -1,4 +1,5 @@
 import type { CallSheet, Shot } from "./types";
+import { combatProseSpec } from "./combat-adapter";
 
 export const SCRIPT_HEADER = "# produced_by: slatecrew_h3_submit";
 
@@ -446,13 +447,31 @@ function buildProseLong(
       ? `${soundDesignLines(sheet, shot)} ${TIMING_REF_SENTENCE}`
       : soundDesignLines(sheet, shot),
   );
+  // dialogue paragraph is built first so the COMBAT_PORT_0921 budget check
+  // below counts its words — combat lines may never push the body past
+  // IDENTITY_LONG_MAX (T42 law).
   const dialogue = shot.dialogue.trim();
+  let dialoguePara = "";
   if (dialogue) {
     if (!speakerName) throw new Error(`${shot.id}: dialogue but no speaker and no cast`);
     const others = chars.filter((c) => c.name !== speakerName).map((c) => c.name);
     const listeners = others.length ? ` ${others.join("、")} ${others.length === 1 ? "listens" : "listen"}.` : "";
-    paras.push(`${speakerName} (${side}) speaks the line in Audio 1: "${dialogue}".${listeners}`);
+    dialoguePara = `${speakerName} (${side}) speaks the line in Audio 1: "${dialogue}".${listeners}`;
   }
+  if (shot.combat) {
+    // COMBAT_PORT_0921: the causal flag layer — Physical Contact constraint
+    // and the relay first, then extra preset lines while the budget holds.
+    // First line that does not fit ends the paragraph (deterministic drop
+    // order, pinned by test). No combat field → this block never runs.
+    let bodySoFar = paras.join("\n\n") + (dialoguePara ? `\n\n${dialoguePara}` : "");
+    for (const { line } of combatProseSpec(sheet, shot, opts.prevShot)) {
+      const next = `${bodySoFar}\n\n${line}`;
+      if (countWords(next) > IDENTITY_LONG_MAX) break;
+      paras.push(line);
+      bodySoFar = next;
+    }
+  }
+  if (dialoguePara) paras.push(dialoguePara);
   const body = paras.join("\n\n");
   const total = countWords(body);
   if (total < IDENTITY_LONG_MIN) {
@@ -476,6 +495,9 @@ export type BuildProseOpts = {
   /** previous shot location — when it differs, pin the same SKU/faces on
    *  return (seats return-pin law, action-short path) */
   prevLocation?: string;
+  /** COMBAT_PORT_0921: the previous Shot — a combat shot following a combat
+   *  shot adds the Match-on-Action momentum-carry cut line */
+  prevShot?: Shot;
   /** card ③b: UI/infographic shot spec — forces identity-long (mapping table
    *  + camera lock + on-screen text engineering ride with the photo refs) */
   ui?: UiShotSpec;

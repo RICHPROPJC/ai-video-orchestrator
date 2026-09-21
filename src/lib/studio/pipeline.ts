@@ -30,6 +30,7 @@ import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, 
 import { isLocationFail, keyframeEditPrompt, keyframeRequire, loadBaseCast, needsShotFacts, sceneRetryNormalize, sceneRetrySchema, sceneRetryUser } from "./keyframe-prompt";
 import { runPeStep } from "./pe-step";
 import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
+import { applyCombatPass } from "./combat-adapter";
 import { submitH3Shot } from "./h3-submit";
 import type { H3GraphVariant } from "./h3-r2v-graph";
 import { assertH3Plan, assertH3SubmitWiring, planH3Shot, type AnglePortrait } from "./h3-slots";
@@ -169,7 +170,7 @@ export function h3MotionPack(
         // story motion shot, C-form: identity = angle portraits on ref_images
         const anglePortraits = anglePortraitsFor(shot, portraitFiles, opts?.portraitDir, opts?.plugDir);
         return {
-          prose: buildProse(timed, shot, { prevLocation: prev?.location, form: "c" }),
+          prose: buildProse(timed, shot, { prevLocation: prev?.location, prevShot: prev, form: "c" }),
           refImageFiles: anglePortraits.map((p) => p.file),
           anglePortraits,
           uiPhotoFiles: undefined as string[] | undefined,
@@ -178,7 +179,7 @@ export function h3MotionPack(
       }
       // no Video 1 asset: still-to-video — keyframes two ends, zero refs
       return {
-        prose: buildProse(timed, shot, { prevLocation: prev?.location, form: "a" }),
+        prose: buildProse(timed, shot, { prevLocation: prev?.location, prevShot: prev, form: "a" }),
         refImageFiles: undefined as string[] | undefined,
         anglePortraits: [] as AnglePortrait[],
         uiPhotoFiles: undefined as string[] | undefined,
@@ -190,7 +191,7 @@ export function h3MotionPack(
     // table. uiShot is the only gate: story shots with stray uiRefs stay
     // ref-free. On the C-form the ui board keeps <Picture 1>; no keyframes.
     return {
-      prose: buildProse(timed, shot, { ui: shot.uiSpec ?? {}, form: hasVideo1 ? "c" : "a" }),
+      prose: buildProse(timed, shot, { ui: shot.uiSpec ?? {}, prevShot: prev, form: hasVideo1 ? "c" : "a" }),
       refImageFiles: undefined as string[] | undefined,
       anglePortraits: [] as AnglePortrait[],
       uiPhotoFiles: shot.uiRefs ?? [] as string[],
@@ -523,6 +524,12 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const boarded = open(toBoards, { slate: jobId, to: "boards" });
     const continuity = assertSameCanon(lockContinuity(boarded.sheet));
     const locked: CallSheet = { ...boarded.sheet, shots: continuity.boards };
+    // COMBAT_PORT_0921: boards-stage combat pass — combat-signal gated (≥2
+    // marked characters + a combat cause in the action). No signal → no-op,
+    // non-combat path byte-identical; with a signal it attaches causal combat
+    // state (Beat七欄/state relay) to the fight shots in place, emits
+    // ACTION_RISK events and writes the combat/combat-pass.json receipt.
+    applyCombatPass(jobId, locked, (event) => emit(jobId, event));
     const plan = buildNarrativePlan({
       slate: jobId,
       brief: boarded.brief,
