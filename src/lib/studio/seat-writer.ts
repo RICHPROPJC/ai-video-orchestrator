@@ -1,4 +1,4 @@
-import { chatJson, type CrewConfig, type RepairNote } from "./crew-llm";
+import { chatJsonSeat, type CrewConfig, type RepairNote } from "./crew-llm";
 import { WRITER_BEATS_CHARTER, WRITER_OUTLINE_CHARTER } from "./seat-charters";
 import { assemblePlaybook, markPass } from "./playbook";
 import {
@@ -151,9 +151,10 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
       if (!r.valid) void io.warn?.(`writer ${unit} attempt ${r.attempt} ✗ ${r.errors[0] ?? ""}`);
     });
 
-  const outlinePass = await chatJson<Outline>({
+  const outlinePass = await chatJsonSeat<Outline>({
     seat: "writer",
     unit: "outline",
+    fallbackModel: io.crew.secondFallback,
     onAttempt: attemptLamp("outline"),
     model: io.model,
     crew: io.crew,
@@ -182,9 +183,10 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
   const scenes: Script["scenes"] = [];
   for (const [i, scene] of outline.scenes.entries()) {
     if (i > 0 && !io.fetchImpl) await new Promise((r) => setTimeout(r, 5000));
-    const pass = await chatJson({
+    const pass = await chatJsonSeat({
       seat: "writer",
       unit: scene.id,
+      fallbackModel: io.crew.secondFallback,
       onAttempt: attemptLamp(scene.id),
       model: io.model,
       crew: io.crew,

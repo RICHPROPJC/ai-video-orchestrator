@@ -12,6 +12,8 @@ export type CrewConfig = {
   blenderModel: string;
   /** Flash Lite miss → this GLM, not Hermes. */
   blenderFallback: string;
+  /** Writer/boards quota-429 fallback (RE2P: 智譜五小時上限唔等得) → local qwen38. */
+  secondFallback: string;
   /** Off-path 27B only. Hot-path boards may be GLM flash. */
   reflectorModel: string;
   deny: string[];
@@ -29,6 +31,7 @@ export const DEFAULT_CREW: CrewConfig = {
   // Nex-N2.5：Blender／CAD／tool 腦（案例七 Inkscape→Blender）；flash-lite content=null 半死唔再用做主
   blenderModel: "nex-n2.5",
   blenderFallback: "glm-5.3-flash",
+  secondFallback: "qwen38",
   reflectorModel: "qwen38",
   deny: [DENIED_FULL_GLM],
   apiKey: "",
@@ -257,6 +260,11 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
       } as RequestInit);
       if (res.status !== 429) return res;
       const text = await res.text().catch(() => "");
+      // quota window (使用上限/5小时): backoff can't refund it — throw now so the
+      // fallback door switches model instead of sleeping out the five hours
+      if (/使用上限|5\s*小时|5\s*小時/.test(text)) {
+        throw new Error(`seat ${opts.seat} ${opts.unit}: ${endpoint} HTTP 429 quota exhausted: ${text.slice(0, 300)}`);
+      }
       const waitMs = HTTP_429_BACKOFF_MS[throttled];
       if (waitMs === undefined) {
         throw new Error(
@@ -396,4 +404,16 @@ export async function chatJsonWithFallback<T>(
     const out = await chatJson({ ...opts, model: opts.fallbackModel, unit: `${opts.unit}.fallback` });
     return { ...out, fellBack: true, primaryError };
   }
+}
+
+/** Writer/boards turn: chatJson + the config secondFallback door (empty/same = single-door). */
+export async function chatJsonSeat<T>(
+  opts: ChatJsonOpts<T> & { fallbackModel?: string },
+): Promise<ChatJsonFallbackResult<T>> {
+  const fallbackModel = opts.fallbackModel?.trim();
+  if (!fallbackModel || fallbackModel === opts.model) {
+    const out = await chatJson(opts);
+    return { ...out, fellBack: false };
+  }
+  return chatJsonWithFallback({ ...opts, fallbackModel });
 }

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { chatJson, type RepairNote } from "./crew-llm";
+import { chatJsonSeat, type RepairNote } from "./crew-llm";
 import { BOARDS_CHARTER } from "./seat-charters";
 import { assemblePlaybook, markPass } from "./playbook";
 import { boardsSceneSchema, SHOT_SEC_MAX, SHOT_SEC_MIN, SCENE_BUDGET_TOLERANCE, SLOT_VALUES, DEPTH_VALUES, STANCE_VALUES, type BoardsScene } from "./boards-contract";
@@ -235,9 +235,10 @@ export async function runBoards(
     if (i > 0 && !io.fetchImpl) await new Promise((r) => setTimeout(r, 5000));
     const beats = script.scenes.find((s) => s.sceneId === scene.id)?.beats ?? [];
     const budgetSec = budget(scene.targetSec);
-    const pass = await chatJson({
+    const pass = await chatJsonSeat({
       seat: "boards",
       unit: scene.id,
+      fallbackModel: io.crew.secondFallback,
       onAttempt: io.warn && ((r: { attempt: number; valid: boolean; errors: string[] }) => {
         if (!r.valid) void io.warn?.(`boards ${scene.id} attempt ${r.attempt} ✗ ${r.errors[0] ?? ""}`);
       }),
