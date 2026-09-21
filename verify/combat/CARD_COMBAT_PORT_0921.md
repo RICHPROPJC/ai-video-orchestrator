@@ -26,7 +26,7 @@ cd /mnt/ssd/crew-wt/combat-port
 
 ## 接線位＋依賴聲明（DISPATCH_BOARD規3）
 - 共用檔三處，全部**加法式、flag-gated**：`types.ts`（Shot.combat type-only選填欄）、`h3-prose.ts`（buildProseLong尾段combat段落＋BuildProseOpts.prevShot；dialogue預算先計）、`pipeline.ts`（boards段applyCombatPass一行hook＋h3MotionPack三個buildProse位）。
-- **Mo嘅MULTISHOT_WIRE共h3-prose.ts**——兩lane merge時交疊，本卡全部係`if (shot.combat)`閘住嘅加法，非combat路徑byte-identical有test釘死；合併先後由SlateLead定。
+- **merge次序（SlateLead 0921釘）：mswire先行、本卡第二**——rebase上mswire結果後重跑byte-identical＋全套先准交Vera。預飛（merge-tree 4e1651c vs lane/motion-mswire@0a4ba50）：實際交疊＝pipeline.ts＋types.ts（mswire**唔掂h3-prose.ts**，佢嘅multishot接線喺h3-r2v-graph＋motion loop）；試合併**零衝突標記**，兩檔加法hunk與motion loop重組區域唔撞。本卡全部係`if (shot.combat)`閘住嘅加法，非combat路徑byte-identical有test釘死。
 - combat訊號 = `detectCombat`（≥2 marked chars＋combat cause）——唔係skill flag，slatecrew無skill概念，訊號源自packet數據本身。
 
 ## 未做咗（照卡「渲染細節後卡」＋範圍外）
