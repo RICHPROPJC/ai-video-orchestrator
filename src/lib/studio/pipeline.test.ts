@@ -396,20 +396,66 @@ function uiChannelSheet(): CallSheet {
   };
 }
 
-test("h3MotionPack: uiShot opens the photo channel; a story shot stays ref-free", async () => {
+test("h3MotionPack: §5b C-form story pack wires angle portraits; uiShot keeps the ③b channel", async () => {
   const { h3MotionPack } = await import("./pipeline");
   const sheet = uiChannelSheet();
   const [ui, story] = sheet.shots;
-  const uiPack = h3MotionPack(sheet, ui!, "a", "/stills/SH01.png", {});
+  const portraitDir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pack-portraits-"));
+  const portraitFiles: Record<string, string> = {};
+  for (const id of ["A", "B"]) {
+    const f = path.join(portraitDir, `${id}.png`);
+    fs.writeFileSync(f, Buffer.from("fake-portrait"));
+    portraitFiles[id] = f;
+  }
+  const uiPack = h3MotionPack(sheet, ui!, "a", "/stills/SH01.png", portraitFiles, undefined, { portraitDir });
   assert.deepEqual(uiPack.uiPhotoFiles, ["/fixtures/ui/dashboard.png"]);
   assert.match(uiPack.prose, /<Picture 1> = the UI layout/);
   assert.match(uiPack.prose, /「HK\$1\.2M」/);
   assert.match(uiPack.prose, /Only the cursor, the highlighted card move/);
-  assert.equal(uiPack.kfEnd, "/stills/SH01.png");
-  const storyPack = h3MotionPack(sheet, story!, "a", "/stills/SH02.png", {});
+  assert.equal(uiPack.kfEnd, undefined, "C-form ui shot wires zero keyframes");
+  const storyPack = h3MotionPack(sheet, story!, "a", "/stills/SH02.png", portraitFiles, undefined, { portraitDir });
   assert.equal(storyPack.uiPhotoFiles, undefined);
-  assert.doesNotMatch(storyPack.prose, /<Picture/);
+  // §5b C-form: identity = angle portraits on ref_images (left-to-right), pin names <Picture 1>
+  assert.ok(storyPack.refImageFiles?.length === 2, "two marked characters → two portrait refs");
+  assert.match(path.basename(storyPack.refImageFiles![0]!), /^A\.png$/, "left mark first");
+  assert.match(path.basename(storyPack.refImageFiles![1]!), /^B\.png$/);
+  assert.match(storyPack.prose, /continue exactly from <Picture 1>/);
+  assert.doesNotMatch(storyPack.prose, /start keyframe image/);
   assert.doesNotMatch(storyPack.prose, /accidental/);
+  assert.equal(storyPack.kfEnd, undefined, "C-form story shot wires zero keyframes");
+  // A-form (no Video 1 asset): still-to-video keeps keyframes and the old pin
+  const aPack = h3MotionPack(sheet, story!, "a", "/stills/SH02.png", portraitFiles, undefined, {
+    hasVideo1: false,
+    portraitDir,
+  });
+  assert.equal(aPack.kfEnd, "/stills/SH02.png");
+  assert.equal(aPack.refImageFiles, undefined);
+  assert.match(aPack.prose, /start keyframe image/);
+});
+
+test("h3MotionPack: 45° shot without an angle portrait fails loud (B-lane face-drag ban)", async () => {
+  const { h3MotionPack } = await import("./pipeline");
+  const sheet = uiChannelSheet();
+  const story = sheet.shots[1]!;
+  story.refAngle = "45";
+  const portraitDir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pack-45-"));
+  fs.writeFileSync(path.join(portraitDir, "A.png"), Buffer.from("fake-front"));
+  assert.throws(
+    () => h3MotionPack(sheet, story, "a", "/stills/SH02.png", { A: path.join(portraitDir, "A.png") }, undefined, { portraitDir }),
+    /angle_portrait_missing.*A_45\.png/,
+  );
+  fs.writeFileSync(path.join(portraitDir, "A_45.png"), Buffer.from("fake-45"));
+  fs.writeFileSync(path.join(portraitDir, "B_45.png"), Buffer.from("fake-45"));
+  const pack = h3MotionPack(sheet, story, "a", "/stills/SH02.png", { A: path.join(portraitDir, "A.png") }, undefined, { portraitDir });
+  assert.equal(pack.refImageFiles!.length, 2);
+  assert.equal(path.basename(pack.refImageFiles![0]!), "A_45.png");
+  assert.equal(path.basename(pack.refImageFiles![1]!), "B_45.png");
+  // plugged 45° supply (WR1Q shape): {id}_45.png in the plug dir counts too
+  const plugDir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pack-45-plug-"));
+  fs.writeFileSync(path.join(plugDir, "A_45.png"), Buffer.from("fake-45-plug"));
+  fs.writeFileSync(path.join(plugDir, "B_45.png"), Buffer.from("fake-45-plug"));
+  const plugged = h3MotionPack(sheet, story, "a", "/stills/SH02.png", {}, undefined, { portraitDir: "/nonexistent", plugDir });
+  assert.equal(plugged.refImageFiles!.length, 2, "plug dir supplies the angle portraits");
 });
 
 test("h3MotionPack: UI channel is A-path only — fallback variants stay frozen", async () => {
@@ -422,12 +468,30 @@ test("h3MotionPack: UI channel is A-path only — fallback variants stay frozen"
   }
 });
 
-test("card ③b end-to-end: UI shot's dry receipt carries photo refs, story shot stays zero", async () => {
+test("h3MotionPack: UI channel is A-path only — fallback variants stay frozen", async () => {
+  const { h3MotionPack } = await import("./pipeline");
+  const sheet = uiChannelSheet();
+  const ui = sheet.shots[0]!;
+  for (const variant of ["b", "bkf", "c"] as const) {
+    const pack = h3MotionPack(sheet, ui, variant, "/stills/SH01.png", {});
+    assert.equal(pack.uiPhotoFiles, undefined, `${variant} must not feed ui photos`);
+  }
+});
+
+test("card ③b end-to-end: C-form dry receipts — ui photos ride ref_images, story rides the portrait", async () => {
   const { h3MotionPack } = await import("./pipeline");
   const { submitH3Shot } = await import("./h3-submit");
   const sheet = uiChannelSheet();
   const [ui, story] = sheet.shots;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-ui-channel-"));
+  const portraitDir = path.join(dir, "portraits");
+  fs.mkdirSync(portraitDir, { recursive: true });
+  const portraitFiles: Record<string, string> = {};
+  for (const id of ["A", "B"]) {
+    const f = path.join(portraitDir, `${id}.png`);
+    fs.writeFileSync(f, Buffer.from("fake-portrait"));
+    portraitFiles[id] = f;
+  }
   for (const id of ["SH01", "SH02"]) {
     writeWav(path.join(dir, `${id}.wav`), new Float32Array(22050 * 2), 22050); // 2.0s → 124f
   }
@@ -436,13 +500,11 @@ test("card ③b end-to-end: UI shot's dry receipt carries photo refs, story shot
     fs.writeFileSync(path.join(dir, `${id}.png`), Buffer.from("fake-kf"));
   }
   for (const [shot, stillId] of [[ui!, "SH01"], [story!, "SH02"]] as const) {
-    const pack = h3MotionPack(sheet, shot, "a", path.join(dir, `${stillId}.png`), {});
+    const pack = h3MotionPack(sheet, shot, "a", path.join(dir, `${stillId}.png`), portraitFiles, undefined, { portraitDir });
     const { receipt } = await submitH3Shot({
       prose: pack.prose,
       wavFile: path.join(dir, `${stillId}.wav`),
       blockoutMp4: path.join(dir, `${stillId}.mp4`),
-      kfStart: path.join(dir, `${stillId}.png`),
-      kfEnd: pack.kfEnd,
       refImageFiles: pack.refImageFiles,
       uiPhotoFiles: pack.uiPhotoFiles,
       outMp4: path.join(dir, "motion", `${stillId}.mp4`),
@@ -451,6 +513,10 @@ test("card ③b end-to-end: UI shot's dry receipt carries photo refs, story shot
       shot: stillId,
       requireQuote: false,
     });
+    assert.equal(receipt.motion_form, "c");
+    assert.equal(receipt.uploads.kf_start, null, "C-form uploads zero keyframe stills");
+    const graph = receipt.graph as Record<string, { class_type: string }>;
+    assert.equal("keyframes" in graph, false, "C-form wires zero keyframe nodes");
     const r2v = (receipt.graph as { r2v: { inputs: Record<string, unknown> } }).r2v;
     if (shot.uiShot) {
       assert.equal(receipt.uploads.ui_photos.length, 1);
@@ -459,12 +525,10 @@ test("card ③b end-to-end: UI shot's dry receipt carries photo refs, story shot
       assert.match(receipt.prompt, /<Picture 1>/);
     } else {
       assert.deepEqual(receipt.uploads.ui_photos, []);
-      assert.deepEqual(receipt.uploads.ref_images, []);
-      assert.equal(
-        Object.keys(r2v.inputs).filter((k) => k.startsWith("ref_images.")).length,
-        0,
-        "story shot must wire zero ref_images slots",
-      );
+      assert.equal(receipt.uploads.ref_images.length, 2, "two identity portraits ride ref_image_0/1");
+      assert.match(receipt.uploads.ref_images[0]!, /_ref_img_0\.png$/);
+      assert.deepEqual(r2v.inputs["ref_images.ref_image_0"], ["ref_img_0", 0]);
+      assert.deepEqual(r2v.inputs["ref_images.ref_image_1"], ["ref_img_1", 0]);
     }
   }
 

@@ -221,6 +221,22 @@ test("prop name lands in the pin sentence (a prop makes the scene heavy → iden
   assert.ok(body.includes("the 長傘 and the field"), "prop name in pin");
 });
 
+/** §5b (CFORM_0921): C-form prose pins identity on <Picture 1> — the graph
+ *  wires zero keyframes, so the pin never names a "start keyframe image". */
+test("form c pins <Picture 1> and never names a keyframe image (both modes)", () => {
+  const { sheet: s, shot: room } = interrogationShot();
+  const long = buildProse(s, room, { form: "c" });
+  assert.ok(long.includes("Faces and clothes continue exactly from <Picture 1>"), "identity-long C-form pin");
+  assert.ok(!long.includes("start keyframe image"), "C-form pin must not name a keyframe image");
+  assert.ok(long.includes("Same props, not a morph"), "prop clause stays");
+  validateProse(wrap(long), { requireQuote: true });
+  const { sheet: d, shot: dance } = streetDanceShot();
+  const short = buildProse(d, dance, { form: "c" });
+  assert.ok(short.includes("continue exactly from <Picture 1>"), "action-short C-form pin");
+  assert.ok(!short.includes("start keyframe image"));
+  validateProse(wrap(short), { requireQuote: false });
+});
+
 test("silent action-short passes with requireQuote false", () => {
   const { sheet: s, shot: dance } = streetDanceShot();
   validateProse(wrap(buildProse(s, dance)), { requireQuote: false });
@@ -392,7 +408,7 @@ test("③b: on-screen text over 6 詞 fails loud; story shots carry no UI lines"
   assert.equal(story.includes("<Picture 1>"), false, "story prose assigns no Picture slots");
 });
 
-test("graph stays v6-golden in both prose modes (proseMode is metadata only)", () => {
+test("graph stays identical in both prose modes (proseMode is metadata only)", () => {
   const models = {
     textEncoder: defaultConfig.motion.textEncoder,
     encoderType: "minimax",
@@ -402,6 +418,8 @@ test("graph stays v6-golden in both prose modes (proseMode is metadata only)", (
     fl2va: defaultConfig.motion.fl2va,
     turboLora: defaultConfig.motion.turboLora,
   };
+  // §5b A-form args (no Video 1 — keyframes lane); steps 4 keeps FBC so the
+  // node set stays maximal while proseMode varies
   const base = {
     script: "__PROMPT__",
     bindings: BINDINGS,
@@ -410,7 +428,6 @@ test("graph stays v6-golden in both prose modes (proseMode is metadata only)", (
     seed: 42,
     filenamePrefix: "video/SLATECREW/__SHOT__",
     kfStartName: "__KF_START__",
-    blockoutName: "__VIDEO__",
     wavName: "line.wav",
     models,
   };

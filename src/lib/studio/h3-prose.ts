@@ -8,6 +8,12 @@ export const VIDEO_SENTENCE = `Have the {{N}} people act following the movements
 
 export const PIN_SENTENCE = `Faces, clothes, the {{PROP}} and the field continue exactly from the start keyframe image and <Video 1>. Same {{PROP}}, not a morph. Do not add people.`;
 
+/** §5b C-form pin (E2E SC-0921-9V4Y SH01.c8 script, tg 17976): with zero
+ *  H3Keyframes wired there IS no start keyframe image in the graph — identity
+ *  pins on <Picture 1> (the angle portrait in ref_image_0) instead. The A-form
+ *  sentence would name an image the model never sees. */
+export const PIN_SENTENCE_CFORM = `Faces and clothes continue exactly from <Picture 1>. Same {{PROP}}, not a morph. Do not add people.`;
+
 // card C ③a (0919): "overall_soundscape:" is UNBANNED as a concept — sound
 // design is now a formal, builder-owned prose field (soundDesignLines, samples
 // #24/#25/#36: SFX are prompt text, not ref files). Line-start labels stay
@@ -426,8 +432,9 @@ function buildProseLong(
     // who + motion contract
     `${cast}. ${shot.action} ${blocking}. ` +
       VIDEO_SENTENCE.replace("{{N}}", String(chars.length)),
-    // pin
-    PIN_SENTENCE.replaceAll("{{PROP}}", prop),
+    // pin — §5b: C-form names <Picture 1> (zero keyframes wired); A-form
+    // (default) names the start keyframe image
+    (opts.form === "c" ? PIN_SENTENCE_CFORM : PIN_SENTENCE).replaceAll("{{PROP}}", prop),
   ];
   if (opts.ui) {
     // card ③b: mapping table + camera lock + on-screen text engineering
@@ -474,6 +481,11 @@ export type BuildProseOpts = {
   ui?: UiShotSpec;
   /** card ③a: a montage timing wav rides as <Audio 2> (ref_audio_1) */
   timingRef?: boolean;
+  /** §5b form: default "a" keeps the T42 keyframe pin (still-to-video lane);
+   *  "c" pins identity on <Picture 1> — the C-form graph wires zero
+   *  keyframes, so the pin names the angle portrait, never a "start keyframe
+   *  image" the model never sees. The motion pack passes the form explicitly. */
+  form?: "a" | "c";
 };
 
 /** H3＝A prose, mode decided by the packet (T42):
@@ -490,7 +502,7 @@ export function buildProse(sheet: CallSheet, shot: Shot, opts: BuildProseOpts = 
   const location = sheet.location.split(/[,，]/)[0]!.trim();
   const prop = shot.props?.[0]?.name ?? "props";
   const duration = Math.round(shot.durationSec * 10) / 10;
-  const pin = PIN_SENTENCE.replaceAll("{{PROP}}", prop);
+  const pin = (opts.form === "c" ? PIN_SENTENCE_CFORM : PIN_SENTENCE).replaceAll("{{PROP}}", prop);
   const returnPin =
     opts.prevLocation && opts.prevLocation !== shot.location
       ? ` Same ${prop} on return, not a substitute.`

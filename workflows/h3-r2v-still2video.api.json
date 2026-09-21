@@ -34,7 +34,7 @@
     "class_type": "H3EpisodeSplit",
     "inputs": {
       "script": "__PROMPT__",
-      "bindings": "<Picture 1> is the sole appearance and identity reference. <Video 1> is motion only: follow its positions, choreography and timing, ignore its appearance, clothing, background and lighting entirely — it is never a look reference. Do not add people."
+      "bindings": "The start and end keyframe images are the physical beginning and near-end of this shot: faces, costumes and props come only from them and continue exactly. The grey placeholders of <Video 1> are motion-only: follow positions and timing, ignore their appearance. Do not add people."
     }
   },
   "lora_a": {
@@ -109,24 +109,6 @@
       "max_seconds": 16
     }
   },
-  "blender_vid": {
-    "class_type": "VHS_LoadVideo",
-    "inputs": {
-      "video": "__VIDEO__",
-      "custom_width": 864,
-      "custom_height": 480,
-      "force_rate": 24,
-      "frame_load_cap": 32,
-      "skip_first_frames": 0,
-      "select_every_nth": 10
-    }
-  },
-  "ref_img_0": {
-    "class_type": "LoadImage",
-    "inputs": {
-      "image": "__PORTRAIT_A__"
-    }
-  },
   "r2v": {
     "class_type": "MiniMaxH3ReferenceToVideo",
     "inputs": {
@@ -153,14 +135,6 @@
       "ref_audios.ref_audio_0": [
         "voice_guard",
         0
-      ],
-      "ref_videos.ref_video_0": [
-        "blender_vid",
-        0
-      ],
-      "ref_images.ref_image_0": [
-        "ref_img_0",
-        0
       ]
     }
   },
@@ -186,6 +160,71 @@
       ],
       "visual_strength": 0.999,
       "audio_strength": 1
+    }
+  },
+  "kf_start_in": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__KF_START__"
+    }
+  },
+  "kf_end_in": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__KF_END__"
+    }
+  },
+  "keyframes": {
+    "class_type": "H3Keyframes",
+    "inputs": {
+      "clip": [
+        "clip",
+        0
+      ],
+      "vae": [
+        "vvae",
+        0
+      ],
+      "prompt": [
+        "split",
+        0
+      ],
+      "width": 864,
+      "height": 480,
+      "length": 260,
+      "positions": "0%, 100%",
+      "image_1": [
+        "kf_start_in",
+        0
+      ],
+      "image_2": [
+        "kf_end_in",
+        0
+      ]
+    }
+  },
+  "kf_strength": {
+    "class_type": "H3ConditionStrength",
+    "inputs": {
+      "conditioning": [
+        "keyframes",
+        0
+      ],
+      "visual_strength": 0.999,
+      "audio_strength": 1
+    }
+  },
+  "cond_combine": {
+    "class_type": "ConditioningCombine",
+    "inputs": {
+      "conditioning_1": [
+        "cond_cs",
+        0
+      ],
+      "conditioning_2": [
+        "kf_strength",
+        0
+      ]
     }
   },
   "noise_a": {
@@ -220,7 +259,7 @@
         0
       ],
       "conditioning": [
-        "cond_cs",
+        "cond_combine",
         0
       ]
     }
