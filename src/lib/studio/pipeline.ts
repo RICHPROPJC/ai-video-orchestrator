@@ -104,28 +104,32 @@ function writeH3Plan(
 }
 
 /** §5b C-form identity refs: one angle-version portrait per marked character,
- *  left-to-right, the refAngle column picking front/45°. A 45° shot without
- *  its _45 portrait fails loud — the frontal version drags the face back to
- *  camera (the B-lane regression). */
+ *  left-to-right, the refAngle column picking front/45°. The 45° version
+ *  comes from the job portraits dir or a plug dir ({id}_45.png, WR1Q shape);
+ *  a 45° shot without it fails loud — the frontal version drags the face back
+ *  to camera (the B-lane regression). */
 export function anglePortraitsFor(
   shot: Shot,
   portraitFiles: Record<string, string>,
   portraitDir?: string,
+  plugDir?: string,
 ): AnglePortrait[] {
   const ordered = [...new Set([...shot.marks].sort((a, b) => a.start.x - b.start.x).map((m) => m.characterId))];
+  const find = (name: string) =>
+    [portraitDir, plugDir].map((d) => (d ? path.join(d, name) : "")).find((p) => p && fs.existsSync(p));
   return ordered.map((id) => {
     const angle: "front" | "45" = shot.refAngle === "45" ? "45" : "front";
     if (angle === "45") {
-      const angled = portraitDir ? path.join(portraitDir, `${id}_45.png`) : "";
-      if (angled && fs.existsSync(angled)) return { characterId: id, angle, file: angled };
+      const angled = find(`${id}_45.png`);
+      if (angled) return { characterId: id, angle, file: angled };
       throw new Error(
         `angle_portrait_missing: ${shot.id} refAngle=45 需要 ${id}_45.png（45°角度版肖像）— 正面版會將個面拉返向鏡頭（B-lane regression），唔准頂`,
       );
     }
     const fromMap = portraitFiles[id];
     if (fromMap && fs.existsSync(fromMap)) return { characterId: id, angle, file: fromMap };
-    const onDisk = portraitDir ? path.join(portraitDir, `${id}.png`) : "";
-    if (onDisk && fs.existsSync(onDisk)) return { characterId: id, angle, file: onDisk };
+    const onDisk = find(`${id}.png`);
+    if (onDisk) return { characterId: id, angle, file: onDisk };
     throw new Error(`${shot.id}: C-form 冇${id}肖像 — ref_image_0 身份ref缺件（首次出場要有肖像）`);
   });
 }
@@ -137,7 +141,7 @@ export function h3MotionPack(
   stillPng: string,
   portraitFiles: Record<string, string>,
   prev?: Shot,
-  opts?: { hasVideo1?: boolean; portraitDir?: string },
+  opts?: { hasVideo1?: boolean; portraitDir?: string; plugDir?: string },
 ) {
   // §5b: the Video 1 asset routes the form. Motion shots carry a blockout
   // (the blockout lane renders one per shot) → C-form; a shot with no Video 1
@@ -147,7 +151,7 @@ export function h3MotionPack(
     if (!shot.uiShot) {
       if (hasVideo1) {
         // story motion shot, C-form: identity = angle portraits on ref_images
-        const anglePortraits = anglePortraitsFor(shot, portraitFiles, opts?.portraitDir);
+        const anglePortraits = anglePortraitsFor(shot, portraitFiles, opts?.portraitDir, opts?.plugDir);
         return {
           prose: buildProse(timed, shot, { prevLocation: prev?.location, form: "c" }),
           refImageFiles: anglePortraits.map((p) => p.file),
@@ -757,6 +761,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files, prev, {
           hasVideo1,
           portraitDir: path.join(jobDir(jobId), "portraits"),
+          plugDir: input.portraitsDir,
         });
         writeH3Plan(jobId, timed, shot, {
           wav: h3WavByShot.get(shot.id)!,
@@ -1363,6 +1368,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       const pack = h3MotionPack(timed, shot, variant, stillPng, portraits.files, prev, {
         hasVideo1,
         portraitDir: path.join(jobDir(jobId), "portraits"),
+        plugDir: input.portraitsDir,
       });
       const prose = pack.prose;
       if (variant === "a") {

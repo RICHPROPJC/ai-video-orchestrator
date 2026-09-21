@@ -83,8 +83,9 @@ export async function submitH3Shot(opts: {
   wavFile: string;
   /** §5b routing field: present → C-form; absent → A-form (kfStart required). */
   blockoutMp4?: string;
-  /** A-form only: the U1.5 still at H3Keyframes 0%. Tolerated but unwired on
-   *  the C-form (the still stays a QC artifact; nothing uploads it). */
+  /** A-form only: the U1.5 still at H3Keyframes 0%. Together with a Video 1
+   *  it throws (§5b coexist ban) — the still stays a QC artifact, never a
+   *  graph input, on the C-form. */
   kfStart?: string;
   kfEnd?: string;
   /** C-form: angle portrait files (per refAngle) riding ref_images; B/BKF

@@ -450,6 +450,12 @@ test("h3MotionPack: 45° shot without an angle portrait fails loud (B-lane face-
   assert.equal(pack.refImageFiles!.length, 2);
   assert.equal(path.basename(pack.refImageFiles![0]!), "A_45.png");
   assert.equal(path.basename(pack.refImageFiles![1]!), "B_45.png");
+  // plugged 45° supply (WR1Q shape): {id}_45.png in the plug dir counts too
+  const plugDir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pack-45-plug-"));
+  fs.writeFileSync(path.join(plugDir, "A_45.png"), Buffer.from("fake-45-plug"));
+  fs.writeFileSync(path.join(plugDir, "B_45.png"), Buffer.from("fake-45-plug"));
+  const plugged = h3MotionPack(sheet, story, "a", "/stills/SH02.png", {}, undefined, { portraitDir: "/nonexistent", plugDir });
+  assert.equal(plugged.refImageFiles!.length, 2, "plug dir supplies the angle portraits");
 });
 
 test("h3MotionPack: UI channel is A-path only — fallback variants stay frozen", async () => {
