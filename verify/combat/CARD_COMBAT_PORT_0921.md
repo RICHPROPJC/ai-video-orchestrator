@@ -22,7 +22,7 @@ cd /mnt/ssd/crew-wt/combat-port
 - **全套實數**：527 tests / 520 pass / 5 fail——5紅**全部＝crew-seats 4e1651c基線同名紅**（noun-lint、resume/bun:test、27B-fake-fetch、no-seat-grave、Chau-home-paths）；基線500 test/493綠/5紅/2 skip，本卡+27 test、**紅名零新增**。
 - 卡指定驗收：兩shot打鬥序列→relay繼承**6/6**（incoming===前鏡outgoing）＋Beat七欄齊＋ACTION_RISK喺user-owned重複序列觸發（warning＋「repeats the preceding Shot」，用戶原文零改寫）。
 - 非combat byte-identical：既有h3-prose/pipeline test（鎖死舊輸出字符串）照舊綠＋新test斷言非combat prose零combat句、同sheet過pass輸出逐byte相等；detectCombat閘——兩人對望冇打鬥動詞→pass完全no-op（零event零收據零combat欄，test釘死）。
-- tsc combat檔零錯（全套tsc 5錯全基線其他檔）；noun-lint combat檔**0 hit**（總12 hit全基線）。
+- tsc combat檔零錯（全套tsc **6錯**全基線其他檔：scripts/nex-blender-real-call×2、app/layout、studio/memory、pipeline.test、pipeline，Vera判詞對拍後修正——原本收據寫5係數錯）；noun-lint combat檔**0 hit**（總12 hit全基線）。
 
 ## 接線位＋依賴聲明（DISPATCH_BOARD規3）
 - 共用檔三處，全部**加法式、flag-gated**：`types.ts`（Shot.combat type-only選填欄）、`h3-prose.ts`（buildProseLong尾段combat段落＋BuildProseOpts.prevShot；dialogue預算先計）、`pipeline.ts`（boards段applyCombatPass一行hook＋h3MotionPack三個buildProse位）。

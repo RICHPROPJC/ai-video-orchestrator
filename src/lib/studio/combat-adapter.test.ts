@@ -197,6 +197,28 @@ test("combat state carries environment inheritance and the prose persists damage
   assert.ok(countWords(prose) <= IDENTITY_LONG_MAX);
 });
 
+test("location change starts a fresh environment ledger (Vera non-blocking釘死)", () => {
+  const fight = sheet([
+    shot("SH01", 0, "陳師傅 punches 大強 beside the crates. 大強 blocks and counters.", ["C1", "C2"]),
+    shot("SH02", 1, "大強 counters with an elbow into the wall. 陳師傅 absorbs it.", ["C2", "C1"]),
+    { ...shot("SH03", 2, "陳師傅 kicks 大強 across the roof. 大強 evades.", ["C1", "C2"]), location: "天台" },
+  ]);
+  const { sheet: passed } = applyCombatToSheet(fight);
+  const alley2 = passed.shots[1]!.combat!.environment;
+  const roof = passed.shots[2]!.combat!.environment;
+  // the alley run accumulated two persistent consequences…
+  assert.equal(alley2.persistent.length, 2);
+  assert.ok(alley2.persistent.some((p) => p.includes("the nearest movable object")));
+  // …and the roof shot does NOT inherit them: new place, new fixtures
+  assert.equal(roof.location, "天台");
+  assert.ok(roof.incoming_state.startsWith("Location=天台"));
+  assert.ok(!roof.incoming_state.includes("後巷"), "alley damage must not leak into the roof state");
+  assert.ok(
+    !roof.persistent.some((p) => p.includes("the nearest movable object")),
+    "the fresh ledger starts empty before this shot's own contact",
+  );
+});
+
 test("combatProseSpec: throw carrier adds Motion Discipline + Anatomy Lock", () => {
   const fight = sheet([shot("SH01", 0,
     "陳師傅 drives a double-leg takedown into 大強. 大強 sprawls and frames.", ["C1", "C2"])]);
