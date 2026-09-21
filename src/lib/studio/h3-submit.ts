@@ -111,6 +111,15 @@ export async function submitH3Shot(opts: {
   if (variant !== "a" && opts.blockoutMp4) {
     throw new Error("only the A production path may carry a Video 1; B/BKF/C stay frozen for receipt comparability");
   }
+  // §5b refuse-to-emit: keyframe stills handed in together with a Video 1 are
+  // the dead coexistence shape — the intent must fail here, not silently drop
+  if (cform && (opts.kfStart || opts.kfEnd)) {
+    throw new Error(
+      `keyframes_video1_coexist: ${opts.shot ?? "shot"} carries a Video 1 (${opts.blockoutMp4}) AND keyframe stills ` +
+        `(${opts.kfStart ?? ""}${opts.kfEnd ? " + kfEnd" : ""}) — §5b model-level double exposure; ` +
+        `Video 1 in → C-form zero keyframes, keyframes in → no blockout`,
+    );
+  }
   if ((opts.uiPhotoFiles?.length ?? 0) > 0 && variant !== "a") {
     throw new Error("ui photos are the A-path law-d channel; B/BKF/C stay frozen for receipt comparability");
   }
@@ -136,7 +145,10 @@ export async function submitH3Shot(opts: {
 
   const wavName = `slatecrew_${tag}_dialogue.wav`;
   const blockoutName = cform ? `slatecrew_${tag}_blockout.mp4` : null;
-  const kfStartName = variant === "a" && !cform && opts.kfStart ? `slatecrew_${tag}_kf_start.png` : null;
+  // keyframes lane names: A-form plus the BKF/C alternates (their H3Keyframes
+  // node needs the upload name); b keeps the name for receipt parity — the
+  // C-form is the only shape with zero keyframes and zero kf uploads.
+  const kfStartName = !cform && opts.kfStart ? `slatecrew_${tag}_kf_start.png` : null;
   const kfEndName = variant === "a" && !cform && opts.kfEnd ? `slatecrew_${tag}_kf_end.png` : null;
   const refImageNames =
     cform || variant === "b" || variant === "bkf"
@@ -213,12 +225,12 @@ export async function submitH3Shot(opts: {
     return { receipt, receiptFile: writeReceipt(opts.receiptJson, receipt) };
   }
 
-  const needKf = variant === "a" && !cform;
+  const needKf = !cform;
   for (const f of [
     opts.wavFile,
     ...(cform ? [opts.blockoutMp4!] : []),
-    ...(needKf ? [opts.kfStart!] : []),
-    ...(needKf && opts.kfEnd ? [opts.kfEnd] : []),
+    ...(needKf && opts.kfStart ? [opts.kfStart] : []),
+    ...(needKf && variant === "a" && opts.kfEnd ? [opts.kfEnd] : []),
     ...(cform || variant === "b" || variant === "bkf" ? (opts.refImageFiles ?? []) : []),
     ...(variant === "a" ? (opts.uiPhotoFiles ?? []) : []),
     ...(variant === "a" && opts.audioTimingFile ? [opts.audioTimingFile] : []),
@@ -233,7 +245,7 @@ export async function submitH3Shot(opts: {
   const uploadedKfStart = needKf && opts.kfStart
     ? await uploadComfyFile(cfg.motion.comfyUrl, opts.kfStart, kfStartName!, "image/png")
     : null;
-  const uploadedKfEnd = needKf && opts.kfEnd && kfEndName
+  const uploadedKfEnd = needKf && variant === "a" && opts.kfEnd && kfEndName
     ? await uploadComfyFile(cfg.motion.comfyUrl, opts.kfEnd, kfEndName, "image/png")
     : null;
   const uploadedRefImages: string[] = [];

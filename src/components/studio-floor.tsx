@@ -523,7 +523,7 @@ export function StudioFloor({
               {tab === "h3" ? (
                 <div className="mt-3 min-h-48 space-y-3">
                   <p className="text-xs text-muted-foreground">
-                    一鏡一 generate · 0%/100% = 呢鏡 U1.5 still · miss kf 只改視覺 wiring，唔調 TTS ·{" "}
+                    一鏡一 generate · §5b：有Video1→C形（零keyframes＋角度肖像ref_image_0）· miss identity 只改視覺 wiring，唔調 TTS ·{" "}
                     <a className="text-primary underline" href="/h3">
                       /h3
                     </a>

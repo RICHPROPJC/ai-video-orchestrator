@@ -433,8 +433,8 @@ function buildProseLong(
     `${cast}. ${shot.action} ${blocking}. ` +
       VIDEO_SENTENCE.replace("{{N}}", String(chars.length)),
     // pin — §5b: C-form names <Picture 1> (zero keyframes wired); A-form
-    // names the start keyframe image
-    (opts.form === "a" ? PIN_SENTENCE : PIN_SENTENCE_CFORM).replaceAll("{{PROP}}", prop),
+    // (default) names the start keyframe image
+    (opts.form === "c" ? PIN_SENTENCE_CFORM : PIN_SENTENCE).replaceAll("{{PROP}}", prop),
   ];
   if (opts.ui) {
     // card ③b: mapping table + camera lock + on-screen text engineering
@@ -481,10 +481,10 @@ export type BuildProseOpts = {
   ui?: UiShotSpec;
   /** card ③a: a montage timing wav rides as <Audio 2> (ref_audio_1) */
   timingRef?: boolean;
-  /** §5b form: "c" (default) pins identity on <Picture 1> — the C-form graph
-   *  wires zero keyframes, so the pin names the angle portrait, never a
-   *  "start keyframe image" the model never sees; "a" keeps the keyframe pin
-   *  for the still-to-video lane. */
+  /** §5b form: default "a" keeps the T42 keyframe pin (still-to-video lane);
+   *  "c" pins identity on <Picture 1> — the C-form graph wires zero
+   *  keyframes, so the pin names the angle portrait, never a "start keyframe
+   *  image" the model never sees. The motion pack passes the form explicitly. */
   form?: "a" | "c";
 };
 
@@ -502,7 +502,7 @@ export function buildProse(sheet: CallSheet, shot: Shot, opts: BuildProseOpts = 
   const location = sheet.location.split(/[,，]/)[0]!.trim();
   const prop = shot.props?.[0]?.name ?? "props";
   const duration = Math.round(shot.durationSec * 10) / 10;
-  const pin = (opts.form === "a" ? PIN_SENTENCE : PIN_SENTENCE_CFORM).replaceAll("{{PROP}}", prop);
+  const pin = (opts.form === "c" ? PIN_SENTENCE_CFORM : PIN_SENTENCE).replaceAll("{{PROP}}", prop);
   const returnPin =
     opts.prevLocation && opts.prevLocation !== shot.location
       ? ` Same ${prop} on return, not a substitute.`

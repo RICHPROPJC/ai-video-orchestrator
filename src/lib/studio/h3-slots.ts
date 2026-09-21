@@ -300,9 +300,6 @@ export function assertH3SubmitWiring(
         );
       }
     }
-    if (!wired.length && plan.slots.photo.length) {
-      throw new Error(`${plan.shotId}: C-form identity portrait missing from the wiring`);
-    }
     if (plan.keyframes === null && prevId) {
       for (const f of [...(wiring.refImageFiles ?? []), ...(wiring.refVideoFiles ?? [])]) {
         if (isPrevAsset(f)) {
