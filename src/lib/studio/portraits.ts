@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CallSheet, Character, RefAngle } from "./types";
 import { buildGeneratePayload, u15Generate, type GeneratePayload } from "./u15-generate";
-import { runPhotoQc, type PhotoQcRecord, type QcRequire } from "./photo-qc";
+import { photoQcEyesFromEnv, runPhotoQc, type PhotoQcRecord, type QcRequire } from "./photo-qc";
 import { ensureAngleBoard, liveBoardLane, type BoardAngle, type BoardLane } from "./asset-board";
 
 /** One face, alone, no placeholders, no scene — the same eye that gates the
@@ -44,10 +44,12 @@ export type PortraitLane = {
   qc: (png: string, outJson: string, require: QcRequire) => Promise<Pick<PhotoQcRecord, "status" | "checks">>;
 };
 
-function liveLane(server: string): PortraitLane {
+export function liveLane(server: string): PortraitLane {
   return {
     generate: (o) => u15Generate({ server, ...o }),
-    qc: (png, outJson, require) => runPhotoQc(png, outJson, require),
+    // W4C P0：eyes 跟call走（同 asset-board liveBoardLane／pipeline.ts:1194）——
+    // 漏交＝GREEN降級PASS_UNCONFIRMED，角度板pin閘永遠零格。
+    qc: (png, outJson, require) => runPhotoQc(png, outJson, require, {}, photoQcEyesFromEnv()),
   };
 }
 

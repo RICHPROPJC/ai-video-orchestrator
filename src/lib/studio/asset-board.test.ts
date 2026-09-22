@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as nodeTest from "node:test";
 import { runCommand } from "./audio";
+import { QC_FORMULA, photoQcEyesFromEnv } from "./photo-qc";
+import { liveLane } from "./portraits";
 import type { Character, ShotProp } from "./types";
 import {
   DEFAULT_CELL_PX,
@@ -12,6 +15,7 @@ import {
   ensureAngleBoard,
   ensurePropBoard,
   ensureSceneBoard,
+  liveBoardLane,
   produceBoard,
   propBoardPrompt,
   sceneBoardPrompt,
@@ -158,13 +162,16 @@ test("W4 角度板：one /edit call → 4 cut cells 2×2（front/45/side/back）
   assert.ok(fs.existsSync(path.join(dir, "boards", "A.angles.png")), "成張板只住 boards/");
 });
 
-test("W4 角度板 prompt：版式規格式＋跨格一致＋純白flat底（唔准攝影棚灰）", () => {
+test("W4 角度板 prompt：版式規格式＋跨格一致＋純白flat底；grade同角標黑框唔准入肖像板（W4C）", () => {
   const p = angleBoardPrompt(CHAR, { styleBible: { grade: "冷青低飽和" } });
-  for (const need of ["2列×2行", "尺寸嚴格一致、邊緣對齊、間距統一", "幼白色間隔線同黑色邊框", "01、02、03、04", "跨格面容髮型服裝完全一致唔走形", "純白flat底（#FFFFFF）", "禁止"]) {
+  for (const need of ["2列×2行", "尺寸嚴格一致、邊緣對齊、間距統一", "幼白色間隔線", "跨格面容髮型服裝完全一致", "純白flat底（#FFFFFF）", "左上格正面全身企直", "右下格背面全身"]) {
     assert.ok(p.includes(need), `prompt 缺 ${need}`);
   }
   assert.ok(!/純色淺灰|淺灰攝影棚/.test(p), "唔准灰底（難key）");
-  assert.ok(p.includes("01 正面全身企直") && p.includes("04 背面全身"), "四格角度規格");
+  assert.ok(!p.includes("冷青低飽和"), "T43/W4C：world grade 永遠唔入肖像板");
+  for (const ban of ["黑色邊框", "左上角", "01、02", "禁止"]) {
+    assert.ok(!p.includes(ban), `資產板唔准有「${ban}」（燒入cell跟rembg落庫／負面token入燃料）`);
+  }
 });
 
 test("W4 逐張QC：FAIL 格唔入庫（RGBA 缺席），其餘格照釘；零 GREEN 兩 seed 後 throw", async () => {
@@ -281,17 +288,19 @@ test("W4 道具板：4 props 一板四格入 assets/，6 props 分兩板；逐�
   await assert.rejects(() => ensurePropBoard({ props: PROPS, assetsDir: dir3, lane: killer.lane }), /鐵犁 板格未過盲眼/);
 });
 
-test("W4 道具/場景板 prompt：純白flat底＋無人無手／跨格一致", () => {
+test("W4 道具/場景板 prompt：純白flat底＋純道具靜物／跨格一致；內容negative掃除（W4B）", () => {
   const p = propBoardPrompt(PROPS);
   assert.ok(p.includes("純白flat底（#FFFFFF）") && !/純色淺灰|淺灰攝影棚/.test(p));
-  assert.ok(p.includes("禁止灰底、漸變底、攝影棚地台"), "灰底係禁詞唔係底色");
-  assert.ok(p.includes("每格一件道具，居中擺放，無人無手"));
+  assert.ok(!p.includes("禁止"), "W4B：負面token照入燃料，全正面寫法");
+  assert.ok(p.includes("每格一件道具，居中擺放，純道具靜物"));
+  assert.ok(p.includes("左上格軍大衣") && p.includes("右下格長槍"), "方位點名代替數字");
 
   const s = sceneBoardPrompt({ name: "檔案室", desc: "兩排高身金屬檔案櫃之間嘅窄道", grade: "冷青低飽和" });
-  assert.ok(s.includes("2列×2行") && s.includes("01、02、03、04"));
+  assert.ok(s.includes("2列×2行") && s.includes("左上格廣角全景"));
+  assert.ok(!s.includes("黑色邊框") && !s.includes("左上角") && !s.includes("禁止"), "資產板無角標黑框無negative");
   assert.ok(s.includes("純白flat底（#FFFFFF）"), "建築板照透明資產底色標準");
   assert.match(s, /檔案室/);
-  assert.match(s, /唔入 still refs|跨格建築結構/);
+  assert.match(s, /跨格建築結構/);
 });
 
 test("W4 場景板分流：cells 入 assets/scenes/ 做 Blender look-dev（唔入 still refs），manifest 帶紅線", async () => {
@@ -324,14 +333,57 @@ test("W4 分鏡動作板 prompt＝pre-vis 層（整張用，唔切割）；唔�
     style: "寫實電影感、冷青低飽和",
   });
   assert.ok(p.includes("2列×2行") && p.includes("01 — 男人企定"));
-  assert.ok(p.includes("禁止"));
+  assert.ok(p.includes("黑色邊框") && p.includes("每格左上角依次標注01、02、03、04"), "分鏡板閱讀用唔切割入庫，角標黑框照舊");
+  assert.ok(!p.includes("禁止"), "W4B：內容negative掃除（霓虹等）；格式項正寫");
   assert.ok(!p.includes("純白flat底"), "pre-vis 唔係資產板，底色跟場面唔跟白底標準");
 });
 
-test("W4 換衫板 prompt：版式照舊＋只換衫＋禁止部分格數", () => {
+test("W4 換衫板 prompt：版式照舊＋只換衫＋四格齊換（W4B正面寫法）", () => {
   const p = wardrobeSwapBoardPrompt(CHAR, "白色禮服");
-  assert.ok(p.includes("版式照舊") && p.includes("只換衫") && p.includes("只換到部分格數"));
+  assert.ok(p.includes("版式照舊") && p.includes("只換衫") && p.includes("四格全部完成換衫"));
+  assert.ok(p.includes("左上格正面"), "Image-1 板面描述跟新無角標法");
+  assert.ok(!p.includes("禁止"), "W4B：內容negative掃除");
   assert.ok(p.includes("純白flat底（#FFFFFF）"), "換衫板照透明資產底色標準");
+});
+
+test("W4C P0：live 兩條lane嘅qc交eyes——armed second令stale cache必MISS（漏交＝hit假GREEN死鎖）", async () => {
+  const dir = tmp();
+  const png = path.join(dir, "cell.png");
+  await makePng(png, 32, "red");
+  const outJson = path.join(dir, "cell.photo_qc.json");
+  // stale GREEN收據（second.model 唔係本run個model）：有交eyes⇒cache MISS重跑；
+  // 漏交eyes⇒secondCfg null⇒cache HIT靜靜收假GREEN——WGTT死鎖嘅機制本身。
+  const sha = crypto.createHash("sha256").update(fs.readFileSync(png)).digest("hex");
+  fs.writeFileSync(
+    outJson,
+    JSON.stringify({
+      tool: "slatecrew.photo_qc",
+      ts: new Date().toISOString(),
+      formula: QC_FORMULA,
+      sha256: sha,
+      require: PORTRAIT_BOARD_REQUIRE,
+      status: "GREEN",
+      checks: { status: "GREEN", fail_reasons: [] },
+      judgeOutput: { stale: true },
+      second: { model: "stale-model" },
+    }),
+  );
+
+  const saved = { ...process.env };
+  process.env.NEX_URL = "http://127.0.0.1:9"; // 死port：eyes有交→cache MISS→probe即場ECONNREFUSED
+  process.env.SLATECREW_SECOND_ENDPOINT = "http://127.0.0.1:9";
+  process.env.SLATECREW_SECOND_MODEL = "w4c-probe";
+  try {
+    const eyes = photoQcEyesFromEnv();
+    assert.equal(eyes.second?.secondEndpoint, "http://127.0.0.1:9", "armed env⇒eyes非空");
+    await assert.rejects(() => liveBoardLane("").qc(png, outJson, PORTRAIT_BOARD_REQUIRE), /fetch failed/);
+    await assert.rejects(() => liveLane("").qc(png, outJson, PORTRAIT_BOARD_REQUIRE), /fetch failed/);
+  } finally {
+    for (const k of ["NEX_URL", "SLATECREW_SECOND_ENDPOINT", "SLATECREW_SECOND_MODEL"]) {
+      if (k in saved) process.env[k] = saved[k]!;
+      else delete process.env[k];
+    }
+  }
 });
 
 if (bareBun) {

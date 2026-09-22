@@ -5,14 +5,16 @@ import type { Character, ShotProp } from "./types";
 import { buildEditPayload, checkHealth, u15Edit, type EditHealth } from "./u15-edit";
 import { scpToHost, u15RefPath } from "./scp-upload";
 import { loadConfig } from "./config";
-import { runPhotoQc, type PhotoQcRecord, type QcRequire } from "./photo-qc";
+import { photoQcEyesFromEnv, runPhotoQc, type PhotoQcRecord, type QcRequire } from "./photo-qc";
 
 /** Chau 0921 戰略令：批量資產板。One board call (U1.5 /edit) → strict 2×2 grid
  *  → ffmpeg cut → per-cell blind eye → rembg → RGBA 入庫.
  *  Prompt grammar is the 0921-night verified shape (/tmp/u15_angles.py +
  *  /tmp/u15_4k_board.py): 版式規格式 — grid counts, equal cells, aligned
- *  edges, uniform spacing, thin white separators + black border, 01..NN
- *  corner numbers, cross-cell identity lock, and a 禁止 clause.
+ *  edges, uniform spacing, thin white separators, cross-cell identity lock,
+ *  all phrased positive (W4B 0921 Chau釘：負面內容token照入燃料). W4C：資產板
+ *  無角標數字無黑框（燒入cell跟rembg RGBA pin落庫）；分鏡板閱讀用先有
+ *  (numberedLayoutClause)。
  *
  *  底色標準 (Chau 0922 釘透明資產): asset boards sit on 純白 flat 底 —
  *  零漸變零陰影零地台, never 攝影棚灰 (難 key). U1.5 /edit and /generate both
@@ -43,12 +45,21 @@ export const DEFAULT_CELL_PX = 2304;
 export const PORTRAIT_BOARD_REQUIRE: QcRequire = { people_count: 1, grey_blocks: false };
 export const PROP_BOARD_REQUIRE: QcRequire = { people_count: 0, grey_blocks: false };
 
-/** 底色標準：純白 flat 底 — keyable, never 攝影棚灰 */
-const FLAT_WHITE_BG =
-  "背景：純白flat底（#FFFFFF），零漸變、零陰影、零地台；主體唔好投射陰影或者倒影落底面。禁止灰底、漸變底、攝影棚地台。";
+/** 底色標準：純白 flat 底 — keyable, never 攝影棚灰（W4B：負面底色句剷走，正寫） */
+const FLAT_WHITE_BG = "背景：純白flat底（#FFFFFF），零漸變、零陰影、零地台，主體無陰影無倒影。";
 
-/** the 版式規格式 grammar every board prompt shares (0921-night verified) */
+/** the 版式規格式 grammar every asset board shares (0921-night verified).
+ *  W4C：角標數字＋黑框唔准入資產板——燒入cell會跟rembg RGBA pin落庫
+ *  （WGTT A.front.cut.png實證「01」+黑框+雙sub-panel）；幼白間隔線留（cut對位靠佢）。 */
 export function layoutClause(count: number): string {
+  return [
+    `整體版式：嚴格採用2列×${Math.ceil(count / 2)}行宮格布局（單張圖嚴格包含${count}個畫面）；`,
+    `${count}格尺寸嚴格一致、邊緣對齊、間距統一；每格用幼白色間隔線分隔。`,
+  ].join("");
+}
+
+/** 分鏡板（閱讀用、成張保留唔切割入庫）先准有角標＋黑框 — asset boards never. */
+function numberedLayoutClause(count: number): string {
   return [
     `整體版式：嚴格採用2列×${Math.ceil(count / 2)}行宮格布局（單張圖嚴格包含${count}個畫面）；`,
     `${count}格尺寸嚴格一致、邊緣對齊、間距統一；每格用幼白色間隔線同黑色邊框分隔；`,
@@ -56,19 +67,26 @@ export function layoutClause(count: number): string {
   ].join("");
 }
 
-const BAN_CLAUSE = "禁止：錯誤漢字、亂碼、卡通化、格仔尺寸唔均、跨格走形、多餘文字水印。";
+/** 2×2 切格次序＝左上→右上→左下→右下（cut 同序）；資產板用方位點名，唔用數字 */
+const QUADRANTS = ["左上格", "右上格", "左下格", "右下格"] as const;
+
+/** W4B (0921 Chau釘)：模型係literal spec-follower，負面內容token照入燃料
+ *  （「禁止打鬥」＝注入打鬥）——內容類negative全剷，格式項一律正面寫法。 */
+const QUALITY_CLAUSE = "文字清晰正確、畫面乾淨、寫實風格、版式工整。";
 
 /** ① 多角度肖像板 — /edit with the GREEN front portrait as Image-1 (ref-driven
- *  identity), four 全身 angles of the SAME character. */
-export function angleBoardPrompt(character: Character, sheet: { styleBible: { grade: string } }): string {
-  const cells = BOARD_ANGLES.map((a, i) => `${String(i + 1).padStart(2, "0")} ${ANGLE_SPEC[a]}`).join("、");
+ *  identity), four 全身 angles of the SAME character. T43：sheet rides for call
+ *  shape but is never read——world grade 永遠唔入肖像ref（同純白flat底自相矛盾，
+ *  WGTT A.angles 青綠邊光怪種實證）。 */
+export function angleBoardPrompt(character: Character, sheet?: { styleBible: { grade: string } }): string {
+  const cells = BOARD_ANGLES.map((a, i) => `${QUADRANTS[i]}${ANGLE_SPEC[a]}`).join("、");
   return [
     `【編輯】Image-1係角色${character.name}嘅正面參考圖（${character.wardrobe}）。`,
     `保持同一個人嘅面容、髮型、體形同服裝完全一致。出一張專業角色多角度設定板，`,
     `${layoutClause(BOARD_ANGLES.length)}四格分別係同一個角色嘅：${cells}。`,
-    `同一個角色跨格面容髮型服裝完全一致唔走形。${FLAT_WHITE_BG}`,
-    `風格：寫實電影級角色設定參考圖${sheet.styleBible.grade.trim() ? `，${sheet.styleBible.grade.trim()}` : ""}。`,
-    BAN_CLAUSE,
+    `同一個角色跨格面容髮型服裝完全一致。${FLAT_WHITE_BG}`,
+    `風格：寫實電影級角色設定參考圖。`,
+    QUALITY_CLAUSE,
   ].join("");
 }
 
@@ -76,24 +94,24 @@ export function angleBoardPrompt(character: Character, sheet: { styleBible: { gr
  *  the wardrobe on all four angles, geometry untouched. */
 export function wardrobeSwapBoardPrompt(character: Character, wardrobe: string): string {
   return [
-    `【編輯】Image-1係同一個角色${character.name}嘅四角度設定板（01正面、02四十五度、03正側、04背面）。`,
+    `【編輯】Image-1係同一個角色${character.name}嘅四角度設定板（左上格正面、右上格四十五度角、左下格正側面、右下格背面）。`,
     `將四格入面角色嘅衫著全部換做：${wardrobe}。`,
-    `四格嘅角度、構圖、企姿完全照Image-1唔變；面容、髮型、體形照Image-1唔變，只換衫。`,
+    `四格嘅角度、構圖、企姿照Image-1原樣保留；面容、髮型、體形同Image-1一致，只換衫。`,
     `版式照舊：${layoutClause(BOARD_ANGLES.length)}${FLAT_WHITE_BG}`,
-    `禁止：格仔尺寸唔均、四格之間角色走形、面容改變、只換到部分格數、灰底、錯誤漢字、亂碼、多餘文字水印。`,
+    `四格全部完成換衫，${QUALITY_CLAUSE}`,
   ].join("");
 }
 
 /** ③ 道具板 — one board, N props, each cell one prop centred (batch asset entry). */
 export function propBoardPrompt(props: ShotProp[]): string {
   const cells = props
-    .map((p, i) => `${String(i + 1).padStart(2, "0")} — ${p.name}（${p.shape.join("、")}），一件完整居中擺放`)
+    .map((p, i) => `${QUADRANTS[i]}${p.name}（${p.shape.join("、")}），一件完整居中擺放`)
     .join("；\n");
   return [
     `生成一張專業道具設定板，${layoutClause(props.length)}`,
-    `${props.length}格內容（每格一件道具，居中擺放，無人無手）：\n${cells}。`,
+    `${props.length}格內容（每格一件道具，居中擺放，純道具靜物）：\n${cells}。`,
     `${FLAT_WHITE_BG}風格：寫實電影級道具設定參考圖。`,
-    `禁止：錯誤漢字、亂碼、卡通化、格仔尺寸唔均、一件道具拆成多件、多餘道具、陰影落底、多餘文字水印。`,
+    QUALITY_CLAUSE,
   ].join("");
 }
 
@@ -103,10 +121,10 @@ export function propBoardPrompt(props: ShotProp[]): string {
 export function sceneBoardPrompt(opts: { name: string; desc: string; grade: string }): string {
   return [
     `生成一張專業建築／場景設定板，${layoutClause(4)}`,
-    `四格內容（同一個場景「${opts.name}」，跨格建築結構、陳設、材質完全一致唔走形）：`,
-    `01 廣角全景；02 中景視角；03 立面／結構細節；04 反打角度。場景內容：${opts.desc}。`,
+    `四格內容（同一個場景「${opts.name}」，跨格建築結構、陳設、材質完全一致）：`,
+    `左上格廣角全景；右上格中景視角；左下格立面／結構細節；右下格反打角度。場景內容：${opts.desc}。`,
     `${FLAT_WHITE_BG}風格：寫實電影級建築設定參考圖${opts.grade.trim() ? `，${opts.grade.trim()}` : ""}。`,
-    BAN_CLAUSE,
+    QUALITY_CLAUSE,
   ].join("");
 }
 
@@ -116,10 +134,10 @@ export function sceneBoardPrompt(opts: { name: string; desc: string; grade: stri
 export function storyboardBoardPrompt(opts: { cells: string[]; style: string }): string {
   const numbered = opts.cells.map((c, i) => `${String(i + 1).padStart(2, "0")} — ${c}`).join("；\n");
   return [
-    `生成一張專業分鏡板，${layoutClause(opts.cells.length)}`,
-    `${opts.cells.length}格內容（同一個角色，跨格面容服裝完全一致唔走形）：\n${numbered}。`,
+    `生成一張專業分鏡板，${numberedLayoutClause(opts.cells.length)}`,
+    `${opts.cells.length}格內容（同一個角色，跨格面容服裝完全一致）：\n${numbered}。`,
     `風格：${opts.style}。`,
-    `禁止：錯誤漢字、亂碼、卡通化、賽博朋克霓虹、動態模糊、格仔尺寸唔均。`,
+    `文字數字清晰正確、寫實風格、畫面清晰銳利、版式工整。`,
   ].join("");
 }
 
@@ -175,7 +193,9 @@ export function liveBoardLane(server: string): BoardLane {
         },
       });
     },
-    qc: (png, outJson, require) => runPhotoQc(png, outJson, require),
+    // W4C P0：eyes 要跟call走（pipeline.ts:1194句式）——漏交＝GREEN降級
+    // PASS_UNCONFIRMED，角度板pin閘永遠零格，死鎖。
+    qc: (png, outJson, require) => runPhotoQc(png, outJson, require, {}, photoQcEyesFromEnv()),
     cut: cutBoardCells,
     rembg: rembgCell,
   };
