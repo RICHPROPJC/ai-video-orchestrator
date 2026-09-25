@@ -12,10 +12,17 @@ import {
   DEFAULT_CELL_PX,
   PORTRAIT_BOARD_REQUIRE,
   angleBoardPrompt,
+  turnaroundCrop,
   ensureAngleBoard,
+  chunkMomentSheets,
+  chunkFrameMoments,
+  fullFrameMoments,
+  ensureKeyframeSheet,
   ensurePropBoard,
   ensureSceneBoard,
+  keyframeSheetPrompt,
   liveBoardLane,
+  momentsForShot,
   produceBoard,
   propBoardPrompt,
   sceneBoardPrompt,
@@ -162,9 +169,17 @@ test("W4 角度板：one /edit call → 4 cut cells 2×2（front/45/side/back）
   assert.ok(fs.existsSync(path.join(dir, "boards", "A.angles.png")), "成張板只住 boards/");
 });
 
+test("轉面帶只切頂條，半張會切到下面嘅剪影帶", () => {
+  const crop = turnaroundCrop(4608, 4608, 0);
+  assert.equal(crop.y, 0);
+  assert.equal(crop.w, 1152);
+  assert.ok(crop.h < 2064);
+  assert.ok(crop.h > 1600);
+});
+
 test("W4 角度板 prompt：版式規格式＋跨格一致＋純白flat底；grade同角標黑框唔准入肖像板（W4C）", () => {
   const p = angleBoardPrompt(CHAR, { styleBible: { grade: "冷青低飽和" } });
-  for (const need of ["2列×2行", "尺寸嚴格一致、邊緣對齊、間距統一", "幼白色間隔線", "跨格面容髮型服裝完全一致", "純白flat底（#FFFFFF）", "左上格正面全身企直", "右下格背面全身"]) {
+  for (const need of ["只出一張", "成張未切嘅板就係呢套片嘅角色參考", "上方一條嚴格四等分", "正面全身企直", "背面全身", "幼白色間隔線", "剪影", "表情八種", "微表情", "頭部多角度", "面部特寫", "姿勢三個", "手部動作", "色板", "純白flat底（#FFFFFF）", "表情、手、配件特寫只留喺成張板上"]) {
     assert.ok(p.includes(need), `prompt 缺 ${need}`);
   }
   assert.ok(!/純色淺灰|淺灰攝影棚/.test(p), "唔准灰底（難key）");
@@ -208,7 +223,7 @@ test("W4 逐張QC：FAIL 格唔入庫（RGBA 缺席），其餘格照釘；零 G
         sheet: { styleBible: { grade: "" } },
         lane: dead.lane,
       }),
-    /零格 GREEN/,
+    /冇正面全身格/,
   );
   assert.equal(dead.edits.length, 2, "兩個 seed 都試過先准死");
 });
@@ -258,7 +273,7 @@ test("W4 換衫板：Image-1＝現有板，一板過換晒四角度（全部 GRE
   );
 });
 
-test("W4 道具板：4 props 一板四格入 assets/，6 props 分兩板；逐格 QC people_count=0；FAIL 即死", async () => {
+test("W4 道具板：4 props 一板四格入 assets/，6 props 同一張板再切；逐格 QC people_count=0；FAIL 即死", async () => {
   const dir = tmp();
   const { lane, edits, qcCalls } = fakeLane();
   const res = await ensurePropBoard({ props: PROPS, assetsDir: dir, lane });
@@ -274,12 +289,12 @@ test("W4 道具板：4 props 一板四格入 assets/，6 props 分兩板；逐�
   assert.match(path.basename(res.pinned[0]!), /^01-軍大衣\.png$/);
   assert.equal(qcCalls.every((c) => (c.require as { people_count: number }).people_count === 0), true, "道具格 people_count 0");
 
-  // 6 props → two boards (4 + 2)
+  // 6 props → one board (chunk of 10)
   const six = [...PROPS, { name: "斗篷", shape: ["披"], forbid: [] as string[] }, { name: "燈籠", shape: ["紙", "竹"], forbid: [] as string[] }];
   const dir2 = tmp();
   const two = fakeLane();
   const res6 = await ensurePropBoard({ props: six, assetsDir: dir2, lane: two.lane });
-  assert.equal(two.edits.length, 2, "6 props＝兩板");
+  assert.equal(two.edits.length, 1, "6 props＝一板");
   assert.equal(res6.pinned.length, 6);
 
   // a FAIL prop kills the shelf (fail loud, never a partial asset set)
@@ -295,21 +310,26 @@ test("W4 道具/場景板 prompt：純白flat底＋純道具靜物／跨格一�
   assert.ok(p.includes("每格一件道具，居中擺放，純道具靜物"));
   assert.ok(p.includes("左上格軍大衣") && p.includes("右下格長槍"), "方位點名代替數字");
 
-  const s = sceneBoardPrompt({ name: "檔案室", desc: "兩排高身金屬檔案櫃之間嘅窄道", grade: "冷青低飽和" });
-  assert.ok(s.includes("2列×2行") && s.includes("左上格廣角全景"));
+  const types = ["城門", "宮殿", "民居", "兵營"];
+  const s = sceneBoardPrompt({ era: "秦代", types });
+  assert.ok(s.includes("2列×2行") && s.includes("左上格秦代城門"));
   assert.ok(!s.includes("黑色邊框") && !s.includes("左上角") && !s.includes("禁止"), "資產板無角標黑框無negative");
   assert.ok(s.includes("純白flat底（#FFFFFF）"), "建築板照透明資產底色標準");
-  assert.match(s, /檔案室/);
-  assert.match(s, /跨格建築結構/);
+  assert.match(s, /秦代/);
+  assert.ok(!/漢代|現代|唐代/.test(s), "只點同一代");
+  const ten = sceneBoardPrompt({
+    era: "秦代",
+    types: ["城門", "宮殿", "民居", "兵營", "倉廩", "市肆", "官署", "闕樓", "亭", "塢壁"],
+  });
+  assert.ok(ten.includes("2列×5行") && ten.includes("全部係秦代"));
 });
 
 test("W4 場景板分流：cells 入 assets/scenes/ 做 Blender look-dev（唔入 still refs），manifest 帶紅線", async () => {
   const dir = tmp();
   const { lane } = fakeLane();
   const res = await ensureSceneBoard({
-    name: "檔案室",
-    desc: "兩排高身金屬檔案櫃之間嘅窄道，慘白光管",
-    grade: "冷青低飽和",
+    era: "秦代",
+    types: ["城門", "宮殿", "民居", "兵營"],
     assetsDir: dir,
     lane,
   });
@@ -322,8 +342,8 @@ test("W4 場景板分流：cells 入 assets/scenes/ 做 Blender look-dev（唔�
   }
   const manifest = JSON.parse(fs.readFileSync(res.manifest, "utf8")) as { purpose: string; redline: string; board: string };
   assert.equal(manifest.purpose, "blender-lookdev");
-  assert.match(manifest.redline, /唔准成張餵 H3/);
-  assert.match(manifest.redline, /blockout真場景 → U1\.5 \/edit keyframe still → H3/);
+  assert.match(manifest.redline, /白模外觀參考/);
+  assert.match(manifest.redline, /照板起模/);
   assert.ok(manifest.board.includes("boards"), "成張板住 boards/");
 });
 
@@ -340,8 +360,8 @@ test("W4 分鏡動作板 prompt＝pre-vis 層（整張用，唔切割）；唔�
 
 test("W4 換衫板 prompt：版式照舊＋只換衫＋四格齊換（W4B正面寫法）", () => {
   const p = wardrobeSwapBoardPrompt(CHAR, "白色禮服");
-  assert.ok(p.includes("版式照舊") && p.includes("只換衫") && p.includes("四格全部完成換衫"));
-  assert.ok(p.includes("左上格正面"), "Image-1 板面描述跟新無角標法");
+  assert.ok(p.includes("版式照舊") && p.includes("只換衫") && p.includes("轉面帶四格全部完成換衫"));
+  assert.ok(p.includes("由左至右係正面"), "Image-1 板面描述跟轉面帶");
   assert.ok(!p.includes("禁止"), "W4B：內容negative掃除");
   assert.ok(p.includes("純白flat底（#FFFFFF）"), "換衫板照透明資產底色標準");
 });
@@ -384,6 +404,57 @@ test("W4C P0：live 兩條lane嘅qc交eyes——armed second令stale cache必MIS
       else delete process.env[k];
     }
   }
+});
+
+test("鍵格板：一張 U1.5 裝多個分鏡，鍵格數量唔鎖死", async () => {
+  const eight = ["0%", "12%", "25%", "37%", "50%", "62%", "75%", "100%"].map((at) => ({ at, text: "弓步" }));
+  const p = keyframeSheetPrompt(eight);
+  assert.ok(p.includes("2列×4行") && p.includes("這一次出齊8個時刻"));
+  assert.ok(p.includes("0%") && p.includes("100%"));
+  assert.ok(!p.includes("黑色邊框"));
+  assert.doesNotThrow(() => keyframeSheetPrompt([{ at: "0%", text: "行" }, { at: "50%", text: "企" }, { at: "100%", text: "望" }]));
+
+  const dir = tmp();
+  const singles = Array.from({ length: 11 }, (_, i) =>
+    momentsForShot({ id: `SH${String(i + 1).padStart(2, "0")}`, action: "行", heading: "h", stillPrompt: "" }, dir),
+  );
+  const batched = chunkMomentSheets(singles);
+  assert.equal(batched.length, 1, "分鏡同一張 U1.5，冇數量鎖");
+  assert.equal(batched[0]!.length, 11);
+
+  const many = momentsForShot(
+    { id: "SH01", action: "行", heading: "h", keyframePositions: "0%, 10%, 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90%, 100%" },
+    dir,
+  );
+  assert.equal(many.length, 11, "鍵格寫幾多留幾多");
+  const own = chunkMomentSheets([many, ...singles.slice(0, 3)]);
+  assert.equal(own[0]!.length, 11);
+  assert.equal(own[1]!.length, 3);
+
+  const frames = fullFrameMoments({ id: "SH01", action: "拉開冰箱", heading: "h" }, 56, dir);
+  const batches = chunkFrameMoments(frames);
+  assert.deepEqual(batches.map((b) => b.length), [16, 16, 16, 8]);
+  assert.equal(batches[0]![0]!.file.endsWith("SH01.kf-000.png"), true);
+  assert.equal(batches[3]![7]!.file.endsWith("SH01.kf-055.png"), true);
+  const sixteen = keyframeSheetPrompt(batches[0]!);
+  assert.ok(sixteen.includes("分鏡鍵格板") && sixteen.includes("4列×4行") && !sixteen.includes("Blender灰模"));
+
+  const { lane, edits } = fakeLane();
+  const outDir = tmp();
+  const moments = momentsForShot(
+    { id: "SH02", action: "企定", heading: "h", keyframePositions: "0%, 30%, 70%, 100%" },
+    outDir,
+  );
+  const res = await ensureKeyframeSheet({
+    moments,
+    boardsDir: path.join(outDir, "boards"),
+    name: "keyframes-01",
+    images: [],
+    lane,
+  });
+  assert.equal(edits.length, 1, "四格一次 spawn");
+  assert.equal(res.cells.length, 4);
+  for (const f of res.cells) assert.ok(fs.existsSync(f), f);
 });
 
 if (bareBun) {

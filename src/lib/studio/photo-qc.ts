@@ -307,6 +307,7 @@ export function buildJudgePrompt(require: QcRequire, eyes: EyeDescriptions): str
     "2. 寫實包括數碼生成嘅寫實——「數碼」「數碼化」「數碼生成」「AI生成」「U1.5」字眼唔等於唔寫實。",
     "3. 插畫／漫畫／厚塗／卡通／版畫——只有呢五類先係唔寫實。",
     "4. 風格判斷只可以根據【全圖】描述（呢張圖係U1.5出品）；四格只用嚟捉全圖睇漏嘅可見內容，唔准攞四格碎片判風格。",
+    "5. 成張圖合格與否只可以根據【全圖】。四格係局部，可以並列矛盾，唔准單憑一格判成張唔達標。",
     "",
     "最後另起一行只回一個 JSON object（冇 code fence 冇廢話）：",
     '{"items":[{"item":"…","verdict":"達標|唔達標|冇提及","evidence":"引描述原句"}],',
@@ -414,6 +415,29 @@ export function factTokens(claim: string): string[] {
   const names = rest.match(/[一-鿿]{3,}/g) ?? [];
   return [...new Set([...dates, ...numbers, ...names])];
 }
+const CROP_LABEL = /【(?:左上角|右上角|左下角|右下角)】/;
+
+/** 證據只引一格、冇引【全圖】，唔可以單獨判成張唔達標。全圖引句維持原判。 */
+export function liftLocalOnly(judge: PackageJudge): PackageJudge {
+  let flipped = false;
+  const items = (judge.items ?? []).map((item) => {
+    if (item.verdict !== "唔達標") return item;
+    const ev = item.evidence ?? "";
+    if (!CROP_LABEL.test(ev) || /【全圖】/.test(ev)) return item;
+    flipped = true;
+    return { ...item, verdict: "達標" };
+  });
+  if (!flipped) return judge;
+  const stillItemFail = items.some((i) => i.verdict === "唔達標");
+  const fail_reasons = (judge.fail_reasons ?? []).filter((r) => {
+    if (CROP_LABEL.test(r) && !/【全圖】/.test(r)) return false;
+    if (!stillItemFail && !/【全圖】/.test(r)) return false;
+    return true;
+  });
+  const stillFail = stillItemFail || fail_reasons.length > 0;
+  return { ...judge, items, fail_reasons, pass: stillFail ? judge.pass : true };
+}
+
 /** 判官輸出 → QcVerdict（GREEN/FAIL ＋ fail_reasons）。 */
 export function packageVerdict(require: QcRequire, judgeOut: PackageJudge): QcVerdict {
   const reasons: string[] = [];
@@ -965,6 +989,25 @@ export async function runPhotoQc(
         sameRequire(existing.require, require) &&
         (!secondCfg || existing.second?.model === secondCfg.model)
       ) {
+        const judgeOut = existing.judgeOutput as PackageJudge;
+        const reasons = existing.checks?.fail_reasons ?? [];
+        const machine = reasons.some((r) => /empty_frame|grey|people_count|facts:|distinct:|style:/.test(r));
+        const bad = (judgeOut.items ?? []).filter((i) => i.verdict === "唔達標");
+        const badAreLocal = bad.length > 0 && bad.every((i) => CROP_LABEL.test(i.evidence ?? "") && !/【全圖】/.test(i.evidence ?? ""));
+        if (!machine && existing.status === "FAIL" && badAreLocal) {
+          const lifted = liftLocalOnly(judgeOut);
+          const again = packageVerdict(existing.require, lifted);
+          if (again.status === "GREEN") {
+            const upgraded: PhotoQcRecord = {
+              ...existing,
+              status: "GREEN",
+              judgeOutput: lifted,
+              checks: { ...again.checks, status: "GREEN", fail_reasons: [] },
+            };
+            fs.writeFileSync(outJson, JSON.stringify(upgraded, null, 2));
+            return upgraded;
+          }
+        }
         return existing;
       }
     } catch {
@@ -984,7 +1027,7 @@ export async function runPhotoQc(
   let judgeOutput: PhotoQcRecord["judgeOutput"];
   let verdict: QcVerdict;
   try {
-    judgeOutput = await runPackageJudge(judgeUrl, judgeModel, require, desc);
+    judgeOutput = liftLocalOnly(await runPackageJudge(judgeUrl, judgeModel, require, desc));
     verdict = packageVerdict(require, judgeOutput);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1071,9 +1114,13 @@ export async function runPhotoQc(
       warns.push(g.warn);
     }
   }
-  // T35b §3: unconditional empty-frame blocking gate (all-black/all-white frame).
+  // A white key is the plate we asked for when the judge already passed an item.
+  // Bright coverage alone must not override that. A blank the judge refused,
+  // and every near-black frame, still fail.
   const ef = await measureEmptyFrame(pngFile);
-  if (ef.hit) {
+  const items = verdict.checks.items;
+  const judgedOk = Array.isArray(items) && items.some((it) => (it as { verdict?: string }).verdict === "達標");
+  if (ef.hit && !(ef.kind === "bright" && judgedOk)) {
     verdict = {
       status: "FAIL",
       checks: {

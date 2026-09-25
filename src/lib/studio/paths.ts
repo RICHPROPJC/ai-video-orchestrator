@@ -31,6 +31,11 @@ export function projectsDir() {
   return path.join(process.cwd(), "projects");
 }
 
+/** Public asset shelf. Sibling of seats/ and projects/. Story nouns do not live here. */
+export function libraryDir() {
+  return path.join(process.cwd(), "library");
+}
+
 /** From a seats dir (tests override it), the projects root is its sibling. */
 export function projectsRootFromSeatsDir(seats: string) {
   return path.join(path.dirname(path.resolve(seats)), "projects");

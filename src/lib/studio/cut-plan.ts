@@ -18,14 +18,15 @@ export type CutPlan = {
 
 const r6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
-/** cut plan from the continuity cut order + the wav plug: durations are the
- *  real wav clocks, never the plan estimate. Writes cut_plan.json when outFile given. */
+/** cut plan from the continuity cut order. lockedSec is the story clock.
+ *  Without it, duration falls back to the wav length. Writes cut_plan.json when outFile given. */
 export async function buildCutPlan(opts: {
   cut: string[];
   wavDir: string;
   gapSec?: number;
   spineWav?: string;
   outFile?: string;
+  lockedSec?: Record<string, number>;
 }): Promise<CutPlan> {
   const gap = opts.gapSec ?? 0;
   const shots: CutPlanShot[] = [];
@@ -33,7 +34,8 @@ export async function buildCutPlan(opts: {
   for (const id of opts.cut) {
     const wav = path.join(opts.wavDir, `${id}.wav`);
     if (!fs.existsSync(wav)) throw new Error(`missing wav slice ${wav}`);
-    const duration = await wavSeconds(wav);
+    const locked = opts.lockedSec?.[id];
+    const duration = typeof locked === "number" && locked > 0 ? locked : await wavSeconds(wav);
     shots.push({
       id,
       start_s: r6(t),

@@ -1,0 +1,352 @@
+TAP version 13
+# Subtest: media preview is bounded WebP; opening the image keeps the original PNG
+ok 1 - media preview is bounded WebP; opening the image keeps the original PNG
+  ---
+  duration_ms: 129.069086
+  type: 'test'
+  ...
+# Subtest: boards repairs only rejected cells, keeps shot/position/hash/QC receipts
+ok 2 - boards repairs only rejected cells, keeps shot/position/hash/QC receipts
+  ---
+  duration_ms: 478.840928
+  type: 'test'
+  ...
+# Subtest: H3 anchor seven onwards use the batch in the original order
+ok 3 - H3 anchor seven onwards use the batch in the original order
+  ---
+  duration_ms: 6.847481
+  type: 'test'
+  ...
+# Subtest: eight 68-frame requests budget 73 each; measured 577 cannot override the gate
+ok 4 - eight 68-frame requests budget 73 each; measured 577 cannot override the gate
+  ---
+  duration_ms: 23.616336
+  type: 'test'
+  ...
+# Subtest: C-form deep-equals the production golden (§5b, CFORM_0921)
+ok 5 - C-form deep-equals the production golden (§5b, CFORM_0921)
+  ---
+  duration_ms: 11.501664
+  type: 'test'
+  ...
+# Subtest: 9:16 C-form deep-equals the portrait golden (ECOM1A probe: verify/motion/H3.object_info.node1.CFORM-ECOM.json)
+ok 6 - 9:16 C-form deep-equals the portrait golden (ECOM1A probe: verify/motion/H3.object_info.node1.CFORM-ECOM.json)
+  ---
+  duration_ms: 1.842891
+  type: 'test'
+  ...
+# Subtest: ECOM1A: VHS_LoadVideo __VIDEO__ canvas stays in sync with the sampler canvas
+ok 7 - ECOM1A: VHS_LoadVideo __VIDEO__ canvas stays in sync with the sampler canvas
+  ---
+  duration_ms: 2.115734
+  type: 'test'
+  ...
+# Subtest: ECOM1A: h3SizeForAspect — probe-backed sizes, default 16:9, unknown refuses
+ok 8 - ECOM1A: h3SizeForAspect — probe-backed sizes, default 16:9, unknown refuses
+  ---
+  duration_ms: 0.771276
+  type: 'test'
+  ...
+# Subtest: A-form deep-equals the still-to-video golden (§5b keyframes lane)
+ok 9 - A-form deep-equals the still-to-video golden (§5b keyframes lane)
+  ---
+  duration_ms: 2.211975
+  type: 'test'
+  ...
+# Subtest: C-form golden: Video 1 wired, zero keyframe nodes, portrait at ref_image_0
+ok 10 - C-form golden: Video 1 wired, zero keyframe nodes, portrait at ref_image_0
+  ---
+  duration_ms: 2.389859
+  type: 'test'
+  ...
+# Subtest: §5b prohibition: Video 1 + keyframes in one build refuses to emit (prompt_too_thin family)
+ok 11 - §5b prohibition: Video 1 + keyframes in one build refuses to emit (prompt_too_thin family)
+  ---
+  duration_ms: 1.127586
+  type: 'test'
+  ...
+# Subtest: A-form without kfStartName refuses to emit (0% anchor is mandatory)
+ok 12 - A-form without kfStartName refuses to emit (0% anchor is mandatory)
+  ---
+  duration_ms: 0.73864
+  type: 'test'
+  ...
+# Subtest: FBC/SolAttn ride ONLY the 4-step road (§5b: 8-step v1.0 structurally crashes FBC)
+ok 13 - FBC/SolAttn ride ONLY the 4-step road (§5b: 8-step v1.0 structurally crashes FBC)
+  ---
+  duration_ms: 3.541166
+  type: 'test'
+  ...
+# Subtest: A-form: official H3Keyframes node, positions one entry per anchor
+ok 14 - A-form: official H3Keyframes node, positions one entry per anchor
+  ---
+  duration_ms: 2.298781
+  type: 'test'
+  ...
+# Subtest: A-form keyframes positive is combined with the refs conditioning chain
+ok 15 - A-form keyframes positive is combined with the refs conditioning chain
+  ---
+  duration_ms: 0.608878
+  type: 'test'
+  ...
+# Subtest: steps and length are numbers, not coerced strings
+ok 16 - steps and length are numbers, not coerced strings
+  ---
+  duration_ms: 0.731493
+  type: 'test'
+  ...
+# Subtest: audio is exactly one dialogue wav (ref_audio_0) unless a timing ref is given
+ok 17 - audio is exactly one dialogue wav (ref_audio_0) unless a timing ref is given
+  ---
+  duration_ms: 0.702415
+  type: 'test'
+  ...
+# Subtest: card ③a: montage timing ref rides as ref_audio_1 after the portrait (sample \#31)
+ok 18 - card ③a: montage timing ref rides as ref_audio_1 after the portrait (sample \#31)
+  ---
+  duration_ms: 0.900306
+  type: 'test'
+  ...
+# Subtest: card ③b: UI photo refs ride after the identity slots on the C-form
+ok 19 - card ③b: UI photo refs ride after the identity slots on the C-form
+  ---
+  duration_ms: 1.048191
+  type: 'test'
+  ...
+# Subtest: variant B (documented fallback): ref_images populated, no Video 1, no keyframes
+ok 20 - variant B (documented fallback): ref_images populated, no Video 1, no keyframes
+  ---
+  duration_ms: 0.668945
+  type: 'test'
+  ...
+# Subtest: variant BKF (documented fallback): ref_images + start anchor, no Video 1
+ok 21 - variant BKF (documented fallback): ref_images + start anchor, no Video 1
+  ---
+  duration_ms: 0.874913
+  type: 'test'
+  ...
+# Subtest: variant C: zero refs, start anchor, no Video 1
+ok 22 - variant C: zero refs, start anchor, no Video 1
+  ---
+  duration_ms: 0.628659
+  type: 'test'
+  ...
+# Subtest: C8b knob: visualStrength override reaches every cond entry; 0.999 default unchanged
+ok 23 - C8b knob: visualStrength override reaches every cond entry; 0.999 default unchanged
+  ---
+  duration_ms: 0.885916
+  type: 'test'
+  ...
+# Subtest: ALIGN-LOCK rejects legacy chained Video 1 multishot
+ok 24 - ALIGN-LOCK rejects legacy chained Video 1 multishot
+  ---
+  duration_ms: 0.818891
+  type: 'test'
+  ...
+# Subtest: standalone multishot golden = the MS-A identity-only shape
+ok 25 - standalone multishot golden = the MS-A identity-only shape
+  ---
+  duration_ms: 3.462439
+  type: 'test'
+  ...
+# Subtest: multishot refuse matrix: chain needs C-form; chain×multishot; standalone purity
+ok 26 - multishot refuse matrix: chain needs C-form; chain×multishot; standalone purity
+  ---
+  duration_ms: 1.323619
+  type: 'test'
+  ...
+# Subtest: dry run C-form (Video 1 asset given): 56-frame receipt, zero keyframe nodes, portrait ref_image_0
+ok 27 - dry run C-form (Video 1 asset given): 56-frame receipt, zero keyframe nodes, portrait ref_image_0
+  ---
+  duration_ms: 33.084262
+  type: 'test'
+  ...
+# Subtest: dry run A-form (no Video 1 asset): keyframes 0%, 100%, kf uploads wired
+ok 28 - dry run A-form (no Video 1 asset): keyframes 0%, 100%, kf uploads wired
+  ---
+  duration_ms: 6.639695
+  type: 'test'
+  ...
+# Subtest: §5b prohibition: blockoutMp4 + kfEnd in one submit refuses to emit
+ok 29 - §5b prohibition: blockoutMp4 + kfEnd in one submit refuses to emit
+  ---
+  duration_ms: 4.79424
+  type: 'test'
+  ...
+# Subtest: dry-run: blockout plus keyframes rides when keyframePositions is set
+ok 30 - dry-run: blockout plus keyframes rides when keyframePositions is set
+  ---
+  duration_ms: 6.442793
+  type: 'test'
+  ...
+# Subtest: dry run never clobbers a real receipt
+ok 31 - dry run never clobbers a real receipt
+  ---
+  duration_ms: 5.731546
+  type: 'test'
+  ...
+# Subtest: dry run wires UI photo refs and audio timing on the C-form (cards ③a/③b)
+ok 32 - dry run wires UI photo refs and audio timing on the C-form (cards ③a/③b)
+  ---
+  duration_ms: 5.846985
+  type: 'test'
+  ...
+# Subtest: UI photos and timing ref are rejected off the A path (fallback variants stay frozen)
+ok 33 - UI photos and timing ref are rejected off the A path (fallback variants stay frozen)
+  ---
+  duration_ms: 3.969888
+  type: 'test'
+  ...
+# Subtest: prose that fails validateProse throws before anything else
+ok 34 - prose that fails validateProse throws before anything else
+  ---
+  duration_ms: 4.306751
+  type: 'test'
+  ...
+# Subtest: ALIGN-LOCK rejects chained multishot before upload
+ok 35 - ALIGN-LOCK rejects chained multishot before upload
+  ---
+  duration_ms: 5.890071
+  type: 'test'
+  ...
+# Subtest: MULTISHOT_WIRE dry-run: standalone multishot (MS-A shape, motion_form=ms)
+ok 36 - MULTISHOT_WIRE dry-run: standalone multishot (MS-A shape, motion_form=ms)
+  ---
+  duration_ms: 9.960623
+  type: 'test'
+  ...
+# Subtest: MULTISHOT_WIRE refuse: chain without a Video 1; multishot with r2v refs
+ok 37 - MULTISHOT_WIRE refuse: chain without a Video 1; multishot with r2v refs
+  ---
+  duration_ms: 5.258557
+  type: 'test'
+  ...
+# Subtest: index parse: subject headers + clip lines, zero-padded ids
+ok 38 - index parse: subject headers + clip lines, zero-padded ids
+  ---
+  duration_ms: 8.198809
+  type: 'test'
+  ...
+# Subtest: live index counts: 2548 BVH on disk / 2435 covered (trial receipt)
+ok 39 - live index counts: 2548 BVH on disk / 2435 covered (trial receipt)
+  ---
+  duration_ms: 224.05855
+  type: 'test'
+  ...
+# Subtest: combat sweep ranking: 73 clips, arm-axis numbers parse
+ok 40 - combat sweep ranking: 73 clips, arm-axis numbers parse
+  ---
+  duration_ms: 4.868687
+  type: 'test'
+  ...
+# Subtest: live buildShortlist: caps exactly the trial caps, siblings deduped, codes unique
+ok 41 - live buildShortlist: caps exactly the trial caps, siblings deduped, codes unique
+  ---
+  duration_ms: 187.338767
+  type: 'test'
+  ...
+# Subtest: decision prompt lines carry the category (111_19 Pregnant Woman lesson)
+ok 42 - decision prompt lines carry the category (111_19 Pregnant Woman lesson)
+  ---
+  duration_ms: 7.418466
+  type: 'test'
+  ...
+# Subtest: parseDecisionLines: strict rows incl. the three-digit C101 case
+ok 43 - parseDecisionLines: strict rows incl. the three-digit C101 case
+  ---
+  duration_ms: 1.434775
+  type: 'test'
+  ...
+# Subtest: golden replay: frozen trial stream → picks, runners and chain-rule conf all hit
+ok 44 - golden replay: frozen trial stream → picks, runners and chain-rule conf all hit
+  ---
+  duration_ms: 53.554535
+  type: 'test'
+  ...
+# Subtest: chain-rule math: three-digit C101 renormalizes over still-valid digits only
+ok 45 - chain-rule math: three-digit C101 renormalizes over still-valid digits only
+  ---
+  duration_ms: 1.699684
+  type: 'test'
+  ...
+# Subtest: one-call hard constraint: short parse retries ONCE, then fails loud; per-shot calls would count >1
+ok 46 - one-call hard constraint: short parse retries ONCE, then fails loud; per-shot calls would count >1
+  ---
+  duration_ms: 44.290484
+  type: 'test'
+  ...
+# Subtest: verb gate: any-of must hit desc or category; all-of partial flags but stays green
+ok 47 - verb gate: any-of must hit desc or category; all-of partial flags but stays green
+  ---
+  duration_ms: 1.326332
+  type: 'test'
+  ...
+# Subtest: decideSelection: no character-motion family leaves the verb gate off
+ok 48 - decideSelection: no character-motion family leaves the verb gate off
+  ---
+  duration_ms: 2.824133
+  type: 'test'
+  ...
+# Subtest: 抹走唔係行路；坐低同 turn／stand 矛盾
+ok 49 - 抹走唔係行路；坐低同 turn／stand 矛盾
+  ---
+  duration_ms: 2.236458
+  type: 'test'
+  ...
+# Subtest: bake window: 4.82s → start 1, len 578 source frames, step 2 (trial bake receipt)
+ok 50 - bake window: 4.82s → start 1, len 578 source frames, step 2 (trial bake receipt)
+  ---
+  duration_ms: 0.501625
+  type: 'test'
+  ...
+# Subtest: bvh frame read: 111_19=1025, 07_01=317 (Frames: sits ~4KB in, not the first KB)
+ok 51 - bvh frame read: 111_19=1025, 07_01=317 (Frames: sits ~4KB in, not the first KB)
+  ---
+  duration_ms: 0.891517
+  type: 'test'
+  ...
+# Subtest: decideSelection: conf ≥0.7 auto; verb-miss walks runner-ups; three misses fail loud
+ok 52 - decideSelection: conf ≥0.7 auto; verb-miss walks runner-ups; three misses fail loud
+  ---
+  duration_ms: 23.648489
+  type: 'test'
+  ...
+# Subtest: selection schema + job-dir write + §5b blockout path convention
+ok 53 - selection schema + job-dir write + §5b blockout path convention
+  ---
+  duration_ms: 20.22193
+  type: 'test'
+  ...
+# Subtest: F4 dry-run: SC-0921-9V4Y callsheet → selection.json (SH01=111_19 auto, SH02 tie-break record)
+ok 54 - F4 dry-run: SC-0921-9V4Y callsheet → selection.json (SH01=111_19 auto, SH02 tie-break record)
+  ---
+  duration_ms: 25.610021
+  type: 'test'
+  ...
+# Subtest: motionSegments: martial/run anchor C-form, simple runs stay separate identity-only multishot
+ok 55 - motionSegments: martial/run anchor C-form, simple runs stay separate identity-only multishot
+  ---
+  duration_ms: 1.837603
+  type: 'test'
+  ...
+# Subtest: snapFramesPerShot: 17k+5 grid rounds upward (4.82s → 124)
+ok 56 - snapFramesPerShot: 17k+5 grid rounds upward (4.82s → 124)
+  ---
+  duration_ms: 3.067271
+  type: 'test'
+  ...
+# Subtest: msGridFrames: multishot delivers on the 17k+5 grid (119 → 124, run5 live)
+ok 57 - msGridFrames: multishot delivers on the 17k+5 grid (119 → 124, run5 live)
+  ---
+  duration_ms: 0.75962
+  type: 'test'
+  ...
+1..57
+# tests 57
+# suites 0
+# pass 57
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2645.82537

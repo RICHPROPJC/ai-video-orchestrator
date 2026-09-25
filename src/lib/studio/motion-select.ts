@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { snapDurationToFrames } from "./frame-grid";
 
 /**
  * MOTION_SELECT_0921 — motion-select skill: callsheet in → per-shot motion
@@ -203,7 +204,10 @@ const ACTION_VERB_TO_FAMILY: ReadonlyArray<readonly [string, string]> = [
   // the MS-A simple join shot) and must NOT flag a shot motion-heavy
   ["打", "martial"], ["踢", "martial"], ["擊", "martial"], ["擋", "martial"],
   ["punch", "martial"], ["kick", "martial"], ["box", "martial"], ["fight", "martial"], ["spar", "martial"],
-  ["行", "walk"], ["走", "walk"], ["漫步", "walk"], ["walk", "walk"], ["stroll", "walk"], ["step", "walk"],
+  ["行走", "walk"], ["走到", "walk"], ["走去", "walk"], ["走過", "walk"], ["走開", "walk"], ["走出", "walk"], ["走入", "walk"],
+  ["行去", "walk"], ["行到", "walk"], ["行過", "walk"], ["行出", "walk"], ["行入", "walk"], ["行路", "walk"], ["步行", "walk"], ["漫步", "walk"],
+  ["行前", "walk"], ["行兩", "walk"], ["走前", "walk"], ["走兩", "walk"],
+  ["walk", "walk"], ["stroll", "walk"], ["step", "walk"],
   ["跑", "run"], ["追", "run"], ["衝", "run"], ["run", "run"], ["jog", "run"], ["sprint", "run"], ["chase", "run"],
   ["蹲", "bend_pick"], ["跪", "bend_pick"], ["執", "bend_pick"], ["執拾", "bend_pick"], ["彎", "bend_pick"], ["拎", "bend_pick"],
   ["bend", "bend_pick"], ["squat", "bend_pick"], ["kneel", "bend_pick"], ["pick", "bend_pick"], ["grab", "bend_pick"], ["lift", "bend_pick"],
@@ -214,7 +218,22 @@ const ACTION_VERB_TO_FAMILY: ReadonlyArray<readonly [string, string]> = [
 /** families the action text points at (adaptive verb → family map) */
 export function familiesForAction(action: string): string[] {
   const low = action.toLowerCase();
-  return [...new Set(ACTION_VERB_TO_FAMILY.filter(([verb]) => low.includes(verb)).map(([, fam]) => fam))];
+  return [...new Set(ACTION_VERB_TO_FAMILY.filter(([verb]) => low.includes(verb.toLowerCase())).map(([, fam]) => fam))];
+}
+
+/** 坐低係由企到坐。gait／stance 寫住另一樣就係矛盾，唔好靜靜雞揀一邊。 */
+export function postureConflict(shot: MotionShotLine): string | null {
+  if (!/坐低|坐下/.test(shot.action)) return null;
+  if (shot.gait && shot.gait !== "plant") return `${shot.id}: 坐低同 gait ${shot.gait} 矛盾`;
+  if (shot.stance === "stand") return `${shot.id}: 坐低但 stance 係 stand`;
+  return null;
+}
+
+/** Clips the picker may see. Gate off → the whole table. A family with no hit → empty, stop before GPU. */
+export function legalCandidates(shortlist: Shortlist, action: string): ShortlistEntry[] {
+  const need = verbsForGate(action);
+  if (need.needAny.length === 0) return shortlist.candidates;
+  return shortlist.candidates.filter((c) => verbGate({ desc: c.desc, category: c.category }, need).pass);
 }
 
 export type ShortlistEntry = {
@@ -376,9 +395,12 @@ export function buildDecisionPrompt(shortlist: Shortlist, shots: MotionShotLine[
     .map(([fam, cs]) => [`== ${fam} ==`, ...cs.map((c) => `${c.code} ${c.id} | ${c.category ?? "uncategorised"} | ${c.desc}${c.arm}`)])
     .flat()
     .join("\n");
-  const shotLines = shots.map(
-    (s) => `[${s.id}] ${s.heading}\naction: ${s.action} (${s.durationSec}s${s.gait ? `, gait ${s.gait}` : ""}${s.stance ? `, stance ${s.stance}` : ""})`,
-  );
+  const shotLines = shots.map((s) => {
+    const legal = legalCandidates(shortlist, s.action);
+    const gated = verbsForGate(s.action).needAny.length > 0;
+    const only = gated ? `\nonly these codes: ${legal.map((c) => c.code).join(" ")}` : "";
+    return `[${s.id}] ${s.heading}\naction: ${s.action} (${s.durationSec}s${s.gait ? `, gait ${s.gait}` : ""}${s.stance ? `, stance ${s.stance}` : ""})${only}`;
+  });
   const system = (
     "You are a mocap casting router for a film pipeline. For EACH shot, " +
     "cast exactly ONE motion clip from the candidate table that best matches " +
@@ -629,27 +651,32 @@ export function decideSelection(
   const pickRow = pickId ? byId.get(pickId) ?? null : null;
   const pickDesc = row.pickDesc ?? pickRow?.desc ?? "";
 
-  const gate = verbGate({ desc: pickDesc, category: pickRow?.category }, verbsForGate(shot.action));
+  const need = verbsForGate(shot.action);
   let chosen = pickId;
-  if (!gate.pass && row.runner.length) {
-    // verb miss → walk the runner-ups, re-gate each
-    for (const rc of row.runner) {
-      const cand = shortlist.candidates.find((c) => c.code === rc);
-      if (!cand) continue;
-      const rg = verbGate({ desc: cand.desc, category: cand.category }, verbsForGate(shot.action));
-      if (rg.pass) {
-        chosen = cand.id;
-        flags.push(`verb-miss swap: ${pickId} → ${cand.id}`);
-        break;
+  // 閘只喺動作認到人物 family 先開。水珠、樽、靜物冇 family，唔閘。
+  if (need.needAny.length === 0) {
+    flags.push("verb-gate off: action names no character motion");
+  } else {
+    const gate = verbGate({ desc: pickDesc, category: pickRow?.category }, need);
+    if (!gate.pass && row.runner.length) {
+      for (const rc of row.runner) {
+        const cand = shortlist.candidates.find((c) => c.code === rc);
+        if (!cand) continue;
+        const rg = verbGate({ desc: cand.desc, category: cand.category }, need);
+        if (rg.pass) {
+          chosen = cand.id;
+          flags.push(`verb-miss swap: ${pickId} → ${cand.id}`);
+          break;
+        }
       }
+      if (chosen === pickId) {
+        throw new Error(
+          `verb gate fail: ${shot.id} pick ${pickId} ("${pickDesc}") misses ${JSON.stringify(need.needAny)} and no runner-up passes`,
+        );
+      }
+    } else if (gate.partial) {
+      flags.push(`verb-partial: only ${JSON.stringify(gate.hitAll)} of the all-of verbs`);
     }
-    if (chosen === pickId) {
-      throw new Error(
-        `verb gate fail: ${shot.id} pick ${pickId} ("${pickDesc}") misses ${JSON.stringify(verbsForGate(shot.action).needAny)} and no runner-up passes`,
-      );
-    }
-  } else if (gate.partial) {
-    flags.push(`verb-partial: only ${JSON.stringify(gate.hitAll)} of the all-of verbs`);
   }
 
   const chosenRow = byId.get(chosen!) ?? null;
@@ -745,17 +772,15 @@ export function blockoutPathFor(jobBlockoutDir: string, shotId: string): string 
 
 export type MotionSegment =
   /** a motion-heavy shot anchors its own C-form render (Video 1 motion +
- *  portrait identity); trailing simple shots chain onto it via multishot */
+ *  portrait identity); chain stays empty under ALIGN-LOCK */
   | { kind: "cform"; anchor: string; chain: string[] }
   /** a LEADING run of simple shots: one standalone multishot call (no first
  *  C-form shot, MS-A shape — motion rides the script, no Video 1 exists on
  *  the node) */
   | { kind: "multishot"; shots: string[] };
 
-/** §5b cross-shot scheduling (今日實證): martial/run shots are motion-heavy —
- *  each anchors a C-form render with the following simple shots chained onto
- *  it (true-endframe multishot); a leading run of simple shots renders as one
- *  standalone multishot call. Single-shot slates stay a plain C-form render. */
+/** Motion-heavy shots stay solo C-form. Simple runs use separate identity-only
+ * multishot calls, including runs following a C-form shot. */
 export function motionSegments(shots: { id: string; action: string }[]): MotionSegment[] {
   const heavy = (action: string) => {
     const fams = familiesForAction(action);
@@ -764,9 +789,9 @@ export function motionSegments(shots: { id: string; action: string }[]): MotionS
   const out: MotionSegment[] = [];
   let pendingSimple: string[] = [];
   const flushSimple = () => {
-    if (pendingSimple.length) {
-      out.push({ kind: "multishot", shots: pendingSimple });
-      pendingSimple = [];
+    while (pendingSimple.length) {
+      out.push({ kind: "multishot", shots: pendingSimple.slice(0, 8) });
+      pendingSimple = pendingSimple.slice(8);
     }
   };
   for (const shot of shots) {
@@ -774,11 +799,7 @@ export function motionSegments(shots: { id: string; action: string }[]): MotionS
       flushSimple();
       out.push({ kind: "cform", anchor: shot.id, chain: [] });
     } else {
-      // attach to the previous C-form anchor if one is open, else queue a
-      // leading standalone multishot
-      const last = out[out.length - 1];
-      if (last && last.kind === "cform") last.chain.push(shot.id);
-      else pendingSimple.push(shot.id);
+      pendingSimple.push(shot.id);
     }
   }
   flushSimple();
@@ -786,11 +807,9 @@ export function motionSegments(shots: { id: string; action: string }[]): MotionS
   return out;
 }
 
-/** frames per chained multishot shot on H3's 17k+5 grid, nearest the shot's
- *  clock (trial: 4.82s → 119f = 7×17 ≈ 4.96s) */
+/** All submissions use the same upward 17k+5 clock as the concat gate. */
 export function snapFramesPerShot(durationSec: number): number {
-  const target = Math.round(durationSec * 24);
-  return Math.min(462, Math.max(17, Math.round(target / 17) * 17));
+  return snapDurationToFrames(durationSec);
 }
 
 /** bake one selection's clip to a grey blockout: repo-external
@@ -801,7 +820,18 @@ export function snapFramesPerShot(durationSec: number): number {
 export async function bakeSelectionFrames(
   sel: MotionSelection,
   outMp4: string,
-  opts?: { blenderBin?: string; libRoot?: string; runCmd?: typeof import("./audio").runCommand },
+  opts?: {
+    blenderBin?: string;
+    libRoot?: string;
+    glb?: string;
+    set?: string[];
+    scenes?: string[];
+    props?: string[];
+    camera?: { lensMm: number; size?: string };
+    worldJson?: string;
+    lookTarget?: string;
+    runCmd?: typeof import("./audio").runCommand;
+  },
 ): Promise<{ framesDir: string; frames: number; log: string }> {
   const run = opts?.runCmd ?? (await import("./audio")).runCommand;
   const blender = opts?.blenderBin || process.env.BLENDER_BIN || "blender";
@@ -823,6 +853,13 @@ export async function bakeSelectionFrames(
       "--step", String(sel.bake.step),
       "--auto-anchor",
       "--name", name,
+      ...(opts?.glb ? ["--glb", opts.glb] : []),
+      ...(opts?.set ?? []).flatMap((file) => ["--set", file]),
+      ...(opts?.scenes ?? []).flatMap((file) => ["--scene", file]),
+      ...(opts?.props ?? []).flatMap((file) => ["--prop", file]),
+      ...(opts?.camera ? ["--lens", String(opts.camera.lensMm), "--shot-size", opts.camera.size ?? ""] : []),
+      ...(opts?.worldJson ? ["--world-json", opts.worldJson] : []),
+      ...(opts?.lookTarget ? ["--look-target", opts.lookTarget] : []),
       // frames land in /tmp/{name}_frames — move them under the job so the
       // assembly is self-contained: the script has no --out flag (repo-external)
     ],
@@ -834,7 +871,7 @@ export async function bakeSelectionFrames(
     throw new Error(`bake failed for ${sel.shot} (${sel.bvh}, exit ${r.code}): ${(r.stderr || r.stdout).slice(-400)}`);
   }
   const src = done[1]!;
-  const want = Math.ceil(sel.bake.len / sel.bake.step);
+  const want = Math.floor(sel.bake.len / sel.bake.step);
   const got = Number(done[2]!);
   if (got !== want) throw new Error(`bake frames ${got} != window ${sel.bake.len}/${sel.bake.step} = ${want}`);
   // /tmp and the job dir live on different devices — copy, never rename (EXDEV)
@@ -847,4 +884,13 @@ export async function bakeSelectionFrames(
  *  request lands as 124 — run5 live, ffprobe 248 = 124+124 on a 124+119 ask) */
 export function msGridFrames(n: number): number {
   return Math.max(5, Math.ceil((n - 5) / 17) * 17 + 5);
+}
+
+/** One multishot call uses one length for every shot. The node then lands on
+ *  the 17k+5 grid, so the request is already on that grid and the file is
+ *  count times that length. */
+export function segmentFrameBudget(durations: number[]): { perShot: number; total: number } {
+  const longest = durations.reduce((m, d) => Math.max(m, snapFramesPerShot(d)), 0);
+  const perShot = msGridFrames(longest);
+  return { perShot, total: durations.length * perShot };
 }

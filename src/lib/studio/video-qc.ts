@@ -116,9 +116,10 @@ export function clipLocationCheck(
   const location = require.location?.trim();
   if (!location) return undefined;
   const { hits, total, need } = gramMatch(location, pooledEvidence(frames));
-  if (total < 2) return { ok: false, reason: "location: require unparseable — no judgeable bigrams" };
-  if (hits < need) {
-    return { ok: false, reason: `location(clip): hits ${hits}/${need} — misses ${JSON.stringify(location)}` };
+  if (total < 1) return { ok: false, reason: "location: require unparseable — no judgeable bigrams" };
+  const needHits = total === 1 ? 1 : need;
+  if (hits < needHits) {
+    return { ok: false, reason: `location(clip): hits ${hits}/${needHits} — misses ${JSON.stringify(location)}` };
   }
   const place = (f: { blind: string; summary: QcSummary | { parse_error: string; raw: string } }) =>
     `${f.blind}\n${String((f.summary as Partial<QcSummary>)?.location_notes ?? "")}`;

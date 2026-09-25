@@ -25,6 +25,8 @@ import { FleetRack } from "@/components/fleet-rack";
 import { ShotTruth } from "@/components/shot-truth";
 import { H3PlanCard } from "@/components/h3-plan-card";
 import { clinicH3Plans } from "@/lib/studio/h3-slots";
+import { ShotCanvas } from "@/components/shot-canvas";
+import { StoryboardPanel, ShotAudio } from "@/components/episode-media";
 import { Clapperboard, Film, Lock, Upload } from "lucide-react";
 
 const EXAMPLES = [
@@ -50,7 +52,7 @@ export function StudioFloor({
   initialTab: FloorTab;
 }) {
   const [brief, setBrief] = useState(initialJob?.input.brief || EXAMPLES[0] || "");
-  const [duration, setDuration] = useState(String(initialJob?.input.durationSec ?? 12));
+  const [duration, setDuration] = useState(String(initialJob?.input.durationSec ?? 15));
   const [aspect, setAspect] = useState(initialJob?.input.aspect ?? "16:9");
   const [language, setLanguage] = useState(initialJob?.input.language ?? "auto");
   const [job, setJob] = useState<JobRecord | null>(initialJob);
@@ -58,6 +60,8 @@ export function StudioFloor({
   const [rack, setRack] = useState<DoctorReport | null>(null);
   const [fleet, setFleet] = useState<FleetReport | null>(null);
   const [probingFleet, setProbingFleet] = useState(false);
+  const [frameShot, setFrameShot] = useState("SH01");
+  const [frameNote, setFrameNote] = useState("");
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<{ id: string; modality: string; score: number; text: string; shotId?: string }[] | null>(null);
   const tab = initialTab;
@@ -209,10 +213,52 @@ export function StudioFloor({
                       <SelectItem value="auto">自動</SelectItem>
                       <SelectItem value="yue">粵語</SelectItem>
                       <SelectItem value="zh-Hant">繁中</SelectItem>
+                      <SelectItem value="zh-Hans">簡中</SelectItem>
                       <SelectItem value="en">English</SelectItem>
                     </SelectContent>
                   </Select>
                 </label>
+                <details className="rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
+                  <summary>同 CLI 一樣嘅旗</summary>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <label className="space-y-1">劇目<input name="drama" className="mt-1 w-full" placeholder="--drama" /></label>
+                    <label className="space-y-1">集<input name="episode" className="mt-1 w-full" placeholder="EP01" /></label>
+                    <label className="space-y-1">場<input name="scene" className="mt-1 w-full" placeholder="SC01" /></label>
+                    <label className="space-y-1">鏡<input name="shot" className="mt-1 w-full" placeholder="SH04" /></label>
+                    <label className="space-y-1">早停
+                      <select name="until" defaultValue="" className="mt-1 w-full bg-background">
+                        <option value="">出齊</option>
+                        <option value="boards">boards</option>
+                        <option value="blockout">blockout</option>
+                        <option value="stills">stills</option>
+                        <option value="motion">motion</option>
+                      </select>
+                    </label>
+                    <label className="space-y-1">H3 graph
+                      <select name="graphVariant" defaultValue="a" className="mt-1 w-full bg-background">
+                        <option value="a">a</option>
+                        <option value="b">b</option>
+                        <option value="bkf">bkf</option>
+                        <option value="c">c</option>
+                      </select>
+                    </label>
+                    <label className="space-y-1">steps<input name="steps" className="mt-1 w-full" /></label>
+                    <label className="col-span-2 space-y-1">wav 目錄<input name="wavDir" className="mt-1 w-full" /></label>
+                    <label className="col-span-2 space-y-1">肖像目錄<input name="portraitsDir" className="mt-1 w-full" /></label>
+                    <label className="col-span-2 space-y-1">blockout 目錄<input name="blockoutDir" className="mt-1 w-full" /></label>
+                    <label className="col-span-2 space-y-1">callsheet<input name="callSheetPath" className="mt-1 w-full" /></label>
+                    <label className="col-span-2 space-y-1">cast roster<input name="castRosterPath" className="mt-1 w-full" /></label>
+                    <label className="space-y-1">鏡間靜音秒<input name="gapSec" className="mt-1 w-full" placeholder="0" /></label>
+                  </div>
+                  <label className="mt-2 flex items-center gap-2"><input type="checkbox" name="dryRun" value="1" />dry-run</label>
+                  <label className="mt-1 flex items-center gap-2"><input type="checkbox" name="noMotionSelect" value="1" />唔揀 mocap</label>
+                  {job?.id ? (
+                    <label className="mt-1 flex items-center gap-2">
+                      <input type="checkbox" name="resume" value={job.id} />
+                      接返 {job.id}
+                    </label>
+                  ) : null}
+                </details>
                 <label className="flex cursor-pointer items-center justify-between rounded-lg border border-dashed border-border px-3 py-2 text-xs">
                   <span className="flex items-center gap-2 text-muted-foreground">
                     <Upload className="size-3.5" />
@@ -232,7 +278,7 @@ export function StudioFloor({
                 </p>
               </form>
               {recents.length > 0 ? (
-                <div className="mt-4 space-y-1 border-t pt-3">
+                <div className="mt-4 max-h-64 space-y-1 overflow-y-auto border-t pt-3">
                   <p className="text-[11px] tracking-wider text-muted-foreground">近期 slate</p>
                   {recents.map((item) => (
                     <a
@@ -326,6 +372,7 @@ export function StudioFloor({
                   {job?.callSheet?.title ?? "等 brief"} · {job?.status ?? "idle"}
                   {job?.continuity?.cut?.length ? ` · ${job.continuity.cut.join("→")}` : ""}
                 </p>
+                {job?.error ? <p className="mt-1 text-xs text-destructive">{job.error}</p> : null}
               </div>
               {job?.status === "locked" ? (
                 <Badge className="bg-primary text-primary-foreground">
@@ -337,6 +384,35 @@ export function StudioFloor({
             </CardHeader>
             <CardContent className="space-y-4">
               <Progress value={job?.progress ?? 0} />
+              <ProductLinks job={job} />
+              {job?.id ? (
+                <form
+                  className="flex flex-wrap items-end gap-2 text-xs"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    setFrameNote("抽緊…");
+                    void fetch("/api/frames", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ job: job.id, shot: frameShot }),
+                    })
+                      .then(async (r) => {
+                        const data = (await r.json()) as { error?: string; frames?: unknown[] };
+                        setFrameNote(data.error ?? `frames ${data.frames?.length ?? 0}`);
+                      })
+                      .catch((err: unknown) => setFrameNote(err instanceof Error ? err.message : String(err)));
+                  }}
+                >
+                  <label className="text-muted-foreground">
+                    抽 QC 帧
+                    <Input value={frameShot} onChange={(e) => setFrameShot(e.target.value)} className="mt-1 w-24" />
+                  </label>
+                  <button type="submit" className={cn(buttonVariants({ size: "sm", variant: "outline" }))}>
+                    frames
+                  </button>
+                  {frameNote ? <span className="text-muted-foreground">{frameNote}</span> : null}
+                </form>
+              ) : null}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
                 {FLOOR.map((id) => {
                   const who = CREW[id];
@@ -375,6 +451,7 @@ export function StudioFloor({
               <div className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
                 {(
                   [
+                    ["canvas", "畫布"],
                     ["board", "分鏡"],
                     ["plan", "計劃"],
                     ["block", "走位"],
@@ -400,28 +477,8 @@ export function StudioFloor({
                   );
                 })}
               </div>
-              {tab === "board" ? (
-                <div className="mt-3 min-h-48 space-y-3">
-                  {job?.continuity ? (
-                    <p className="text-xs text-muted-foreground">
-                      Cut = boards：{job.continuity.cut.join(" → ")} · 同一 SH id，唔另開場。
-                    </p>
-                  ) : null}
-                  <div className="grid gap-3 sm:grid-cols-2">
-                  {(job?.outputs.stills ?? []).length === 0 ? (
-                    <Empty label="未有 stills。阿圖鎖分鏡之後阿靜先出圖。" />
-                  ) : (
-                    job?.outputs.stills.map((rel) => (
-                      <figure key={rel} className="overflow-hidden rounded-lg border bg-black">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={media(job.id, rel)} alt={rel} className="w-full" />
-                        <figcaption className="px-2 py-1 text-[11px] text-muted-foreground">{rel}</figcaption>
-                      </figure>
-                    ))
-                  )}
-                  </div>
-                </div>
-              ) : null}
+              {tab === "canvas" ? <ShotCanvas key={job?.id} job={job} /> : null}
+              {tab === "board" ? <StoryboardPanel job={job} /> : null}
               {tab === "plan" ? (
                 <div className="mt-3 min-h-48 space-y-3 text-sm">
                   <p className="text-sm font-medium">計劃 · narrative plan</p>
@@ -540,7 +597,8 @@ export function StudioFloor({
                 </div>
               ) : null}
               {tab === "lock" ? (
-                <div className="mt-3 min-h-48">
+                <div className="mt-3 min-h-48 space-y-4">
+                <ShotAudio job={job} />
                 {job?.outputs.pictureLock ? (
                   <div className="space-y-3">
                     <p className="text-sm font-medium">成片 · picture lock</p>
@@ -624,8 +682,43 @@ export function StudioFloor({
   );
 }
 
+
 function Empty({ label }: { label: string }) {
   return <p className="rounded-lg border border-dashed p-8 text-sm text-muted-foreground">{label}</p>;
+}
+
+function ProductLinks({ job }: { job: JobRecord | null }) {
+  if (!job) return null;
+  const out = job.outputs;
+  const files = [
+    out.callSheet,
+    out.continuity,
+    out.narrativePlan,
+    out.voice,
+    out.cutPlan,
+    out.concatGate,
+    out.scenePreview,
+    out.pictureLock,
+    out.qcReport,
+    out.redo,
+    out.blenderScript,
+    out.blockingPreview,
+    out.vault,
+    ...out.stills,
+    ...out.shots,
+    ...out.blockout,
+    ...out.receipts,
+  ].filter((p): p is string => Boolean(p));
+  if (!files.length) return null;
+  return (
+    <div className="flex flex-wrap gap-2 text-[11px]">
+      {files.map((file) => (
+        <a key={file} className="text-primary underline" href={media(job.id, file)}>
+          {file}
+        </a>
+      ))}
+    </div>
+  );
 }
 
 function QcCard({

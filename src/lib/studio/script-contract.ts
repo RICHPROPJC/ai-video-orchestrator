@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { shotSecMin } from "./frame-grid";
 
 export const CHARACTER_ID_RE = /^[A-Z]$/;
 export const SCENE_ID_RE = /^SC\d{2}$/;
@@ -20,8 +21,6 @@ export function hasVisibleActionVerb(action: string): boolean {
 }
 const BEATS_PER_SCENE_MIN = 4;
 const BEATS_PER_SCENE_MAX = 12;
-/** ECOM1A 廣告帶：一場三拍起（EPISODE/FEATURE 嘅 4–12 唔變）。 */
-const AD_BEATS_PER_SCENE_MIN = 3;
 
 /** The shape of a 10-minute slate. A fixture may ask for a smaller one, so the
  *  counts are a knob with this default rather than a constant in the schema. */
@@ -32,39 +31,34 @@ export const FEATURE_RANGES: ScriptRanges = { scenes: [6, 14], totalBeats: [60, 
 export const EPISODE_RANGES: ScriptRanges = { scenes: [4, 8], totalBeats: [28, 60] };
 export const EPISODE_MAX_SEC = 360;
 
-/** ECOM1A 廣告帶：≤30s 係另一種 slate——一場一景，3–6 拍。力學：grid 最短
- *  實鏡 124f≈5.17s，AD beat floor 釘 5.0s → 3拍×5.33=16s 寫得入（beatCeiling(16)=3），
- *  6拍×5.0=30s 貼帶邊；<15s 短brief物理上裝唔落三拍，schema 大聲死。 */
+/** Short slates are not forced into one scene. Scene count comes from the story. */
+export const SHORT_RANGES: ScriptRanges = { scenes: [1, 8], totalBeats: [1, 40] };
+/** Kept so older ad-band callers still import. rangesFor no longer selects it from duration. */
 export const AD_RANGES: ScriptRanges = { scenes: [1, 1], totalBeats: [3, 6] };
 export const AD_MAX_SEC = 30;
-/** AD beat floor：16s 目標三鏡每鏡 5.33s，過 grid 5.17s 但入唔到 5.5 嘅 episode floor。 */
-export const AD_SECONDS_PER_BEAT_FLOOR = 5.0;
-/** AD 場景 clamp 下限 = 三拍最短場（3×5.0）；episode/feature 嘅 24s 不變。 */
-export const AD_SCENE_TARGET_MIN = 15;
 
 export function rangesFor(targetSec: number): ScriptRanges {
-  if (targetSec <= AD_MAX_SEC) return AD_RANGES;
+  if (targetSec <= AD_MAX_SEC) return SHORT_RANGES;
   return targetSec <= EPISODE_MAX_SEC ? EPISODE_RANGES : FEATURE_RANGES;
 }
 
-/** beats-per-second floor by band: ads run 5.0s, episode/feature stay 5.5s. */
-export function beatsFloorFor(targetSec: number): number {
-  return targetSec <= AD_MAX_SEC ? AD_SECONDS_PER_BEAT_FLOOR : SECONDS_PER_BEAT_FLOOR;
+/** One floor: the grid's shortest shot. No separate 5.0 / 5.5 beat copies. */
+export function beatsFloorFor(_targetSec: number): number {
+  return shotSecMin();
 }
+
+export const SECONDS_PER_BEAT_FLOOR = shotSecMin();
 
 /** scene targetSec clamp bounds by band. */
 export function sceneClampBounds(targetSec: number): { min: number; max: number } {
+  const floor = shotSecMin();
   return targetSec <= AD_MAX_SEC
-    ? { min: AD_SCENE_TARGET_MIN, max: AD_MAX_SEC }
+    ? { min: Math.min(floor, targetSec), max: Math.max(targetSec, floor) }
     : { min: SCENE_TARGET_MIN, max: SCENE_TARGET_MAX };
 }
 export const SCENE_TARGET_MIN = 24;
 export const SCENE_TARGET_MAX = 120;
 const TARGET_TOLERANCE = 0.1;
-
-/** A beat becomes at least one shot and no shot is shorter than the frame grid
- *  allows, so a scene's second budget is a hard ceiling on how many beats fit. */
-export const SECONDS_PER_BEAT_FLOOR = 5.5;
 
 export function maxBeatsIn(sceneTargetSec: number): number {
   return Math.floor(sceneTargetSec / beatsFloorFor(sceneTargetSec));
@@ -101,6 +95,7 @@ export const characterSchema = z.object({
     gender: z.enum(["f", "m", "n"]),
   }),
   heightM: z.number().min(0.8).max(1.2),
+  publicName: omittable(z.string().min(1).max(24)),
   speaks: z.boolean(),
 });
 
@@ -131,7 +126,7 @@ const outlineShape = z.object({
   mood: z.string().min(1).max(80),
   language: z.enum(["zh-Hant", "yue", "en"]),
   world: worldSchema,
-  characters: z.array(characterSchema).min(2).max(12),
+  characters: z.array(characterSchema).min(1).max(12),
   scenes: z.array(sceneSchema).min(1),
   targetSec: z.number().positive(),
 });
@@ -219,8 +214,7 @@ export type Beat = z.infer<typeof beatShape>;
 
 export function sceneBeatsSchema(ctx: { sceneId: string; speakingNames: string[]; targetSec: number }) {
   const speaking = new Set(ctx.speakingNames);
-  // ECOM1A: the ad band (≤30s scenes) runs three beats up; episode/feature stay 4–12
-  const beatsMin = ctx.targetSec <= AD_MAX_SEC ? AD_BEATS_PER_SCENE_MIN : BEATS_PER_SCENE_MIN;
+  const beatsMin = ctx.targetSec <= AD_MAX_SEC ? 1 : BEATS_PER_SCENE_MIN;
   const beatCeiling = maxBeatsIn(ctx.targetSec);
   return sceneBeatsShape(beatsMin).superRefine((scene, report) => {
     if (scene.sceneId !== ctx.sceneId) {

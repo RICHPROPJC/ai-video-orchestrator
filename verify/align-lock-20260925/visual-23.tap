@@ -1,0 +1,148 @@
+TAP version 13
+# Subtest: media preview is bounded WebP; opening the image keeps the original PNG
+ok 1 - media preview is bounded WebP; opening the image keeps the original PNG
+  ---
+  duration_ms: 373.049624
+  type: 'test'
+  ...
+# Subtest: boards repairs only rejected cells, keeps shot/position/hash/QC receipts
+ok 2 - boards repairs only rejected cells, keeps shot/position/hash/QC receipts
+  ---
+  duration_ms: 980.431231
+  type: 'test'
+  ...
+# Subtest: H3 anchor seven onwards use the batch in the original order
+ok 3 - H3 anchor seven onwards use the batch in the original order
+  ---
+  duration_ms: 18.151442
+  type: 'test'
+  ...
+# Subtest: eight 68-frame requests budget 73 each; measured 577 cannot override the gate
+ok 4 - eight 68-frame requests budget 73 each; measured 577 cannot override the gate
+  ---
+  duration_ms: 112.052622
+  type: 'test'
+  ...
+# Subtest: runBoards completes only with visible mapped cuts and a visual receipt
+ok 5 - runBoards completes only with visible mapped cuts and a visual receipt
+  ---
+  duration_ms: 888.579854
+  type: 'test'
+  ...
+# Subtest: the two seats drive a frozen fixture to a valid three-scene callsheet
+ok 6 - the two seats drive a frozen fixture to a valid three-scene callsheet
+  ---
+  duration_ms: 77.296964
+  type: 'test'
+  ...
+# Subtest: every shot carries a camera a mark ray can reach and marks for its cast
+ok 7 - every shot carries a camera a mark ray can reach and marks for its cast
+  ---
+  duration_ms: 39.524175
+  type: 'test'
+  ...
+# Subtest: speaking parts stay inside the cast roster and every line is a cast member's
+ok 8 - speaking parts stay inside the cast roster and every line is a cast member's
+  ---
+  duration_ms: 43.950729
+  type: 'test'
+  ...
+# Subtest: provenance names both models, lists receipts and digests the sheet
+ok 9 - provenance names both models, lists receipts and digests the sheet
+  ---
+  duration_ms: 77.471569
+  type: 'test'
+  ...
+# Subtest: the seat-authored sheet passes loadCallSheet, the same gate the plug path uses
+ok 10 - the seat-authored sheet passes loadCallSheet, the same gate the plug path uses
+  ---
+  duration_ms: 33.812774
+  type: 'test'
+  ...
+# Subtest: each seat gets its own charter and only its sealed packet
+ok 11 - each seat gets its own charter and only its sealed packet
+  ---
+  duration_ms: 27.612168
+  type: 'test'
+  ...
+# Subtest: the seats speak their own thinking and index the script into the vault
+ok 12 - the seats speak their own thinking and index the script into the vault
+  ---
+  duration_ms: 29.434754
+  type: 'test'
+  ...
+# Subtest: the handoff carries each figure's last slot, stance and props forward
+ok 13 - the handoff carries each figure's last slot, stance and props forward
+  ---
+  duration_ms: 2.35404
+  type: 'test'
+  ...
+# Subtest: padBoardDurations lifts durationSec before the dialogue-clock zod gate
+ok 14 - padBoardDurations lifts durationSec before the dialogue-clock zod gate
+  ---
+  duration_ms: 8.534137
+  type: 'test'
+  ...
+# Subtest: padBoardDurations lifts a short scene sum into the budget band
+ok 15 - padBoardDurations lifts a short scene sum into the budget band
+  ---
+  duration_ms: 1.322051
+  type: 'test'
+  ...
+# Subtest: 07JZ SC06 grave: a 49.1 sum against hi 49.05 cuts back inside the band
+ok 16 - 07JZ SC06 grave: a 49.1 sum against hi 49.05 cuts back inside the band
+  ---
+  duration_ms: 10.590943
+  type: 'test'
+  ...
+# Subtest: SC02 grave: facing 0 and heldBy "null" are repaired, then zod passes
+ok 17 - SC02 grave: facing 0 and heldBy "null" are repaired, then zod passes
+  ---
+  duration_ms: 2.919099
+  type: 'test'
+  ...
+# Subtest: T5MM SC01 grave: missing, null and illegal gait become plant, then zod passes
+ok 18 - T5MM SC01 grave: missing, null and illegal gait become plant, then zod passes
+  ---
+  duration_ms: 2.748579
+  type: 'test'
+  ...
+# Subtest: padBoardDurations drops heldBy when that letter is not in the shot cast
+ok 19 - padBoardDurations drops heldBy when that letter is not in the shot cast
+  ---
+  duration_ms: 0.407158
+  type: 'test'
+  ...
+# Subtest: 2Y0V grave: gait word in stanceEnd and depth word in travelTo drop before zod, no retry burned
+ok 20 - 2Y0V grave: gait word in stanceEnd and depth word in travelTo drop before zod, no retry burned
+  ---
+  duration_ms: 1.704918
+  type: 'test'
+  ...
+# Subtest: BO9W grave: two figures on C/mid — the later one is nudged to a free seat before zod
+ok 21 - BO9W grave: two figures on C/mid — the later one is nudged to a free seat before zod
+  ---
+  duration_ms: 2.453077
+  type: 'test'
+  ...
+# Subtest: recoverBoardsKeys maps qwen punctuation keys onto sceneId
+ok 22 - recoverBoardsKeys maps qwen punctuation keys onto sceneId
+  ---
+  duration_ms: 2.424595
+  type: 'test'
+  ...
+# Subtest: a denied model never reaches the wire, whichever seat asks
+ok 23 - a denied model never reaches the wire, whichever seat asks
+  ---
+  duration_ms: 7.367912
+  type: 'test'
+  ...
+1..23
+# tests 23
+# suites 0
+# pass 23
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4013.388815

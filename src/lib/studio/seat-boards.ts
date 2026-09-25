@@ -1,4 +1,8 @@
 import crypto from "node:crypto";
+import path from "node:path";
+import { liveBoardLane, momentsForShot, type BoardLane } from "./asset-board";
+import { renderBoards, type BoardsVisualOptions } from "./boards-visual";
+import { loadConfig } from "./config";
 import { chatJsonSeat, type RepairNote } from "./crew-llm";
 import { BOARDS_CHARTER } from "./seat-charters";
 import { assemblePlaybook, markPass } from "./playbook";
@@ -213,21 +217,26 @@ export function sheetDigest(sheet: CallSheet): string {
 
 /** 阿圖 boards one scene per turn so the handoff is real continuity, then the
  *  desk — not the model — assigns SH ids and turns the grammar into geometry. */
+type BoardsOptions = { script: Script; targetSec: number; aspect?: CallSheet["aspect"]; writer: { model: string; receipts: string[] }; draftOnly?: boolean };
+type BoardsIo = SeatIo & { boardLane?: BoardLane; boardsDir?: string };
+export function runBoards(opts: { render: BoardsVisualOptions }): ReturnType<typeof renderBoards>;
+export function runBoards(opts: BoardsOptions, io: BoardsIo): Promise<BoardsResult>;
 export async function runBoards(
-  opts: { script: Script; targetSec: number; aspect?: CallSheet["aspect"]; writer: { model: string; receipts: string[] } },
-  io: SeatIo,
-): Promise<BoardsResult> {
+  opts: BoardsOptions | { render: BoardsVisualOptions },
+  io?: BoardsIo,
+): Promise<BoardsResult | Awaited<ReturnType<typeof renderBoards>>> {
+  if ("render" in opts) return renderBoards(opts.render);
+  if (!io) throw new Error("boards: seat IO required");
   const { script } = opts;
   const characters = script.outline.characters.map((c) => ({ id: c.id, name: c.name }));
   const receipts: string[] = [];
   // system = charter (law) + global playbook + own playbook; charter never shrinks
-  const book = assemblePlaybook("boards", io.playbookDir);
+  const book = assemblePlaybook("boards", io.playbookDir, io.drama);
   const boards: BoardsScene[] = [];
   let carried: Handoff = {};
-  // the writer's scene targets are within 10% of the slate; rescaling them to
-  // land exactly on it keeps the per-scene gate and the sheet gate the same gate
+  // Locked scene seconds are the clock. The form number is not applied again.
   const declared = script.outline.scenes.reduce((a, s) => a + s.targetSec, 0) || 1;
-  const budget = (sec: number) => (sec / declared) * opts.targetSec;
+  const budget = (sec: number) => sec;
 
   for (const [i, scene] of script.outline.scenes.entries()) {
     // qwen on litellm sometimes returns an empty JSON object if the prior scene
@@ -270,10 +279,23 @@ export async function runBoards(
     io.index?.({ id: `boards:${scene.id}`, text: pass.value.shots.map((s) => s.action).join(" ") });
   }
 
-  const expanded = expandBoards({ script, boards, targetSec: opts.targetSec, aspect: opts.aspect });
-  assertSheetGates(expanded, { script, targetSec: opts.targetSec });
-  // the boards stage passed with these bullets in the prompt: ship gate
-  receipts.push(...markPass(["boards", "global"], io.playbookDir));
+  const expanded = expandBoards({ script, boards, targetSec: declared, aspect: opts.aspect });
+  assertSheetGates(expanded, { script, targetSec: declared });
+  // A callsheet is a text draft until visible boards and their mapped cuts pass.
+  if (!opts.draftOnly) {
+    const boardsDir = io.boardsDir ?? path.join(io.receiptDir, "boards");
+    const moments = expanded.shots.flatMap((shot) => momentsForShot({
+      ...shot, keyframePositions: shot.keyframePositions || "0%",
+      action: `${shot.marks.map((m) => expanded.characters.find((c) => c.id === m.characterId)?.name ?? m.characterId).join("、")}：${shot.action}`,
+    }, path.join(boardsDir, "cells")));
+    const visual = await runBoards({ render: {
+      moments, boardsDir, receiptDir: io.receiptDir, name: "storyboard",
+      images: [], lane: io.boardLane ?? liveBoardLane(loadConfig().stills.url), cellPx: 1024,
+    } });
+    receipts.push(path.relative(io.receiptDir, visual.receipt));
+    expanded.storyboard = moments.map((m) => ({ shotId: m.shotId, at: m.at || "0%", file: m.file, board: [...visual.attempts].reverse().find((a) => a.cells.some((c) => c.destination === m.file && c.status === "GREEN"))?.board }));
+    receipts.push(...markPass(["boards", "global"], io.playbookDir, io.drama));
+  }
   const sheet: CallSheet = {
     ...expanded,
     provenance: {

@@ -1,0 +1,17 @@
+nex-blender-effort-abc.ts(4,28): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+nex-blender-effort-abc.ts(5,55): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+nex-blender-real-call.ts(4,28): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+nex-blender-real-call.ts(5,55): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+nex-skill-fusion-nexonly.ts(4,28): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+nex-skill-fusion-nexonly.ts(5,26): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+nex-skill-fusion.ts(4,28): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+nex-skill-fusion.ts(5,38): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+scripts/nex-blender-real-call.ts(4,28): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+scripts/nex-blender-real-call.ts(5,38): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+src/lib/studio/memory.ts(3,30): error TS2307: Cannot find module 'node:sqlite' or its corresponding type declarations.
+src/lib/studio/pipeline.test.ts(95,33): error TS2307: Cannot find module 'bun:test' or its corresponding type declarations.
+src/lib/studio/still-h3-proxy.test.ts(7,10): error TS2305: Module '"./u15-edit"' has no exported member 'STILLS_EDIT'.
+src/lib/studio/still-h3-proxy.ts(8,10): error TS2305: Module '"./u15-edit"' has no exported member 'STILLS_EDIT'.
+src/lib/studio/wb/projector.test.ts(6,30): error TS2307: Cannot find module 'node:sqlite' or its corresponding type declarations.
+src/lib/studio/wb/projector.ts(3,30): error TS2307: Cannot find module 'node:sqlite' or its corresponding type declarations.
+src/lib/studio/wb/query.ts(3,30): error TS2307: Cannot find module 'node:sqlite' or its corresponding type declarations.

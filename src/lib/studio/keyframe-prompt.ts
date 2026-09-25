@@ -102,6 +102,30 @@ export function needsShotFacts(shot: Shot): boolean {
   return TEXT_SCREEN_RE.test(shot.action) || (shot.props ?? []).some((p) => TEXT_SCREEN_RE.test(p.name));
 }
 
+/** Wrong on-screen text. Redraw the same card before rewriting the prompt. */
+export function textMiss(reasons: string[]): boolean {
+  return reasons.length > 0 && reasons.every((r) => /文字|上屏|錯字|字形|ocr/i.test(r));
+}
+
+/** After one same-card redraw still misses the glyphs: one action-line rewrite.
+ *  Do not append a second copy of the words. Boards shot action ceiling is 60. */
+export function textRetryUser(shot: Shot, failReasons: string[]): string {
+  const line = (shot.action || shot.stillPrompt || shot.heading).trim();
+  return JSON.stringify({
+    task: "同一張卡再抽仍然文字唔啱。而家先改呢一鏡嘅動作句，一次。",
+    shot: shot.id,
+    action: line,
+    failReasons,
+    rule: "改寫 action 一句，1–60 字。沿用原本要上屏嘅字，唔好再加一行重複嘅字，唔好把 failReasons 抄入 action。",
+    output_schema: { thinking: "string，最多三句", action: "string，1–60 字" },
+  });
+}
+
+export const textRetrySchema = z.object({
+  thinking: z.preprocess((v) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 400) : "改一句"), z.string().min(1).max(400)),
+  action: z.preprocess((v) => (typeof v === "string" ? v.trim().slice(0, 60) : v), z.string().min(1).max(60)),
+});
+
 /** Assemble packet facts verbatim for the /edit prompt. Code assembles, never
  *  authors — every number on screen must trace to one of these rows. */
 export function factsBlock(facts: ShotFact[]): string {
@@ -266,40 +290,31 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
   // angle version, so facing follows THAT image — never the standing frontal
   // puppet, which drags the face back to camera. Pose/occupancy stay with
   // Image-1. The 45° sentence carries the law-mandated eye guard + 90° ban.
-  const facing45 = shot.refAngle === "45";
-  const facing = (slot: number) =>
-    facing45
-      ? `朝向跟 Image-${slot} 嘅三份一側面45度：仍要見到雙眼同兩邊面頰，唔好轉成90度純側面；姿勢同佔位跟 Image-1 人偶。`
-      : `朝向同動作跟 Image-1 人偶。`;
-  // Image-N 對號＋每張作用：puppet i+1 wears character from Image-i+2 — the ref
-  // is the DRESSED body (面容＋衫著, Chau 法5/9), facing per the shot's refAngle;
-  // wardrobe prefers the drama's base cast on disk (loadBaseCast, Ivo bug4)
+  // Identity is the uncut sheet on Image-2 (and the next sheets). Image-1 is
+  // occupancy only. The 45° turn sentence stays on portraitPrompt, not here.
   const people = chars
     .map((c, i) => {
       const wardrobe = opts.cast?.characters.find((e) => e.id === c.id)?.wardrobe ?? c.wardrobe;
-      return `左起第${i + 1}個人偶＝Image-${i + 2} 嘅角色${c.name}（${c.role}）：面容、髮型同成套衫著照 Image-${i + 2}——${wardrobe}；${facing(i + 2)}`;
+      return `左起第${i + 1}個角色＝Image-${i + 2} 未切成張入面嘅${c.name}（${c.role}）：面容、髮型同成套衫著照 Image-${i + 2}——${wardrobe}。`;
     })
     .join("");
   let props = "";
   if (prop && cls === "garment") {
-    // clothing on the body, never farm vocabulary — a coat drawn as a plow blade is the SH07 regression
     props = `【道具】${prop.name}係一件衣物：披上膊頭或者着住喺身嘅衣服，有領有袖，布料隨姿勢自然垂落，屬於角色造型一部分。`;
   } else if (prop && cls === "document") {
-    // flat paper document in the hands — never the plow sentence, never a tool
     props = `【道具】${prop.name}係一張紙本文書：薄而平，可以喺手中展開、遞出或者攤開睇，上面有字有印；佢係文具唔係工具，畫面冇任何農具或者長柄器具。`;
   } else if (prop && cls === "system") {
-    // chart + UI frame + text labels; never plow, never a screen/forbid echo
-    props = `【道具】${prop.name}係一個懸浮喺半空嘅全息投影界面：半透明光造影像微微發光，畫面要見齊三層結構——數據圖表圖形、UI介面框線、細小文字標籤，全部懸浮喺角色手上方；佢係光造嘅投影，冇機身冇金屬邊框，唔係實體機器。`;  } else if (prop) {
-    // "one blade, one tool" — U1.5's default farm tool is a multi-tine rake
-    props = `【道具】人偶手中／兩人之間嘅長條係${prop.name}：一件完整木犁，弧形犁樑自後把手斜落前方，前端只有一塊三角形鐵犁鏵、單一刃口向下插入壟土；成張畫面只有呢一件農具，背景冇任何其他工具；唔係${prop.forbid.join("、")}。`;
+    props = `【道具】${prop.name}係一個懸浮喺半空嘅全息投影界面：半透明光造影像微微發光，畫面要見齊三層結構——數據圖表圖形、UI介面框線、細小文字標籤，全部懸浮喺角色手上方；佢係光造嘅投影，冇機身冇金屬邊框，唔係實體機器。`;
+  } else if (prop && /樽|瓶/.test(prop.name)) {
+    props = `【道具】${prop.name}：有蓋、樽頸收窄、瘦高圓柱玻璃樽身，由樽底到樽蓋成件入鏡，放喺角色手邊。`;
+  } else if (prop) {
+    props = `【道具】${prop.name}：${prop.shape.join("、")}。呢件物件嘅輪廓同材質照呢句，放喺角色手邊。`;
   }
-  // 變咗＋保持咩唔變：質感/材質/光線變，人偶位置/姿勢/佔位不變（法1準錨清單）；
-  // 人數錨住人偶數（法5：錨定句，唔係冇錨 negative）
   const keep = opts.first
-    ? `畫面人數照 Image-1 人偶：淨係得呢${chars.length}個角色，每個嘅面容同衫著照自己嗰張 Image。`
-    : `Image-2 係上一鏡嘅定格：樣貌、衣服${prop ? `、${prop.name}` : ""}、光線同色調照 Image-2；姿勢同企位跟 Image-1。`;
+    ? `畫面人數照呢${chars.length}個角色，每個身份跟自己嗰張未切成張。`
+    : `上一鏡定格係最後一張參考。身份仍然跟未切的成張。樣貌、衣服${prop ? `、${prop.name}` : ""}、光線同色調照最後一張。`;
   const brief = [
-    "【底圖】Image-1 係 Blender 灰模概念圖，人偶係角色佔位。轉 photoreal——變嘅係質感、材質同光線；人偶嘅位置、姿勢、佔位保持照 Image-1。",
+    "【底圖】Image-1 係這鏡一張佔位，只帶距離同位置。身份跟 Image-2 未切的成張。轉 photoreal——變嘅係質感、材質同光線。",
     `【人物】${people}`,
     `【場景】${sceneLine(sheet, shot)}`,
     props,

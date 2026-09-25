@@ -35,7 +35,7 @@ export async function checkGate(opts: {
    *  (chained multishot shots quantise to the 17-frame grid, so the expected
    *  count is the sum of each shot's own snapped frames). Shots not covered
    *  by any segment keep the per-shot check. */
-  segments?: { shots: string[] }[];
+  segments?: { shots: string[]; frames?: number; perShot?: number; kind?: string }[];
 }): Promise<GateResult> {
   const { plan, motionDir } = opts;
   const shots = plan.shots ?? [];
@@ -51,7 +51,7 @@ export async function checkGate(opts: {
     if (!fs.existsSync(shot.wav)) return fail(`missing slice ${shot.wav}`);
     const got = await wavSeconds(shot.wav);
     if (Math.abs(got - shot.duration_s) > FRAME_TOL) {
-      return fail(`shot ${shot.id}: ${path.basename(shot.wav)} ${got.toFixed(6)}s != plan ${shot.duration_s.toFixed(6)}s`);
+      return fail(`shot ${shot.id}: 退回阿聲 — ${path.basename(shot.wav)} ${got.toFixed(6)}s != locked ${shot.duration_s.toFixed(6)}s`);
     }
     const seg = segOf.get(shot.id);
     const fileId = seg ? seg.join("-") : shot.id;
@@ -60,10 +60,20 @@ export async function checkGate(opts: {
     const mp4 = path.join(motionDir, `${fileId}.mp4`);
     if (!fs.existsSync(mp4)) return fail(`missing ${mp4}`);
     const frameIds = seg ?? [shot.id];
-    const frames = frameIds.reduce(
-      (a, id) => a + snapDurationToFrames(shots.find((s) => s.id === id)?.duration_s ?? 0),
-      0,
-    );
+    const marked = (opts.segments ?? []).find((s) => s.shots.join("-") === fileId);
+    const snapped = frameIds.map((id) => snapDurationToFrames(shots.find((s) => s.id === id)?.duration_s ?? 0));
+    const uniform = Math.max(...snapped);
+    const frames = marked?.kind === "multishot"
+      ? uniform * snapped.length
+      : marked?.kind === "cform" && snapped.length > 1
+        ? snapped[0]! + Math.max(...snapped.slice(1)) * (snapped.length - 1)
+        : snapped.reduce((a, n) => a + n, 0);
+    if (marked?.frames !== undefined && marked.frames !== frames) {
+      return fail(`${fileId}: manifest frames ${marked.frames} != planned grid budget ${frames}`);
+    }
+    if (marked?.perShot !== undefined && marked.perShot !== uniform) {
+      return fail(`${fileId}: manifest perShot ${marked.perShot} != planned grid ${uniform}`);
+    }
     const probe = await probeVideo(mp4);
     if (probe.nbFrames !== frames) {
       return fail(`${fileId}: ${mp4} has ${probe.nbFrames} frames != summed wav snap ${frames}`);

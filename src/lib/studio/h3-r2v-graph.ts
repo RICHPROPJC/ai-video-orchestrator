@@ -1,4 +1,5 @@
 import type { ComfyGraph } from "./comfy";
+import { snapDurationToFrames } from "./frame-grid";
 
 // v6-parity constants — shotdag h3_submit.py, verbatim values (receipts in
 // NOTES_h3_graph.md "v6 parity"). Defaults with receipts, not locked numbers.
@@ -139,9 +140,15 @@ export type BuildH3GraphOpts = {
    *  pair, or the latent and the motion ref disagree). */
   width?: number;
   height?: number;
-  /** A-form only (no Video 1): the U1.5 still anchoring H3Keyframes at 0%. */
+  /** A-form only (no Video 1): the U1.5 still anchoring H3Keyframes at 0%.
+   *  Also the first keyframe image when keyframePositions is set. */
   kfStartName?: string;
   kfEndName?: string;
+  /** Extra keyframe upload names after start/end. The positions string is the shot's own. */
+  kfExtraNames?: string[];
+  /** Percent anchors. Video 1 coexistence remains disputed: ALIGN-LOCK records
+   * both the typed allowance and §5b warning; this change does not adjudicate it. */
+  keyframePositions?: string;
   /** §5b routing field: a Video 1 asset present → C-form (zero H3Keyframes,
    *  ref_images.ref_image_0 = angle portrait); absent → A-form (H3Keyframes
    *  0%/100%). Passing keyframe names together with a Video 1 throws. */
@@ -214,6 +221,10 @@ export type BuildH3GraphOpts = {
  *  one positions entry per anchor across both (anchors batch comes AFTER the
  *  image_N slots). % positioning is native to positions, so no percent field
  *  exists anywhere else. */
+function rejectChainedMultishot(chain: unknown): void {
+  if (chain) throw new Error("multishot_identity_only: chained Video 1/start-frame generation is outside ALIGN-LOCK");
+}
+
 export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   const variant = opts.variant ?? "a";
   const m = opts.models;
@@ -241,7 +252,8 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   // absent → A-form still-to-video (H3Keyframes 0%/100%). Refuse to emit the
   // dead coexistence shape — same refuse-to-emit family as prompt_too_thin.
   const hasVideo1 = Boolean(opts.blockoutName);
-  if (hasVideo1 && (opts.kfStartName || opts.kfEndName)) {
+  const positions = opts.keyframePositions?.trim() ?? "";
+  if (!positions && hasVideo1 && (opts.kfStartName || opts.kfEndName || opts.kfExtraNames?.length)) {
     throw new Error(
       `keyframes_video1_coexist: <Video 1> (${opts.blockoutName}) and H3Keyframes ` +
         `(${opts.kfStartName ?? ""}${opts.kfEndName ? " + kf_end" : ""}) cannot ride one graph — ` +
@@ -257,11 +269,13 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   if (opts.chain && (!opts.blockoutName || variant !== "a")) {
     throw new Error("chain_requires_cform: the chained topology's shot 1 IS the C-form render (Video 1 motion + portrait identity)");
   }
+  // ALIGN-LOCK: multi-shot generation accepts identity sheets only.
+  rejectChainedMultishot(opts.chain);
   if (opts.chain && opts.chain.shotCount < 1) {
     throw new Error("chain.shotCount must be ≥1 (the shots after the C-form first shot)");
   }
   if (opts.multishot) {
-    if (opts.blockoutName || opts.kfStartName || opts.kfEndName) {
+    if (opts.blockoutName || opts.kfStartName || opts.kfEndName || opts.kfExtraNames?.length || positions || opts.multishot.startImageName) {
       throw new Error("multishot is standalone: no Video 1 (the node has no ref_videos input) and no keyframes");
     }
     if (variant !== "a") throw new Error("multishot runs on the production path only (variant a)");
@@ -306,7 +320,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       shot_count: ms.shotCount,
       width: width,
       height: height,
-      frames_per_shot: ms.framesPerShot,
+      frames_per_shot: snapDurationToFrames(ms.framesPerShot / 24),
       seed: opts.seed,
       steps: opts.steps,
       seed_per_shot: MS_PARAMS.seedPerShot,
@@ -434,11 +448,9 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   // keyframes lane: BKF/C alternates plus A-form (variant a WITHOUT Video 1 —
   // §5b: the H3Keyframes lane belongs to still-to-video; a Video 1 shot is
   // C-form and never wires keyframes).
-  const keyform = variant === "bkf" || variant === "c" || (variant === "a" && !hasVideo1);
+  const keyform = Boolean(positions) || variant === "bkf" || variant === "c" || (variant === "a" && !hasVideo1);
   if (keyform) {
-    // official H3Keyframes (card C ①): the anchors ARE the clip's own frames,
-    // pinned by positions — % is native here. One positions entry per anchor.
-    g.kf_start_in = { class_type: "LoadImage", inputs: { image: opts.kfStartName! } };
+    if (!opts.kfStartName) throw new Error("keyframes require kfStartName");
     const kfInputs: Record<string, unknown> = {
       clip: ["clip", 0],
       vae: ["vvae", 0],
@@ -449,10 +461,34 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       positions: "0%",
       image_1: ["kf_start_in", 0],
     };
-    if (variant === "a" && opts.kfEndName) {
-      g.kf_end_in = { class_type: "LoadImage", inputs: { image: opts.kfEndName } };
-      kfInputs.positions = "0%, 100%";
-      kfInputs.image_2 = ["kf_end_in", 0];
+    if (positions) {
+      const files = [opts.kfStartName, ...(opts.kfEndName ? [opts.kfEndName] : []), ...(opts.kfExtraNames ?? [])];
+      const marks = positions.split(/[,，]/).map((p) => p.trim());
+      const values = marks.map((p) => /^\d+(?:\.\d+)?%$/.test(p) ? Number(p.slice(0, -1)) : NaN);
+      if (marks.length !== files.length || values.some((v, i) => !Number.isFinite(v) || v < 0 || v > 100 || (i > 0 && v <= values[i - 1]!))) {
+        throw new Error("keyframe_positions_invalid: one increasing percentage in 0–100% per image required");
+      }
+      kfInputs.positions = marks.join(", ");
+      let batch: [string, number] | undefined;
+      files.forEach((name, i) => {
+        const id = i === 0 ? "kf_start_in" : i === 1 && opts.kfEndName ? "kf_end_in" : `kf_img_${i + 1}`;
+        g[id] = { class_type: "LoadImage", inputs: { image: name } };
+        if (i < 6) kfInputs[`image_${i + 1}`] = [id, 0];
+        else if (!batch) batch = [id, 0];
+        else {
+          const batchId = `kf_batch_${i + 1}`;
+          g[batchId] = { class_type: "ImageBatch", inputs: { image1: batch, image2: [id, 0] } };
+          batch = [batchId, 0];
+        }
+      });
+      if (batch) kfInputs.images_batch = batch;
+    } else {
+      g.kf_start_in = { class_type: "LoadImage", inputs: { image: opts.kfStartName } };
+      if (variant === "a" && opts.kfEndName) {
+        g.kf_end_in = { class_type: "LoadImage", inputs: { image: opts.kfEndName } };
+        kfInputs.positions = "0%, 100%";
+        kfInputs.image_2 = ["kf_end_in", 0];
+      }
     }
     g.keyframes = { class_type: "H3Keyframes", inputs: kfInputs };
     // anchor strength: the official H3_Keyframes example applies
@@ -515,7 +551,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       shot_count: c.shotCount,
       width: width,
       height: height,
-      frames_per_shot: c.framesPerShot,
+      frames_per_shot: snapDurationToFrames(c.framesPerShot / 24),
       seed: opts.seed,
       steps: opts.steps,
       seed_per_shot: MS_PARAMS.seedPerShot,

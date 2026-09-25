@@ -62,9 +62,9 @@ export type H3KeyframeStation = (typeof H3_KEYFRAME_STATIONS)[number];
 
 export type H3KeyframePlan = {
   /** H3KeyframeInject start_image = frame 0 of THIS generation. */
-  start: { at: "0%"; source: KeyframeSource; file: string };
+  start: { at: string; source: KeyframeSource; file: string };
   /** Optional last-frame anchor of THIS generation — still OUR still, not prev last. */
-  end: { at: "100%"; source: KeyframeSource; file: string };
+  end: { at: string; source: KeyframeSource; file: string };
   /** Previous shot last frame. Never kf_start. Default: stay out of every visual slot. */
   prevLastFrame: { policy: PrevLastPolicy; reason: string };
 };
@@ -80,8 +80,10 @@ export type H3ShotPlan = {
   fl2vaLoaded: true;
   lanes: Record<H3Lane, string>;
   slots: { audio: H3SlotFill[]; photo: H3SlotFill[]; video: H3SlotFill[] };
-  /** null on the C-form — zero keyframe nodes, identity rides ref_image_0. */
+  /** null on the C-form when the shot did not write keyframe positions. */
   keyframes: H3KeyframePlan | null;
+  /** Shot-written positions string. When set, keyframes ride with Video 1. */
+  positions?: string;
   stations: typeof H3_KEYFRAME_STATIONS;
   missKeyframe: { tune: string[]; never: string[] };
 };
@@ -121,6 +123,7 @@ export function planH3Shot(opts: {
   const shotId = opts.shot.id;
   const endFile = opts.ourEndStill ?? opts.ourStill;
   const form: H3PlanForm = opts.blockout ? "c" : "a";
+  const positions = opts.shot.keyframePositions?.trim() || "";
   const locationHop = Boolean(opts.prev && opts.prev.location !== opts.shot.location);
   const prevLast: H3KeyframePlan["prevLastFrame"] = locationHop
     ? {
@@ -177,11 +180,12 @@ export function planH3Shot(opts: {
           ]
         : [],
     },
-    keyframes: form === "c"
+    positions: positions || undefined,
+    keyframes: form === "c" && !positions
       ? null
       : {
-          start: { at: "0%", source: "our_still", file: opts.ourStill },
-          end: { at: "100%", source: opts.ourEndStill ? "our_end_still" : "our_still", file: endFile },
+          start: { at: positions || "0%", source: "our_still", file: opts.ourStill },
+          end: { at: positions || "100%", source: opts.ourEndStill ? "our_end_still" : "our_still", file: endFile },
           prevLastFrame: prevLast,
         },
     stations: H3_KEYFRAME_STATIONS,
@@ -228,6 +232,15 @@ export function assertH3Plan(plan: H3ShotPlan): void {
   if (plan.slots.audio.length > H3_SLOT_CAP.audio) throw new Error("audio slots overflow");
   if (plan.slots.photo.length > H3_SLOT_CAP.photo) throw new Error("photo slots overflow");
   if (plan.slots.video.length > H3_SLOT_CAP.video) throw new Error("video slots overflow");
+  if (plan.positions) {
+    if (plan.form === "c" && plan.keyframes === null) {
+      throw new Error(`${plan.shotId}: 有百分比就要鍵格同 Video 1 一齊`);
+    }
+    if (plan.form === "c" && (plan.slots.video.length !== 1 || plan.slots.video[0]?.bind !== "ref_videos.ref_video_0")) {
+      throw new Error(`${plan.shotId}: C-form requires the blockout as ref_video_0 (motion only)`);
+    }
+    return;
+  }
   if (plan.form === "c") {
     if (plan.keyframes !== null) {
       throw new Error(`${plan.shotId}: C-form plans carry no keyframes (§5b: keyframes × Video 1 coexist ban)`);
@@ -266,7 +279,7 @@ export function assertH3SubmitWiring(
   },
 ): void {
   assertH3Plan(plan);
-  if (plan.form === "c" && (wiring.kfStart || wiring.kfEnd)) {
+  if (plan.form === "c" && (wiring.kfStart || wiring.kfEnd) && !plan.positions) {
     throw new Error(
       `keyframes_video1_coexist: ${plan.shotId} is C-form (Video 1 in ref_video_0) but the wiring carries ` +
         `keyframe stills — keyframes × Video 1 is the §5b model-level double exposure; drop one`,

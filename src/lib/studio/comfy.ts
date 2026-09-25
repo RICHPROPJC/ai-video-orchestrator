@@ -62,7 +62,8 @@ export async function queuePrompt(server: string, graph: ComfyGraph): Promise<st
     node_errors?: unknown;
   };
   if (!res.ok || !json.prompt_id) {
-    throw new Error(json.error?.message || JSON.stringify(json.node_errors || json));
+    const detail = json.node_errors ? ` ${JSON.stringify(json.node_errors).slice(0, 700)}` : "";
+    throw new Error(`${json.error?.message || "comfy prompt rejected"}${detail}`);
   }
   return json.prompt_id;
 }

@@ -148,20 +148,21 @@ function promptShot(withProp: boolean): Shot {
 test("first-appearance prompt names Image-1 (own f0) and Image-2.. (dressed-body refs, BUG3)", () => {
   const text = keyframeEditPrompt(promptSheet(), promptShot(true), { first: true });
   assert.ok(text.includes("Image-1"), "names Image-1");
-  assert.ok(text.includes("左起第1個人偶＝Image-2 嘅角色阿月"), "marks sorted by start.x — A (x30) is first, tied to Image-2");
-  assert.ok(text.includes("左起第2個人偶＝Image-3 嘅角色阿衡"), "B (x70) is second, tied to Image-3");
+  assert.ok(text.includes("左起第1個角色＝Image-2 未切成張入面嘅阿月"), "marks sorted by start.x — A (x30) is first, tied to Image-2");
+  assert.ok(text.includes("左起第2個角色＝Image-3 未切成張入面嘅阿衡"), "B (x70) is second, tied to Image-3");
   assert.ok(text.includes("面容、髮型同成套衫著照 Image-2"), "ref is the dressed body (Chau 法5/9), never face-only");
-  assert.ok(text.includes("朝向同動作跟 Image-1 人偶"), "facing follows the blockout (Chau 法6)");
+  assert.ok(text.includes("畫面人數照呢2個角色"), "people count follows the marked roles");
   assert.ok(text.includes("深藍乾濕褸"), "wardrobe from sheet");
-  assert.ok(text.includes("曲轅犁"), "prop name from sheet");
-  assert.ok(text.includes("唔係锹、铲、锄"), "forbid list from sheet");
+  assert.ok(text.includes("曲轅犁：弯、木、插入"), "tool shape from the sheet");
+  assert.ok(text.includes("放喺角色手邊"), "tool sits beside the hand");
+  assert.ok(!text.includes("唔係锹、铲、锄"), "no forbid echo");
 });
 
-test("later-shot prompt names Image-1 (own f0) and Image-2 (previous keyframe)", () => {
+test("later-shot prompt names Image-1 (own f0) and the previous freeze as the last ref", () => {
   const text = keyframeEditPrompt(promptSheet(), promptShot(false), { first: false });
   assert.ok(text.includes("Image-1"), "names Image-1");
-  assert.ok(text.includes("Image-2 係上一鏡嘅定格"), "prev-keyframe ref line");
-  assert.ok(text.includes("姿勢同企位跟 Image-1"), "posture follows the own f0");
+  assert.ok(text.includes("上一鏡定格係最後一張參考"), "prev freeze is the last ref");
+  assert.ok(text.includes("身份仍然跟未切的成張"), "identity still follows the uncut sheet");
   assert.ok(!text.includes("曲轅犁"), "no prop line without props");
   assert.ok(!text.includes("保持每個人偶嘅位置、姿勢、構圖同鏡頭完全不變"), "no single-image no-op phrasing");
 });

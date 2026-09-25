@@ -68,6 +68,10 @@
     "endpoint": "http://127.0.0.1:8016",
     "model": "wemm-2b"
   },
+  "h3Grid": {
+    "kMin": 3,
+    "kMax": 21
+  },
   "ssh": {
     "user": "hojaiv3v",
     "motionInputDir": "~/comfy/ComfyUI/input",

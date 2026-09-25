@@ -95,25 +95,34 @@ function withDb<T>(ep: string, fn: (db: DatabaseSync) => T): T {
   }
 }
 
-function parseEmbed(json: unknown): number[] {
+export const EMBED_DIM = 2048;
+
+export function parseEmbed(json: unknown): number[] {
   if (!json || typeof json !== "object") throw new Error("embed: empty reply");
   const o = json as Record<string, unknown>;
   if (Array.isArray(o.data) && o.data[0] && typeof o.data[0] === "object") {
     const emb = (o.data[0] as { embedding?: unknown }).embedding;
-    if (Array.isArray(emb) && typeof emb[0] === "number") return emb as number[];
+    if (Array.isArray(emb) && typeof emb[0] === "number") return acceptEmbed(emb as number[]);
   }
   const embeddings = o.embeddings;
   if (Array.isArray(embeddings) && Array.isArray(embeddings[0]) && typeof embeddings[0][0] === "number") {
-    return embeddings[0] as number[];
+    return acceptEmbed(embeddings[0] as number[]);
   }
   if (embeddings && typeof embeddings === "object") {
     const pack = embeddings as { float?: unknown };
     if (Array.isArray(pack.float) && Array.isArray(pack.float[0]) && typeof pack.float[0][0] === "number") {
-      return pack.float[0] as number[];
+      return acceptEmbed(pack.float[0] as number[]);
     }
-    if (Array.isArray(pack.float) && typeof pack.float[0] === "number") return pack.float as number[];
+    if (Array.isArray(pack.float) && typeof pack.float[0] === "number") return acceptEmbed(pack.float as number[]);
   }
   throw new Error("embed: no vector in reply");
+}
+
+function acceptEmbed(vec: number[]): number[] {
+  if (vec.length !== EMBED_DIM || vec.some((n) => typeof n !== "number")) {
+    throw new Error(`embed_dim: got ${vec.length}, want ${EMBED_DIM}`);
+  }
+  return vec;
 }
 
 export async function embedImage(file: string, fetchImpl: typeof fetch = fetch): Promise<number[]> {

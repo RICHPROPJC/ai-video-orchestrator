@@ -148,6 +148,7 @@ function isEmptyJson(obj: unknown, seat: string): boolean {
   if (keys.every((k) => k === "" || /^[.,/]+$/.test(k))) return true;
   if (seat === "boards") {
     const r = obj as Record<string, unknown>;
+    if (typeof r.action === "string" && r.action.trim()) return false;
     return !r.sceneId && !r.shots;
   }
   return false;

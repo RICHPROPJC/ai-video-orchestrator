@@ -86,7 +86,7 @@ test("no wavDir: AuK speaks the continuity dialogue, cloneRef reaches the take",
   assert.ok(fs.existsSync(path.join(audioDir, "SH02.wav")));
 });
 
-test("fail loud: plug wav missing from --wav-dir, or no wav and no dialogue", async () => {
+test("fail loud: --wav-dir that lacks the shot file still stops", async () => {
   const dir = tmp();
   const wavDir = path.join(dir, "plug");
   fs.mkdirSync(wavDir);
@@ -97,10 +97,23 @@ test("fail loud: plug wav missing from --wav-dir, or no wav and no dialogue", as
     () => plugShotWavs({ boards: [shot("SH03", "")], wavDir, audioDir, synthesize: async () => undefined }),
     /--wav-dir 缺 SH03\.wav/,
   );
-  await assert.rejects(
-    () => plugShotWavs({ boards: [shot("SH04", "   ")], audioDir, synthesize: async () => undefined }),
-    /no wav and empty dialogue/,
-  );
+});
+
+test("picture beat with no dialogue writes silence and does not call AuK", async () => {
+  const dir = tmp();
+  const audioDir = path.join(dir, "audio");
+  const calls: RunAukTtsOpts[] = [];
+  const out = await plugShotWavs({
+    boards: [shot("SH04", "   ")],
+    audioDir,
+    synthesize: async (o) => {
+      calls.push(o);
+    },
+  });
+  assert.equal(out[0]!.source, "silent");
+  assert.equal(out[0]!.text, "");
+  assert.equal(calls.length, 0);
+  assert.ok(fs.statSync(path.join(audioDir, "SH04.wav")).size > 44);
 });
 
 if (bareBun) {

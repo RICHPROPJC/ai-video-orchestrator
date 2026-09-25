@@ -2,18 +2,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runPipeline, describeFloor } from "./lib/studio/pipeline";
-import { newSlateId, writeJob, readJob, listJobs, readEvents, readEpEvents, runningBlocker, failedRecent, failedRecentLines } from "./lib/studio/store";
+import { readJob, listJobs, readEvents, readEpEvents, failedRecent, failedRecentLines } from "./lib/studio/store";
+import { createSlate, fleetGateOf, resumeSlate as openResume } from "./lib/studio/open-produce";
 import { projectsDir } from "./lib/studio/paths";
 import { loadConfig, setConfigPath } from "./lib/studio/config";
 import { doctor, formatDoctor } from "./lib/studio/doctor";
 import { blockersForGate, formatFleet, gateReady, probeFleet, type FleetGate } from "./lib/studio/fleet";
 import { runTui } from "./lib/studio/tui";
-import type { JobRecord, ProduceInput } from "./lib/studio/types";
-import { SCENE_ID_RE } from "./lib/studio/script-contract";
-
-const UNTIL_GATES: NonNullable<ProduceInput["until"]>[] = ["boards", "blockout", "stills", "motion"];
-const GRAPH_VARIANTS: NonNullable<ProduceInput["graphVariant"]>[] = ["a", "b", "bkf", "c"];
-
+import type { ProduceInput } from "./lib/studio/types";
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(name);
   if (i >= 0 && process.argv[i + 1]) return process.argv[i + 1];
@@ -58,6 +54,7 @@ Flags
                         blockout＝灰塊走位+f0 即停（唔使 pictureQc）；
                         stills＝photo QC GREEN 即停（stills-ready）；motion＝H3 落片即停
   --scene SCxx          淨係燒呢一場嘅 H3（一場一 hop）；唔加＝出齊全部鏡（原有行為）
+  --shot SHxx           由呢鏡同後面受影響嘅鏡重做；前面 GREEN 保留
   --resume <slate>      接返舊 slate：callsheet 照舊，過咗閘嘅 blockout／keyframe／片唔重做
 
 Rack（two-host truth）
@@ -68,9 +65,13 @@ Rack（two-host truth）
 `);
 }
 
-async function makeJob(brief: string) {
-  const id = newSlateId();
-  const input: ProduceInput = {
+function die(opened: { error: string }): never {
+  console.error(opened.error);
+  process.exit(1);
+}
+
+function makeJob(brief: string) {
+  const opened = createSlate({
     brief,
     durationSec: Number(arg("--duration", "12")),
     aspect: (arg("--aspect", "16:9") as ProduceInput["aspect"]) || "16:9",
@@ -84,80 +85,35 @@ async function makeJob(brief: string) {
     dryRun: process.argv.includes("--dry-run"),
     until: arg("--until") as ProduceInput["until"],
     scene: arg("--scene"),
+    shot: arg("--shot"),
     callSheetPath: arg("--callsheet"),
     castRosterPath: arg("--cast-roster"),
     graphVariant: (arg("--graph-variant", "a") as ProduceInput["graphVariant"]) || "a",
     steps: process.argv.includes("--steps") ? Number(arg("--steps", "4")) : undefined,
     drama: arg("--drama"),
     episode: arg("--episode"),
-  };
-  if (input.graphVariant && !GRAPH_VARIANTS.includes(input.graphVariant)) {
-    console.error(`--graph-variant 只接受 ${GRAPH_VARIANTS.join(" / ")}`);
-    process.exit(1);
-  }
-  if (input.until && !UNTIL_GATES.includes(input.until)) {
-    console.error(`--until 只接受 ${UNTIL_GATES.join(" / ")}`);
-    process.exit(1);
-  }
-  if (input.scene && !SCENE_ID_RE.test(input.scene)) {
-    console.error("--scene 只接受 SCxx（例：--scene SC01）");
-    process.exit(1);
-  }
-  const job: JobRecord = {
-    id,
-    slate: id,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    status: "queued",
-    input,
-    ...(input.drama ? { drama: input.drama } : {}),
-    ...(input.episode ? { episode: input.episode } : {}),
-    progress: 0,
-    retries: { stills: 0, voice: 0, motion: 0 },
-    outputs: { stills: [], shots: [], blockout: [], receipts: [] },
-  };
-  writeJob(job);
-  return { id, input };
+  });
+  if ("error" in opened) die(opened);
+  return opened;
 }
 
-/** Resume keeps the slate's own brief and clock — only the plug paths and the
- *  stop gate come from this command line. */
 function resumeJob(slate: string) {
-  const job = readJob(slate);
-  if (!job) {
-    console.error(`--resume ${slate}：搵唔到呢份 slate`);
-    process.exit(1);
-  }
-  const input: ProduceInput = {
-    ...job.input,
-    resume: true,
-    wavDir: arg("--wav-dir") ?? job.input.wavDir,
-    portraitsDir: arg("--portraits") ?? job.input.portraitsDir,
-    blockoutDir: arg("--blockout-dir") ?? job.input.blockoutDir,
-    gapSec: process.argv.includes("--gap") ? Number(arg("--gap", "0")) : job.input.gapSec,
-    noMotionSelect: process.argv.includes("--no-motion-select") || job.input.noMotionSelect,
+  const opened = openResume(slate, {
+    wavDir: arg("--wav-dir"),
+    portraitsDir: arg("--portraits"),
+    blockoutDir: arg("--blockout-dir"),
+    gapSec: process.argv.includes("--gap") ? Number(arg("--gap", "0")) : undefined,
+    noMotionSelect: process.argv.includes("--no-motion-select"),
     dryRun: process.argv.includes("--dry-run"),
-    until: (arg("--until") as ProduceInput["until"]) ?? undefined,
-    scene: arg("--scene") ?? undefined,
-    graphVariant: arg("--graph-variant")
-      ? (arg("--graph-variant") as ProduceInput["graphVariant"])
-      : job.input.graphVariant,
-    steps: process.argv.includes("--steps") ? Number(arg("--steps", "4")) : job.input.steps,
-  };
-  if (input.graphVariant && !GRAPH_VARIANTS.includes(input.graphVariant)) {
-    console.error(`--graph-variant 只接受 ${GRAPH_VARIANTS.join(" / ")}`);
-    process.exit(1);
-  }
-  if (input.until && !UNTIL_GATES.includes(input.until)) {
-    console.error(`--until 只接受 ${UNTIL_GATES.join(" / ")}`);
-    process.exit(1);
-  }
-  if (input.scene && !SCENE_ID_RE.test(input.scene)) {
-    console.error("--scene 只接受 SCxx（例：--scene SC01）");
-    process.exit(1);
-  }
-  writeJob({ ...job, input, status: "queued", error: undefined, updatedAt: new Date().toISOString() });
-  return { id: job.id, input };
+    until: arg("--until") as ProduceInput["until"],
+    scene: arg("--scene"),
+    shot: arg("--shot"),
+    graphVariant: arg("--graph-variant") ? (arg("--graph-variant") as ProduceInput["graphVariant"]) : undefined,
+    steps: process.argv.includes("--steps") ? Number(arg("--steps", "4")) : undefined,
+    voiceClonePath: arg("--clone"),
+  });
+  if ("error" in opened) die(opened);
+  return opened;
 }
 
 async function produce(brief: string, tui: boolean) {
@@ -167,41 +123,14 @@ async function produce(brief: string, tui: boolean) {
     console.error("提示：無 --wav-dir，voice 席會用 AuK :9882 自動出 VO（要 tts.promptWav 或 --clone ref.wav）");
   }
   const fleet = await probeFleet(loadConfig());
-  const gate: FleetGate =
-    arg("--until") === "boards" || arg("--until") === "blockout"
-      ? "boards"
-      : arg("--until") === "stills"
-        ? "stills"
-        : arg("--until") === "motion"
-          ? "motion"
-          : "full";
+  const gate: FleetGate = fleetGateOf(arg("--until") as ProduceInput["until"]);
   if (!gateReady(fleet, gate)) {
     console.error(formatFleet({ ...fleet, ready: false, blockers: blockersForGate(fleet.rows, gate) }));
     process.exit(1);
   }
-  // serial floor: refuse a second concurrent slate before any job is touched
-  const resumeSlate = arg("--resume");
-  // 開工掃墓 (INSIDE_VISIBLE 卡B): any unswept corpse surfaces before a new
-  // produce — listed loud, never blocking (the serial floor still governs).
+  const resumeId = arg("--resume");
   for (const line of failedRecentLines(failedRecent())) console.error(line);
-  const blocker = runningBlocker(resumeSlate);
-  if (blocker) {
-    console.error(`一次一份：slate ${blocker.id} 仲行緊（running）。等佢完先開新工，或者 --resume ${blocker.id} 接返呢份。`);
-    process.exit(1);
-  }
-  const { id, input } = resumeSlate ? resumeJob(resumeSlate) : await makeJob(brief);
-  if (input.drama && input.until === "stills") {
-    console.error(`劇目 ${input.drama}：唔准 --until stills（stills-ready skip）`);
-    process.exit(1);
-  }
-  if (input.drama === "guojia-lingdaoren" && !input.until && !input.scene && !input.dryRun) {
-    console.error("guojia-lingdaoren：唔准一次 H3 全 slate。用 --scene SC01（一場一 hop）");
-    process.exit(1);
-  }
-  if (input.drama === "guojia-lingdaoren" && input.until === "stills") {
-    console.error("guojia-lingdaoren：唔准 --until stills（stills-ready skip）");
-    process.exit(1);
-  }
+  const { id, input } = resumeId ? resumeJob(resumeId) : makeJob(brief);
   const rack = loadConfig();
   if (!tui || !process.stdout.isTTY) {
     console.log(`\n  SLATE  ${id}`);

@@ -68,12 +68,6 @@
       "max_seconds": 16
     }
   },
-  "ms_start_in": {
-    "class_type": "LoadImage",
-    "inputs": {
-      "image": "__MS_ENDFRAME__"
-    }
-  },
   "ms_hero_in": {
     "class_type": "LoadImage",
     "inputs": {
@@ -103,7 +97,7 @@
       "shot_count": 2,
       "width": 864,
       "height": 480,
-      "frames_per_shot": 119,
+      "frames_per_shot": 124,
       "seed": 42,
       "steps": 8,
       "seed_per_shot": true,
@@ -119,11 +113,7 @@
       "scheduler": "simple",
       "self_anchor_voice": false,
       "two_pass_upscale": false,
-      "chain_gain_control": "flatten",
-      "start_image": [
-        "ms_start_in",
-        0
-      ]
+      "chain_gain_control": "flatten"
     }
   },
   "cv": {

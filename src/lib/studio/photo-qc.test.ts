@@ -18,6 +18,7 @@ import {
   liftActionWithPoseJudge,
   lintEyeContent,
   lintEyePrompt,
+  liftLocalOnly,
   packageVerdict,
   parseNexPoseReply,
   factTokens,
@@ -215,6 +216,23 @@ test("A1: photo-qc.ts source has zero guided-interrogation wording", () => {
 });
 
 // ─── A2 主點：數碼寫實＝寫實 ───
+
+test("只引一格唔可以判成張唔合格；全圖引句維持原判", () => {
+  const local = {
+    pass: false,
+    items: [{ item: "道具：玻璃檸檬汽水樽", verdict: "唔達標", evidence: "【左下角】畫面右邊有一個玻璃杯" }],
+    fail_reasons: ["道具描述包含禁用詞「cup」（玻璃杯）"],
+  };
+  const v = packageVerdict({ tool: "玻璃檸檬汽水樽" }, liftLocalOnly(local));
+  assert.equal(v.status, "GREEN");
+  const whole = liftLocalOnly({
+    pass: false,
+    items: [{ item: "道具：玻璃檸檬汽水樽", verdict: "唔達標", evidence: "【全圖】畫面係一個玻璃杯" }],
+    fail_reasons: ["【全圖】玻璃杯"],
+  });
+  assert.equal(whole.items?.[0]?.verdict, "唔達標");
+  assert.equal(packageVerdict({}, whole).status, "FAIL");
+});
 
 test("A2 主點: 數碼寫實／AI生成／U1.5 描述＋可見項達標 → GREEN（pure verdict）", () => {
   const v = packageVerdict(E_REQUIRE, JUDGE_PASS_JSON);
@@ -969,26 +987,53 @@ test("T35b A7: plain-studio portrait warns instead of grey-failing", async () =>
   }
 });
 
-test("T35b A8: all-black and all-white frames fail empty_frame", async () => {
+test("T35b A8: a blank frame fails empty_frame; a counted person on white does not", async () => {
   const { eye, judge } = await qcHarness();
   const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
   delete process.env.SLATECREW_SECOND_ENDPOINT;
+  const nobody: PackageJudge = {
+    ...JUDGE_PASS_JSON,
+    items: [{ item: "人數", verdict: "唔達標", evidence: "【全圖】「成幅白，冇人」" }],
+    pass: false,
+    fail_reasons: ["人數唔達標"],
+  };
   try {
-    for (const rgb of [[10, 10, 10], [245, 245, 245]] as [number, number, number][]) {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t35b-a8-"));
-      const png = await mkFlatPng(path.join(dir, "SH09.png"), rgb);
-      const rec = await runPhotoQc(
-        png,
-        path.join(dir, "SH09.photo_qc.json"),
+    const blackDir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t35b-a8-"));
+    const black = await mkFlatPng(path.join(blackDir, "SH09.png"), [10, 10, 10]);
+    const blackRec = await runPhotoQc(
+      black,
+      path.join(blackDir, "SH09.photo_qc.json"),
+      { people_count: 1, grey_blocks: false, size: "medium" },
+      {},
+      { first: { url: eye.url, model: "nex-fx" }, judge: { url: judge.url, model: "qwen-fx" } },
+    );
+    assert.equal(blackRec.status, "FAIL");
+    assert.ok(blackRec.checks.fail_reasons.some((r) => r.startsWith("empty_frame: dark")));
+
+    const { judge: blankJudge } = await qcHarness({ judgeReply: () => JSON.stringify(nobody) });
+    try {
+      const whiteDir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-t35b-a8w-"));
+      const white = await mkFlatPng(path.join(whiteDir, "SH09.png"), [245, 245, 245]);
+      const blankRec = await runPhotoQc(
+        white,
+        path.join(whiteDir, "blank.photo_qc.json"),
         { people_count: 1, grey_blocks: false, size: "medium" },
+        {},
+        { first: { url: eye.url, model: "nex-fx" }, judge: { url: blankJudge.url, model: "qwen-fx" } },
+      );
+      assert.equal(blankRec.status, "FAIL");
+      assert.ok(blankRec.checks.fail_reasons.some((r) => r.startsWith("empty_frame: bright")));
+
+      const kept = await runPhotoQc(
+        white,
+        path.join(whiteDir, "person.photo_qc.json"),
+        { people_count: 1, grey_blocks: false },
         {},
         { first: { url: eye.url, model: "nex-fx" }, judge: { url: judge.url, model: "qwen-fx" } },
       );
-      assert.equal(rec.status, "FAIL", String(rgb));
-      assert.ok(
-        rec.checks.fail_reasons.some((r) => r.startsWith("empty_frame:")),
-        String(rgb) + " " + rec.checks.fail_reasons.join("|"),
-      );
+      assert.ok(!kept.checks.fail_reasons.some((r) => r.startsWith("empty_frame:")));
+    } finally {
+      blankJudge.close();
     }
   } finally {
     if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;

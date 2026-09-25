@@ -1,10 +1,22 @@
 # all primitive playbook — 全部檯跨劇目教訓（Curator 代碼寫；Chau 刪一行即否決）
 - [g1] schema.missing field=sceneId saw=undefined rule=絕對唔可以喺 JSON 頂層 key 前面加斜線、空格或冒號。sceneId 必須係純 key "sceneId"。每次交稿前逐字檢查頂層 JSON 結構。 hits=2 status=proven src=SC-0912-78N8
-- [g2] schema.roster field=people_count saw=5 rule=Portrait returned 5 faces but require is 1; check the face count matches the required count before accepting. hits=1 status=trial src=SC-0915-LD0F
 - [g4] machine.func field=loadBaseCast saw=undefined rule=Avoid calling import_keyframe_prompt.loadBaseCast directly; the function reference is broken in the current environment. hits=1 status=trial src=SC-0915-LD0F
 - [g5] machine.auth field=job_error saw=password rule=Ensure SSH password env vars are set before running scp routes. hits=1 status=trial src=SC-0915-LD0F
-- [g6] machine.check field=shot_list saw=Missing rule=--scene hop 嗰陣，picture QC 嘅 geometry 預檢只可以對 hop 自己嗰幕嘅 shots（同 stills／QC lane 一齊 crop），唔可以用成個 slate 嘅 shot list 去判 missing stills——其餘幕嘅 stills 係其他 hop 嘅事。 hits=1 status=trial src=SC-0915-LD0F
 - [g7] schema.missing field=blockout.figure saw=Ymin=154 rule=Ensure figures are placed within the specified Y range for mark A to avoid 'no figure at mark A' errors. hits=1 status=trial src=SC-0919-WR1Q
-- [g8] machine.check field=photo_qc saw=SH01 rule=Ensure photo_qc is GREEN before attempting /edit; missing green status blocks editing. hits=1 status=trial src=SC-0919-WR1Q
 - [g9] machine.thin field=prompt_length saw=140 rule=If packet length is 140, pad to min 150 chars to avoid prompt_too_thin rejection. hits=1 status=trial src=SC-0919-WR1Q
-
+- [g10] machine.check field=angle_board saw=PASS_UNCONFIRMED rule=If angle board cells show PASS_UNCONFIRMED, ensure explicit confirmation to GREEN before proceeding. hits=1 status=trial src=SC-0922-WGTT
+- [g11] machine.dep field=job_error saw=12050 rule=TBB_INTERFACE_VERSION 12050 is too low for numba/rembg; update TBB to version 2021 update 6 or later. hits=1 status=trial src=SC-0923-LM1L
+- [g12] machine.parse field=job_error saw=empty rule=若 job 報 empty json，強制輸出純 raw JSON，禁 markdown 代碼塊或前言，避免 parser 截斷。確保頂層係 object 而非 array。 hits=3 status=trial src=SC-0923-LM1L
+- [g13] schema.len field=thinking saw=empty rule=若報 empty json，先檢查 thinking 是否超長（>400 chars），超長會導致解析失敗，必須精簡。 hits=1 status=trial src=SC-0923-DTQH
+- [g14] machine.eye field=portrait.background saw=圓形圖案 rule=Explicitly ban background patterns in portrait prompts to avoid eye test failures on non-solid backgrounds. hits=1 status=trial src=SC-0923-1KU5
+- [g15] machine.frame field=angle_board saw=0.87 rule=Ensure foreground subjects reduce bright coverage below 0.8 to avoid empty_frame rejection. hits=1 status=trial src=SC-0923-1KU5
+- [g16] machine.input field=job_error saw=images rule=If job fails with missing images, verify input paths are not empty before execution. hits=1 status=trial src=SC-0923-1KU5
+- [g17] machine.memory field=job_error saw=CUDA rule=If job fails with 'CUDA out of memory', reduce batch size or clear GPU cache to fit within 31.73 GiB limit. hits=1 status=trial src=SC-0923-1KU5
+- [g18] machine.fs field=job_error saw=already rule=Clear or verify the sf3d output directory path before job execution to avoid 'already exists (no reuse)' failures. hits=1 status=trial src=SC-0923-1KU5
+- [g19] schema.enum field=job_error saw=standing rule=If pick status is 'standing' but expected list is empty, verify state mapping logic to match enum keys. hits=1 status=trial src=SC-0923-1KU5
+- [g20] machine.struct field=job_error saw=chain rule=Chain and multishot are exclusive; do not define a shot as both. hits=1 status=trial src=SC-0924-BP5S
+- [g21] schema.roster field=job_error saw=cast_incomplete rule=若 job 報 cast_incomplete，檢查上游角色定義是否完整，確保所有必要角色都有齊特徵描述再開始 rig。 hits=1 status=trial src=SC-0924-BP5S
+- [g22] schema.struct field=multishot.reference saw=Picture rule=Multishot 輸出必須包含 <Picture 1> 作為未切成張的完整參考畫面，不可省略。 hits=1 status=trial src=SC-0924-BP5S
+- [g23] schema.max field=shot_count saw=11 rule=確保 shot_count 參數永遠唔超過 8，避免 H3MultishotSampler 驗證失敗。 hits=1 status=trial src=SC-0924-BP5S
+- [g24] machine.sync field=shot.audio saw=0.100000s rule=若 shot audio 時長遠短於 video locked 時長，檢查 audio 生成是否成功，避免 silent 或截斷導致 concat gate 失敗。 hits=1 status=trial src=SC-0924-BP5S
+- [g25] machine.sync field=job_error saw=577 rule=Concat gate 報 frame mismatch 時，檢查 video 總 frame 數是否等於 audio snap 長度，確保音視頻時長嚴格同步。 hits=1 status=trial src=SC-0924-BP5S

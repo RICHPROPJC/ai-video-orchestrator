@@ -134,6 +134,8 @@ export type SeatIo = {
   /** seats/ dir: set it and every writer system prompt carries the global +
    *  writer playbooks (charter untouched), and a PASS promotes their trials. */
   playbookDir?: string;
+  /** Named project. Unset = public playbooks only. Never guess the only drama on disk. */
+  drama?: string;
   /** INSIDE_VISIBLE 卡A attempt燈: the pipeline wires this to a warn event —
    *  a failed attempt is visible the moment it happens, not only in receipts. */
   warn?: (message: string) => void | Promise<void>;
@@ -146,7 +148,7 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
   ranges ??= rangesFor(packet.targetSec);
   const receipts: string[] = [];
   // system = charter (law) + global playbook + own playbook; charter never shrinks
-  const book = assemblePlaybook("writer", io.playbookDir);
+  const book = assemblePlaybook("writer", io.playbookDir, io.drama);
   const attemptLamp = (unit: string) =>
     io.warn &&
     ((r: { attempt: number; valid: boolean; errors: string[] }) => {
@@ -220,6 +222,6 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
   const script: Script = { outline, scenes };
   assertBeatTotal(script, ranges);
   // the writer's whole stage passed with these bullets in the prompt: ship gate
-  receipts.push(...markPass(["writer", "global"], io.playbookDir));
+  receipts.push(...markPass(["writer", "global"], io.playbookDir, io.drama));
   return { script, model: outlinePass.model, receipts };
 }

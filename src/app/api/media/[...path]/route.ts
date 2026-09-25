@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import { resolveInJob } from "@/lib/studio/isolate";
 
 export const runtime = "nodejs";
+
+const previews = new Map<string, Buffer>();
 
 const TYPES: Record<string, string> = {
   ".mp4": "video/mp4",
@@ -33,6 +36,17 @@ export async function GET(
     return new Response("not found", { status: 404 });
   }
   const ext = path.extname(abs).toLowerCase();
+  if (new URL(_req.url).searchParams.get("preview") === "1" && ext === ".png") {
+    const stat = fs.statSync(abs);
+    const key = `${abs}:${stat.mtimeMs}:${stat.size}`;
+    let preview = previews.get(key);
+    if (!preview) {
+      preview = await sharp(abs).resize({ width: 320, height: 240, fit: "inside", withoutEnlargement: true }).webp({ quality: 72 }).toBuffer();
+      if (previews.size >= 128) previews.delete(previews.keys().next().value!);
+      previews.set(key, preview);
+    }
+    return new Response(new Uint8Array(preview), { headers: { "Content-Type": "image/webp", "Cache-Control": "no-cache" } });
+  }
   const buf = fs.readFileSync(abs);
   return new Response(buf, {
     headers: {

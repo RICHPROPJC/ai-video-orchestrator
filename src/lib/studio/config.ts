@@ -47,6 +47,9 @@ export type SlateConfig = {
     maxTokens: number;
     wigoloClient: string;
     timeoutMs: number;
+    /** 簡單改寫，上網搜尋關住。sensenova-v6.8-flash-lite via LiteLLM. */
+    rewriteEndpoint: string;
+    rewriteModel: string;
   };
   mesher: {
     endpoint: string;
@@ -57,7 +60,10 @@ export type SlateConfig = {
   soundQc: { endpoint: string; model: string };
   /** A3: every sense is a provider. Empty = the stage that needs it FAILs loud. */
   ocr: { endpoint: string; model: string };
-  embed: { endpoint: string; model: string };  ssh: { user: string; motionInputDir: string; stillsRefsDir: string };
+  embed: { endpoint: string; model: string };
+  /** H3 frame grid 17k+5. kMin 3 ≈ 2.3s. Do not clamp every shot up to k=7. */
+  h3Grid: { kMin: number; kMax: number };
+  ssh: { user: string; motionInputDir: string; stillsRefsDir: string };
 };
 
 const DEFAULTS: SlateConfig = {
@@ -100,6 +106,8 @@ const DEFAULTS: SlateConfig = {
     maxTokens: 6000,
     wigoloClient: "/mnt/ssd/u1_canvas_research/wigolo_research.py",
     timeoutMs: 300_000,
+    rewriteEndpoint: "http://127.0.0.1:4000",
+    rewriteModel: "sensenova-v6.8-flash-lite",
   },
   mesher: {
     endpoint: "http://127.0.0.1:8018",
@@ -109,7 +117,9 @@ const DEFAULTS: SlateConfig = {
   },
   soundQc: { endpoint: "", model: "FunAudioLLM/SenseVoiceSmall" },
   ocr: { endpoint: "", model: "" },
-  embed: { endpoint: "", model: "wemm-2b" },  ssh: {
+  embed: { endpoint: "", model: "wemm-2b" },
+  h3Grid: { kMin: 3, kMax: 21 },
+  ssh: {
     user: "hojaiv3v",
     motionInputDir: "~/comfy/ComfyUI/input",
     stillsRefsDir: "/home/hojaiv3v/SenseNova-U1/refs",
@@ -137,7 +147,9 @@ export function loadConfig(): SlateConfig {
     mesher: { ...DEFAULTS.mesher, ...raw.mesher },
     soundQc: { ...DEFAULTS.soundQc, ...raw.soundQc },
     ocr: { ...DEFAULTS.ocr, ...raw.ocr },
-    embed: { ...DEFAULTS.embed, ...raw.embed },    ssh: { ...DEFAULTS.ssh, ...raw.ssh },
+    embed: { ...DEFAULTS.embed, ...raw.embed },
+    h3Grid: { ...DEFAULTS.h3Grid, ...raw.h3Grid },
+    ssh: { ...DEFAULTS.ssh, ...raw.ssh },
   };
   const h3 = process.env.H3_COMFY_URL?.trim();
   if (h3) merged.motion.comfyUrl = h3;

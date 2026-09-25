@@ -10,6 +10,8 @@ import {
   COPY_MIN,
   DRIFT_MAX,
   ingestVector,
+  parseEmbed,
+  EMBED_DIM,
   queryRefs,
   cosine,
   distance,
@@ -31,6 +33,13 @@ test("cosine is 1 for identical vectors and drift/copy thresholds fire", () => {
   assert.equal(blockoutCopy(a, b).fail, true);
   assert.ok(blockoutCopy(a, b).distance < COPY_MIN);
   assert.equal(blockoutCopy(a, far).fail, false);
+});
+
+test("parseEmbed keeps a 2048-d WeMM vector and refuses a short plug", () => {
+  const ok = Array.from({ length: EMBED_DIM }, () => 0.1);
+  assert.equal(parseEmbed({ embeddings: { float: [ok] } }).length, EMBED_DIM);
+  assert.throws(() => parseEmbed({ embeddings: { float: [[1, 2, 3]] } }), /embed_dim/);
+  assert.throws(() => parseEmbed({ data: [{ embedding: [1, 2, 3] }] }), /embed_dim/);
 });
 
 test("sqlite store query stills by REAL cosine under projects/<ep>/memory/", async (t) => {

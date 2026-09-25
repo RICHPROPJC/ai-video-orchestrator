@@ -55,9 +55,12 @@ export type H3SubmitReceipt = {
     wav: string;
     /** null on the A-form (no Video 1) and on b/bkf/c alternates */
     blockout: string | null;
-    /** null on the C-form — zero keyframe nodes, nothing to upload */
+    /** null on the C-form — zero keyframe nodes, nothing to upload.
+     *  Set when the shot wrote keyframePositions: those stills ride with Video 1. */
     kf_start: string | null;
     kf_end: string | null;
+    /** Further keyframe uploads after start and end. Absent when the shot wrote no positions string. */
+    kf_extra?: string[];
     ref_images: string[];
     /** A-only UI/infographic photo refs (card ③b) */
     ui_photos: string[];
@@ -106,9 +109,15 @@ function modelsFromConfig(): H3GraphModels {
  *  → C-form (zero keyframes, refImageFiles = angle portraits ride
  *  ref_images, BINDINGS_CFORM); blockoutMp4 absent → A-form still-to-video
  *  (kfStart anchors 0%, kfEnd optional 100%). */
+function rejectChainedMultishot(chain: unknown): void {
+  if (chain) throw new Error("multishot_identity_only: split C-form and identity-only multishot into separate renders");
+}
+
 export async function submitH3Shot(opts: {
   prose: string;
   wavFile: string;
+  /** Locked shot seconds. When set, frames come from this, not from the wav length. */
+  durationSec?: number;
   /** §5b routing field: present → C-form; absent → A-form (kfStart required). */
   blockoutMp4?: string;
   /** A-form only: the U1.5 still at H3Keyframes 0%. Together with a Video 1
@@ -116,6 +125,10 @@ export async function submitH3Shot(opts: {
    *  graph input, on the C-form. */
   kfStart?: string;
   kfEnd?: string;
+  /** Further keyframe files after start and end. Count is the shot's, not a fixed 4 or 8. */
+  kfExtraFiles?: string[];
+  /** Shot-written percentages. Video 1 coexistence is unresolved in ALIGN-LOCK. */
+  keyframePositions?: string;
   /** C-form: angle portrait files (per refAngle) riding ref_images; B/BKF
    *  (documented fallback): still then portrait files on disk. Dry-run uses
    *  names only. */
@@ -157,6 +170,11 @@ export async function submitH3Shot(opts: {
   /** test-only steps override; default remains config.motion.steps (8, turbo 8-step v1.0) */
   stepsOverride?: number;
 }): Promise<{ receipt: H3SubmitReceipt; receiptFile: string }> {
+  opts = {
+    ...opts,
+    ...(opts.chain ? { chain: { ...opts.chain, framesPerShot: snapDurationToFrames(opts.chain.framesPerShot / 24) } } : {}),
+    ...(opts.multishot ? { multishot: { ...opts.multishot, framesPerShot: snapDurationToFrames(opts.multishot.framesPerShot / 24) } } : {}),
+  };
   const cfg = loadConfig();
   const variant = opts.graphVariant ?? "a";
   const cform = variant === "a" && Boolean(opts.blockoutMp4);
@@ -170,15 +188,20 @@ export async function submitH3Shot(opts: {
   if (opts.chain && !cform) {
     throw new Error("chain_requires_cform: the chained topology's shot 1 IS the C-form render (blockoutMp4 required)");
   }
-  if (isMultishot && (opts.blockoutMp4 || opts.kfStart || opts.kfEnd || (opts.refImageFiles?.length ?? 0) > 0)) {
+  if (isMultishot && (opts.blockoutMp4 || opts.kfStart || opts.kfEnd || opts.kfExtraFiles?.length || opts.keyframePositions?.trim() || opts.multishot?.startImageFile || (opts.refImageFiles?.length ?? 0) > 0)) {
     throw new Error("multishot is standalone: no Video 1, no keyframes, no r2v ref_images — its inputs are the script/portrait/voice only");
+  }
+  rejectChainedMultishot(opts.chain);
+  if (opts.multishot && !/\/boards\/[^/]+\.angles\.png$/i.test(opts.multishot.referenceImageFile.replace(/\\/g, "/"))) {
+    throw new Error("multishot_identity_only: reference must be an uncut boards/<character>.angles.png identity sheet");
   }
   if (isMultishot && variant !== "a") {
     throw new Error("multishot runs on the production path only (variant a)");
   }
   // §5b refuse-to-emit: keyframe stills handed in together with a Video 1 are
-  // the dead coexistence shape — the intent must fail here, not silently drop
-  if (cform && (opts.kfStart || opts.kfEnd)) {
+  // the dead coexistence shape — unless this shot wrote its own positions string.
+  const freePositions = opts.keyframePositions?.trim() ?? "";
+  if (!freePositions && cform && (opts.kfStart || opts.kfEnd || opts.kfExtraFiles?.length)) {
     throw new Error(
       `keyframes_video1_coexist: ${opts.shot ?? "shot"} carries a Video 1 (${opts.blockoutMp4}) AND keyframe stills ` +
         `(${opts.kfStart ?? ""}${opts.kfEnd ? " + kfEnd" : ""}) — §5b model-level double exposure; ` +
@@ -205,7 +228,7 @@ export async function submitH3Shot(opts: {
     });
   }
 
-  const seconds = await wavSeconds(opts.wavFile);
+  const seconds = opts.durationSec ?? (await wavSeconds(opts.wavFile));
   const frames = snapDurationToFrames(seconds);
   const steps = opts.stepsOverride ?? cfg.motion.steps;
   const seed = cfg.motion.seed;
@@ -216,8 +239,12 @@ export async function submitH3Shot(opts: {
   // keyframes lane names: A-form plus the BKF/C alternates (their H3Keyframes
   // node needs the upload name); b keeps the name for receipt parity — the
   // C-form is the only shape with zero keyframes and zero kf uploads.
-  const kfStartName = !cform && opts.kfStart ? `slatecrew_${tag}_kf_start.png` : null;
-  const kfEndName = variant === "a" && !cform && opts.kfEnd ? `slatecrew_${tag}_kf_end.png` : null;
+  const rideKf = Boolean(freePositions) || !cform;
+  const kfStartName = rideKf && opts.kfStart ? `slatecrew_${tag}_kf_start.png` : null;
+  const kfEndName = variant === "a" && rideKf && opts.kfEnd ? `slatecrew_${tag}_kf_end.png` : null;
+  const kfExtraNames = freePositions
+    ? (opts.kfExtraFiles ?? []).map((_, i) => `slatecrew_${tag}_kf_extra_${i}.png`)
+    : [];
   const refImageNames =
     cform || variant === "b" || variant === "bkf"
       ? (opts.refImageFiles ?? []).map((_, i) => `slatecrew_${tag}_ref_img_${i}.png`)
@@ -231,7 +258,13 @@ export async function submitH3Shot(opts: {
   const models = modelsFromConfig();
   const shotTag = `${path.basename(opts.outMp4, ".mp4")}_${tag}`;
   const bindings = cform ? BINDINGS_CFORM : variant === "a" ? BINDINGS : "";
-  const keyframePositions = cform || opts.chain || isMultishot ? "" : kfEndName ? "0%, 100%" : "0%";
+  const keyframePositions = freePositions
+    ? freePositions
+    : cform || opts.chain || isMultishot
+      ? ""
+      : kfEndName
+        ? "0%, 100%"
+        : "0%";
 
   const build = (names: {
     kfStart: string | null;
@@ -244,6 +277,7 @@ export async function submitH3Shot(opts: {
     msRef: string | null;
     msVoice: string | null;
     msStart: string | null;
+    kfExtra: string[];
   }) =>
     buildH3Graph({
       script: promptText,
@@ -262,6 +296,8 @@ export async function submitH3Shot(opts: {
       refImageNames: names.refImages,
       uiPhotoNames: names.uiPhotos,
       audioTimingRefName: names.audioTiming ?? undefined,
+      kfExtraNames: names.kfExtra.length ? names.kfExtra : undefined,
+      keyframePositions: freePositions || undefined,
       ...(opts.chain
         ? {
             chain: {
@@ -330,6 +366,7 @@ export async function submitH3Shot(opts: {
       msRef: msRefName,
       msVoice: msVoiceName,
       msStart: msStartName,
+      kfExtra: kfExtraNames,
     });
     const receipt: H3SubmitReceipt = {
       dry_run: true,
@@ -351,6 +388,7 @@ export async function submitH3Shot(opts: {
         blockout: blockoutName,
         kf_start: kfStartName,
         kf_end: kfEndName,
+        ...(kfExtraNames.length ? { kf_extra: kfExtraNames } : {}),
         ref_images: refImageNames,
         ui_photos: uiPhotoNames,
         audio_timing: audioTimingName,
@@ -363,12 +401,13 @@ export async function submitH3Shot(opts: {
     return { receipt, receiptFile: writeReceipt(opts.receiptJson, receipt) };
   }
 
-  const needKf = !cform;
+  const needKf = !cform || Boolean(freePositions);
   for (const f of [
     opts.wavFile,
     ...(cform ? [opts.blockoutMp4!] : []),
     ...(needKf && opts.kfStart ? [opts.kfStart] : []),
     ...(needKf && variant === "a" && opts.kfEnd ? [opts.kfEnd] : []),
+    ...(freePositions ? (opts.kfExtraFiles ?? []) : []),
     ...(cform || variant === "b" || variant === "bkf" ? (opts.refImageFiles ?? []) : []),
     ...(variant === "a" ? (opts.uiPhotoFiles ?? []) : []),
     ...(variant === "a" && opts.audioTimingFile ? [opts.audioTimingFile] : []),
@@ -394,6 +433,13 @@ export async function submitH3Shot(opts: {
   const uploadedKfEnd = needKf && variant === "a" && opts.kfEnd && kfEndName
     ? await uploadComfyFile(cfg.motion.comfyUrl, opts.kfEnd, kfEndName, "image/png")
     : null;
+  const uploadedKfExtra: string[] = [];
+  if (freePositions) {
+    for (const [i, file] of (opts.kfExtraFiles ?? []).entries()) {
+      const name = kfExtraNames[i]!;
+      uploadedKfExtra.push(await uploadComfyFile(cfg.motion.comfyUrl, file, name, "image/png"));
+    }
+  }
   const uploadedRefImages: string[] = [];
   if (cform || variant === "b" || variant === "bkf") {
     for (const [i, file] of (opts.refImageFiles ?? []).entries()) {
@@ -444,6 +490,7 @@ export async function submitH3Shot(opts: {
     msRef: uploadedMsRef,
     msVoice: uploadedMsVoice,
     msStart: uploadedMsStart,
+    kfExtra: uploadedKfExtra,
   });
   const promptId = await queuePrompt(cfg.motion.comfyUrl, graph);
   const outputs = await waitHistory(cfg.motion.comfyUrl, promptId, { saveNode: "save" });
@@ -470,6 +517,7 @@ export async function submitH3Shot(opts: {
       blockout: uploadedBlockout,
       kf_start: uploadedKfStart,
       kf_end: uploadedKfEnd,
+      ...(uploadedKfExtra.length ? { kf_extra: uploadedKfExtra } : {}),
       ref_images: uploadedRefImages,
       ui_photos: uploadedUiPhotos,
       audio_timing: uploadedTiming,

@@ -55,6 +55,8 @@ export type ProduceInput = {
   /** C-scene-hop: burn H3 for ONE scene only (must match SCxx). Motion-lane
    *  filter — stills/QC/layout stay full-slate. Omitted = all shots. */
   scene?: string;
+  /** Redo this shot and every later shot. Earlier GREEN stays. */
+  shot?: string;
   /** reuse this slate's callsheet and finished artefacts instead of starting over */
   resume?: boolean;
   /** names the writer may cast speaking parts from (data file, never in src) */
@@ -114,6 +116,8 @@ export type Character = {
   voice: { pitchHz: number; gender: "f" | "m" | "n" };
   /** blockout mannequin height in metres — data decides, src has no per-name constants */
   heightM?: number;
+  /** Public shelf name. The story name stays; this name must not be a drama noun. */
+  publicName?: string;
 };
 
 export type Stance = "stand" | "lean" | "crouch";
@@ -135,6 +139,12 @@ export type ShotProp = {
   heldBy?: string;
   shape: string[];
   forbid: string[];
+  /** A measurement you wrote. Absent means the world stops. */
+  sizeM?: number;
+  sizeSource?: string;
+  proportion?: { of: string; at: "knee" | "waist" | "chest" | "shoulder"; source: string };
+  /** Public shelf name. The story name stays; this name must not be a drama noun. */
+  publicName?: string;
 };
 
 /** Chau 0919 search-first PE law: one evidence row behind every number a
@@ -237,6 +247,11 @@ export type Shot = {
    *  on every non-combat shot; type-only import, erased at runtime
    *  (UiShotSpec precedent). */
   combat?: import("./combat-adapter").CombatShotState;
+  /** H3Keyframes positions, the shot's own string (e.g. "0%, 30%, 70%, 100%").
+   *  Absent → the factory stops before H3. Not limited to 0% and 100%. */
+  keyframePositions?: string;
+  /** Cut cells from one sheet (one spawn, then cut). Not one image per shot. */
+  keyframeFiles?: string[];
 };
 
 /** Which seat wrote the sheet, on which model, with the receipts to prove it. */
@@ -266,6 +281,9 @@ export type CallSheet = {
   shots: Shot[];
   voiceover: string;
   scenes?: { id: string; heading: string; summary: string; targetSec: number }[];
+  /** One era, ten building types, one 4K board. Absent → the factory does not invent eras. */
+  buildings?: { era: string; types: string[]; publicName?: string }[];
+  storyboard?: { shotId: string; at: string; file: string; board?: string }[];
   provenance?: Provenance;
 };
 
@@ -355,6 +373,8 @@ export type JobRecord = {
     concatGate?: string;
     /** h3-prose scene preview (lane/crew motion prose card): motion/scene-preview.mp4 */
     scenePreview?: string;
+    /** Owning seat of the last blocked decision, plus the tail to redo. */
+    redo?: string;
   };
   error?: string;
 };

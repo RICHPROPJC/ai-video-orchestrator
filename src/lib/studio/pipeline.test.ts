@@ -148,8 +148,10 @@ test("resume + all stills GREEN skips portraits and reaches motion-prep", async 
     pinGreenStill(path.join(jdir, "stills"), "SH01");
 
     const portraitDir = path.join(jdir, "portraits");
-    fs.mkdirSync(portraitDir, { recursive: true });
+    fs.mkdirSync(path.join(portraitDir, "boards"), { recursive: true });
     fs.writeFileSync(path.join(portraitDir, "A.png"), Buffer.from("89504e470d0a1a2a0001", "hex"));
+    fs.writeFileSync(path.join(portraitDir, "boards", "A.angles.png"), Buffer.from("uncut-a"));
+    fs.writeFileSync(path.join(portraitDir, "boards", "B.angles.png"), Buffer.from("uncut-b"));
     fs.writeFileSync(
       path.join(portraitDir, "A.photo_qc.json"),
       JSON.stringify({ status: "FAIL", checks: { fail_reasons: ["people_count: 2"] } }),
@@ -401,10 +403,13 @@ test("h3MotionPack: §5b C-form story pack wires angle portraits; uiShot keeps t
   const sheet = uiChannelSheet();
   const [ui, story] = sheet.shots;
   const portraitDir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pack-portraits-"));
+  const boards = path.join(portraitDir, "boards");
+  fs.mkdirSync(boards);
   const portraitFiles: Record<string, string> = {};
   for (const id of ["A", "B"]) {
     const f = path.join(portraitDir, `${id}.png`);
     fs.writeFileSync(f, Buffer.from("fake-portrait"));
+    fs.writeFileSync(path.join(boards, `${id}.angles.png`), Buffer.from("uncut"));
     portraitFiles[id] = f;
   }
   const uiPack = h3MotionPack(sheet, ui!, "a", "/stills/SH01.png", portraitFiles, undefined, { portraitDir });
@@ -416,9 +421,9 @@ test("h3MotionPack: §5b C-form story pack wires angle portraits; uiShot keeps t
   const storyPack = h3MotionPack(sheet, story!, "a", "/stills/SH02.png", portraitFiles, undefined, { portraitDir });
   assert.equal(storyPack.uiPhotoFiles, undefined);
   // §5b C-form: identity = angle portraits on ref_images (left-to-right), pin names <Picture 1>
-  assert.ok(storyPack.refImageFiles?.length === 2, "two marked characters → two portrait refs");
-  assert.match(path.basename(storyPack.refImageFiles![0]!), /^A\.png$/, "left mark first");
-  assert.match(path.basename(storyPack.refImageFiles![1]!), /^B\.png$/);
+  assert.ok(storyPack.refImageFiles?.length === 2, "two marked characters → two uncut sheets");
+  assert.match(path.basename(storyPack.refImageFiles![0]!), /^A\.angles\.png$/, "left mark first");
+  assert.match(path.basename(storyPack.refImageFiles![1]!), /^B\.angles\.png$/);
   assert.match(storyPack.prose, /continue exactly from <Picture 1>/);
   assert.doesNotMatch(storyPack.prose, /start keyframe image/);
   assert.doesNotMatch(storyPack.prose, /accidental/);
@@ -433,29 +438,33 @@ test("h3MotionPack: §5b C-form story pack wires angle portraits; uiShot keeps t
   assert.match(aPack.prose, /start keyframe image/);
 });
 
-test("h3MotionPack: 45° shot without an angle portrait fails loud (B-lane face-drag ban)", async () => {
+test("h3MotionPack: a cut cell does not stand in for the uncut sheet", async () => {
   const { h3MotionPack } = await import("./pipeline");
   const sheet = uiChannelSheet();
   const story = sheet.shots[1]!;
   story.refAngle = "45";
   const portraitDir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pack-45-"));
   fs.writeFileSync(path.join(portraitDir, "A.png"), Buffer.from("fake-front"));
-  assert.throws(
-    () => h3MotionPack(sheet, story, "a", "/stills/SH02.png", { A: path.join(portraitDir, "A.png") }, undefined, { portraitDir }),
-    /angle_portrait_missing.*A_45\.png/,
-  );
   fs.writeFileSync(path.join(portraitDir, "A_45.png"), Buffer.from("fake-45"));
   fs.writeFileSync(path.join(portraitDir, "B_45.png"), Buffer.from("fake-45"));
+  assert.throws(
+    () => h3MotionPack(sheet, story, "a", "/stills/SH02.png", { A: path.join(portraitDir, "A.png") }, undefined, { portraitDir }),
+    /identity_sheet_missing/,
+  );
+  const boards = path.join(portraitDir, "boards");
+  fs.mkdirSync(boards);
+  fs.writeFileSync(path.join(boards, "A.angles.png"), Buffer.from("uncut-a"));
+  fs.writeFileSync(path.join(boards, "B.angles.png"), Buffer.from("uncut-b"));
   const pack = h3MotionPack(sheet, story, "a", "/stills/SH02.png", { A: path.join(portraitDir, "A.png") }, undefined, { portraitDir });
   assert.equal(pack.refImageFiles!.length, 2);
-  assert.equal(path.basename(pack.refImageFiles![0]!), "A_45.png");
-  assert.equal(path.basename(pack.refImageFiles![1]!), "B_45.png");
-  // plugged 45° supply (WR1Q shape): {id}_45.png in the plug dir counts too
+  assert.equal(path.basename(pack.refImageFiles![0]!), "A.angles.png");
+  assert.equal(path.basename(pack.refImageFiles![1]!), "B.angles.png");
   const plugDir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pack-45-plug-"));
-  fs.writeFileSync(path.join(plugDir, "A_45.png"), Buffer.from("fake-45-plug"));
-  fs.writeFileSync(path.join(plugDir, "B_45.png"), Buffer.from("fake-45-plug"));
+  fs.mkdirSync(path.join(plugDir, "boards"), { recursive: true });
+  fs.writeFileSync(path.join(plugDir, "boards", "A.angles.png"), Buffer.from("plug-a"));
+  fs.writeFileSync(path.join(plugDir, "boards", "B.angles.png"), Buffer.from("plug-b"));
   const plugged = h3MotionPack(sheet, story, "a", "/stills/SH02.png", {}, undefined, { portraitDir: "/nonexistent", plugDir });
-  assert.equal(plugged.refImageFiles!.length, 2, "plug dir supplies the angle portraits");
+  assert.equal(plugged.refImageFiles!.length, 2, "plug dir supplies the uncut sheets");
 });
 
 test("h3MotionPack: UI channel is A-path only — fallback variants stay frozen", async () => {
@@ -486,10 +495,13 @@ test("card ③b end-to-end: C-form dry receipts — ui photos ride ref_images, s
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-ui-channel-"));
   const portraitDir = path.join(dir, "portraits");
   fs.mkdirSync(portraitDir, { recursive: true });
+  const boards = path.join(portraitDir, "boards");
+  fs.mkdirSync(boards, { recursive: true });
   const portraitFiles: Record<string, string> = {};
   for (const id of ["A", "B"]) {
     const f = path.join(portraitDir, `${id}.png`);
     fs.writeFileSync(f, Buffer.from("fake-portrait"));
+    fs.writeFileSync(path.join(boards, `${id}.angles.png`), Buffer.from("uncut"));
     portraitFiles[id] = f;
   }
   for (const id of ["SH01", "SH02"]) {

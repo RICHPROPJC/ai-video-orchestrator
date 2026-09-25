@@ -17,14 +17,14 @@ function validProse() {
 
 function shotDir() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-h3-"));
-  writeWav(path.join(dir, "SH01.wav"), new Float32Array(22050 * 2), 22050); // 2.0 s → 124 f
+  writeWav(path.join(dir, "SH01.wav"), new Float32Array(22050 * 2), 22050); // 2.0 s → k=3 → 56 f
   fs.writeFileSync(path.join(dir, "SH01.mp4"), Buffer.from("fake-blockout"));
   fs.writeFileSync(path.join(dir, "SH01.png"), Buffer.from("fake-kf"));
   fs.writeFileSync(path.join(dir, "A.png"), Buffer.from("fake-portrait"));
   return dir;
 }
 
-test("dry run C-form (Video 1 asset given): 124-frame receipt, zero keyframe nodes, portrait ref_image_0", async () => {
+test("dry run C-form (Video 1 asset given): 56-frame receipt, zero keyframe nodes, portrait ref_image_0", async () => {
   const dir = shotDir();
   const receiptJson = path.join(dir, "motion", "SH01.h3_submit_dryrun.json");
   const { receipt, receiptFile } = await submitH3Shot({
@@ -40,7 +40,7 @@ test("dry run C-form (Video 1 asset given): 124-frame receipt, zero keyframe nod
   assert.equal(receipt.dry_run, true);
   assert.equal(receipt.graph_variant, "a");
   assert.equal(receipt.motion_form, "c");
-  assert.equal(receipt.frames, 124);
+  assert.equal(receipt.frames, 56);
   assert.equal(receipt.prompt_id, null);
   assert.equal(receipt.keyframe_positions, "");
   assert.equal(receipt.uploads.kf_start, null);
@@ -63,7 +63,7 @@ test("dry run C-form (Video 1 asset given): 124-frame receipt, zero keyframe nod
   assert.equal("solattn_ref2va" in graph, false);
   assert.ok(receiptFile);
   const onDisk = JSON.parse(fs.readFileSync(receiptFile, "utf8"));
-  assert.equal(onDisk.frames, 124);
+  assert.equal(onDisk.frames, 56);
   assert.ok(onDisk.prompt.startsWith("# produced_by: slatecrew_h3_submit"));
   // no motion mp4 materialised in dry run
   assert.equal(fs.existsSync(path.join(dir, "motion", "SH01.mp4")), false);
@@ -115,6 +115,30 @@ test("§5b prohibition: blockoutMp4 + kfEnd in one submit refuses to emit", asyn
       }),
     /keyframes_video1_coexist/,
   );
+});
+
+test("dry-run: blockout plus keyframes rides when keyframePositions is set", async () => {
+  const dir = shotDir();
+  const positions = "0%, 40%, 100%";
+  const { receipt } = await submitH3Shot({
+    prose: validProse(),
+    wavFile: path.join(dir, "SH01.wav"),
+    blockoutMp4: path.join(dir, "SH01.mp4"),
+    kfStart: path.join(dir, "SH01.png"),
+    kfEnd: path.join(dir, "SH01.png"),
+    keyframePositions: positions,
+    kfExtraFiles: [path.join(dir, "SH01.png")],
+    refImageFiles: [path.join(dir, "A.png")],
+    outMp4: path.join(dir, "motion", "SH01.mp4"),
+    receiptJson: path.join(dir, "motion", "SH01.h3_submit_dryrun.json"),
+    dryRun: true,
+    shot: "SH01",
+  });
+  assert.equal(receipt.keyframe_positions, positions);
+  assert.equal(receipt.motion_form, "c");
+  const graph = receipt.graph as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+  assert.ok(graph.blender_vid, "Video 1 node stays");
+  assert.equal(graph.keyframes.inputs.positions, positions);
 });
 
 test("dry run never clobbers a real receipt", async () => {
@@ -209,40 +233,13 @@ test("prose that fails validateProse throws before anything else", async () => {
   );
 });
 
-test("MULTISHOT_WIRE dry-run: chain rides the C-form receipt (true-endframe start, flatten, seed_per_shot)", async () => {
+test("ALIGN-LOCK rejects chained multishot before upload", async () => {
   const dir = shotDir();
-  const { receipt } = await submitH3Shot({
-    prose: validProse(),
-    wavFile: path.join(dir, "SH01.wav"),
-    blockoutMp4: path.join(dir, "SH01.mp4"),
-    refImageFiles: [path.join(dir, "A.png")],
-    chain: {
-      script: "MEDIUM / 檔案室：行前兩步停低，收拳定神。Same person as <Picture 1>.",
-      shots: ["SH02"],
-      framesPerShot: 119,
-      referenceImageFile: path.join(dir, "A.png"),
-    },
-    outMp4: path.join(dir, "motion", "SH01-SH02.mp4"),
-    receiptJson: path.join(dir, "motion", "SH01-SH02.h3_submit_dryrun.json"),
-    dryRun: true,
-    shot: "SH01-SH02",
-    requireQuote: true,
-  });
-  assert.equal(receipt.motion_form, "c");
-  assert.equal(receipt.shot, "SH01-SH02");
-  assert.ok(receipt.chain);
-  assert.deepEqual(receipt.chain!.shots, ["SH02"]);
-  assert.equal(receipt.chain!.frames_per_shot, 119);
-  assert.equal(receipt.chain!.seed_per_shot, true);
-  assert.equal(receipt.chain!.chain_gain_control, "flatten");
-  assert.equal(receipt.chain!.start_image, "h3_last_frame(this render)");
-  assert.match(receipt.uploads.ms_reference!, /_ms_ref\.png$/);
-  const graph = receipt.graph as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
-  assert.equal(graph.ms.class_type, "H3MultishotSampler");
-  assert.deepEqual(graph.ms.inputs.start_image, ["lastf", 0]);
-  assert.deepEqual(graph.lastf.inputs.images, ["dec_v", 0]);
-  assert.equal(graph.concat.class_type, "H3ConcatAV");
-  assert.deepEqual(graph.cv.inputs.images, ["concat", 0]);
+  await assert.rejects(() => submitH3Shot({
+    prose: validProse(), wavFile: path.join(dir, "SH01.wav"), blockoutMp4: path.join(dir, "SH01.mp4"),
+    chain: { script: "two", shots: ["SH02"], framesPerShot: 124, referenceImageFile: path.join(dir, "boards/A.angles.png") },
+    outMp4: path.join(dir, "out.mp4"), receiptJson: path.join(dir, "receipt.json"), dryRun: true,
+  }), /multishot_identity_only/);
 });
 
 test("MULTISHOT_WIRE dry-run: standalone multishot (MS-A shape, motion_form=ms)", async () => {
@@ -254,7 +251,7 @@ test("MULTISHOT_WIRE dry-run: standalone multishot (MS-A shape, motion_form=ms)"
       script: "line A\n---\nline B",
       shots: ["SH01", "SH02"],
       framesPerShot: 119,
-      referenceImageFile: path.join(dir, "A.png"),
+      referenceImageFile: path.join(dir, "boards/A.angles.png"),
     },
     outMp4: path.join(dir, "motion", "SH01-SH02.mp4"),
     receiptJson: path.join(dir, "motion", "SH01-SH02.h3_submit_dryrun.json"),
@@ -263,7 +260,7 @@ test("MULTISHOT_WIRE dry-run: standalone multishot (MS-A shape, motion_form=ms)"
   });
   assert.equal(receipt.motion_form, "ms");
   assert.equal(receipt.multishot!.shot_count, 2);
-  assert.equal(receipt.multishot!.frames_per_shot, 119);
+  assert.equal(receipt.multishot!.frames_per_shot, 124);
   assert.equal(receipt.multishot!.start_image, null);
   assert.equal(receipt.uploads.blockout, null);
   assert.equal(receipt.uploads.ms_start, null);

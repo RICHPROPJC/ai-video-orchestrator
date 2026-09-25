@@ -10,6 +10,12 @@ import { ensureAngleBoard, liveBoardLane, type BoardAngle, type BoardLane } from
  *  street behind the face is a scene still, not a portrait anchor). */
 export const PORTRAIT_REQUIRE: QcRequire = { people_count: 1, grey_blocks: false, plain_background: true };
 
+/** Backdrop complaints are not a dead portrait. The person stays in color;
+ *  rembg cuts the backdrop to alpha before mesh. */
+export function backgroundOnlyFail(reasons: string[]): boolean {
+  return reasons.length > 0 && reasons.every((r) => /背景|plain_background/.test(r));
+}
+
 /** T43 (Chau: embed 同一張垃圾圖一路塞返 /edit，源頭 1＝肖像抄 world night/neon):
  * a portrait is a face reference, not a scene — the sheet's world line
  * (location/timeOfDay/weather/grade) NEVER enters it. Only: 一人半身、wardrobe、
@@ -60,6 +66,8 @@ export type PortraitResult = {
   /** W4 批量資產板：per-character RGBA angle pins ({id}.{angle}.png) when
    *  angleBoard mode ran; angles that never went GREEN stay absent. */
   anglePins?: Record<string, Partial<Record<BoardAngle, string>>>;
+  /** Uncut angle board per character. Identity ref is this sheet, not a cut cell. */
+  sheets?: Record<string, string>;
 };
 
 /** A plugged portrait is honoured as-is; anything missing is cast by the stills
@@ -87,6 +95,7 @@ export async function ensurePortraits(opts: {
   const made: string[] = [];
   const plugged: string[] = [];
   const anglePins: Record<string, Partial<Record<BoardAngle, string>>> = {};
+  const sheets: Record<string, string> = {};
   const cast = opts.onlyIds?.length
     ? opts.sheet.characters.filter((c) => opts.onlyIds!.includes(c.id))
     : opts.sheet.characters;
@@ -110,12 +119,17 @@ export async function ensurePortraits(opts: {
         recordJson: path.join(opts.outDir, `${character.id}.u15_generate.json`),
       });
       const verdict = await lane.qc(outFile, path.join(opts.outDir, `${character.id}.photo_qc.json`), PORTRAIT_REQUIRE);
-      if (verdict.status !== "FAIL") {
+      const reasons = verdict.checks.fail_reasons;
+      const backdrop = verdict.status === "FAIL" && backgroundOnlyFail(reasons);
+      if (verdict.status !== "FAIL" || backdrop) {
         files[character.id] = outFile;
         made.push(character.id);
-        // T35b-cache envelope: the event names the real status — PASS_WITH_WARN /
-        // PASS_UNCONFIRMED must never be worded as GREEN (warn ≠ pass).
-        opts.onEvent?.(`${character.id} 肖像 ${verdict.status}（seed ${trySeed}）`, { file: outFile, attempt: attempt + 1 });
+        opts.onEvent?.(
+          backdrop
+            ? `${character.id} 肖像背景留低（${reasons.join("; ")}）。去 mesh 之前先去背，人本身仍然有色。`
+            : `${character.id} 肖像 ${verdict.status}（seed ${trySeed}）`,
+          { file: outFile, attempt: attempt + 1 },
+        );
         break;
       }
       last = verdict.checks.fail_reasons.join("; ") || "not GREEN";
@@ -126,7 +140,7 @@ export async function ensurePortraits(opts: {
     }
     if (opts.angleBoard) await runAngleBoard(character);
   }
-  return { files, made, plugged, anglePins };
+  return { files, made, plugged, anglePins, sheets };
 
   async function runAngleBoard(character: Character) {
     const boardLane = opts.boardLane ?? liveBoardLane(opts.server ?? "");
@@ -143,5 +157,6 @@ export async function ensurePortraits(opts: {
     anglePins[character.id] = Object.fromEntries(
       Object.entries(res.pinned).filter(([, f]) => fs.existsSync(f)),
     ) as Partial<Record<BoardAngle, string>>;
+    if (res.board && fs.existsSync(res.board)) sheets[character.id] = res.board;
   }
 }

@@ -3,6 +3,8 @@ import * as nodeTest from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
+import type { BoardLane } from "./asset-board";
 import { DEFAULT_CREW, type CrewConfig } from "./crew-llm";
 import { runWriter, type SeatDoc } from "./seat-writer";
 import { handoffFrom, padBoardDurations, recoverBoardsKeys, runBoards, sheetDigest } from "./seat-boards";
@@ -56,7 +58,17 @@ function replayFetch(replies: string[]) {
   return { impl, seen };
 }
 
-async function runBothSeats() {
+async function runBothSeats(draftOnly = true) {
+  const boardLane: BoardLane = {
+    edit: async (o) => { await sharp({ create: { width: 128, height: 128, channels: 3, background: "white" } }).png().toFile(o.outFile); },
+    cut: async (board, cells) => { for (const c of cells) await sharp(board).extract({ left: c.x, top: c.y, width: c.w, height: c.h }).png().toFile(c.file); },
+    qc: async (_file, out) => {
+      const result: Awaited<ReturnType<BoardLane["qc"]>> = { status: "GREEN", checks: { status: "GREEN", fail_reasons: [] } };
+      fs.writeFileSync(out, JSON.stringify(result));
+      return result;
+    },
+    rembg: async () => { throw new Error("not for storyboards"); },
+  };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seats-e2e-"));
   const { impl, seen } = replayFetch(FIXTURE.replies.map((r) => r.content));
   const spoken: string[] = [];
@@ -74,11 +86,24 @@ async function runBothSeats() {
     FIXTURE.ranges,
   );
   const boards = await runBoards(
-    { script: writer.script, targetSec: FIXTURE.targetSec, writer: { model: writer.model, receipts: writer.receipts } },
-    { ...io, model: crew.boardsModel },
+    { script: writer.script, targetSec: FIXTURE.targetSec, draftOnly, writer: { model: writer.model, receipts: writer.receipts } },
+    { ...io, model: crew.boardsModel, boardLane },
   );
   return { writer, boards, dir, seen, spoken, docs };
 }
+
+test("runBoards completes only with visible mapped cuts and a visual receipt", async () => {
+  const { boards, dir } = await runBothSeats(false);
+  assert.equal(boards.sheet.storyboard?.length, boards.sheet.shots.length);
+  for (const cell of boards.sheet.storyboard!) {
+    assert.equal(cell.at, "0%");
+    assert.ok(fs.existsSync(cell.file));
+    assert.ok(boards.sheet.shots.some((s) => s.id === cell.shotId));
+  }
+  const receipt = boards.receipts.find((r) => r.endsWith(".visual.json"));
+  assert.ok(receipt);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, receipt), "utf8")).status, "GREEN");
+});
 
 test("the two seats drive a frozen fixture to a valid three-scene callsheet", async () => {
   const { writer, boards } = await runBothSeats();

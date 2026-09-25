@@ -255,6 +255,61 @@ test("PE step: max_tokens below the 5000 law floor refuses to run", async () => 
   );
 });
 
+test("PE rewrite: web search off calls 6.8 and never wigolo", async () => {
+  let wigoloCalls = 0;
+  const wires: Wire[] = [];
+  const res = await runPeStep({
+    shotId: "SH01",
+    action: "男人行過走廊",
+    context: "fixture",
+    config: { ...CONFIG, rewriteEndpoint: "http://127.0.0.1:4000", rewriteModel: "sensenova-v6.8-flash-lite" },
+    webSearch: false,
+    deps: {
+      wigolo: async () => {
+        wigoloCalls += 1;
+        return EVIDENCE;
+      },
+      fetchImpl: (async (url: string, init?: RequestInit) => {
+        wires.push({ url: String(url), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+        return okResponse(JSON.stringify({
+          render: { 主體: "男人", 場景: "走廊", 風格光照: "日光", 約束: "一個人行過" },
+        })) as unknown as Response;
+      }) as unknown as typeof fetch,
+    },
+  });
+  assert.equal(wigoloCalls, 0);
+  assert.equal(res.facts.length, 0);
+  assert.equal(res.brain, "sensenova-v6.8-flash-lite");
+  assert.equal(wires.length, 1);
+  assert.match(wires[0]!.url, /127\.0\.0\.1:4000/);
+  assert.equal(wires[0]!.body.max_tokens, 8000);
+  assert.equal(wires[0]!.body.chat_template_kwargs, undefined);
+});
+
+test("PE rewrite: 已有四要素收據就唔再叫腦", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pe-rcpt-"));
+  const receipt = path.join(dir, "SH06.pe_rewrite.json");
+  const render = { 主體: "阿檸舉樽", 場景: "木檯", 風格光照: "冷調", 約束: "水珠滑落" };
+  fs.writeFileSync(receipt, JSON.stringify({ tool: "slatecrew.pe_step", shot: "SH06", render: JSON.stringify(render), brain: "sensenova-v6.8-flash-lite", question: "舊" }));
+  let calls = 0;
+  const res = await runPeStep({
+    shotId: "SH06",
+    action: "再叫就錯",
+    context: "fixture",
+    config: { ...CONFIG, rewriteEndpoint: "http://127.0.0.1:4000", rewriteModel: "sensenova-v6.8-flash-lite" },
+    webSearch: false,
+    receiptFile: receipt,
+    deps: {
+      fetchImpl: (async () => {
+        calls += 1;
+        throw new Error("should not call");
+      }) as unknown as typeof fetch,
+    },
+  });
+  assert.equal(calls, 0);
+  assert.equal(JSON.parse(res.render).主體, "阿檸舉樽");
+});
+
 if (bareBun) {
   void (async () => {
     let failed = 0;

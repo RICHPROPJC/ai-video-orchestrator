@@ -24,6 +24,9 @@ export type PeConfig = {
   maxTokens: number;
   wigoloClient: string;
   timeoutMs: number;
+  /** 簡單改寫。缺席時 webSearch:false 會停，唔會偷偷改行上網那條。 */
+  rewriteEndpoint?: string;
+  rewriteModel?: string;
 };
 
 /** the slice of wigolo's output the PE brain needs: the cited report plus its
@@ -47,6 +50,13 @@ export type PeDeps = {
 };
 
 const FETCHED_AT_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const REWRITE_SYSTEM = [
+  "你係 Editing PE（簡單改寫）。呢次冇開網上搜尋。",
+  "唔准估數字、日期、名。畫面冇要上屏嘅數字就唔好寫數字。",
+  "輸出只係一個 JSON object（冇 markdown、冇解釋）：{\"render\":{\"主體\":\"…\",\"場景\":\"…\",\"風格光照\":\"…\",\"約束\":\"…\"}}",
+  "render 四個 key 都要有，一個唔准漏。",
+].join("\n");
 
 const PE_SYSTEM = [
   "你係 search-first PE（U1.5 官方 Image PE 步）。你會收到一份搜證報告同一個畫面需求。",
@@ -127,6 +137,7 @@ async function callBrain(
   user: string,
   config: PeConfig,
   deps: PeDeps,
+  maxTokens = config.maxTokens,
 ): Promise<string> {
   const doFetch = deps.fetchImpl ?? fetch;
   const body: Record<string, unknown> = {
@@ -138,7 +149,7 @@ async function callBrain(
     temperature: 0.7,
     top_p: 0.95,
     top_k: 40,
-    max_tokens: config.maxTokens,
+    max_tokens: maxTokens,
   };
   if (brain.effortNone) body.chat_template_kwargs = { reasoning_effort: "none" };
   const res = await doFetch(`${brain.endpoint.replace(/\/$/, "")}/v1/chat/completions`, {
@@ -180,11 +191,36 @@ export function validateFacts(raw: unknown, runDate: string): ShotFact[] {
   return facts;
 }
 
-/** wigolo evidence → PE brain → {facts, render}. Primary brain first, qwen38
- *  backup second; both failing (or zero valid facts / empty render) throws —
- *  the shot then hits the facts_missing refuse-to-emit gate, it never silently
- *  proceeds. Receipt (if receiptDir) follows the photo_qc record shape. */
-export async function runPeStep(opts: {
+const REWRITE_MAX_TOKENS = 8000;
+
+function writePeReceipt(file: string, shotId: string, result: PeStepResult): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ tool: "slatecrew.pe_step", ts: new Date().toISOString(), shot: shotId, ...result }, null, 2));
+}
+
+/** 已經寫好嘅改寫收據。四要素齊就直接用，唔再叫腦。 */
+function readRewriteReceipt(file: string, shotId: string): PeStepResult | null {
+  if (!fs.existsSync(file)) return null;
+  try {
+    const rec = JSON.parse(fs.readFileSync(file, "utf8")) as { shot?: string; render?: string; brain?: string; question?: string };
+    if (rec.shot && rec.shot !== shotId) return null;
+    const renderObj = JSON.parse(rec.render ?? "") as Record<string, unknown>;
+    if (!renderObj || typeof renderObj !== "object" || Array.isArray(renderObj)) return null;
+    if (renderMissingKeys(renderObj).length) return null;
+    return {
+      facts: [],
+      render: JSON.stringify(renderObj),
+      brain: rec.brain || "receipt",
+      question: rec.question || "",
+      wigoloMs: 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 簡單改寫。唔叫 wigolo，唔要求 facts。腦係 6.8，max_tokens 低過 8000 會燒晒 thinking。 */
+async function runRewrite(opts: {
   shotId: string;
   action: string;
   context: string;
@@ -192,7 +228,55 @@ export async function runPeStep(opts: {
   deps?: PeDeps;
   receiptFile?: string;
 }): Promise<PeStepResult> {
+  const endpoint = opts.config.rewriteEndpoint?.trim() ?? "";
+  const model = opts.config.rewriteModel?.trim() ?? "";
+  if (!endpoint || !model) throw new Error("PE 簡單改寫未設定 rewriteEndpoint／rewriteModel");
+  assertLocalPeBrain(model);
+  if (opts.receiptFile) {
+    const have = readRewriteReceipt(opts.receiptFile, opts.shotId);
+    if (have) return have;
+  }
+  const raw = await callBrain(
+    { endpoint, model, effortNone: false },
+    REWRITE_SYSTEM,
+    JSON.stringify({ shot: opts.shotId, 畫面需求: opts.action, 場景: opts.context }),
+    opts.config,
+    opts.deps ?? {},
+    REWRITE_MAX_TOKENS,
+  );
+  const parsed = sliceJsonObject(raw) as { render?: unknown };
+  const renderObj =
+    parsed.render && typeof parsed.render === "object" && !Array.isArray(parsed.render)
+      ? (parsed.render as Record<string, unknown>)
+      : null;
+  if (!renderObj) throw new Error(`PE rewrite ${model} returned empty render`);
+  const missing = renderMissingKeys(renderObj);
+  if (missing.length > 0) throw new Error(`PE rewrite ${model} render 缺結構四要素：${missing.join("、")}`);
+  const result: PeStepResult = {
+    facts: [],
+    render: JSON.stringify(renderObj),
+    brain: model,
+    question: opts.action,
+    wigoloMs: 0,
+  };
+  if (opts.receiptFile) writePeReceipt(opts.receiptFile, opts.shotId, result);
+  return result;
+}
+
+/** Two PE routes. webSearch true: wigolo then nex, qwen38 backup.
+ *  webSearch false: simple rewrite on 6.8, no web search, no fact rows required. */
+export async function runPeStep(opts: {
+  shotId: string;
+  action: string;
+  context: string;
+  config: PeConfig;
+  deps?: PeDeps;
+  receiptFile?: string;
+  /** Default true keeps the search route. False is the rewrite route. */
+  webSearch?: boolean;
+}): Promise<PeStepResult> {
   const { config } = opts;
+  if (opts.webSearch === false) return runRewrite(opts);
   assertLocalPeBrain(config.model);
   assertLocalPeBrain(config.fallbackModel);
   if (config.maxTokens < 5000) throw new Error(`PE max_tokens ${config.maxTokens} < 5000 — nex effort none needs ≥5000 (0919 law)`);
@@ -265,12 +349,6 @@ export async function runPeStep(opts: {
       ? { notes: `primary ${config.model} failed: ${errors[0]!.slice(0, 300)}` }
       : {}),
   };
-  if (opts.receiptFile) {
-    fs.mkdirSync(path.dirname(opts.receiptFile), { recursive: true });
-    fs.writeFileSync(
-      opts.receiptFile,
-      JSON.stringify({ tool: "slatecrew.pe_step", ts: new Date().toISOString(), shot: opts.shotId, ...result }, null, 2),
-    );
-  }
+  if (opts.receiptFile) writePeReceipt(opts.receiptFile, opts.shotId, result);
   return result;
 }

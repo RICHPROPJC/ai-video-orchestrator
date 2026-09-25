@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { BEAT_ID_RE, CHARACTER_ID_RE, SCENE_ID_RE, dialogueSeconds, omittable, type Beat } from "./script-contract";
 import { isRoomNoun, isSystemDisplayProp, isSystemDisplayScreenForbid, negativePoison } from "./keyframe-prompt";
+import { shotSecMax, shotSecMin } from "./frame-grid";
 
-/** One shot is one H3 submit: the frame grid (17k+5, k 7–21) cannot render
- *  anything shorter or longer, so boards may not ask for it. */
-export const SHOT_SEC_MIN = 5.2;
-export const SHOT_SEC_MAX = 15;
+/** Shot length bounds come from the H3 grid setting, not a second copy of 5.2/15. */
+export const SHOT_SEC_MIN = shotSecMin();
+export const SHOT_SEC_MAX = shotSecMax();
 const SHOT_ACTION_MAX = 60;
 const CAST_PER_SHOT_MAX = 3;
 
@@ -35,6 +35,17 @@ const propSchema = z.object({
   heldBy: omittable(z.string().regex(CHARACTER_ID_RE)),
   shape: z.array(z.string().min(1).max(12)).min(1).max(5),
   forbid: z.array(z.string().min(1).max(12)).max(8),
+  publicName: omittable(z.string().min(1).max(24)),
+  sizeM: omittable(z.number().positive().max(30)),
+  sizeSource: omittable(z.string().min(1).max(80)),
+  proportion: omittable(z.object({
+    of: z.string().regex(CHARACTER_ID_RE),
+    at: z.enum(["knee", "waist", "chest", "shoulder"]),
+    source: z.string().min(1).max(80),
+  })),
+}).refine((p) => p.sizeM == null || Boolean(p.sizeSource?.trim()), {
+  message: "sizeM 要連 sizeSource 一齊寫，唔准估",
+  path: ["sizeSource"],
 }).refine((p) => !isSystemDisplayProp(p.name) || !p.forbid.some(isSystemDisplayScreenForbid), {
   // §0c law46（#27 boards 端豁免）：光框本身就係螢幕——screen/螢幕 入 system
   // prop 嘅 forbid＝禁詞殺自己人（WR1Q SH02）；非 system 禁 screen 照舊合法。

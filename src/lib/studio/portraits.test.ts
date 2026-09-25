@@ -135,6 +135,25 @@ test("a failed portrait gets exactly one more seed, then passes", async () => {
   assert.equal(calls[2]!.seed, 42, "the next character starts fresh");
 });
 
+test("a patterned backdrop is kept once; a bad face still stops", async () => {
+  const outDir = tmpDir();
+  let n = 0;
+  const lane: PortraitLane = {
+    generate: async ({ outFile, recordJson }) => {
+      fs.mkdirSync(path.dirname(outFile), { recursive: true });
+      fs.writeFileSync(outFile, Buffer.concat([PNG_MAGIC, Buffer.from("stub")]));
+      fs.writeFileSync(recordJson, "{}");
+    },
+    qc: async () => {
+      n += 1;
+      return { status: "FAIL", checks: { status: "FAIL", fail_reasons: ["背景：純色平面背景: 唔達標 — 圓形圖案"] } };
+    },
+  };
+  const result = await ensurePortraits({ sheet, outDir, lane, seed: 42, onlyIds: ["A"] });
+  assert.deepEqual(result.made, ["A"]);
+  assert.equal(n, 1);
+});
+
 test("two failures throw instead of anchoring a keyframe on a bad face", async () => {
   const outDir = tmpDir();
   const { lane, calls } = fakeLane(["FAIL", "FAIL"]);

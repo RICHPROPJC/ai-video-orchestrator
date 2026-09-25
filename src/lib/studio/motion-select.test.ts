@@ -19,6 +19,7 @@ import {
   bakeFor,
   bvhClipFrames,
   decideSelection,
+  postureConflict,
   writeSelections,
   blockoutPathFor,
   motionSegments,
@@ -289,6 +290,33 @@ test("verb gate: any-of must hit desc or category; all-of partial flags but stay
   assert.equal(miss.pass, false);
 });
 
+test("decideSelection: no character-motion family leaves the verb gate off", () => {
+  const drip = "冷凝水沿玻璃樽身滑落，水珠滴落木檯";
+  assert.deepEqual(verbsForGate(drip).needAny, []);
+  const sl: Shortlist = {
+    strategy: "t",
+    caps: {},
+    nCandidates: 1,
+    candidates: [{ family: "stand_idle", id: "77_02", bvh: "data/077/77_02.bvh", category: null, desc: "standing", arm: "", code: "C01" }],
+  };
+  const sel = decideSelection(
+    { shot: "SH01", pick: "C01", runner: ["C01"], reason: "still", conf: 0.9, pickId: "77_02", pickDesc: "standing", pickFamily: "stand_idle", pickBvh: "data/077/77_02.bvh" },
+    sl,
+    new Map(),
+    { id: "SH01", heading: "CU", action: drip, durationSec: 2.4 },
+    null,
+  );
+  assert.equal(sel.bvh, "data/077/77_02.bvh");
+  assert.ok(sel.flags.includes("verb-gate off: action names no character motion"));
+});
+
+test("抹走唔係行路；坐低同 turn／stand 矛盾", () => {
+  assert.deepEqual(verbsForGate("阿檸用掌心抹走樽身水珠，擰開樽蓋。").needAny, []);
+  assert.ok(verbsForGate("行前兩步停低").needAny.includes("walk"));
+  const clash = postureConflict({ id: "SH11", heading: "M", action: "阿檸坐低挨埋木檯", durationSec: 2.3, gait: "turn", stance: "stand" });
+  assert.match(clash ?? "", /坐低同 gait turn/);
+});
+
 test("bake window: 4.82s → start 1, len 578 source frames, step 2 (trial bake receipt)", () => {
   assert.deepEqual(bakeFor(4.82), { start: 1, len: 578, step: 2, auto_anchor: true });
   assert.deepEqual(bakeFor(4.0), { start: 1, len: 480, step: 2, auto_anchor: true });
@@ -411,7 +439,7 @@ test("F4 dry-run: SC-0921-9V4Y callsheet → selection.json (SH01=111_19 auto, S
 
 // ---- MULTISHOT_WIRE_0921: cross-shot scheduling ---------------------------
 
-test("motionSegments: martial/run anchor C-form, trailing simples chain, leading simples = one multishot", () => {
+test("motionSegments: martial/run anchor C-form, simple runs stay separate identity-only multishot", () => {
   const segs = motionSegments([
     { id: "SH01", action: "沈北辰打出兩記右直拳，轉身起左腳側踢" }, // martial
     { id: "SH02", action: "行前兩步停低，收拳定神" }, // simple walk
@@ -420,8 +448,10 @@ test("motionSegments: martial/run anchor C-form, trailing simples chain, leading
     { id: "SH05", action: "企定望前" }, // simple stand
   ]);
   assert.deepEqual(segs, [
-    { kind: "cform", anchor: "SH01", chain: ["SH02", "SH03"] },
-    { kind: "cform", anchor: "SH04", chain: ["SH05"] },
+    { kind: "cform", anchor: "SH01", chain: [] },
+    { kind: "multishot", shots: ["SH02", "SH03"] },
+    { kind: "cform", anchor: "SH04", chain: [] },
+    { kind: "multishot", shots: ["SH05"] },
   ]);
   // leading run of simples (no anchor before them) = ONE standalone multishot
   const lead = motionSegments([
@@ -442,10 +472,10 @@ test("motionSegments: martial/run anchor C-form, trailing simples chain, leading
   ]);
 });
 
-test("snapFramesPerShot: 17-frame grid nearest the shot clock (4.82s → 119)", () => {
-  assert.equal(snapFramesPerShot(4.82), 119);
-  assert.equal(snapFramesPerShot(4.0), 102); // 96 → 6×17
-  assert.equal(snapFramesPerShot(0.5), 17);
+test("snapFramesPerShot: 17k+5 grid rounds upward (4.82s → 124)", () => {
+  assert.equal(snapFramesPerShot(4.82), 124);
+  assert.equal(snapFramesPerShot(4.0), 107); // 96 → 6×17
+  assert.throws(() => snapFramesPerShot(0.5), /h3_grid/);
 });
 
 test("msGridFrames: multishot delivers on the 17k+5 grid (119 → 124, run5 live)", () => {

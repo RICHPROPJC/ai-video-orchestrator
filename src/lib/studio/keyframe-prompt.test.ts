@@ -21,6 +21,9 @@ import {
   sceneRetryNormalize,
   sceneRetrySchema,
   sceneRetryUser,
+  textMiss,
+  textRetrySchema,
+  textRetryUser,
 } from "./keyframe-prompt";
 import { chatJson, DEFAULT_CREW, SchemaMismatchError, type CrewConfig } from "./crew-llm";
 import { loadTraceFixture } from "./trace";
@@ -35,6 +38,22 @@ const cases: { name: string; fn: () => void | Promise<void> }[] = [];
 const test = bareBun
   ? (name: string, fn: () => void | Promise<void>) => cases.push({ name, fn })
   : nodeTest.test;
+
+test("wrong on-screen text is a redraw, not a prompt rewrite, until other faults mix in", () => {
+  assert.equal(textMiss(["文字：錯字"]), true);
+  assert.equal(textMiss(["上屏：2021 寫成 2024"]), true);
+  assert.equal(textMiss(["文字：錯字", "people_count: 2"]), false);
+  assert.equal(textMiss([]), false);
+});
+
+test("text retry rewrites the action once and refuses a second line of words", () => {
+  const shot = { ...shotWithProp(), action: "樽身寫住凍" };
+  const user = textRetryUser(shot, ["文字：錯字"]);
+  assert.match(user, /唔好再加一行/);
+  assert.match(user, /樽身寫住凍/);
+  assert.equal(textRetrySchema.safeParse({ thinking: "改一句", action: "樽身只寫凍" }).success, true);
+  assert.equal(textRetrySchema.safeParse({ thinking: "改一句", action: "字".repeat(61) }).success, false);
+});
 
 const baseSheet: CallSheet = {
   title: "t",
@@ -91,7 +110,7 @@ test("T41 E1: fixture SH01 packet → /edit 150–300 中文字, require.locatio
   assert.ok(n >= 150, `≥150 中文字，got ${n}`);
   assert.ok(n <= 300, `≤300 中文字，got ${n}`);
   assert.ok(text.includes("地下室"), "require.location 原句全文");
-  assert.ok(text.includes("人偶嘅位置、姿勢、佔位保持照 Image-1"), "Image-1 錨句（BUG3 法1 準錨，唔再完全照）");
+  assert.ok(text.includes("Image-1 係這鏡一張佔位，只帶距離同位置。身份跟 Image-2 未切的成張。"), "Image-1 佔位，身份跟未切成張");
   assert.ok(text.includes(`；禁止${PACKET_NEGS.join("、")}`), "packet negatives 組裝");
   assert.ok(text.includes("【動作】"), "packet action rides after the band");
 });
@@ -217,7 +236,8 @@ test("garment prop: prompt names the coat as clothing, never a plow (SH07 class)
 
 test("garment prop: later-shot continuity carries the coat, not the 犁", () => {
   const text = keyframeEditPrompt(baseSheet,shotWithProp(coat), { first: false });
-  assert.ok(text.includes("Image-2 係上一鏡嘅定格"), "continuity line present");
+  assert.ok(text.includes("上一鏡定格係最後一張參考"), "later shot: previous freeze is the last ref");
+  assert.ok(text.includes("身份仍然跟未切的成張"), "identity still follows the uncut sheet");
   assert.ok(text.includes("軍大衣、光線同色調"), "the garment is the carried prop");
   assert.ok(!text.includes("犁"), "no plow in the carry-over list");
 });
@@ -250,19 +270,30 @@ test("tool prop (犁): plow sentence + tool gate unchanged", () => {
   const plow: ShotProp = { name: "曲轅犁", heldBy: "A", shape: ["弯", "木", "插入"], forbid: ["锹", "铲", "锄"] };
   const text = keyframeEditPrompt(baseSheet,shotWithProp(plow), { first: false });
   assert.ok(text.includes("曲轅犁"), "prop name from sheet");
-  assert.ok(text.includes("一件完整木犁"), "plow sentence kept for real tools");
-  assert.ok(text.includes("唔係锹、铲、锄"), "forbid list from sheet");
+  assert.ok(text.includes("曲轅犁：弯、木、插入"), "tool shape rides the prop sentence");
+  assert.ok(text.includes("呢件物件嘅輪廓同材質照呢句，放喺角色手邊"), "tool contour sentence");
+  assert.ok(!text.includes("一件完整木犁"), "no plow template");
+  assert.ok(!text.includes("唔係锹、铲、锄"), "no forbid echo");
   const req = keyframeRequire(shotWithProp(plow));
   assert.equal(req.tool, "曲轅犁");
   assert.deepEqual(req.tool_shape, ["弯", "木", "插入"]);
   assert.deepEqual(req.tool_forbid, ["锹", "铲", "锄"]);
 });
 
+test("tool prop (樽): bottle form in Chinese, no English tumbler words", () => {
+  const bottle: ShotProp = { name: "玻璃檸檬汽水樽", heldBy: "A", shape: ["cylindrical", "glass", "wet"], forbid: ["can", "cup"] };
+  const text = keyframeEditPrompt(baseSheet, shotWithProp(bottle), { first: true });
+  assert.ok(text.includes("有蓋、樽頸收窄、瘦高圓柱玻璃樽身"));
+  assert.ok(!text.includes("cylindrical"));
+  assert.ok(!text.includes("cup"));
+});
+
 test("tool prop (槍): not a garment or document, keeps the tool gate", () => {
   const spear: ShotProp = { name: "長槍", heldBy: "B", shape: ["长", "杆", "尖"], forbid: ["剑", "戟"] };
   const text = keyframeEditPrompt(baseSheet,shotWithProp(spear), { first: true });
-  assert.ok(text.includes("長槍"), "prop name from sheet");
-  assert.ok(text.includes("犁"), "one-tool gate vocabulary present");
+  assert.ok(text.includes("長槍：长、杆、尖"), "tool shape rides the prop sentence");
+  assert.ok(text.includes("呢件物件嘅輪廓同材質照呢句，放喺角色手邊"), "unknown tool uses the contour sentence");
+  assert.ok(!text.includes("犁"), "no plow vocabulary on a spear");
   assert.equal(keyframeRequire(shotWithProp(spear)).tool, "長槍");
 });
 
@@ -440,7 +471,7 @@ test("T32 rev2 A1: packet require.location writes the scene line — prompt carr
 test("BUG3 SUPERSEDE T32 17:48: Image-1 只錨人偶位置/姿勢/佔位 — 場景結構唔跟灰模", () => {
   const { fx, sheet } = ldSheet();
   const text = keyframeEditPrompt(sheet, fx.shots[0]!, { first: true });
-  assert.ok(text.includes("人偶嘅位置、姿勢、佔位保持照 Image-1"), "法1 準錨清單");
+  assert.ok(text.includes("Image-1 係這鏡一張佔位，只帶距離同位置。身份跟 Image-2 未切的成張。"), "法1 佔位錨");
   assert.ok(text.includes("變嘅係質感、材質同光線"), "法1 變邊");
   assert.ok(!text.includes("地平線"), "banned 地平線");
   assert.ok(!text.includes("完全照 Image-1"), "banned 完全照");
@@ -554,17 +585,16 @@ test("BUG3: the four Chau-banned sentences never appear (first/later, every prop
 
 test("BUG3: Image-1 anchors puppet 位置/姿勢/佔位 only; the change/keep pair is explicit (法1)", () => {
   const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: true });
-  assert.ok(text.includes("人偶嘅位置、姿勢、佔位保持照 Image-1"), "keep side: 法1 allowed anchor list verbatim");
+  assert.ok(text.includes("Image-1 係這鏡一張佔位，只帶距離同位置。身份跟 Image-2 未切的成張。"), "keep side: occupancy only, identity on the uncut sheet");
   assert.ok(text.includes("變嘅係質感、材質同光線"), "change side: what the edit changes");
 });
 
 test("BUG3: Image-N 對號 — each ref is the character's dressed body, facing follows Image-1 (法5/6/9)", () => {
   const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: true });
-  assert.ok(text.includes("左起第1個人偶＝Image-2 嘅角色角色一"), "puppet 1 → Image-2");
-  assert.ok(text.includes("左起第2個人偶＝Image-3 嘅角色角色二"), "puppet 2 → Image-3");
+  assert.ok(text.includes("左起第1個角色＝Image-2 未切成張入面嘅角色一"), "role 1 → Image-2 uncut sheet");
+  assert.ok(text.includes("左起第2個角色＝Image-3 未切成張入面嘅角色二"), "role 2 → Image-3 uncut sheet");
   assert.ok(text.includes("面容、髮型同成套衫著照 Image-2"), "dressed-body ref, never face-only");
-  assert.ok(text.includes("朝向同動作跟 Image-1 人偶"), "facing follows the blockout, not forced frontal");
-  assert.ok(text.includes("淨係得呢2個角色"), "people count anchored to the puppets (法5)");
+  assert.ok(text.includes("畫面人數照呢2個角色"), "people count follows the marked roles");
 });
 
 test("BUG3: scene truth source is ONE field — require.location, then shot.location, sheet tail last", () => {
@@ -644,17 +674,17 @@ test("BUG3: the facts block rides AFTER the band — packet rows never pad the b
  *  the scene line and the compound location word are one string; 動作
  *  (freeze frame + spatial sentence) rides after the band. Single mark —
  *  the SH01 verified shape. */
-test("C1: refAngle 45 — facing follows Image-2 with eye guard + 90° ban; compound location verbatim; 動作 rides after the band", () => {
+test("C1: refAngle 45 — keyframe prompt keeps 動作 and 場景; 45° eye guard stays on portraitPrompt", () => {
   const shot = shotWithProp(coat);
   shot.marks = [shot.marks[0]!];
   shot.refAngle = "45";
   shot.require = { location: "地下室檔案室", action: "俯身雙手撐地、上身抬起", pose: "體重由雙膝同雙手掌承住，大腿同地面成角度唔貼地" };
   const text = keyframeEditPrompt(sheet, shot, { first: true });
-  assert.ok(text.includes("朝向跟 Image-2"), "the puppet's facing follows its own 45° ref");
-  assert.ok(text.includes("唔好轉成90度純側面"), "the 90° ban rides the 45° facing clause");
-  assert.ok(text.includes("雙眼"), "eye guard present");
-  assert.ok(text.includes("姿勢同佔位跟 Image-1 人偶"), "pose/occupancy still anchor Image-1");
-  assert.ok(!text.includes("朝向同動作跟 Image-1 人偶"), "the frontal-drag sentence is gone on a 45° shot");
+  assert.ok(text.includes("【底圖】Image-1 係這鏡一張佔位，只帶距離同位置。身份跟 Image-2 未切的成張。"), "occupancy on Image-1, identity on the uncut sheet");
+  assert.ok(!text.includes("朝向跟 Image-2"), "facing sentence is not in the keyframe prompt");
+  assert.ok(!text.includes("90度"), "90° ban stays on portraitPrompt");
+  assert.ok(!text.includes("雙眼"), "eye guard stays on portraitPrompt");
+  assert.ok(!text.includes("人偶"), "no puppet noun in the keyframe prompt");
   assert.ok(text.includes("【場景】地下室檔案室"), "scene line carries the compound word verbatim (require.location 注入)");
   assert.ok(
     text.includes("【動作】俯身雙手撐地、上身抬起。體重由雙膝同雙手掌承住，大腿同地面成角度唔貼地。"),
@@ -693,9 +723,10 @@ test("C1: the 45° clause costs band width — a fat crew refuses loud (prompt_t
   assert.throws(() => keyframeEditPrompt(fatSheet, shot, { first: true }), /prompt_too_thick/);
 });
 
-test("C1: absent refAngle stays front (old facing sentence, no 動作 line)", () => {
+test("C1: absent refAngle keeps the occupancy sentence and the 動作 fallback", () => {
   const text = keyframeEditPrompt(sheet, shotWithProp(coat), { first: true });
-  assert.ok(text.includes("朝向同動作跟 Image-1 人偶"), "front default unchanged");
+  assert.ok(text.includes("【底圖】Image-1 係這鏡一張佔位，只帶距離同位置。身份跟 Image-2 未切的成張。"), "front and 45° share the occupancy sentence");
+  assert.ok(!text.includes("人偶"), "no puppet noun in the keyframe prompt");
   assert.ok(text.includes("【動作】扯過件外套披上肩"), "boards action rides the 動作 slot when the packet is silent (0c636e9 fallback, MERGE_THREE_0921)");
   assert.ok(!text.includes("90度"), "no 45° vocabulary on a front shot");
 });

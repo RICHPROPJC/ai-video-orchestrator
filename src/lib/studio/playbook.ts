@@ -280,16 +280,17 @@ export function enforceCap(lines: PlaybookLine[]): { lines: PlaybookLine[]; evic
  *  stage becomes proven, hits++. `scopes` names the scopes whose files were
  *  in the prompt; each scope's primitive file and drama files are promoted.
  *  Retired scope names (legacy callers still pass one) are skipped. */
-export function markPass(scopes: string[], dir?: string): string[] {
+export function markPass(scopes: string[], dir?: string, drama?: string): string[] {
   if (!dir) return []; // nothing was wired into a prompt — and a test must never touch the real seats/
   const receipts: string[] = [];
   const proot = projectsRootFromSeatsDir(dir);
+  const named = drama?.trim();
   for (const raw of scopes) {
     if (!PLAYBOOK_SCOPES.includes(raw as PlaybookScope)) continue;
     const scope = raw as PlaybookScope;
     const addrs: PlaybookAddress[] = [
       { lifetime: "primitive", scope, dir },
-      ...dramasWithPlaybooks(proot).map((drama) => ({ lifetime: "drama" as const, scope, drama, dir: proot })),
+      ...(named ? [{ lifetime: "drama" as const, scope, drama: named, dir: proot }] : []),
     ];
     for (const addr of addrs) {
       const lines = loadPlaybookLines(addr);
@@ -492,23 +493,22 @@ export function curatePlaybook(
   return { receipts, rejected };
 }
 
-/** Prompt assembly: the seat's system = charter + its playbook files —
- *  all-scope and own-scope, primitive before drama. Drama files ride along
- *  only while exactly one drama owns a playbook dir: two or more is ambiguous
- *  without the job's drama, and guessing would cross-pollinate nouns — the
- *  exact leak this split exists to kill. */
+/** Prompt assembly: charter stays outside. Public bullets are seats/*.primitive.md.
+ *  A project playbook is included only when `drama` names it. One project on disk
+ *  is not a guess — mixing it into a job that did not name it cross-pollinates. */
 export function assemblePlaybook(
   seat: "writer" | "boards",
   dir?: string,
+  drama?: string,
 ): { text: string; bullets: PlaybookBullet[] } {
   if (!dir) return { text: "", bullets: [] };
   const proot = projectsRootFromSeatsDir(dir);
-  const drama = dramasWithPlaybooks(proot).length === 1 ? dramasWithPlaybooks(proot)[0] : undefined;
+  const named = drama?.trim();
   const sections: { label: string; addr: PlaybookAddress }[] = [
     { label: "### 全部 seat（跨劇目）", addr: { lifetime: "primitive", scope: "all", dir } },
-    ...(drama ? [{ label: `### 全部 seat（劇目 ${drama}）`, addr: { lifetime: "drama" as const, scope: "all" as const, drama, dir: proot } }] : []),
+    ...(named ? [{ label: `### 全部 seat（劇目 ${named}）`, addr: { lifetime: "drama" as const, scope: "all" as const, drama: named, dir: proot } }] : []),
     { label: `### ${seat} 檯（跨劇目）`, addr: { lifetime: "primitive", scope: seat, dir } },
-    ...(drama ? [{ label: `### ${seat} 檯（劇目 ${drama}）`, addr: { lifetime: "drama" as const, scope: seat, drama, dir: proot } }] : []),
+    ...(named ? [{ label: `### ${seat} 檯（劇目 ${named}）`, addr: { lifetime: "drama" as const, scope: seat, drama: named, dir: proot } }] : []),
   ];
   const loaded = sections
     .map((s) => ({ ...s, bullets: bulletsOf(loadPlaybookLines(s.addr)) }))

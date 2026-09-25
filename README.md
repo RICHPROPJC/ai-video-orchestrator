@@ -4,36 +4,35 @@
 
 故事、分鏡、剪接用**同一組 SH id、同一條次序**（阿剪唔可以重排）；packet / vault / embed / rerank 全部 bind 喺呢份 slate——何晴可以 dispatch 去阿圖，但信封寫住 `slate: SC-…`，阿圖冇權打開隔夜嗰份 vault。
 
-## 四線 ＝ 一次 H3 submit（0921 現實；SSOT：`docs/H3_FOUR_LANE_LOCK_0915.md` ＋ 碼）
+## 分鏡交付
 
-**一鏡一 generate。** 唔係四次 ffmpeg。
+以 [ALIGN-LOCK.md](ALIGN-LOCK.md) 為準，維持十二席。`runBoards` 先拆文字鏡頭表，再經 U1.5 出可見分鏡板、切格及逐格 QC。收據留喺分鏡席，記錄鏡號、鏡內位置、板／格檔案、hash 同 QC；文字 callsheet 唔算分鏡完成。壞格抽出再拼板補格，只替換指定格。十一鏡唔等於十六格，空格唔會開新鏡。dry-run 只係草稿。
 
-| # | 線 | 入邊 | 槽 |
-|---|---|---|---|
-| 1 | layout | 呢鏡 grey blockout → `ref_video_0` / `<Video 1>`（motion only） | video 槽之一 |
-| 2 | stills | 呢鏡 U1.5 still → keyframe **0%** 同 **100%**（A 形，用喺**冇** Video1 嘅 shot） | photo／kf，唔係 prev last |
-| 3 | audio | 呢鏡 wav → `ref_audio_0`（一鏡一 take；**唔用 spine**） | audio 槽 |
-| 4 | motion | **一次** H3 generate＝呢鏡；之後 `concat -c copy` | — |
+`buildings` 空就唔畫大廈。廚房、露台、木檯係場所或道具，唔會由場所名自動造建築板。明確宣告嘅建築板只供 look-dev，唔入鍵格參考鏈；共享鍵格板用未切角色身份板。
 
-### 0921 新法
+## H3 輸入同幀數
 
-- **C 形（動作 shot 帶 Video1 嘅正路）**：零 keyframes＋`ref_image_0` 身份 ref（45° 角度版）＋Video1 motion-only＋**turbo 8-step v1.0 @ steps 8、無 FBC／SolAttn**（8-step LoRA 行 FBC 爆 tensor，結構性）。**Video1 × H3Keyframes 並存＝必疊影**（五路實證：4/8/20 步、LoRA、FBC 全救唔到）——H3Keyframes lane 留畀冇 Video1 嘅 shot。
-- **跨 shot 接駁（同場連續）＝`H3MultishotSampler` 原生鏈成梳延續**：上一梳輸出直接餵下一梳（frame-0 keyframe latent＋anchor_frames／memory_frames＋chain_gain），同時自己嗰梳 reference_images 照擺（混合制）；角度肖像每 shot 帶入、seed_per_shot 鎖面。**「真 endframe 做 start_image」只係兩段分開燒（HardMode 兩段式／KFE 手動鏈）嘅入口接駁媒介，唔係同場連續本身**。過渡形態全部 hard cut。
+| 輸入 | 用途與接法 |
+|---|---|
+| 鍵格百分比 | `H3Keyframes.positions` 對應呢鏡 `17k+5` 總長度。首六釘依序入 `image_1`–`image_6`，第七張起順序入 `images_batch`，六張唔係上限。H3 補兩個釘之間嘅幀。 |
+| 身份參考 | 樣貌／身份，冇百分比。C 形有灰色 Video 1、零鍵格；角度肖像入 `ref_images.ref_image_0`，Video 1 只供動作。故事鏡唔塞場景相入身份槽。 |
+| 多鏡生成 | 只收未切身份板；拒收走位片、鍵格名及 start image。舊 chained Video 1 路徑已拒收；C 形鏡同後續多鏡段分開生成。 |
+| 聲軌 | 該鏡 wav；無對白鏡嘅靜音跟鏡長，再按 H3 時鐘補齊。 |
 
-### 條界（唔係「續接弱」，係「換場唔食舊尾」）
+冇百分比而同時交鍵格同 Video 1 會被拒。**有百分比＋Video 1** 嘅型別允許同 §5b 疊影警告仍未裁決；唔當其中一句已勝出。
 
-- **換場（location hop）→ 禁食舊鏡尾幀**（身份被食就係呢度；0915 四線原則不變）
-- **同場連續 → chain 得**（`H3MultishotSampler` 原生鏈成梳延續——上一梳 latent 直落下一梳，唔係靠食 endframe）
+提交、分段預算、concat gate 都向上對齊 `17k+5`。八鏡各請求 68 幀會預算成每鏡 73、共 584；實檔 577 唔會用嚟改 gate，manifest 亦唔可以覆蓋計算預算。剪接跟同一 cut 次序、純 copy concat；frame gate 同 QC 未過唔宣稱 picture lock。
 
-同一 take 續 45–120s 嗰套（靠上一窗 latent／尾幀）係另一條題，我哋明文禁止。
+## 聲音同網頁
 
-## 現況（0921）
+AuK `:9882/tts` 只按參考聲讀原句；唔塞情緒符號。情緒、快慢、音高同非語言任務屬 `/run`，目前未接。SenseVoice `:9881` 對**實際已交鏡頭對白**做聲檢，唔對未讀出嘅完整旁白稿；收據記錄比較範圍。
 
-- **剪接**：`native-cut` 純 copy concat，禁 xfade；`motion/SHxx.h3_plan.json` 每鏡收據，kf_start 撞舊場 fail-loud。
-- **still 質閘（T44）**：任何 `/edit` ref（肖像／上一鏡定格／memory 命中）都要自己 photo_qc GREEN，唔 GREEN 即 `ref_rejected` 事件＋肖像補位；resume 只 skip GREEN。
-- **入面可見（INSIDE_VISIBLE，即將 merge）**：seat 每次 attempt 失敗即發 warn event（A4 events.jsonl）；produce preflight／`status` 開場掃墓——未收屍 failed job 同靜咗 >30min 嘅 running 必現形。
-- **motion 選座（MOTSEL）**：CMU 座席步（index parse＋combat sweep ranking＋六族 caps shortlist）＋一 call decider（conf≥0.7 自動收，分唔出 needs_human），selection.json 帶 bvh 相對路徑。
-- **`--scene` hop＋`--resume`**：hop 只跑嗰幕嘅 stills／QC／motion；resume 靠 GREEN pin 續鏈。
+- **畫布**：一集一塊；分鏡格、角色轉面、場景、道具、鍵格同層。實線只連鍵格剪接次序；虛線另示角色參考。場所節點唔假裝有建築圖，未交圖會保留標示。
+- **分鏡**：顯示 runBoards 已交嘅板（有板路徑時）同切格，標明 SH id／鏡內位置；未有交付就顯示未完成。鍵格另列，唔當文字表已完成分鏡。
+- **圖片**：縮圖用小型 WebP 預覽；撳開先讀原圖。
+- **成片**：播放成片及逐鏡音頻，顯示對白／靜音；聲音唔係畫布節點。
+
+`--scene` 配 `--resume` 只續跑指定場景嘅 stills／QC／motion；是否重用產物由相應時鐘及 QC pin 決定，唔靠檔案存在就宣稱已過關。
 
 ## 跑
 
@@ -52,14 +51,15 @@ npm run slatecrew -- models set stills.checkpoint SenseNova-U1.5-8B-MoT.safetens
 npm run slatecrew -- models set motion.checkpoint minimax_h3_fl2va_pruned_int8_convrot.safetensors
 ```
 
-Comfy `File → Export (API)` 覆蓋 `workflows/*.api.json`，保留 `__PROMPT__` `__CKPT__` `__IMAGE__`。Comfy 熄咗用 studio fallback，QC 閘照行。
+`workflows/*.api.json` 係圖形工作流參考；生產 H3 graph 由代碼建構。供應端唔通或 QC 缺證據，唔視為成功。
 
 ```bash
-COMFY_URL=http://127.0.0.1:8188
-SENSEVOICE_ENDPOINT=
-TTS_ENDPOINT=
-BLENDER_BIN=blender
+H3_COMFY_URL=http://127.0.0.1:8188
+U15_URL=http://127.0.0.1:8097
+AUK_TTS_URL=http://127.0.0.1:9882
 ```
+
+SenseVoice 同 Blender 等設定讀 `slatecrew.config.json` 嘅 `soundQc.endpoint`／`mesher.blender`；環境變數只用代碼支援嘅名稱。
 
 ## 十二人（名 / 工 / 諗法）
 
@@ -67,13 +67,41 @@ BLENDER_BIN=blender
 |---|---|---|
 | 何晴 | 製片 | dispatch 專職；信封只裝呢份 slate |
 | 阿文 | 編劇 | 故事同對白寫死 |
-| 阿圖 | 分鏡 | 專職。narrative plan。cut = boards |
+| 阿圖 | 分鏡 | runBoards 交可見板、切格、鏡內位置、QC／補格收據。文字表只係草稿。 |
 | 阿釉 | 美術 | 唔另開世界 |
 | 阿標 | 走位 | IK 只跟分鏡 mark |
 | 阿靜 | 生圖 | U1.5；rerank 只問呢份 vault |
 | 阿察 | 畫檢 | Nex 五路盲描述＋qwen38 判官（公版 QC） |
-| 阿動 | 生片 | C 形（Video1）／A 形 keyframes（0%/100%＝呢鏡 still） |
+| 阿動 | 生片 | C 形身份／動作，百分比鍵格，或純身份板多鏡 |
 | 阿聲 | 聲線 | 只讀 continuity 對白 |
 | 阿耳 | 聲檢 | SenseVoice |
 | 阿剪 | 剪接 | 照 cut[]，純 copy |
 | 阿鎖 | 交片 | 三閘先 picture lock |
+
+## 公共庫同劇目庫
+
+文字同立體件用同一條名詞測試。專名來自 `projects/<劇目>/entities.json`。
+
+| 層 | 路徑 | 入面係咩 |
+|---|---|---|
+| 公共文字 | `seats/<scope>.primitive.md` | 冇專名嘅教訓。每份新 slate 阿文、阿圖都會食。冇指名劇目就唔撈劇目 playbook |
+| 劇目文字 | `projects/<劇目>/playbook/<scope>.md` | 句入面有專名。唔會自動升去公共 |
+| 公共件 | `library/<characters\|props\|scenes>/<公共名>/` | 去背板同／或 `mesh_front_rigged.glb`。目錄名唔可以含劇目專名 |
+| 劇目件 | `projects/<劇目>/library/<角色\|道具\|場景>/<故事名>/` | 個名撞到專名，只可以留喺呢度 |
+| 本份 | `data/jobs/<slate>/` | 呢份嘅板、rig、vault、WeMM。隔籬 slate 睇唔到 |
+
+本份已經有板，用本份。本份冇，先去庫攞。庫有 rig 就唔再 mesh。庫唔會自動抄一份 job 入去。
+
+故事名留喺 callsheet。要複用公共件，喺角色、道具或 `buildings[]` 寫 `publicName`，指住公共目錄個名。`publicName` 如果仲含有專名，當冇呢次攞件。
+
+## 一個世界
+
+出圖同 rig 之前先查尺寸同動作。尺寸缺就停。動作用詞組，`抹走` 唔當行路；`坐低` 同 `gait turn` 或 `stance stand` 矛盾就停。模型只睇該鏡合格片段，揀定先出圖。Rig 齊之後先組裝一次，寫 `world/assemble.json` 同 `world/story.blend`。每鏡只讀呢個世界，鏡頭望已擺好嘅件（`lookAtId`）。分鏡 `pos`／`lookAt` 唔塞入世界。
+
+角色身份板只切頂條四格全身入模。切半張會把下面嘅剪影帶切入正面格，畫檢當灰模，rig 就唔開。正面格冇釘到會換 seed 再畫一次，唔當個角色唔存在。
+
+尺寸只得三條，缺就停，唔估：
+
+- 角色：`heightM`
+- 道具／場景：`sizeM` 加 `sizeSource`
+- 或者一句已確認比例：`proportion.of` 指住有 `heightM` 嘅角色，`at` 係 `knee` 0.25、`waist` 0.55、`chest` 0.72、`shoulder` 0.82
