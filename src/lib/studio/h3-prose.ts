@@ -428,6 +428,7 @@ function buildProseLong(
   const paras = [
     // setting — 場景重 gets described, not labelled
     `Photoreal. ${location}, ${sheet.timeOfDay}, ${sheet.weather}; ${sheet.mood}. ` +
+      `Grade ${sheet.styleBible.grade}. ` +
       `The shot ${SIZE_PHRASE[shot.size]}, ${duration} seconds end to end, on a ${shot.camera.lensMm}mm lens ` +
       `with ${cameraHeight}, framed ${sheet.aspect}.`,
     // who + motion contract

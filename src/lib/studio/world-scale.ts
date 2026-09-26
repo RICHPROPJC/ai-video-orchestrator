@@ -31,10 +31,7 @@ export function piecesFromCallSheet(
   const pieces: WorldPiece[] = characters.map((c) => ({ id: c.id, role: "character", glb: "", heightM: c.heightM }));
   const seen = new Set(pieces.map((p) => p.id));
   for (const shot of shots) {
-    if (shot.location && !seen.has(shot.location)) {
-      seen.add(shot.location);
-      pieces.push({ id: shot.location, role: "scene", glb: "" });
-    }
+    // shot.location is the frame's place name, not a building mesh. Do not send it to SF3D.
     for (const prop of shot.props ?? []) {
       if (seen.has(prop.name)) continue;
       seen.add(prop.name);
@@ -65,8 +62,11 @@ export function resolveScales(pieces: WorldPiece[]): { ok: ScaleRow[] } | { miss
   const ok: ScaleRow[] = [];
   for (const piece of pieces) {
     if (piece.role === "character") {
-      if (!piece.heightM || piece.heightM <= 0) missing.push(`${piece.id} 角色冇 heightM`);
-      else ok.push({ id: piece.id, meters: piece.heightM, evidence: `heightM ${piece.heightM}` });
+      if (piece.sizeM && piece.sizeM > 0 && piece.sizeSource?.trim()) {
+        ok.push({ id: piece.id, meters: piece.sizeM, evidence: piece.sizeSource.trim() });
+      } else {
+        missing.push(`${piece.id} 只有人偶比例 heightM，冇有來源嘅實際尺寸`);
+      }
       continue;
     }
     if (piece.sizeM && piece.sizeM > 0 && piece.sizeSource?.trim()) {
@@ -75,32 +75,19 @@ export function resolveScales(pieces: WorldPiece[]): { ok: ScaleRow[] } | { miss
     }
     if (piece.proportion?.source?.trim()) {
       const host = byId.get(piece.proportion.of);
-      if (!host || host.role !== "character" || !host.heightM || host.heightM <= 0) {
-        missing.push(`${piece.id} 比例指去唔到 ${piece.proportion.of}`);
+      if (!host || host.role !== "character" || !host.sizeM || host.sizeM <= 0 || !host.sizeSource?.trim()) {
+        missing.push(`${piece.id} 比例指去唔到 ${piece.proportion.of} 嘅有來源尺寸`);
         continue;
       }
-      const meters = host.heightM * CONFIRMED_PROPORTION[piece.proportion.at];
+      const meters = host.sizeM * CONFIRMED_PROPORTION[piece.proportion.at];
       ok.push({
         id: piece.id,
         meters,
-        evidence: `${piece.proportion.source.trim()} (${piece.proportion.at} of ${host.id} heightM ${host.heightM})`,
+        evidence: `${piece.proportion.source.trim()} (${piece.proportion.at} of ${host.id} ${host.sizeSource.trim()})`,
       });
       continue;
     }
-    const people = pieces.filter((p) => p.role === "character" && p.heightM && p.heightM > 0);
-    const host = piece.heldBy
-      ? people.find((p) => p.id === piece.heldBy)
-      : people.length === 1 ? people[0] : undefined;
-    if (!host?.heightM) {
-      missing.push(`${piece.id} 冇尺寸`);
-      continue;
-    }
-    if (piece.role === "scene") {
-      ok.push({ id: piece.id, meters: host.heightM, evidence: `冇寫尺寸，場景跟 ${host.id} heightM ${host.heightM}` });
-      continue;
-    }
-    const meters = host.heightM * CONFIRMED_PROPORTION.knee;
-    ok.push({ id: piece.id, meters, evidence: `冇寫尺寸，道具跟 ${host.id} heightM ${host.heightM} 的 knee` });
+    missing.push(`${piece.id} 冇有來源嘅尺寸`);
   }
   if (missing.length) return { missing };
   return { ok };

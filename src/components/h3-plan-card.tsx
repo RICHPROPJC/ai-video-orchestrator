@@ -81,7 +81,7 @@ export function H3PlanCard({
           <div className="rounded-md border border-primary/40 bg-primary/5 px-2 py-2">
             <p className="font-mono text-sm">§5b C-form</p>
             <p className="text-[11px] leading-snug">
-              zero H3Keyframes — identity rides ref_image_0 (angle portrait), &lt;Video 1&gt; motion only
+              真鍵格可以同灰模參考片一齊入。灰模圖唔可以當鍵格。身份參考係角度肖像，Video 1 只交動作。
             </p>
           </div>
         ) : (

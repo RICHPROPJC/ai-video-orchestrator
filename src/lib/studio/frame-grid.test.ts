@@ -12,7 +12,8 @@ test("snap receipts (ceil, 17k+5, k∈[7,21])", () => {
   assert.equal(snapDurationToFrames(12.96), 328); // 12.96 s is past the 311 boundary (311/24 = 12.9583…)
   assert.equal(snapDurationToFrames(8.12), 209);
   assert.equal(snapDurationToFrames(2.5), 73); // k=4, 73f ≈ 3.04s — not lifted to 124
-  assert.throws(() => snapDurationToFrames(1), /h3_grid/);
+  assert.equal(snapDurationToFrames(1.5), 56); // story 1.5s, H3 floor k=3
+  assert.equal(snapDurationToFrames(1), 56);
   assert.throws(() => snapDurationToFrames(60), /h3_grid/);
 });
 

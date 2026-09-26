@@ -12,6 +12,7 @@ type ShotRow = {
   memoryHits: number;
   events: number;
   fleet?: string;
+  eventsAt: { level: string; message: string }[];
 };
 
 function rowsFor(job: JobRecord | null, events: JobEvent[]): ShotRow[] {
@@ -28,7 +29,10 @@ function rowsFor(job: JobRecord | null, events: JobEvent[]): ShotRow[] {
       const hits = (e.data as { memoryHits?: unknown[] } | undefined)?.memoryHits;
       return n + (Array.isArray(hits) ? hits.length : e.message.includes("memory") ? 1 : 0);
     }, 0);
-    return { shot, eyes, verdicts, proofs, memoryHits, events: ev.length, fleet: job?.providers?.stills };
+    return {
+      shot, eyes, verdicts, proofs, memoryHits, events: ev.length, fleet: job?.providers?.stills,
+      eventsAt: ev.map((e) => ({ level: e.level, message: e.message })),
+    };
   });
 }
 
@@ -39,25 +43,29 @@ export function ShotTruth({ job, events }: { job: JobRecord | null; events: JobE
   return (
     <div className="grid gap-3">
       {rows.map((row) => {
-        const failed = row.verdicts.some((v) => v === "fail" || v === "FAIL");
-        const passed = row.verdicts.some((v) => v === "pass" || v === "GREEN");
+        const verdictEvent = [...row.eventsAt].reverse().find((e) => e.level === "fail" || e.level === "pass");
+        const latestFail = verdictEvent?.level === "fail";
+        const latestPass = verdictEvent?.level === "pass";
         const zeroEyes = row.eyes.length === 0;
-        const greenOk = passed && !failed && !zeroEyes;
+        const greenOk = latestPass && !latestFail && !zeroEyes;
         return (
           <Card key={row.shot}>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="font-mono text-sm">{row.shot}</CardTitle>
               {zeroEyes ? (
                 <Badge variant="destructive">唔可以 GREEN（零眼）</Badge>
-              ) : (
+              ) : verdictEvent ? (
                 <Badge variant={greenOk ? "default" : "destructive"}>{greenOk ? "GREEN" : "FAIL"}</Badge>
+              ) : (
+                <Badge variant="outline">未判</Badge>
               )}
             </CardHeader>
             <CardContent className="space-y-1 text-xs text-muted-foreground">
               <p>fleet {row.fleet ?? job.providers?.mars ?? "—"}</p>
               <p>memory hits {row.memoryHits} · events {row.events}</p>
               <p>eyes {row.eyes.join(", ") || "—"}</p>
-              <p>verdict {row.verdicts.slice(-4).join(" → ") || "—"}</p>
+              <p>最新 {verdictEvent ? `${verdictEvent.level} ${verdictEvent.message.slice(0, 80)}` : "—"}</p>
+              <p>歷史 {row.verdicts.join(" → ") || "—"}</p>
               <p>proof {row.proofs.join(" · ") || "—"}</p>
             </CardContent>
           </Card>

@@ -54,7 +54,7 @@ export async function renderBoards(opts: BoardsVisualOptions) {
       const made = await ensureKeyframeSheet({
         ...opts, images, boardsDir: attemptDir, name, moments: staged, seed: (opts.seed ?? 42) + round,
         prompt: storyboardBoardPrompt({
-          cells: group.map((m) => `${m.shotId}${m.at ? `，鏡內${m.at}` : "，鏡內起點"}：${m.text}`),
+          cells: group.map((m) => m.text),
           style: opts.style ?? "寫實電影感、画面清晰銳利", cleanCuts: true,
         }) + "格內只畫指定時刻，鏡號同百分比係切格對照資料，留喺收據，畫面保持乾淨。剩餘空位留白，唔開新鏡。"
           + (round > 0 ? "Image-1係抽出再併嘅壞格，依照同一次序修正指定格；其後參考圖只供角色身份。" : "參考圖只供角色身份。"),
@@ -65,7 +65,7 @@ export async function renderBoards(opts: BoardsVisualOptions) {
         const file = staged[j]!.file;
         const qc = file.replace(/\.png$/, ".photo_qc.json");
         const result = await opts.lane.qc(file, qc, opts.require?.[m.shotId] ?? {});
-        attempt.cells.push({ shotId: m.shotId, at: m.at || "0%", file, destination: m.file, sha256: digest(file), qc, status: result.status });
+        attempt.cells.push({ shotId: m.shotId, at: m.at, file, destination: m.file, sha256: digest(file), qc, status: result.status });
         if (result.status === "GREEN") {
           fs.mkdirSync(path.dirname(m.file), { recursive: true });
           fs.copyFileSync(file, m.file);

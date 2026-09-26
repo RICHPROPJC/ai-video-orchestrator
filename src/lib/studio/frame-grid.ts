@@ -31,16 +31,17 @@ export function shotSecMax(): number {
   return framesForK(gridK().kMax) / FPS;
 }
 
-/** Ceil onto 17k+5. Below kMin or above kMax throws — do not rewrite the shot to 124 frames. */
+/** Ceil onto 17k+5. Story seconds shorter than kMin still generate at kMin.
+ *  kMin stays the H3 floor. Above kMax throws. Do not lift a short shot to 124 frames. */
 export function snapDurationToFrames(duration: number): number {
   const { kMin, kMax } = gridK();
   const k = Math.ceil((duration * FPS - GRID_B) / GRID_K);
-  if (k < kMin || k > kMax) {
+  if (k > kMax) {
     throw new Error(
       `h3_grid: ${duration}s needs k=${k}, allowed ${kMin}–${kMax} (${shotSecMin().toFixed(2)}–${shotSecMax().toFixed(2)}s)`,
     );
   }
-  return framesForK(k);
+  return framesForK(Math.max(k, kMin));
 }
 
 async function ffprobeDuration(file: string): Promise<number> {

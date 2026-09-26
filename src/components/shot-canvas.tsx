@@ -45,13 +45,19 @@ export function ShotCanvas({ job }: { job: JobRecord | null }) {
       .map((b) => ({ from: b, to: node }));
   });
   return (
-    <div className="mt-3 overflow-hidden rounded-lg border bg-black">
+    <div className="mt-3 w-full min-w-0 overflow-hidden rounded-lg border bg-black">
       <div className="flex items-center justify-between px-3 py-2 text-[11px] text-muted-foreground">
-        <span>鍵格 {nodes.length} 跟剪接線。虛線表示角色參考；分鏡、角色、場景、道具同層。</span>
+        <span>
+          計劃鍵格 {shots.filter((s) => (s.keyframePositions ?? "").trim()).length}
+          · 靜畫檔 {job.outputs.stills.length}
+          · 灰片檔 {job.outputs.blockout.length}
+          · 已提交 {job.outputs.shots.filter((p) => /\/SH\d+\.mp4$/.test(p) || /^SH\d+\.mp4$/.test(p.split("/").pop() ?? "")).length}
+          。檔案存在唔等於 QC 通過。
+        </span>
         <span>{Math.round(scale * 100)}%</span>
       </div>
       <div
-        className="relative h-[640px] cursor-grab overflow-hidden active:cursor-grabbing"
+        className="relative h-[640px] w-full cursor-grab overflow-hidden active:cursor-grabbing"
         onWheel={(e) => {
           e.preventDefault();
           setScale((s) => Math.min(1.6, Math.max(0.15, s * (e.deltaY > 0 ? 0.9 : 1.1))));
@@ -59,17 +65,25 @@ export function ShotCanvas({ job }: { job: JobRecord | null }) {
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest("[data-kf]")) return;
           drag.current = { x: e.clientX, y: e.clientY, ox: origin.x, oy: origin.y };
-          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          const el = e.currentTarget as HTMLElement;
+          try { el.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
         }}
         onPointerMove={(e) => {
           if (!drag.current) return;
           setOrigin({ x: drag.current.ox + e.clientX - drag.current.x, y: drag.current.oy + e.clientY - drag.current.y });
         }}
-        onPointerUp={() => {
+        onPointerUp={(e) => {
           drag.current = null;
+          const el = e.currentTarget as HTMLElement;
+          try { if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+        }}
+        onPointerCancel={(e) => {
+          drag.current = null;
+          const el = e.currentTarget as HTMLElement;
+          try { if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId); } catch { /* already released */ }
         }}
       >
-        <div style={{ transform: `translate(${origin.x}px, ${origin.y}px) scale(${scale})`, transformOrigin: "0 0" }}>
+        <div className="absolute left-0 top-0" style={{ width, height, transform: `translate(${origin.x}px, ${origin.y}px) scale(${scale})`, transformOrigin: "0 0" }}>
           <svg width={width} height={height} className="absolute left-0 top-0">
             {nodes.slice(1).map((node, i) => {
               const prev = nodes[i]!;

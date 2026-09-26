@@ -26,6 +26,7 @@ import { ShotTruth } from "@/components/shot-truth";
 import { H3PlanCard } from "@/components/h3-plan-card";
 import { clinicH3Plans } from "@/lib/studio/h3-slots";
 import { ShotCanvas } from "@/components/shot-canvas";
+import { ShotInspector } from "@/components/shot-inspector";
 import { StoryboardPanel, ShotAudio } from "@/components/episode-media";
 import { Clapperboard, Film, Lock, Upload } from "lucide-react";
 
@@ -56,6 +57,7 @@ export function StudioFloor({
   const [aspect, setAspect] = useState(initialJob?.input.aspect ?? "16:9");
   const [language, setLanguage] = useState(initialJob?.input.language ?? "auto");
   const [job, setJob] = useState<JobRecord | null>(initialJob);
+  const [rows, setRows] = useState<JobRecord[]>(recents);
   const [events, setEvents] = useState<JobEvent[]>(initialEvents);
   const [rack, setRack] = useState<DoctorReport | null>(null);
   const [fleet, setFleet] = useState<FleetReport | null>(null);
@@ -89,6 +91,35 @@ export function StudioFloor({
   }, [probeNow]);
 
   useEffect(() => {
+    let stop = false;
+    const pull = () => {
+      void fetch("/api/jobs", { cache: "no-store" })
+        .then((r) => r.json() as Promise<{ jobs?: JobRecord[] }>)
+        .then((data) => {
+          if (!stop && data.jobs) setRows(data.jobs);
+        })
+        .catch(() => undefined);
+    };
+    pull();
+    const timer = window.setInterval(pull, 3000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!job?.id) return;
+    const listed = rows.find((item) => item.id === job.id);
+    if (!listed || listed.updatedAt < job.updatedAt) return;
+    if (listed.status === job.status && listed.error === job.error && listed.updatedAt === job.updatedAt) return;
+    setJob({
+      ...listed,
+      callSheet: listed.callSheet?.storyboard?.length ? listed.callSheet : job.callSheet,
+    });
+  }, [rows, job]);
+
+  useEffect(() => {
     if (!job?.id) return;
     let stop = false;
     const src = new EventSource(`/api/jobs/${job.id}/events`);
@@ -99,16 +130,22 @@ export function StudioFloor({
     src.addEventListener("job", (e) => {
       setJob(JSON.parse((e as MessageEvent).data) as JobRecord);
     });
-    const poll = window.setInterval(async () => {
+    src.onerror = () => {
+      src.close();
+    };
+    const poll = window.setInterval(() => {
       if (stop) return;
-      const res = await fetch(`/api/jobs/${job.id}`, { cache: "no-store" });
-      if (!res.ok) return;
-      const data = (await res.json()) as JobRecord & { events?: JobEvent[] };
-      setJob(data);
-      if (data.events?.length) setEvents(data.events);
-      if (data.status === "locked" || data.status === "failed" || data.status === "blocked") {
-        window.clearInterval(poll);
-      }
+      void fetch(`/api/jobs/${job.id}`, { cache: "no-store" })
+        .then(async (res) => {
+          if (!res.ok || stop) return;
+          const data = (await res.json()) as JobRecord & { events?: JobEvent[] };
+          setJob(data);
+          if (data.events?.length) setEvents(data.events);
+          if (data.status === "locked" || data.status === "failed" || data.status === "blocked" || data.status === "boarded") {
+            window.clearInterval(poll);
+          }
+        })
+        .catch(() => undefined);
     }, 1000);
     return () => {
       stop = true;
@@ -151,7 +188,8 @@ export function StudioFloor({
       </header>
 
       <main className="mx-auto grid max-w-[1400px] gap-4 px-4 py-6 md:px-8 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <section className="space-y-4">
+        <section className="order-2 space-y-4 lg:order-1">
+          <SlatePicker rows={rows} current={job?.id} tab={tab} />
           <Card className="bg-card/80">
             <CardHeader className="border-b">
               <CardTitle>開新 slate</CardTitle>
@@ -225,15 +263,6 @@ export function StudioFloor({
                     <label className="space-y-1">集<input name="episode" className="mt-1 w-full" placeholder="EP01" /></label>
                     <label className="space-y-1">場<input name="scene" className="mt-1 w-full" placeholder="SC01" /></label>
                     <label className="space-y-1">鏡<input name="shot" className="mt-1 w-full" placeholder="SH04" /></label>
-                    <label className="space-y-1">早停
-                      <select name="until" defaultValue="" className="mt-1 w-full bg-background">
-                        <option value="">出齊</option>
-                        <option value="boards">boards</option>
-                        <option value="blockout">blockout</option>
-                        <option value="stills">stills</option>
-                        <option value="motion">motion</option>
-                      </select>
-                    </label>
                     <label className="space-y-1">H3 graph
                       <select name="graphVariant" defaultValue="a" className="mt-1 w-full bg-background">
                         <option value="a">a</option>
@@ -277,21 +306,6 @@ export function StudioFloor({
                   CLI 同等：<code className="text-primary">npm run slatecrew -- produce &quot;brief&quot;</code>
                 </p>
               </form>
-              {recents.length > 0 ? (
-                <div className="mt-4 max-h-64 space-y-1 overflow-y-auto border-t pt-3">
-                  <p className="text-[11px] tracking-wider text-muted-foreground">近期 slate</p>
-                  {recents.map((item) => (
-                    <a
-                      key={item.id}
-                      href={`/?slate=${item.id}`}
-                      className="flex items-center justify-between rounded-md px-2 py-1 text-xs hover:bg-muted"
-                    >
-                      <span className="font-mono text-primary">{item.slate}</span>
-                      <span className="text-muted-foreground">{item.status}</span>
-                    </a>
-                  ))}
-                </div>
-              ) : null}
             </CardContent>
           </Card>
 
@@ -360,7 +374,7 @@ export function StudioFloor({
           </Card>
         </section>
 
-        <section className="space-y-4">
+        <section className="order-1 min-w-0 space-y-4 lg:order-2">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between border-b">
               <div>
@@ -369,10 +383,22 @@ export function StudioFloor({
                   {job?.slate ?? "未開 slate"}
                 </CardTitle>
               <p className="text-muted-foreground mt-1 text-xs">
-                  {job?.callSheet?.title ?? "等 brief"} · {job?.status ?? "idle"}
+                  {job?.callSheet?.title ?? job?.input.brief ?? "等 brief"} · {job?.status ?? "idle"}
                   {job?.continuity?.cut?.length ? ` · ${job.continuity.cut.join("→")}` : ""}
                 </p>
-                {job?.error ? <p className="mt-1 text-xs text-destructive">{job.error}</p> : null}
+                {job ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    進度 {job.progress}% · 鏡頭 {job.callSheet?.shots.length ?? 0} · 分鏡 {job.callSheet?.storyboard?.length ?? 0} · 靜畫 {job.outputs.stills.length} · 灰片 {job.outputs.blockout.length} · H3 已交 {submittedShotCount(events)}
+                  </p>
+                ) : null}
+                {job?.status === "boarded" ? (
+                  <p className="mt-1 text-xs text-destructive">自己停喺文字表，冇下一席接手。算失敗。</p>
+                ) : null}
+                {job?.error ? (
+                  <p className="mt-1 text-sm text-destructive">stage gate · {job.currentAgent ?? job.status} · {job.error}</p>
+                ) : (
+                  <p className="mt-1 text-sm text-muted-foreground">stage gate · {job?.currentAgent ?? job?.status ?? "idle"} · 更新 {job?.updatedAt ?? "—"}</p>
+                )}
               </div>
               {job?.status === "locked" ? (
                 <Badge className="bg-primary text-primary-foreground">
@@ -446,8 +472,8 @@ export function StudioFloor({
             </CardContent>
           </Card>
 
-          <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
-            <div>
+          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0">
               <div className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
                 {(
                   [
@@ -478,7 +504,17 @@ export function StudioFloor({
                 })}
               </div>
               {tab === "canvas" ? <ShotCanvas key={job?.id} job={job} /> : null}
-              {tab === "board" ? <StoryboardPanel job={job} /> : null}
+              {tab === "board" ? (
+                <div className="mt-3 grid gap-3 lg:grid-cols-[11rem_minmax(0,1fr)_20rem]">
+                  <div className="space-y-1 text-xs">
+                    {(job?.callSheet?.shots ?? []).map((shot) => (
+                      <p key={shot.id} className="font-mono">{shot.id} · {shot.location}</p>
+                    ))}
+                  </div>
+                  <StoryboardPanel job={job} />
+                  {job?.id ? <ShotInspector jobId={job.id} shots={job.callSheet?.shots.map((s) => s.id) ?? []} /> : null}
+                </div>
+              ) : null}
               {tab === "plan" ? (
                 <div className="mt-3 min-h-48 space-y-3 text-sm">
                   <p className="text-sm font-medium">計劃 · narrative plan</p>
@@ -580,7 +616,7 @@ export function StudioFloor({
               {tab === "h3" ? (
                 <div className="mt-3 min-h-48 space-y-3">
                   <p className="text-xs text-muted-foreground">
-                    一鏡一 generate · §5b：有Video1→C形（零keyframes＋角度肖像ref_image_0）· miss identity 只改視覺 wiring，唔調 TTS ·{" "}
+                    一鏡一 generate。真 U1.5 鍵格可以同灰模參考片一齊用。灰模圖唔可以當鍵格。{" "}
                     <a className="text-primary underline" href="/h3">
                       /h3
                     </a>
@@ -682,6 +718,78 @@ export function StudioFloor({
   );
 }
 
+
+function submittedShotCount(events: { message: string }[]): number {
+  const ids = new Set<string>();
+  for (const event of events) {
+    const hit = /^(SH\d+) motion 完成/.exec(event.message);
+    if (hit?.[1]) ids.add(hit[1]);
+  }
+  return ids.size;
+}
+
+function slateHref(id: string, tab: FloorTab) {
+  const q = new URLSearchParams();
+  q.set("slate", id);
+  if (tab !== "board") q.set("tab", tab);
+  return `/?${q.toString()}`;
+}
+
+function SlatePicker({ rows, current, tab }: { rows: JobRecord[]; current?: string; tab: FloorTab }) {
+  const live = rows.filter((item) => item.status === "running" || item.status === "queued");
+  const rest = rows.filter((item) => item.status !== "running" && item.status !== "queued");
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle>揀 slate</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <PickerGroup label="做緊" items={live} empty="而家冇一份喺跑" current={current} tab={tab} />
+        <PickerGroup label="其餘" items={rest} empty="冇" current={current} tab={tab} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function PickerGroup({
+  label,
+  items,
+  empty,
+  current,
+  tab,
+}: {
+  label: string;
+  items: JobRecord[];
+  empty: string;
+  current?: string;
+  tab: FloorTab;
+}) {
+  return (
+    <div className="space-y-1">
+      <p className="text-[11px] tracking-wider text-muted-foreground">{label}</p>
+      {items.length === 0 ? <p className="text-xs text-muted-foreground">{empty}</p> : (
+        <div className="max-h-48 space-y-1 overflow-y-auto">
+          {items.map((item) => (
+            <a
+              key={item.id}
+              href={slateHref(item.id, tab)}
+              className={cn(
+                buttonVariants({ variant: item.id === current ? "default" : "outline", size: "sm" }),
+                "h-auto w-full justify-between whitespace-normal px-2 py-1.5",
+              )}
+            >
+              <span className="text-left">
+                <span className="font-mono">{item.slate}</span>
+                <span className="mt-0.5 block text-[10px] opacity-80">{item.callSheet?.title ?? item.input.brief.slice(0, 18)}</span>
+              </span>
+              <span className="text-[10px]">{item.status} {item.progress}%</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Empty({ label }: { label: string }) {
   return <p className="rounded-lg border border-dashed p-8 text-sm text-muted-foreground">{label}</p>;

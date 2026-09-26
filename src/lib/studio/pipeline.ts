@@ -23,11 +23,13 @@ import { ensurePortraits } from "./portraits";
 import { assertStoryPlatesReady, ensureCastOnce } from "./cast-mesh";
 import { lookupShelf } from "./asset-library";
 import { writeStoryWorld, type WorldPlan } from "./world-assemble";
-import { assertScales, piecesFromCallSheet, type WorldPiece } from "./world-scale";
+import { piecesFromCallSheet, resolveScales, type WorldPiece } from "./world-scale";
 import { chunkMomentSheets, ensurePropBoard, ensureSceneBoard, keyframeSheetPrompt, liveBoardLane, momentsForShot } from "./asset-board";
+import { diffPropPlates, nextPropBoardSeq, propAssetId, writePropPinManifest } from "./prop-plate-index";
 import { ensureDir, jobDir, jobFile, projectsDir, seatsDir } from "./paths";
 import { runReflector } from "./reflector";
 import { snapDurationToFrames, wavSeconds } from "./frame-grid";
+import { layDialogueBed } from "./dialogue-bed";
 import { plugShotWavs } from "./shot-wav-plug";
 import { buildCutPlan, type CutPlan } from "./cut-plan";
 import { checkGate } from "./concat-gate";
@@ -590,15 +592,6 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const boarded = open(toBoards, { slate: jobId, to: "boards" });
     const continuity = assertSameCanon(lockContinuity(boarded.sheet));
     const locked: CallSheet = { ...boarded.sheet, shots: continuity.boards };
-    // Plugged/resumed text callsheets still owe the visible boards contract.
-    if (!input.dryRun && (!locked.storyboard?.length || locked.storyboard.some((c) => !fs.existsSync(c.file)))) {
-      const moments = locked.shots.flatMap((s) => momentsForShot({ ...s, keyframePositions: s.keyframePositions || "0%" }, path.join(jobDir(jobId), "boards", "cells")));
-      const visual = await runBoards({ render: {
-        moments, boardsDir: path.join(jobDir(jobId), "boards"), receiptDir: path.join(jobDir(jobId), "seats", "boards"),
-        name: "storyboard", images: [], lane: liveBoardLane(cfg.stills.url), cellPx: 1024,
-      } });
-      locked.storyboard = moments.map((m) => ({ shotId: m.shotId, at: m.at || "0%", file: m.file, board: [...visual.attempts].reverse().find((a) => a.cells.some((c) => c.destination === m.file && c.status === "GREEN"))?.board }));
-    }
 
     // COMBAT_PORT_0921: boards-stage combat pass — combat-signal gated (≥2
     // marked characters + a combat cause in the action). No signal → no-op,
@@ -631,28 +624,22 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         vault: "vault.json",
       },
     });
-    await speak("boards", `分鏡專職鎖咗 ${continuity.cut.length} 鏡。故事＝分鏡＝剪接。Vault 只得 ${jobId}。`);
-
-    if (input.until === "boards") {
-      job = patch(job, {
-        status: input.dryRun ? "dry-run" : "boarded",
-        progress: 20,
-        currentAgent: "boards",
-        providers: trace,
-        outputs: { ...job.outputs, callSheet: "callsheet.json" },
-      });
-      emit(jobId, {
-        agent: "boards",
-        level: "pass",
-        message: `--until boards：${continuity.boards.length} 鏡、${locked.durationSec.toFixed(1)}s。${input.dryRun ? "dry-run 文字草稿；未出分鏡板，唔算完成。" : "分鏡板、切格同收據已交。"}`,
-        data: { shots: continuity.boards.length, durationSec: locked.durationSec, provenance: locked.provenance },
-      });
-      return;
-    }
+    const boardCount = locked.storyboard?.length ?? 0;
+    await speak(
+      "boards",
+      boardCount > 0
+        ? `分鏡專職鎖咗 ${continuity.cut.length} 鏡。可見板 ${boardCount} 格。故事＝分鏡＝剪接。Vault 只得 ${jobId}。下一席接走位。`
+        : `文字表 ${continuity.cut.length} 鏡。可見分鏡板 0，未逐格 GREEN。未算分鏡完成。`,
+      boardCount > 0 ? "info" : "warn",
+    );
 
     if (!input.dryRun) {
-      assertScales(piecesFromCallSheet(locked.characters, locked.shots));
-      await speak("layout", "尺寸齊，先鎖動作，先出圖。");
+      const sized = resolveScales(piecesFromCallSheet(locked.characters, locked.shots));
+      if ("missing" in sized) {
+        await speak("layout", `世界米數未齊，人偶 heightM 唔當米：${sized.missing.join("；")}`, "warn");
+      } else {
+        await speak("layout", "尺寸齊，先鎖動作，先出圖。");
+      }
     }
 
     const motionSelections = new Map<string, MotionSelection>();
@@ -713,23 +700,16 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // --until blockout stops before U1.5/QC — skip the eye (pictureQc may be DOWN)
     const stillDir = path.join(jobDir(jobId), "stills");
     const skipPortraits =
-      input.until === "blockout" ||
-      (input.resume && continuity.boards.every((shot) => pinQcAccepted(stillDir, shot.id)));
+      input.resume && continuity.boards.every((shot) => pinQcAccepted(stillDir, shot.id));
     let portraits: Awaited<ReturnType<typeof ensurePortraits>>;
     let hopCast: string[] | undefined;
     if (skipPortraits) {
       emit(jobId, {
         agent: "stills",
         level: "info",
-        message:
-          input.until === "blockout"
-            ? "blockout gate: skip portraits (no pictureQc eye this hop)"
-            : "repair: portraits saw ensurePortraits became skip (all stills pinned GREEN on resume)",
+        message: "repair: portraits saw ensurePortraits became skip (all stills pinned GREEN on resume)",
       });
-      await speak(
-        "stills",
-        input.until === "blockout" ? "肖像跳過：--until blockout，唔叫畫檢眼" : "肖像跳過：stills 已全 GREEN，肖像唔再守門",
-      );
+      await speak("stills", "肖像跳過：stills 已全 GREEN，肖像唔再守門");
       const portraitDir = path.join(jobDir(jobId), "portraits");
       const files: Record<string, string> = {};
       const sheets: Record<string, string> = {};
@@ -796,15 +776,34 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const wavByShot = new Map<string, string>();
     const h3WavByShot = new Map<string, string>();
     const gapDelivered = new Map<string, number>();
+    const bedRows: { id: string; take: string; story: string; grid: string; storySec: number; gridSec: number }[] = [];
     for (const shot of continuity.boards) {
       const dst = plugged.find((p) => p.shotId === shot.id)!.file;
+      const take = path.join(audioDir, `${shot.id}.take.wav`);
+      fs.copyFileSync(dst, take);
       wavByShot.set(shot.id, dst);
       const frames = snapDurationToFrames(shot.durationSec);
-      const h3Wav = path.join(audioDir, `${shot.id}.h3.wav`);
-      await padH3Wav(dst, h3Wav, frames);
-      h3WavByShot.set(shot.id, h3Wav);
-      gapDelivered.set(shot.id, Math.round((frames / 24 - (await wavSeconds(dst))) * 1e4) / 1e4);
+      const gridSec = frames / 24;
+      bedRows.push({
+        id: shot.id,
+        take,
+        story: dst,
+        grid: path.join(audioDir, `${shot.id}.h3.wav`),
+        storySec: shot.durationSec,
+        gridSec,
+      });
+      gapDelivered.set(shot.id, Math.round((gridSec - (await wavSeconds(take))) * 1e4) / 1e4);
     }
+    await layDialogueBed({
+      segments: bedRows.map((r) => ({ id: r.id, take: r.take, out: r.story, seconds: r.storySec })),
+      workDir: path.join(audioDir, "bed-story"),
+    });
+    await layDialogueBed({
+      segments: bedRows.map((r) => ({ id: r.id, take: r.take, out: r.grid, seconds: r.gridSec })),
+      workDir: path.join(audioDir, "bed-grid"),
+    });
+    for (const row of bedRows) h3WavByShot.set(row.id, row.grid);
+    await speak("voice", "對白留 AuK 原長。底下鋪連續床，只喺成片頭淡入、尾淡出。");
     const spineGiven = input.wavDir ? path.join(input.wavDir, "spine.wav") : undefined;
     const spineWav = spineGiven && fs.existsSync(spineGiven) ? path.join(audioDir, "spine.wav") : undefined;
     if (spineGiven && spineWav) fs.copyFileSync(spineGiven, spineWav);
@@ -852,45 +851,41 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       const props = new Map<string, NonNullable<Shot["props"]>[number]>();
       for (const shot of locked.shots) {
         for (const prop of shot.props ?? []) {
-          if (!props.has(prop.name)) props.set(prop.name, prop);
+          const key = propAssetId(prop.name);
+          if (!props.has(key)) props.set(key, prop);
         }
       }
       const propMark = path.join(assetsDir, "props.pinned.json");
-      if (props.size > 0 && !fs.existsSync(propMark)) {
+      let plateDiff = diffPropPlates(assetsDir, propMark, [...props.keys()]);
+      if (props.size > 0 && plateDiff.missingIds.length > 0) {
         fs.mkdirSync(assetsDir, { recursive: true });
+        const missingProps = plateDiff.missingIds
+          .map((id) => props.get(id))
+          .filter((prop): prop is NonNullable<typeof prop> => Boolean(prop));
         const madeProps = await ensurePropBoard({
-          props: [...props.values()],
+          props: missingProps,
           assetsDir,
           server: cfg.stills.url,
           seed: cfg.motion.seed,
+          boardSeqStart: nextPropBoardSeq(assetsDir),
         });
-        fs.writeFileSync(propMark, JSON.stringify({ files: madeProps.pinned }, null, 2));
-        await speak("layout", `道具板一次出 ${madeProps.pinned.length} 件再切，去背後先入 mesh。`);
+        plateDiff = diffPropPlates(assetsDir, propMark, [...props.keys()]);
+        if (plateDiff.missingIds.length > 0) {
+          throw new Error(`道具板未補齊：${plateDiff.missingIds.join("、")}（今次入庫 ${madeProps.pinned.length}）`);
+        }
+        await speak("layout", `道具差集補 ${madeProps.pinned.length} 件，已有板唔重出。`);
       }
+      if (plateDiff.resolved.length > 0) writePropPinManifest(propMark, plateDiff.manifest);
     }
 
     let castRigs: Record<string, string> = {};
     if (!input.dryRun && locked.characters.length > 0) {
       const assetsDir = path.join(jobDir(jobId), "assets");
-      const propFiles = (() => {
-        const mark = path.join(assetsDir, "props.pinned.json");
-        if (!fs.existsSync(mark)) return [] as string[];
-        const doc = JSON.parse(fs.readFileSync(mark, "utf8")) as { files?: string[] };
-        return (doc.files ?? []).filter((f) => fs.existsSync(f) && !f.endsWith(".cut.png"));
-      })();
-      const propPlate = (name: string) => propFiles.find((f) => path.basename(f).includes(name.replace(/[\s/\\]+/g, "-")));
-      const scenePlate = (location: string) => {
-        const scenesDir = path.join(assetsDir, "scenes");
-        const slug = location.trim().replace(/[\s/\\]+/g, "-");
-        const manifest = path.join(scenesDir, `${slug}.lookdev.json`);
-        if (!fs.existsSync(manifest)) return undefined;
-        const doc = JSON.parse(fs.readFileSync(manifest, "utf8")) as { cells?: string[] };
-        return (doc.cells ?? []).find((f) => f && fs.existsSync(f) && !f.endsWith(".cut.png"));
-      };
-      const locations = [...new Set(locked.shots.map((s) => s.location).filter(Boolean))];
+      const propMark = path.join(assetsDir, "props.pinned.json");
+      const plateDiff = diffPropPlates(assetsDir, propMark, [...new Set(locked.shots.flatMap((s) => (s.props ?? []).map((p) => p.name)))]);
+      const propPlate = (name: string) => plateDiff.resolved.find((row) => row.assetId === propAssetId(name))?.file;
       const propNames = [...new Set(locked.shots.flatMap((s) => (s.props ?? []).map((p) => p.name)))];
       const propPublic = (name: string) => locked.shots.flatMap((s) => s.props ?? []).find((p) => p.name === name)?.publicName;
-      const scenePublic = (id: string) => locked.buildings?.find((b) => b.era === id || b.types.includes(id))?.publicName;
       const fromShelf = (id: string, role: "characters" | "props" | "scenes", own?: string, publicName?: string) => {
         if (own && fs.existsSync(own)) return { file: own };
         const hit = lookupShelf(id, role, undefined, publicName);
@@ -898,27 +893,29 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       };
       const characters = locked.characters.map((c) => {
         const got = fromShelf(c.id, "characters", portraits.anglePins?.[c.id]?.front, c.publicName);
-        return { id: c.id, pin: got.file, rig: got.rig };
+        return { id: c.id, pin: got.file, rig: got.rig, deform: "rig" as const };
       });
       const props = propNames.map((name) => {
         const got = fromShelf(name, "props", propPlate(name), propPublic(name));
-        return { name, file: got.file, rig: got.rig };
+        const row = plateDiff.resolved.find((item) => item.assetId === propAssetId(name));
+        return { name, file: got.file, rig: got.rig, deform: "rigid" as const, meshAliasId: row?.aliasFrom };
       });
-      const scenes = locations.map((id) => {
-        const got = fromShelf(id, "scenes", scenePlate(id), scenePublic(id));
-        return { id, file: got.file, rig: got.rig };
+      const items = assertStoryPlatesReady({ characters, props }).map((item) => {
+        const row = [...characters, ...props].find((entry) => ("id" in entry ? entry.id : entry.name) === item.id);
+        return {
+          ...item,
+          rig: row?.rig,
+          deform: row?.deform,
+          meshAliasId: row && "meshAliasId" in row ? row.meshAliasId : undefined,
+        };
       });
-      const items = assertStoryPlatesReady({ characters, props, scenes }).map((item) => ({
-        ...item,
-        rig: [...characters, ...props, ...scenes].find((row) => ("id" in row ? row.id : row.name) === item.id)?.rig,
-      }));
       castRigs = await ensureCastOnce({
         characters: locked.characters,
         items,
         meshRoot: path.join(jobDir(jobId), "cast"),
         endpoint: cfg.mesher.endpoint,
       });
-      await speak("layout", `故事元素 ${items.length} 件齊晒，先一次 mesh，再 systemctl 讓卡 rig 一次。`);
+      await speak("layout", `故事元素 ${items.length} 件齊晒。人物先對來源哈希；樽同蓋用剛體 mesh，唔停 SF3D。`);
     }
 
     // per-shot grey blockout (plug, mocap bake, or the cast rig), frame 0, dHash anchors
@@ -937,7 +934,38 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       const pieces: WorldPiece[] = [];
       for (const person of locked.characters) {
         const glb = castRigs[person.id];
-        if (glb) pieces.push({ id: person.id, role: "character", glb, heightM: person.heightM });
+        const evidence = sizes[person.id] ?? {};
+        if (glb) pieces.push({
+          id: person.id,
+          role: "character",
+          glb,
+          heightM: person.heightM,
+          sizeM: evidence.sizeM,
+          sizeSource: evidence.source,
+        });
+      }
+      // A location string never goes to SF3D on its own; but an already-meshed
+      // canonical with a succeeded receipt may stand in the world as the
+      // support surface (SH04 放蓋上木檯 needs a real tabletop to land on).
+      for (const loc of sceneNames) {
+        if (castRigs[loc]) continue;
+        const canonical = path.join(jobDir(jobId), "cast", loc, "sf3d", "0", "mesh_front.glb");
+        const receiptFile = path.join(jobDir(jobId), "cast", loc, "sf3d", "mesh-receipt.json");
+        if (!fs.existsSync(canonical) || !fs.existsSync(receiptFile)) continue;
+        try {
+          const receipt = JSON.parse(fs.readFileSync(receiptFile, "utf8")) as { status?: string };
+          if (receipt.status !== "succeeded") continue;
+        } catch {
+          continue;
+        }
+        const evidence = sizes[loc] ?? {};
+        pieces.push({
+          id: loc,
+          role: "scene",
+          glb: canonical,
+          sizeM: evidence.sizeM,
+          sizeSource: evidence.source,
+        });
       }
       for (const [id, glb] of Object.entries(castRigs)) {
         if (pieces.some((p) => p.id === id)) continue;
@@ -1069,23 +1097,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         blockout: blockouts.map((f) => relInJob(jobId, f)),
       },
     });
-    await speak("layout", `cut_plan ${cutPlan.shots.length} 鏡 · gap ${gapSec}s · 走位稿已出。`);
-
-    if (input.until === "blockout") {
-      job = patch(job, {
-        status: "blockout-ready",
-        progress: 30,
-        currentAgent: "layout",
-        providers: trace,
-      });
-      emit(jobId, {
-        agent: "layout",
-        level: "pass",
-        message: `--until blockout：${blockouts.length} 鏡灰塊+f0 已出。pictureQc UP 之後 --resume ${jobId} --scene ${input.scene ?? "SCxx"}。`,
-        data: { blockouts: blockouts.length, scene: input.scene ?? null },
-      });
-      return;
-    }
+    await speak("layout", `cut_plan ${cutPlan.shots.length} 鏡 · gap ${gapSec}s · 走位稿已出。下一席接靜畫。`);
 
     // stills lane prompts + require (built in both live and dry run)
     ensureDir(stillDir);
@@ -1332,8 +1344,13 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       if (input.resume && !qcFail(shotId) && fs.existsSync(png) && fs.statSync(png).size >= 8_000) return false;
       return true;
     };
+    // Every shot owes its real U1.5 anchors: momentsForShot splits the action
+    // clauses into per-beat cells, so a mark-less shot still gets its board.
+    // (The old "2+ pre-written marks" gate left fresh callsheets with no cells,
+    // which the per-shot loop below rejects as 鍵格板未切出.)
+    const keyframePlans = hopStillPlans.filter((p) => needsFreshSheet(p.shot.id));
     const sheets = chunkMomentSheets(
-      hopStillPlans.filter((p) => needsFreshSheet(p.shot.id)).map((p) => momentsForShot(p.shot, stillDir)),
+      keyframePlans.map((p) => momentsForShot(p.shot, stillDir)),
     );
     for (const [si, moments] of sheets.entries()) {
       const identity = [...new Set([...new Set(moments.map((m) => m.shotId))].flatMap((id) => {
@@ -1368,8 +1385,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         const shot = hopStillPlans.find((p) => p.shot.id === shotId)?.shot;
         const group = moments.filter((m) => m.shotId === shotId);
         if (!shot || shot.keyframePositions?.trim()) continue;
+        if (group.length < 2) continue;
         shot.keyframePositions = group
-          .map((m, i) => m.at || (group.length === 1 ? "0%" : `${Math.round((i / (group.length - 1)) * 100)}%`))
+          .map((m, i) => m.at || `${Math.round((i / (group.length - 1)) * 100)}%`)
           .join(", ");
       }
       await speak("stills", `鍵格板 ${si + 1}：一次出 ${moments.length} 格再切。`);
@@ -1791,23 +1809,6 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     }
     trace.mars = `qwen38 ${cfg.pictureQc.endpoint} (${cfg.pictureQc.model})`;
     job = patch(job, { pictureQcStills: geometry, providers: trace, progress: 55 });
-    if (input.until === "stills") {
-      job = patch(job, {
-        status: "stills-ready",
-        currentAgent: "pictureQc",
-        outputs: {
-          ...job.outputs,
-          stills: stills.map((f) => relInJob(jobId, f)),
-          blockout: blockouts.map((f) => relInJob(jobId, f)),
-        },
-      });
-      emit(jobId, {
-        agent: "pictureQc",
-        level: "pass",
-        message: "--until stills：photo QC 全 GREEN，H3 未燒。stills + f0 + require 已出。",
-      });
-      return;
-    }
 
     // motion: H3 R2V per shot — photo QC pin must be accepted before submit
     const motionDir = path.join(jobDir(jobId), "motion");
@@ -2003,10 +2004,11 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         const singleShot = !isMsSegment && chained.length === 0;
         const positions = shot.keyframePositions?.trim() ?? "";
         const cutFiles = existingKeyframeFiles(shot, stillDir);
-        if (singleShot && !positions) {
+        const rideKf = singleShot && Boolean(positions) && cutFiles.length >= 1;
+        if (singleShot && !hasVideo1 && !positions) {
           throw new Error(`keyframe_positions_missing: ${shot.id}`);
         }
-        if (singleShot && cutFiles.length < 1) {
+        if (singleShot && !hasVideo1 && cutFiles.length < 1) {
           throw new Error(`keyframe_positions_missing: ${shot.id} 鍵格檔未切`);
         }
         if (singleShot) {
@@ -2017,8 +2019,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
             wav: h3WavByShot.get(shot.id)!,
             blockout: hasVideo1 ? blockoutMp4 : undefined,
             still: stillPng,
-            kfStart: singleShot ? cutFiles[0] : (hasVideo1 ? undefined : stillPng),
-            kfEnd: singleShot ? cutFiles[1] : pack!.kfEnd,
+            kfStart: rideKf ? cutFiles[0] : (hasVideo1 ? undefined : stillPng),
+            kfEnd: rideKf ? cutFiles[1] : (hasVideo1 ? undefined : pack!.kfEnd),
             refImageFiles: pack!.refImageFiles,
             anglePortraits: pack!.anglePortraits,
           });
@@ -2028,10 +2030,10 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           wavFile: h3WavByShot.get(shot.id)!,
           durationSec: shot.durationSec,
           blockoutMp4: hasVideo1 && !isMsSegment ? blockoutMp4 : undefined,
-          keyframePositions: singleShot ? positions : undefined,
-          kfStart: singleShot ? cutFiles[0] : (hasVideo1 || isMsSegment ? undefined : stillPng),
-          kfEnd: singleShot ? cutFiles[1] : pack?.kfEnd,
-          kfExtraFiles: singleShot ? cutFiles.slice(2) : undefined,
+          keyframePositions: rideKf ? positions : undefined,
+          kfStart: rideKf ? cutFiles[0] : (hasVideo1 || isMsSegment ? undefined : stillPng),
+          kfEnd: rideKf ? cutFiles[1] : (hasVideo1 ? undefined : pack?.kfEnd),
+          kfExtraFiles: rideKf ? cutFiles.slice(2) : undefined,
           refImageFiles: pack?.refImageFiles,
           uiPhotoFiles: pack?.uiPhotoFiles,
           ...(chained.length && !isMsSegment
@@ -2116,6 +2118,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           outJson: sliceJson,
           require: shotRequire,
           shotId: b.id,
+          ...(segShots.length > 1
+            ? { parent: { file: mp4, shotId: b.id, start: b.start, len: b.len } }
+            : {}),
         });
         if (b.id === shot.id) {
           videoQc = await attachMemoryDistances(videoQc, {
@@ -2165,15 +2170,6 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         receipts,
       },
     });
-    if (input.until === "motion") {
-      job = patch(job, { status: "motion-ready", currentAgent: "motion" });
-      emit(jobId, {
-        agent: "motion",
-        level: "pass",
-        message: "--until motion：H3 片已落，mux 之前停（stills/motion 閘已過）。",
-      });
-      return;
-    }
     // --scene hop: mux this scene only → preview/SCxx.preview.mp4；唔走全 slate concat
     if (input.scene) {
       const previewDir = path.join(jobDir(jobId), "preview");

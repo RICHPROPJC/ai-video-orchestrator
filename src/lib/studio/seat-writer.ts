@@ -107,18 +107,7 @@ export function coerceOutline(raw: unknown, slateSec?: number, note?: RepairNote
     }) as Record<string, unknown>[];
     const scenes = o.scenes as Record<string, unknown>[];
     if (typeof slateSec === "number" && slateSec > 0 && scenes.length) {
-      const sum = scenes.reduce((a, s) => a + (typeof s.targetSec === "number" ? s.targetSec : 0), 0);
-      const lo = slateSec * 0.9;
-      const hi = slateSec * 1.1;
-      if (sum > 0 && (sum < lo || sum > hi)) {
-        const scale = slateSec / sum;
-        let after = 0;
-        for (const s of scenes) {
-          if (typeof s.targetSec === "number") s.targetSec = clampSceneSec(s.targetSec * scale, slateSec);
-          after += typeof s.targetSec === "number" ? s.targetSec : 0;
-        }
-        repair(`repair: scenes[].targetSec saw sum ${sum.toFixed(1)} became sum ${after.toFixed(1)} (slate ${slateSec}s ±10%)`);
-      }
+      // Story seconds stay as written. Do not scale scenes up to fill the slate.
     }
   }
   return o;

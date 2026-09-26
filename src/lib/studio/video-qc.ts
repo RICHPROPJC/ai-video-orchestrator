@@ -45,6 +45,8 @@ export type VideoQcRecord = {
   frames: VideoFrameQc[];
   checks: QcVerdict["checks"];
   second?: SecondEyeRecord & { frame: number };
+  /** Multishot slice: the judged file is SHxx.qc.mp4 cut from this parent. */
+  parent?: { file: string; sha256: string; shotId: string; start: number; len: number };
   memory?: {
     character_drift?: { distance: number; fail: boolean };
     blockout_copy?: { distance: number; fail: boolean };
@@ -282,6 +284,7 @@ export async function runVideoQc(opts: {
   require: QcRequire;
   shotId: string;
   framesDir?: string;
+  parent?: { file: string; shotId: string; start: number; len: number };
 } & SecondEyeOpts): Promise<VideoQcRecord> {
   const digest = videoDigest(opts.mp4);
   const secondCfg = resolveSecondEye(opts);
@@ -349,6 +352,9 @@ export async function runVideoQc(opts: {
       fail_reasons: failReasons,
     },
     ...(second ? { second } : {}),
+    ...(opts.parent
+      ? { parent: { ...opts.parent, sha256: videoDigest(opts.parent.file) } }
+      : {}),
   };
   fs.mkdirSync(path.dirname(opts.outJson), { recursive: true });
   fs.writeFileSync(opts.outJson, JSON.stringify(record, null, 2));
@@ -383,11 +389,12 @@ export function motionReadyAllowed(motionDir: string, shotIds: string[]): boolea
   return shotIds.length > 0 && shotIds.every((id) => pinVideoQcAccepted(motionDir, id));
 }
 
-/** Resume may keep an mp4 only when video_qc is GREEN and hash-matches the file on disk. */
+/** Resume may keep a take only when video_qc is GREEN and the hash matches the
+ *  file that was judged. A multishot slice is SHxx.qc.mp4 and must still name
+ *  its parent take, frame range, and shot. FAIL or a broken binding is not a pin. */
 export function pinVideoQcAccepted(motionDir: string, shotId: string): boolean {
   const qcFile = path.join(motionDir, `${shotId}.video_qc.json`);
-  const mp4 = path.join(motionDir, `${shotId}.mp4`);
-  if (!fs.existsSync(qcFile) || !fs.existsSync(mp4)) return false;
+  if (!fs.existsSync(qcFile)) return false;
   let data: VideoQcRecord;
   try {
     data = JSON.parse(fs.readFileSync(qcFile, "utf8")) as VideoQcRecord;
@@ -397,5 +404,24 @@ export function pinVideoQcAccepted(motionDir: string, shotId: string): boolean {
   if (data.tool !== "slatecrew.video_qc" || data.status !== "GREEN") return false;
   const require = data.require;
   if (typeof require !== "object" || require === null || Object.keys(require).length === 0) return false;
-  return data.sha256 === videoDigest(mp4);
+  const solo = path.join(motionDir, `${shotId}.mp4`);
+  const slice = path.join(motionDir, `${shotId}.qc.mp4`);
+  const named = data.video ? path.resolve(data.video) : solo;
+  const base = path.basename(named);
+  if (base !== `${shotId}.mp4` && base !== `${shotId}.qc.mp4`) return false;
+  const judged = base === `${shotId}.qc.mp4` ? slice : solo;
+  if (path.resolve(judged) !== named && data.video) return false;
+  if (!fs.existsSync(judged)) return false;
+  if (data.sha256 !== videoDigest(judged)) return false;
+  if (base === `${shotId}.qc.mp4`) {
+    const parent = data.parent;
+    if (!parent || parent.shotId !== shotId) return false;
+    if (!Number.isInteger(parent.start) || parent.start < 0) return false;
+    if (!Number.isInteger(parent.len) || parent.len <= 0) return false;
+    const parentFile = path.resolve(parent.file);
+    const root = path.resolve(motionDir) + path.sep;
+    if (!parentFile.startsWith(root) || !fs.existsSync(parentFile)) return false;
+    if (parent.sha256 !== videoDigest(parentFile)) return false;
+  }
+  return true;
 }

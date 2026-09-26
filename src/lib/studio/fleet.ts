@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import { resolveCrewEndpoint } from "./crew-llm";
 import type { SlateConfig } from "./config";
 
@@ -336,7 +338,52 @@ export async function probeFleet(cfg: SlateConfig, fetchImpl: FetchLike = fetch)
       required: false,
       configured: [cfg.embed.model],
     }),
+    rowFor(fetchImpl, {
+      id: "sf3d",
+      label: "SF3D",
+      configKey: "mesher.endpoint",
+      url: cfg.mesher.endpoint,
+      required: false,
+      configured: ["sf3d"],
+      skipModelCheck: true,
+    }),
   ]);
+  const skinBin = process.env.SKINTOKENS_BIN || "/home/c/skintokens_work/build-cuda/bin/skintokens-cli";
+  const skinUp = fs.existsSync(skinBin);
+  rows.push(finish({
+    id: "skintokens",
+    label: "SkinTokens",
+    configKey: "SKINTOKENS_BIN",
+    url: skinBin,
+    required: false,
+    unconfigured: false,
+    up: skinUp,
+    mismatch: false,
+    configured: ["skintokens-cli"],
+    live: skinUp ? ["present"] : [],
+    vram: "",
+    error: skinUp ? "" : "binary missing",
+  }));
+  let rev = "unknown";
+  try {
+    const head = execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
+    const dirty = execFileSync("git", ["status", "--porcelain", "--", "src"], { encoding: "utf8" }).trim();
+    rev = dirty ? `${head}-dirty` : head;
+  } catch { /* not a git checkout */ }
+  rows.push(finish({
+    id: "process",
+    label: "factory source",
+    configKey: "git HEAD",
+    url: "",
+    required: false,
+    unconfigured: false,
+    up: true,
+    mismatch: rev.endsWith("-dirty"),
+    configured: [rev],
+    live: [rev],
+    vram: "",
+    error: "",
+  }));
   const blockers = fleetBlockers(rows);
   const degraded = fleetDegraded(rows, cfg);
   return {

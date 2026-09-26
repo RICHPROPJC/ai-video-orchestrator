@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { ensureCastOnce, freshMeshDir, refuseKeyframePlate, assertStoryPlatesReady } from "./cast-mesh";
+import { ensureCastOnce, freshMeshDir, refuseKeyframePlate, assertStoryPlatesReady, reusableCanonical, unusedMeshDir } from "./cast-mesh";
 import { bakeSelectionFrames, type MotionSelection } from "./motion-select";
 import { keyframeSheetPrompt } from "./asset-board";
 import type { runCommand } from "./audio";
@@ -42,14 +42,13 @@ test("rig stays shut until every story plate exists", () => {
   const scene = path.join(dir, "desk.png");
   const b = path.join(dir, "B.front.png");
   fs.writeFileSync(prop, "p");
-  fs.writeFileSync(scene, "s");
   fs.writeFileSync(b, "b");
   const items = assertStoryPlatesReady({
     characters: [{ id: "A", pin }, { id: "B", pin: b }],
     props: [{ name: "樽", file: prop }],
-    scenes: [{ id: "木檯", file: scene }],
+    scenes: [{ id: "木檯" }, { id: "雪櫃前" }],
   });
-  assert.deepEqual(items.map((i) => i.id), ["A", "B", "樽", "木檯"]);
+  assert.deepEqual(items.map((i) => i.id), ["A", "B", "樽"]);
 });
 
 test("a failed sf3d directory does not block the next attempt", () => {
@@ -75,6 +74,14 @@ test("ensureCastOnce rigs the plate inside one systemctl window", async () => {
   const mesh = path.join(dir, "cast", "A", "sf3d", "0", "mesh_front.glb");
   fs.mkdirSync(path.dirname(mesh), { recursive: true });
   fs.writeFileSync(mesh, "glb");
+  const { createHash } = await import("node:crypto");
+  const srcSha = createHash("sha256").update(fs.readFileSync(src)).digest("hex");
+  fs.writeFileSync(path.join(dir, "cast", "A", "sf3d", "mesh-receipt.json"), JSON.stringify({
+    status: "succeeded",
+    input: src,
+    input_sha256: srcSha,
+    mesh_front: mesh,
+  }));
   const calls: string[] = [];
   const run: typeof runCommand = async (cmd, args) => {
     const line = [cmd, ...args].join(" ");

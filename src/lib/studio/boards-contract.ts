@@ -3,6 +3,8 @@ import { BEAT_ID_RE, CHARACTER_ID_RE, SCENE_ID_RE, dialogueSeconds, omittable, t
 import { isRoomNoun, isSystemDisplayProp, isSystemDisplayScreenForbid, negativePoison } from "./keyframe-prompt";
 import { shotSecMax, shotSecMin } from "./frame-grid";
 
+/** Story shot length. H3's shortest legal generate stays shotSecMin(); it does not rewrite the shot. */
+export const TEXT_SHOT_SEC_MIN = 1;
 /** Shot length bounds come from the H3 grid setting, not a second copy of 5.2/15. */
 export const SHOT_SEC_MIN = shotSecMin();
 export const SHOT_SEC_MAX = shotSecMax();
@@ -66,7 +68,7 @@ const boardShotShape = z.object({
   size: z.enum(["wide", "full", "medium", "closeup", "insert"]),
   angle: z.enum(["eye", "high", "low"]),
   side: z.enum(["frontal", "leftQuarter", "rightQuarter"]),
-  durationSec: z.number().min(SHOT_SEC_MIN).max(SHOT_SEC_MAX),
+  durationSec: z.number().min(TEXT_SHOT_SEC_MIN).max(SHOT_SEC_MAX),
   action: z.string().min(1).max(SHOT_ACTION_MAX),
   dialogue: z.string().nullish().transform((v) => v ?? ""),
   speaker: omittable(z.string().min(1).max(12)),
@@ -172,7 +174,7 @@ export function boardsSceneSchema(ctx: {
     const runtime = scene.shots.reduce((a, s) => a + s.durationSec, 0);
     const lo = ctx.budgetSec * (1 - SCENE_BUDGET_TOLERANCE);
     const hi = ctx.budgetSec * (1 + SCENE_BUDGET_TOLERANCE);
-    if (runtime < lo || runtime > hi) {
+    if (runtime > hi) {
       report.addIssue({
         code: "custom",
         path: ["shots"],

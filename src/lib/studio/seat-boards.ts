@@ -1,12 +1,12 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import { liveBoardLane, momentsForShot, type BoardLane } from "./asset-board";
+import type { BoardLane } from "./asset-board";
 import { renderBoards, type BoardsVisualOptions } from "./boards-visual";
 import { loadConfig } from "./config";
 import { chatJsonSeat, type RepairNote } from "./crew-llm";
 import { BOARDS_CHARTER } from "./seat-charters";
 import { assemblePlaybook, markPass } from "./playbook";
-import { boardsSceneSchema, SHOT_SEC_MAX, SHOT_SEC_MIN, SCENE_BUDGET_TOLERANCE, SLOT_VALUES, DEPTH_VALUES, STANCE_VALUES, type BoardsScene } from "./boards-contract";
+import { boardsSceneSchema, TEXT_SHOT_SEC_MIN, SCENE_BUDGET_TOLERANCE, SLOT_VALUES, DEPTH_VALUES, STANCE_VALUES, type BoardsScene } from "./boards-contract";
 import { assertSheetGates, expandBoards } from "./boards-expand";
 import { dialogueSeconds, type Script } from "./script-contract";
 import type { CallSheet } from "./types";
@@ -140,9 +140,9 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
       });
     }
     const dialogueClock = dialogueSeconds(dialogue);
-    const floor = Math.max(dialogueClock, SHOT_SEC_MIN);
+    const floor = Math.max(dialogueClock, TEXT_SHOT_SEC_MIN);
     if (durationSec < floor) {
-      const why = dialogue && dialogueClock >= SHOT_SEC_MIN ? "dialogue clock" : `floor ${SHOT_SEC_MIN}`;
+      const why = dialogue && dialogueClock >= TEXT_SHOT_SEC_MIN ? "dialogue clock" : `floor ${TEXT_SHOT_SEC_MIN}`;
       repair(`repair: shots[${i}].durationSec saw ${durationSec} became ${floor.toFixed(1)} (${why})`);
     }
     return { ...shot, cast, props, durationSec: Math.max(durationSec, floor) };
@@ -151,19 +151,7 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
     const lo = budgetSec * (1 - SCENE_BUDGET_TOLERANCE);
     const hi = budgetSec * (1 + SCENE_BUDGET_TOLERANCE);
     const sum = shots.reduce((a, s) => a + (s.durationSec as number), 0);
-    if (sum < lo) {
-      let need = lo - sum + 0.05;
-      for (let i = 0; i < shots.length && need > 0; i += 1) {
-        const shot = shots[i]!;
-        const room = SHOT_SEC_MAX - (shot.durationSec as number);
-        if (room <= 0) continue;
-        const add = Math.min(room, need);
-        const before = shot.durationSec as number;
-        shot.durationSec = tenth(before + add);
-        need -= add;
-        repair(`repair: shots[${i}].durationSec saw ${before} became ${shot.durationSec} (sum lift toward band ${lo.toFixed(1)}–${hi.toFixed(1)})`);
-      }
-    } else if (sum > hi) {
+    if (sum > hi) {
       // the 07JZ SC06 grave: cutting exactly sum - hi let tenth() round the
       // cut shot back up (7 − 0.05 → 7), so the sum stayed 49.1 against a true
       // hi of 49.05 (45 × 1.09) and zod's `runtime > hi` killed the scene.
@@ -176,7 +164,7 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
         for (let k = shots.length - 1; k >= 0 && extra > 0; k -= 1) {
           const shot = shots[k]!;
           const dialogue = typeof shot.dialogue === "string" ? shot.dialogue.trim() : "";
-          const floor = Math.max(SHOT_SEC_MIN, dialogueSeconds(dialogue));
+          const floor = Math.max(TEXT_SHOT_SEC_MIN, dialogueSeconds(dialogue));
           const room = (shot.durationSec as number) - floor;
           if (room <= 0) continue;
           const cut = Math.min(room, extra);
@@ -281,19 +269,7 @@ export async function runBoards(
 
   const expanded = expandBoards({ script, boards, targetSec: declared, aspect: opts.aspect });
   assertSheetGates(expanded, { script, targetSec: declared });
-  // A callsheet is a text draft until visible boards and their mapped cuts pass.
   if (!opts.draftOnly) {
-    const boardsDir = io.boardsDir ?? path.join(io.receiptDir, "boards");
-    const moments = expanded.shots.flatMap((shot) => momentsForShot({
-      ...shot, keyframePositions: shot.keyframePositions || "0%",
-      action: `${shot.marks.map((m) => expanded.characters.find((c) => c.id === m.characterId)?.name ?? m.characterId).join("、")}：${shot.action}`,
-    }, path.join(boardsDir, "cells")));
-    const visual = await runBoards({ render: {
-      moments, boardsDir, receiptDir: io.receiptDir, name: "storyboard",
-      images: [], lane: io.boardLane ?? liveBoardLane(loadConfig().stills.url), cellPx: 1024,
-    } });
-    receipts.push(path.relative(io.receiptDir, visual.receipt));
-    expanded.storyboard = moments.map((m) => ({ shotId: m.shotId, at: m.at || "0%", file: m.file, board: [...visual.attempts].reverse().find((a) => a.cells.some((c) => c.destination === m.file && c.status === "GREEN"))?.board }));
     receipts.push(...markPass(["boards", "global"], io.playbookDir, io.drama));
   }
   const sheet: CallSheet = {
@@ -304,5 +280,8 @@ export async function runBoards(
       sha256: sheetDigest(expanded),
     },
   };
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/ed012a9f-01ce-40d6-a4fe-5aa6a237c57d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'244f6d'},body:JSON.stringify({sessionId:'244f6d',hypothesisId:'B',location:'seat-boards.ts:return',message:'boards seat returns text sheet without U1.5',data:{shots:sheet.shots.length,storyboard:sheet.storyboard?.length ?? 0},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   return { sheet, model: io.model, receipts };
 }

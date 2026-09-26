@@ -1,20 +1,87 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import { runCommand } from "./audio";
 import { rembgCell } from "./asset-board";
 import { assertMeshPlate, sf3dGenerate } from "./mesh-provider";
+
+function meshDirName(castItemDir: string, n: number): string {
+  return n === 1 ? path.join(castItemDir, "sf3d") : path.join(castItemDir, `sf3d-${n}`);
+}
 
 /** A finished mesh is reused. A directory left by a failed generate is not:
  *  the provider refuses to write into an existing out_dir, so the next
  *  attempt gets the next free sf3d-N. */
 export function freshMeshDir(castItemDir: string): string {
-  const named = (n: number) => (n === 1 ? path.join(castItemDir, "sf3d") : path.join(castItemDir, `sf3d-${n}`));
   const hasMesh = (dir: string) => fs.existsSync(path.join(dir, "0", "mesh_front.glb"));
   for (let n = 1; ; n += 1) {
-    const dir = named(n);
+    const dir = meshDirName(castItemDir, n);
     if (!fs.existsSync(dir)) return dir;
     if (hasMesh(dir)) return dir;
   }
+}
+
+/** Identity miss: do not reuse a mesh that is already there. */
+export function unusedMeshDir(castItemDir: string): string {
+  for (let n = 1; ; n += 1) {
+    const dir = meshDirName(castItemDir, n);
+    if (!fs.existsSync(dir)) return dir;
+  }
+}
+
+export type CastDeform = "rig" | "rigid";
+
+function sha256File(file: string): string {
+  return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+}
+
+type MeshReceipt = {
+  status?: string;
+  input?: string;
+  input_sha256?: string;
+  mesh_front?: string;
+};
+
+/** Reuse only when the receipt names this source, or a stored plate link does.
+ *  A one-time mtime adoption writes plate.source.json when writeLink is set. */
+export function reusableCanonical(opts: {
+  dirs: string[];
+  srcFile: string;
+  writeLink?: boolean;
+}): { mesh: string; rigged?: string; dir: string } | null {
+  if (!fs.existsSync(opts.srcFile)) return null;
+  const srcSha = sha256File(opts.srcFile);
+  const srcMtime = fs.statSync(opts.srcFile).mtimeMs;
+  for (const dir of opts.dirs) {
+    const receiptPath = path.join(dir, "sf3d", "mesh-receipt.json");
+    if (!fs.existsSync(receiptPath)) continue;
+    const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8")) as MeshReceipt;
+    if (receipt.status !== "succeeded" || !receipt.mesh_front || !receipt.input_sha256) continue;
+    if (!fs.existsSync(receipt.mesh_front)) continue;
+    const linkPath = path.join(dir, "plate.source.json");
+    let ok = srcSha === receipt.input_sha256;
+    if (!ok && fs.existsSync(linkPath)) {
+      const link = JSON.parse(fs.readFileSync(linkPath, "utf8")) as { srcSha256?: string; plateSha256?: string };
+      ok = link.srcSha256 === srcSha && link.plateSha256 === receipt.input_sha256;
+    }
+    if (!ok && opts.writeLink && receipt.input && fs.existsSync(receipt.input)) {
+      const plateSha = sha256File(receipt.input);
+      if (plateSha === receipt.input_sha256 && srcMtime <= fs.statSync(receipt.input).mtimeMs) {
+        fs.writeFileSync(linkPath, `${JSON.stringify({
+          src: opts.srcFile,
+          srcSha256: srcSha,
+          plateSha256: plateSha,
+          adopted: "src_mtime_not_after_receipt_input",
+        }, null, 2)}\n`);
+        ok = true;
+      }
+    }
+    if (!ok) continue;
+    const rigged = path.join(dir, "mesh_front_rigged.glb");
+    return { mesh: receipt.mesh_front, dir, rigged: fs.existsSync(rigged) ? rigged : undefined };
+  }
+  return null;
 }
 export const SKINTOKENS_BIN = process.env.SKINTOKENS_BIN || "/home/c/skintokens_work/build-cuda/bin/skintokens-cli";
 export const SKINTOKENS_MODELS =
@@ -30,12 +97,12 @@ export function assertCastConfirmed(count: number): void {
   }
 }
 
-/** The rig window stays shut until every story element has its own rembg plate.
- *  A partial shelf must not be rigged. */
+/** The rig window stays shut until every character and prop plate exists.
+ *  A location is not a building and is not a mesh plate. */
 export function assertStoryPlatesReady(opts: {
   characters: { id: string; pin?: string }[];
   props: { name: string; file?: string }[];
-  scenes: { id: string; file?: string }[];
+  scenes?: { id: string; file?: string }[];
 }): { id: string; file: string }[] {
   const missing: string[] = [];
   const items: { id: string; file: string }[] = [];
@@ -45,7 +112,6 @@ export function assertStoryPlatesReady(opts: {
   };
   for (const c of opts.characters) take("角色", c.id, c.pin);
   for (const p of opts.props) take("道具", p.name, p.file);
-  for (const s of opts.scenes) take("場景", s.id, s.file);
   if (missing.length > 0) {
     throw new Error(`cast_incomplete: 故事元素未齊，唔開 rig。${missing.join("；")}`);
   }
@@ -76,12 +142,70 @@ async function squarePlate(input: string, output: string, run: typeof runCommand
   if (r.code !== 0) throw new Error(`square plate failed: ${r.stderr.slice(0, 300)}`);
 }
 
+async function centerSubject(input: string, output: string): Promise<void> {
+  const { data, info } = await sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = info;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const a = data[(y * width + x) * channels + channels - 1] ?? 0;
+      if (a <= 32) continue;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) throw new Error(`plate has no subject: ${input}`);
+  const bw = maxX - minX + 1;
+  const bh = maxY - minY + 1;
+  const canvas = Math.ceil(Math.max(bw, bh) / 0.7);
+  const left = Math.floor((canvas - bw) / 2);
+  const top = Math.floor((canvas - bh) / 2);
+  const tmp = `${output}.center.png`;
+  await sharp(input)
+    .extract({ left: minX, top: minY, width: bw, height: bh })
+    .extend({
+      top,
+      bottom: canvas - bh - top,
+      left,
+      right: canvas - bw - left,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toFile(tmp);
+  fs.renameSync(tmp, output);
+}
+
 async function transparentPlate(src: string, dir: string, run: typeof runCommand): Promise<string> {
   refuseKeyframePlate(src);
   const plate = path.join(dir, "plate.png");
+  const linkPath = path.join(dir, "plate.source.json");
+  if (fs.existsSync(plate) && fs.existsSync(linkPath)) {
+    const link = JSON.parse(fs.readFileSync(linkPath, "utf8")) as { srcSha256?: string; plateSha256?: string };
+    const same = link.srcSha256 === sha256File(src) && link.plateSha256 === sha256File(plate);
+    if (!same) {
+      fs.rmSync(plate, { force: true });
+    }
+  } else if (fs.existsSync(plate)) {
+    fs.rmSync(plate, { force: true });
+  }
   if (fs.existsSync(plate)) {
-    await assertMeshPlate(plate);
-    return plate;
+    try {
+      await assertMeshPlate(plate);
+      return plate;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const offCenter = message.includes("border is not transparent") || message.includes("no opaque subject");
+      if (!offCenter) throw error;
+      const rgba = path.join(dir, "plate.rgba.png");
+      await centerSubject(fs.existsSync(rgba) ? rgba : plate, plate);
+      await assertMeshPlate(plate);
+      return plate;
+    }
   }
   try {
     await assertMeshPlate(src);
@@ -135,9 +259,11 @@ async function waitGpu2ForRig(run: typeof runCommand): Promise<void> {
  */
 export async function ensureCastOnce(opts: {
   characters: { id: string }[];
-  items: { id: string; file: string; rig?: string }[];
+  items: { id: string; file: string; rig?: string; deform?: CastDeform; meshAliasId?: string }[];
   meshRoot: string;
   endpoint: string;
+  /** SkinTokens stops SF3D. Production leaves this off until a resource owner opens the window. */
+  allowGpuHandoff?: boolean;
   runCmd?: typeof runCommand;
 }): Promise<Record<string, string>> {
   assertCastConfirmed(opts.characters.length);
@@ -146,32 +272,46 @@ export async function ensureCastOnce(opts: {
   const pending: { id: string; mesh: string; rigged: string }[] = [];
   for (const item of opts.items) {
     const dir = path.join(opts.meshRoot, item.id);
-    const rigged = path.join(dir, "mesh_front_rigged.glb");
-    if (item.rig && fs.existsSync(item.rig)) {
-      rigs[item.id] = item.rig;
+    const deform = item.deform ?? "rig";
+    const dirs = [dir];
+    if (item.meshAliasId) dirs.push(path.join(opts.meshRoot, item.meshAliasId));
+    const hit = item.file ? reusableCanonical({ dirs, srcFile: item.file, writeLink: true }) : null;
+    if (hit && deform === "rigid") {
+      rigs[item.id] = hit.mesh;
       continue;
     }
-    if (fs.existsSync(rigged)) {
-      rigs[item.id] = rigged;
+    if (hit?.rigged && deform === "rig") {
+      rigs[item.id] = hit.rigged;
+      continue;
+    }
+    if (deform === "rig" && item.rig && fs.existsSync(item.rig)) {
+      rigs[item.id] = item.rig;
       continue;
     }
     if (!item.file || !fs.existsSync(item.file)) {
       throw new Error(`cast_plate_missing: ${item.id} 冇去背板`);
     }
     fs.mkdirSync(dir, { recursive: true });
-    const plate = await transparentPlate(item.file, dir, run);
-    const meshDir = freshMeshDir(dir);
-    let mesh = path.join(meshDir, "0", "mesh_front.glb");
-    if (!fs.existsSync(mesh)) {
+    const plate = hit ? item.file : await transparentPlate(item.file, dir, run);
+    let mesh = hit?.mesh;
+    if (!mesh) {
+      const meshDir = unusedMeshDir(dir);
       const receipt = await sf3dGenerate({ plate, outDir: meshDir, endpoint: opts.endpoint });
       if (receipt.status !== "succeeded" || !receipt.mesh_front) {
         throw new Error(`sf3d ${item.id}: ${receipt.error ?? receipt.refused ?? receipt.status}`);
       }
       mesh = receipt.mesh_front;
     }
-    pending.push({ id: item.id, mesh, rigged });
+    if (deform === "rigid") {
+      rigs[item.id] = mesh;
+      continue;
+    }
+    pending.push({ id: item.id, mesh, rigged: path.join(dir, "mesh_front_rigged.glb") });
   }
   if (pending.length === 0) return rigs;
+  if (!opts.allowGpuHandoff) {
+    throw new Error(`gpu_handoff_required: ${pending.map((item) => item.id).join("、")} 要 SkinTokens，未有資源窗口，唔停 SF3D`);
+  }
   if (!fs.existsSync(SKINTOKENS_BIN)) throw new Error(`skintokens-cli missing: ${SKINTOKENS_BIN}`);
   if (!fs.existsSync(SKINTOKENS_MODELS)) throw new Error(`skintokens models missing: ${SKINTOKENS_MODELS}`);
   await systemctlUser(run, "stop", SF3D_UNIT);

@@ -25,8 +25,8 @@ export type PlugShotWavsOpts = {
 };
 
 /** Voice hop, per shot: a plug wav is copied, dialogue goes to AuK, a picture
- *  beat with no line gets silence the length of the locked shot. padH3Wav then
- *  stretches it to the locked frame clock. A named --wav-dir that lacks the file still fails. */
+ *  beat with no line gets a silent take. The bed mix fills the locked clock;
+ *  AuK is not padded with silence. A named --wav-dir that lacks the file still fails. */
 export async function plugShotWavs(opts: PlugShotWavsOpts): Promise<PluggedShotWav[]> {
   const out: PluggedShotWav[] = [];
   for (const shot of opts.boards) {

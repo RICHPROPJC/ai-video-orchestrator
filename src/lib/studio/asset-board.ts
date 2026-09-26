@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import { runCommand } from "./audio";
 import type { Character, ShotProp } from "./types";
 import { buildEditPayload, checkHealth, u15Edit, type EditHealth } from "./u15-edit";
@@ -98,16 +99,29 @@ export function momentsForShot(
   const sit = /坐/.test(body) ? "人坐低，臀部挨住凳，雙腳落地。" : "";
   const squint = /瞇眼/.test(body) ? "眼睛瞇住，嘴角向上笑。" : "";
   const table = /木檯|枱/.test(`${body}${shot.location ?? ""}`) ? "身前係一張木檯，檯面入鏡。" : "";
-  const text = `${place}${sizeLine}${body}${soda}${sit}${squint}${table}`;
+  const mods = `${soda}${sit}${squint}${table}`;
   const written = (shot.keyframePositions ?? "").split(/[,，]/).map((s) => s.trim()).filter(Boolean);
-  if (written.length >= 2) {
-    return written.map((at, i) => ({
+  // Action clauses are the beat list: each clause is its own anchor with its
+  // own picture. Written positions only time the beats; they never merge them.
+  const beats = body.split(/[,，、；;]/).map((s) => s.trim()).filter(Boolean);
+  if (beats.length >= 2) {
+    const moments = beats.map((beat, i) => ({
       shotId: shot.id,
-      at,
-      text,
+      at: written[i] ?? "",
+      text: `${place}${sizeLine}${beat}${mods}`,
       file: path.join(stillDir, `${shot.id}.kf-${String(i).padStart(2, "0")}.png`),
     }));
+    for (let i = beats.length; i < written.length; i += 1) {
+      moments.push({
+        shotId: shot.id,
+        at: written[i]!,
+        text: `${place}${sizeLine}${body}${mods}`,
+        file: path.join(stillDir, `${shot.id}.kf-${String(i).padStart(2, "0")}.png`),
+      });
+    }
+    return moments;
   }
+  const text = `${place}${sizeLine}${body}${mods}`;
   return [{ shotId: shot.id, at: written[0] ?? "", text, file: path.join(stillDir, `${shot.id}.png`) }];
 }
 
@@ -241,12 +255,14 @@ export function storyboardBoardPrompt(opts: { cells: string[]; style: string; cl
   const layout = opts.cleanCuts ? layoutClause(n) : n === KEYFRAME_SPAWN
     ? "整體版式：嚴格採用4列×4行宮格布局（單張圖嚴格包含16個畫面）；16格尺寸嚴格一致、邊緣對齊、間距統一；每格用幼白色間隔線同黑色邊框分隔；每格左上角依次標注01至16清晰正確。"
     : numberedLayoutClause(n);
-  const numbered = opts.cells.map((c, i) => `${String(i + 1).padStart(2, "0")} — ${c}`).join("；\n");
+  const body = opts.cleanCuts
+    ? opts.cells.join("；\n")
+    : opts.cells.map((c, i) => `${String(i + 1).padStart(2, "0")} — ${c}`).join("；\n");
   return [
     `生成一張專業分鏡板，${layout}`,
-    `${n}格內容（各格指定角色，跨格同一角色面容服裝完全一致）：\n${numbered}。`,
+    `${n}格內容（各格指定角色，跨格同一角色面容服裝完全一致）：\n${body}。`,
     `風格：${opts.style}。`,
-    `文字數字清晰正確、寫實風格、畫面清晰銳利、版式工整。`,
+    opts.cleanCuts ? "格內冇任何文字、數字、鏡號、百分比。" : "文字數字清晰正確、寫實風格、畫面清晰銳利、版式工整。",
   ].join("");
 }
 
@@ -355,6 +371,30 @@ export async function rembgCell(input: string, output: string): Promise<void> {
   if (r.code !== 0) throw new Error(`rembg failed for ${input}: ${(r.stderr || r.stdout).slice(-300)}`);
 }
 
+async function drawnColumnCount(png: string): Promise<number | null> {
+  const { data, info } = await sharp(png).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const light: boolean[] = [];
+  for (let x = 0; x < info.width; x++) {
+    let white = 0;
+    let n = 0;
+    for (let y = 0; y < info.height; y += 8) {
+      if ((data[y * info.width + x] ?? 0) > 200) white += 1;
+      n += 1;
+    }
+    light.push(n > 0 && white / n > 0.85);
+  }
+  const bands: [number, number][] = [];
+  light.forEach((on, i) => {
+    if (!on) return;
+    const last = bands[bands.length - 1];
+    if (!last || i > last[1] + 4) bands.push([i, i]);
+    else last[1] = i;
+  });
+  const gaps = bands.filter((band) => band[1] - band[0] >= 8);
+  if (gaps.length < 2) return null;
+  return gaps.length - 1;
+}
+
 /** One /edit (or the lane's one call) writes the sheet. Cells are crops, not extra spawns. */
 export async function ensureKeyframeSheet(opts: {
   moments: SheetMoment[];
@@ -385,6 +425,10 @@ export async function ensureKeyframeSheet(opts: {
     recordJson: board.replace(/\.png$/, ".u15_edit.json"),
   });
   const size = await probePngSize(board);
+  const drawnCols = await drawnColumnCount(board);
+  if (drawnCols != null && drawnCols !== cols) {
+    throw new Error(`board_layout: asked ${cols} columns, picture has ${drawnCols}; refuse to cut`);
+  }
   const cell = { w: Math.floor(size.width / cols), h: Math.floor(size.height / rows) };
   await opts.lane.cut(
     board,
@@ -396,7 +440,36 @@ export async function ensureKeyframeSheet(opts: {
       h: cell.h,
     })),
   );
+  for (const m of opts.moments) await cutOffTopLabel(m.file);
   return { board, cells: opts.moments.map((m) => m.file) };
+}
+
+/** The sheet burns a white title strip into the cell. That strip is not the picture. */
+export async function cutOffTopLabel(file: string): Promise<void> {
+  const { data, info } = await sharp(file).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const step = 4;
+  let lastWhite = -1;
+  let cut = 0;
+  for (let y = 0; y < Math.min(info.height, 220); y++) {
+    let sum = 0;
+    let n = 0;
+    let white = 0;
+    for (let x = 0; x < info.width; x += step) {
+      const v = data[y * info.width + x] ?? 0;
+      sum += v;
+      if (v > 230) white += 1;
+      n += 1;
+    }
+    if (white / n > 0.75) lastWhite = y;
+    else if (lastWhite > 40 && sum / n < 120) {
+      cut = lastWhite + 1;
+      break;
+    }
+  }
+  if (cut < 40 || cut > 200) return;
+  const tmp = `${file}.nolabel.png`;
+  await sharp(file).extract({ left: 0, top: cut, width: info.width, height: info.height - cut }).toFile(tmp);
+  fs.renameSync(tmp, file);
 }
 
 export async function cutBoardCells(
@@ -623,6 +696,8 @@ export async function ensurePropBoard(opts: {
   seed?: number;
   cellPx?: number;
   lane?: BoardLane;
+  /** First `props-NN` number. A refill passes nextPropBoardSeq so props-01 stays. */
+  boardSeqStart?: number;
   onEvent?: (message: string, data?: Record<string, unknown>) => void;
 }): Promise<{ pinned: string[]; boards: string[] }> {
   if (!opts.props.length) throw new Error("道具板：props 空，冇嘢好批量");
@@ -634,9 +709,10 @@ export async function ensurePropBoard(opts: {
   fs.mkdirSync(boardsDir, { recursive: true });
   const pinned: string[] = [];
   const boards: string[] = [];
+  const seq0 = opts.boardSeqStart ?? 1;
   for (const [chunk, props] of chunked(opts.props, 10).entries()) {
     const rows = Math.ceil(props.length / 2);
-    const board = path.join(boardsDir, `props-${String(chunk + 1).padStart(2, "0")}.png`);
+    const board = path.join(boardsDir, `props-${String(chunk + seq0).padStart(2, "0")}.png`);
     boards.push(board);
     await lane.edit({
       prompt: propBoardPrompt(props),
@@ -650,7 +726,7 @@ export async function ensurePropBoard(opts: {
     const size = await probePngSize(board);
     const cell = { w: Math.floor(size.width / 2), h: Math.floor(size.height / rows) };
     for (const [i, prop] of props.entries()) {
-      const cutFile = path.join(opts.assetsDir, `${String(chunk * 10 + i + 1).padStart(2, "0")}-${slug(prop.name)}.cut.png`);
+      const cutFile = path.join(opts.assetsDir, `${String(chunk * 10 + i + seq0).padStart(2, "0")}-${slug(prop.name)}.cut.png`);
       await lane.cut(board, [{ file: cutFile, x: (i % 2) * cell.w, y: Math.floor(i / 2) * cell.h, w: cell.w, h: cell.h }]);
       const qcFile = cutFile.replace(/\.png$/, ".photo_qc.json");
       const verdict = await lane.qc(cutFile, qcFile, PROP_BOARD_REQUIRE);

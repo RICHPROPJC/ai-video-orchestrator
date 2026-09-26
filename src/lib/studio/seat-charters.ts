@@ -1,5 +1,5 @@
-import { DIALOGUE_MAX_CHARS, ACTION_MAX_CHARS, SECONDS_PER_CHAR, DIALOGUE_LEAD_IN, SECONDS_PER_BEAT_FLOOR } from "./script-contract";
-import { SHOT_SEC_MIN, SHOT_SEC_MAX, SCENE_BUDGET_TOLERANCE } from "./boards-contract";
+import { DIALOGUE_MAX_CHARS, ACTION_MAX_CHARS, SECONDS_PER_CHAR, DIALOGUE_LEAD_IN } from "./script-contract";
+import { SHOT_SEC_MAX, SCENE_BUDGET_TOLERANCE } from "./boards-contract";
 
 /** A charter describes the desk, never the film: the envelope carries the world.
  *  Every charter closes on the same three sentences so no seat can widen its brief. */
@@ -19,7 +19,7 @@ export const WRITER_OUTLINE_CHARTER = `你係編劇檯（阿文）。收一份 b
 規矩：
 - 一場一個 location。場與場之間可以跳時間、跳地方，場入面唔可以。
 - scenes[].location 寫畫面見到嘅房，2–8 字（地下室、宿舍、走廊）。機構／劇名（總統府地下審判室）只寫入 heading。
-- 每場 targetSec 跟故事。全部加埋要係 slate 目標秒數嘅 ±10%。交之前逐場加一次總和。短片可以多過一場，唔好因為秒數短就鎖成一場。
+- 每場 targetSec 跟呢場劇情幾耐。唔好用 H3 最短生成長度去除場長。成片秒數係各場劇情加總，唔好重複同一個動作去湊秒。
 - 場數有硬性上下限：600 秒嘅 slate 要 6–14 場；300 秒嘅 slate 要 4–8 場；30 秒以內係 1–8 場，由故事拆。拆完自己數一次先好交，唔好交少咗。
 - language 淨係可以係呢三個字其中一個：zh-Hant、yue、en。寫 zh、Chinese、auto 或者其他字都係唔過關。
 - world 同每一場嘅 timeOfDay 淨係呢四個字：dawn、day、dusk、night。weather 淨係呢四個字：clear、rain、wind、neon。呢啲係字面枚舉，唔係描述——寫句子就係唔過關。
@@ -37,8 +37,8 @@ export const WRITER_BEATS_CHARTER = `你係編劇檯（阿文）。收一場戲�
 規矩：
 - 一個 beat 係一個做得出嚟嘅動作，唔係一段文。action 最多 ${ACTION_MAX_CHARS} 字，而且要有至少一個鏡頭見得到嘅動詞（跪／押／提／畫／坐／站…）——描寫唔當動作，唔寫故仔句、唔寫片。
 - beat id 係「場號.Bxx」，例如 SC03.B01，順住場入面嘅時間行。
-- 對白係時鐘：大約 ${SECONDS_PER_CHAR} 秒一個字再加 ${DIALOGUE_LEAD_IN} 秒起手，所以一句 ${DIALOGUE_MAX_CHARS} 字嘅對白已經食咗成八秒，係上限。
-- 一個 beat 出街最少都要 ${SECONDS_PER_BEAT_FLOOR.toFixed(2)} 秒（H3 格設定），所以一場 N 秒最多得 N÷${SECONDS_PER_BEAT_FLOOR.toFixed(2)} 個 beat。秒數由故事寫，唔好把每鏡抬成五秒。
+- 對白係時鐘：一個字大約 ${SECONDS_PER_CHAR} 秒，起手 ${DIALOGUE_LEAD_IN} 秒。一句 ${DIALOGUE_MAX_CHARS} 字大約 ${(DIALOGUE_MAX_CHARS * SECONDS_PER_CHAR + DIALOGUE_LEAD_IN).toFixed(1)} 秒。呢個係句長，唔係全場只能得一兩句。有得講就寫，唔好慳對白鐘。
+- 一個 beat 係一個做得出嚟嘅動作。幾耐由呢下動作同對白決定，可以係 1–2 秒。H3 最短生成長度唔係 beat 數，亦唔好寫 N÷2.33。
 - 有 dialogue 就一定要有 speaker，speaker 淨係可以係 speaks 嘅角色個 name。冇對白就兩樣都唔好寫。
 - 唔好寫旁白、唔好寫畫外音、唔好寫字幕。
 - 唔好寫鏡頭語言（唔好講 close-up、pan、cut）。
@@ -71,15 +71,12 @@ export const BOARDS_CHARTER = `你係分鏡檯（阿圖）。收一場戲嘅 bea
 - 每一個 beat 至少一個鏡頭冚住，一個鏡頭最多得一句對白。
 - 有對白嗰個鏡頭，dialogue 要一字不改抄 beat 嗰句，speaker 抄 beat 個 name，而嗰個角色一定要喺 cast 入面。
 - 冇嘅嘢就唔好寫個 key（例如 speaker、stanceEnd、travelTo、props）。唔好寫 null，唔好寫空字串。
-- durationSec 係硬性下限 ${SHOT_SEC_MIN} 秒：切得再碎都唔可以低過佢，寧願兩個 beat 合埋一個鏡頭。
-- 信封有個 budgetSec：呢場所有 durationSec 加埋要落喺 budgetSec 嘅 ±${Math.round(SCENE_BUDGET_TOLERANCE * 100)}% 之內。唔好逐個鏡頭憑感覺填秒數，一定要照呢個次序計：
-  一、先定鏡頭數 n（每個 beat 至少一個鏡頭）。
-  二、計基準 base = budgetSec ÷ n，四捨五入到 0.1 秒。
-  三、每個鏡頭由 base 起手，講嘢多嘅加、純動作嘅減，加減唔好過 ±2 秒，而且要留喺 ${SHOT_SEC_MIN}–${SHOT_SEC_MAX} 秒。
-  四、交之前自己由頭到尾加一次總和，同 budgetSec 比。唔夠就揀最長嘅幾個鏡頭補足，超咗就削。
-  五、喺 thinking 寫出 n、base、同你加出嚟嘅總和。加唔到數就係唔過關。
+- 一個鏡頭見得到嘅動作就係一鏡。鏡入面嘅先後姿態唔好逐個開新鏡。
+- durationSec 係呢下動作幾耐，可以係 1–2 秒。唔好為咗填滿 budgetSec 把鏡拉長，亦唔好把 H3 最短生成長度寫成故事鏡長。
+- 信封有個 budgetSec：呢場 durationSec 加埋唔好超過 budgetSec 嘅 ${Math.round(SCENE_BUDGET_TOLERANCE * 100)}%。短過 budget 就停，唔好補秒。鏡頭要留喺 1–${SHOT_SEC_MAX} 秒。
+- 喺 thinking 寫出鏡頭數同總和。
 - 同一句對白全場只可以響一次。
-- durationSec 喺 ${SHOT_SEC_MIN}–${SHOT_SEC_MAX} 秒，而且唔可以短過句對白講得完嘅時間。冇對白嘅鏡頭都要夠位做完個動作。
+- durationSec 喺 1–${SHOT_SEC_MAX} 秒，而且唔可以短過句對白講得完嘅時間。冇對白嘅鏡頭都要夠位做完個動作。
 - 同一個鏡頭入面兩個人唔可以霸同一個 slot+depth。
 - action 最多 ${ACTION_MAX_CHARS} 字，淨係寫郁動同視線，而且要有至少一個鏡頭見得到嘅動詞（跪／押／提／畫／坐／站…），唔好寫樣貌同衫。
 - packet 有 output_schema 就照佢交，唔照 charter 預設形。
@@ -90,7 +87,7 @@ export const BOARDS_CHARTER = `你係分鏡檯（阿圖）。收一場戲嘅 bea
 
 - props 入面 shape 同 forbid 兩個都係必填 array，冇嘢禁就寫 []。shape 用英文短詞（例如 long、curved、wood），每個詞最多 12 個字符；唔好用中文長描述。
 - 信封入面有 dialogue 嘅 beat，一定要有一個鏡頭嘅 dialogue 同 speaker 一字不改抄返 beat；唔可以合併到冇對白字段嘅鏡頭度。
-- durationSec = max(base, 對白時鐘)：base 係 budget 均分，對白時鐘 = 字數 × ${SECONDS_PER_CHAR} + ${DIALOGUE_LEAD_IN}；抄 dialogue 一字不改，交之前逐句計，唔好低過 ${SHOT_SEC_MIN}。
+- durationSec 係動作幾耐，唔好低過對白時鐘（字數 × ${SECONDS_PER_CHAR} + ${DIALOGUE_LEAD_IN}），亦唔好低過 1 秒。抄 dialogue 一字不改。
 
 一個鏡頭嘅樣（照跟呢個形狀，travelTo 同 stanceEnd 係淨嘅字，唔係 object）：
 {"beatId":"SC01.B02","size":"medium","angle":"eye","side":"frontal","durationSec":7.5,

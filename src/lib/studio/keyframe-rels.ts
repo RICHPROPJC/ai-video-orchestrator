@@ -86,7 +86,8 @@ export function episodeImageRel(file: string, jobId: string): string | undefined
   const normalized = file.replace(/\\/g, "/");
   const marker = `/data/jobs/${jobId}/`;
   const rel = normalized.includes(marker) ? normalized.split(marker)[1]! : normalized;
-  if (rel.startsWith("/") || rel.split("/").some((part) => part === "..") || !/^(boards|stills|assets|portraits)\//.test(rel)) return undefined;
+  const root = rel.split("/")[0];
+  if (rel.startsWith("/") || rel.split("/").some((part) => part === "..") || !root || !["boards", "stills", "assets", "portraits"].includes(root)) return undefined;
   return rel;
 }
 

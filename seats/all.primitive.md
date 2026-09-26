@@ -2,8 +2,6 @@
 - [g1] schema.missing field=sceneId saw=undefined rule=絕對唔可以喺 JSON 頂層 key 前面加斜線、空格或冒號。sceneId 必須係純 key "sceneId"。每次交稿前逐字檢查頂層 JSON 結構。 hits=2 status=proven src=SC-0912-78N8
 - [g4] machine.func field=loadBaseCast saw=undefined rule=Avoid calling import_keyframe_prompt.loadBaseCast directly; the function reference is broken in the current environment. hits=1 status=trial src=SC-0915-LD0F
 - [g5] machine.auth field=job_error saw=password rule=Ensure SSH password env vars are set before running scp routes. hits=1 status=trial src=SC-0915-LD0F
-- [g7] schema.missing field=blockout.figure saw=Ymin=154 rule=Ensure figures are placed within the specified Y range for mark A to avoid 'no figure at mark A' errors. hits=1 status=trial src=SC-0919-WR1Q
-- [g9] machine.thin field=prompt_length saw=140 rule=If packet length is 140, pad to min 150 chars to avoid prompt_too_thin rejection. hits=1 status=trial src=SC-0919-WR1Q
 - [g10] machine.check field=angle_board saw=PASS_UNCONFIRMED rule=If angle board cells show PASS_UNCONFIRMED, ensure explicit confirmation to GREEN before proceeding. hits=1 status=trial src=SC-0922-WGTT
 - [g11] machine.dep field=job_error saw=12050 rule=TBB_INTERFACE_VERSION 12050 is too low for numba/rembg; update TBB to version 2021 update 6 or later. hits=1 status=trial src=SC-0923-LM1L
 - [g12] machine.parse field=job_error saw=empty rule=若 job 報 empty json，強制輸出純 raw JSON，禁 markdown 代碼塊或前言，避免 parser 截斷。確保頂層係 object 而非 array。 hits=3 status=trial src=SC-0923-LM1L
@@ -20,3 +18,6 @@
 - [g23] schema.max field=shot_count saw=11 rule=確保 shot_count 參數永遠唔超過 8，避免 H3MultishotSampler 驗證失敗。 hits=1 status=trial src=SC-0924-BP5S
 - [g24] machine.sync field=shot.audio saw=0.100000s rule=若 shot audio 時長遠短於 video locked 時長，檢查 audio 生成是否成功，避免 silent 或截斷導致 concat gate 失敗。 hits=1 status=trial src=SC-0924-BP5S
 - [g25] machine.sync field=job_error saw=577 rule=Concat gate 報 frame mismatch 時，檢查 video 總 frame 數是否等於 audio snap 長度，確保音視頻時長嚴格同步。 hits=1 status=trial src=SC-0924-BP5S
+- [g26] machine.thin field=packet.weave saw=148 rule=若 job 報 prompt_too_thin 且 weave 詞數為 148，必須 enrich 內容至最少 150 詞，嚴禁無意義 padding。 hits=1 status=trial src=SC-0924-BP5S
+- [g27] schema.action field=beats.action saw=樽身冷凝水滴落桌面 rule=Action 必須包含明確動詞，嚴禁純現象描述。 hits=1 status=trial src=SC-0924-BP5S
+- [g28] schema.missing field=job_error.scale_missing saw=兩米盒 rule=Scale_missing 時嚴禁假設尺寸如兩米盒，必須確認來源。 hits=1 status=trial src=SC-0924-BP5S

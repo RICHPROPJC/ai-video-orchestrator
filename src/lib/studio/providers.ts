@@ -43,9 +43,14 @@ export async function ttsHttp(opts: {
 
 export async function senseVoiceHttp(audioFile: string): Promise<Partial<SoundQc> | null> {
   const cfg = loadConfig();
-  if (!cfg.soundQc.endpoint) return null;
-  const b64 = fs.readFileSync(audioFile).toString("base64");
-  const res = await postJson(cfg.soundQc.endpoint, { audio_b64: b64, language: "auto" }, apiKey());
+  const base = cfg.soundQc.endpoint.replace(/\/$/, "");
+  if (!base) return null;
+  const url = base.endsWith("/asr") ? base : `${base}/asr`;
+  const form = new FormData();
+  form.append("audio", new File([new Uint8Array(fs.readFileSync(audioFile))], path.basename(audioFile), { type: "audio/wav" }));
+  form.append("language", "zh");
+  const res = await fetch(url, { method: "POST", body: form, signal: AbortSignal.timeout(120_000) });
+  if (!res.ok) throw new Error(`SenseVoice /asr HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const json = (await res.json()) as {
     text?: string;
     emotion?: string;

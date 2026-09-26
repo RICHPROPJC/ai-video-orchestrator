@@ -20,10 +20,15 @@ export function planStoryWorld(
   shots: { id: string; lensMm: number; size: string; location?: string; heldPropId?: string }[],
 ): WorldPlan {
   const scaled = resolveScales(pieces);
+  // A world that lost every piece to a missing size is not a success. Fail
+  // with the exact missing items instead of writing an empty story.blend.
   if ("missing" in scaled) {
-    throw new Error(`scale_missing: ${scaled.missing.join("；")}。要一條尺寸或者一句已確認比例，唔好用兩米盒。`);
+    throw new Error(`world_scale_missing: ${scaled.missing.join("；")}。要一條有來源嘅尺寸（metric 實測或 art_direction 場景單位比例）先入世界。`);
   }
-  const placed = placeWorld(pieces, scaled.ok);
+  const ok = scaled.ok;
+  const sizedIds = new Set(ok.map((row) => row.id));
+  const kept = pieces.filter((piece) => sizedIds.has(piece.id));
+  const placed = placeWorld(kept, ok);
   return { pieces: placed, shots: shots.map((shot) => aimShot(shot, placed)) };
 }
 

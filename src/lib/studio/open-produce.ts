@@ -7,10 +7,7 @@ import type { FleetGate } from "./fleet";
 export const UNTIL_GATES: NonNullable<ProduceInput["until"]>[] = ["boards", "blockout", "stills", "motion"];
 export const GRAPH_VARIANTS: NonNullable<ProduceInput["graphVariant"]>[] = ["a", "b", "bkf", "c"];
 
-export function fleetGateOf(until: ProduceInput["until"]): FleetGate {
-  if (until === "boards" || until === "blockout") return "boards";
-  if (until === "stills") return "stills";
-  if (until === "motion") return "motion";
+export function fleetGateOf(_until: ProduceInput["until"]): FleetGate {
   return "full";
 }
 

@@ -174,8 +174,8 @@ test("golden replay: frozen trial stream → picks, runners and chain-rule conf 
   assert.ok(content.includes("SH01 C13"), "gold carries the raw text for the mock");
   const mock = trialFetch(raw, content);
   const shots: MotionShotLine[] = [
-    { id: "SH01", heading: "FULL / 地下室檔案室：拳腳收勢", action: "沈北辰企定打出兩記右直拳，轉身起左腳側踢，落地收勢。", durationSec: 4.82 },
-    { id: "SH02", heading: "MEDIUM / 地下室檔案室：收拳定神", action: "沈北辰行前兩步停低，收拳定神。", durationSec: 4.82 },
+    { id: "SH01", heading: "FULL / 地下室檔案室：拳腳收勢", action: "企定打出兩記右直拳，轉身起左腳側踢，落地收勢。", durationSec: 4.82 },
+    { id: "SH02", heading: "MEDIUM / 地下室檔案室：收拳定神", action: "行前兩步停低，收拳定神。", durationSec: 4.82 },
     { id: "SX1", heading: "MEDIUM / 房間：跪低執嘢", action: "角色蹲低半跪，執起紙條，起身企直。", durationSec: 4.0 },
     { id: "SX2", heading: "FULL / 走廊：跑向門", action: "角色全速跑向門口，接近時減速。", durationSec: 4.0 },
     { id: "SX3", heading: "MEDIUM / 房間：坐低嘆氣", action: "角色拖椅坐低，垂頭嘆氣，坐定。", durationSec: 4.0 },
@@ -439,43 +439,29 @@ test("F4 dry-run: SC-0921-9V4Y callsheet → selection.json (SH01=111_19 auto, S
 
 // ---- MULTISHOT_WIRE_0921: cross-shot scheduling ---------------------------
 
-test("motionSegments: martial/run anchor C-form, simple runs stay separate identity-only multishot", () => {
-  const segs = motionSegments([
-    { id: "SH01", action: "沈北辰打出兩記右直拳，轉身起左腳側踢" }, // martial
-    { id: "SH02", action: "行前兩步停低，收拳定神" }, // simple walk
-    { id: "SH03", action: "拖椅坐低嘆氣" }, // simple sit
-    { id: "SH04", action: "全速跑向門口" }, // run
-    { id: "SH05", action: "企定望前" }, // simple stand
-  ]);
-  assert.deepEqual(segs, [
+test("motionSegments: each shot is C-form so the Blender video can enter ref_videos", () => {
+  assert.deepEqual(motionSegments([
+    { id: "SH01", action: "打出兩記右直拳，轉身起左腳側踢" },
+    { id: "SH02", action: "行前兩步停低，收拳定神" },
+    { id: "SH03", action: "拖椅坐低嘆氣" },
+    { id: "SH04", action: "全速跑向門口" },
+    { id: "SH05", action: "企定望前" },
+  ]), [
     { kind: "cform", anchor: "SH01", chain: [] },
-    { kind: "multishot", shots: ["SH02", "SH03"] },
+    { kind: "cform", anchor: "SH02", chain: [] },
+    { kind: "cform", anchor: "SH03", chain: [] },
     { kind: "cform", anchor: "SH04", chain: [] },
-    { kind: "multishot", shots: ["SH05"] },
-  ]);
-  // leading run of simples (no anchor before them) = ONE standalone multishot
-  const lead = motionSegments([
-    { id: "SA", action: "行前兩步停低" },
-    { id: "SB", action: "坐低嘆氣" },
-    { id: "SC", action: "打出兩拳" },
-  ]);
-  assert.deepEqual(lead, [
-    { kind: "multishot", shots: ["SA", "SB"] },
-    { kind: "cform", anchor: "SC", chain: [] },
-  ]);
-  // single shot slate keeps the plain C-form path (no manifest, no chain)
-  assert.deepEqual(motionSegments([{ id: "SOLO", action: "打出兩拳" }]), [
-    { kind: "cform", anchor: "SOLO", chain: [] },
+    { kind: "cform", anchor: "SH05", chain: [] },
   ]);
   assert.deepEqual(motionSegments([{ id: "SOLO", action: "行兩步" }]), [
-    { kind: "multishot", shots: ["SOLO"] },
+    { kind: "cform", anchor: "SOLO", chain: [] },
   ]);
 });
 
 test("snapFramesPerShot: 17k+5 grid rounds upward (4.82s → 124)", () => {
   assert.equal(snapFramesPerShot(4.82), 124);
   assert.equal(snapFramesPerShot(4.0), 107); // 96 → 6×17
-  assert.throws(() => snapFramesPerShot(0.5), /h3_grid/);
+  assert.equal(snapFramesPerShot(0.5), 56); // under kMin generates at the H3 floor
 });
 
 test("msGridFrames: multishot delivers on the 17k+5 grid (119 → 124, run5 live)", () => {

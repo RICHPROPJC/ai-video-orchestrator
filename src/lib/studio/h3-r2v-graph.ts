@@ -245,20 +245,14 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       `graph_size_invalid: ${width}x${height} — H3 canvas needs two /32 ints in 32–4096 (node1 object_info step 32)`,
     );
   }
-  // §5b (CHAU_FULL_FLOW_LAW, E2E SC-0921-9V4Y six-way A/B): H3Keyframes ×
-  // <Video 1> coexistence is a model-level fight — 4/8/20 steps all failed
-  // (double exposure / identity morph). The Video 1 asset is THE routing
-  // field: present → C-form (zero keyframes, ref_image_0 = angle portrait),
-  // absent → A-form still-to-video (H3Keyframes 0%/100%). Refuse to emit the
-  // dead coexistence shape — same refuse-to-emit family as prompt_too_thin.
+  // 鍵格同參考片可以一齊入。冇寫百分比就同時塞鍵格檔同走位片，先拒。
+  // 灰模片只入 ref_videos，唔當鍵格。
   const hasVideo1 = Boolean(opts.blockoutName);
   const positions = opts.keyframePositions?.trim() ?? "";
   if (!positions && hasVideo1 && (opts.kfStartName || opts.kfEndName || opts.kfExtraNames?.length)) {
     throw new Error(
-      `keyframes_video1_coexist: <Video 1> (${opts.blockoutName}) and H3Keyframes ` +
-        `(${opts.kfStartName ?? ""}${opts.kfEndName ? " + kf_end" : ""}) cannot ride one graph — ` +
-        `model-level double exposure (§5b, E2E SC-0921-9V4Y 4/8/20步全滅); ` +
-        `Video 1 in → C-form zero keyframes, keyframes in → no Video 1`,
+      `keyframes_video1_coexist: 冇寫 positions 就同時有走位片 (${opts.blockoutName}) 同鍵格檔 ` +
+        `(${opts.kfStartName ?? ""}${opts.kfEndName ? " + kf_end" : ""})`,
     );
   }
   // MULTISHOT_WIRE: the two cross-shot shapes are exclusive with everything
@@ -445,9 +439,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     },
   };
   let condOut: [string, number] = ["cond_cs", 0];
-  // keyframes lane: BKF/C alternates plus A-form (variant a WITHOUT Video 1 —
-  // §5b: the H3Keyframes lane belongs to still-to-video; a Video 1 shot is
-  // C-form and never wires keyframes).
+  // 寫咗 positions 就釘鍵格，有冇走位片都釘。冇走位片、冇 positions 先用兩端 still。
   const keyform = Boolean(positions) || variant === "bkf" || variant === "c" || (variant === "a" && !hasVideo1);
   if (keyform) {
     if (!opts.kfStartName) throw new Error("keyframes require kfStartName");
@@ -462,11 +454,11 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       image_1: ["kf_start_in", 0],
     };
     if (positions) {
-      const files = [opts.kfStartName, ...(opts.kfEndName ? [opts.kfEndName] : []), ...(opts.kfExtraNames ?? [])];
-      const marks = positions.split(/[,，]/).map((p) => p.trim());
-      const values = marks.map((p) => /^\d+(?:\.\d+)?%$/.test(p) ? Number(p.slice(0, -1)) : NaN);
-      if (marks.length !== files.length || values.some((v, i) => !Number.isFinite(v) || v < 0 || v > 100 || (i > 0 && v <= values[i - 1]!))) {
-        throw new Error("keyframe_positions_invalid: one increasing percentage in 0–100% per image required");
+      const files = [opts.kfStartName, ...(opts.kfEndName ? [opts.kfEndName] : []), ...(opts.kfExtraNames ?? [])].filter((name): name is string => Boolean(name));
+      const marks = positions.split(/[,，]/).map((p) => p.trim()).filter(Boolean);
+      const token = /^(?:\d+(?:\.\d+)?%|\d+|\d+(?:\.\d+)?%-\d+(?:\.\d+)?%|\d+-\d+)$/;
+      if (!files.length || !marks.length || marks.some((p) => !token.test(p))) {
+        throw new Error("keyframe_positions_invalid: each mark must be a percentage, a frame index, or a range");
       }
       kfInputs.positions = marks.join(", ");
       let batch: [string, number] | undefined;

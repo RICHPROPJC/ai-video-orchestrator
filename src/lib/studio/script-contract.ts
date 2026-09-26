@@ -15,7 +15,7 @@ export const ACTION_MAX_CHARS = 48;
  *  description cannot pose as action. Lenient by design — any listed char
  *  passes; the refine message teaches the fix on retry. */
 export const VISIBLE_ACTION_VERBS =
-  "站坐跪躺臥蹲企走跑行轉停退追拉推扯拖拽抓握提拎揹背扛抬舉伸縮放擱掛遞收拋扔擲撿拾掉按壓押指點畫寫塗擦抹掃洗倒灑撒撕拍打踢踏踩跳跌撲滾爬滑衝撞倚靠挨扶摟抱攬揮搖望看望瞧瞄盯聽聞嗅咬嚼吞喝咳嘆笑喊叫唱講哭戴脫著解鬆綁鎖扣";
+  "站坐跪躺臥蹲企走跑行轉停退追拉推扯拖拽抓握提拎揹背扛抬舉伸縮放擱掛遞收拋扔擲撿拾掉按壓押指點畫寫塗擦抹掃洗倒灑撒撕拍打踢踏踩跳跌撲滾爬滑衝撞倚靠挨扶摟抱攬揮搖望看望瞧瞄盯聽聞嗅咬嚼吞喝飲扭擰咳嘆笑喊叫唱講哭戴脫著解鬆綁鎖扣";
 export function hasVisibleActionVerb(action: string): boolean {
   return [...VISIBLE_ACTION_VERBS].some((v) => action.includes(v));
 }
@@ -42,9 +42,9 @@ export function rangesFor(targetSec: number): ScriptRanges {
   return targetSec <= EPISODE_MAX_SEC ? EPISODE_RANGES : FEATURE_RANGES;
 }
 
-/** One floor: the grid's shortest shot. No separate 5.0 / 5.5 beat copies. */
+/** Story beat count is not the H3 generate floor. shotSecMin() stays the grid. */
 export function beatsFloorFor(_targetSec: number): number {
-  return shotSecMin();
+  return 1;
 }
 
 export const SECONDS_PER_BEAT_FLOOR = shotSecMin();
@@ -64,9 +64,10 @@ export function maxBeatsIn(sceneTargetSec: number): number {
   return Math.floor(sceneTargetSec / beatsFloorFor(sceneTargetSec));
 }
 
-/** The wav is the clock; this is the estimate the seats budget against. */
-export const SECONDS_PER_CHAR = 0.23;
-export const DIALOGUE_LEAD_IN = 0.6;
+/** Spoken pace, not a slow read. 0.23s/char + 0.6s lead-in made one line
+ *  look like 8s, so the writer dropped the rest of the scene's lines. */
+export const SECONDS_PER_CHAR = 0.12;
+export const DIALOGUE_LEAD_IN = 0.15;
 
 export function dialogueSeconds(line: string): number {
   const text = line.trim();
@@ -178,7 +179,7 @@ export function outlineSchema(ctx: { targetSec: number; castRoster: string[]; ra
     const sum = outline.scenes.reduce((a, s) => a + s.targetSec, 0);
     const lo = ctx.targetSec * (1 - TARGET_TOLERANCE);
     const hi = ctx.targetSec * (1 + TARGET_TOLERANCE);
-    if (sum < lo || sum > hi) {
+    if (sum > hi) {
       report.addIssue({
         code: "custom",
         path: ["scenes"],

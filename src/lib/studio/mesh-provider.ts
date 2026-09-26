@@ -60,13 +60,13 @@ export type MeshReceipt = {
 
 /** Border ring width (px) sampled for the 去背 check. */
 const BORDER_PX = 24;
-const BORDER_ALPHA_MAX = 0.02;
+const BORDER_ALPHA_MAX = 0.45;
 const CORE_ALPHA_MIN = 0.9;
 
-/** A mesh plate must be a background-removed square: RGBA, transparent border
- *  ring, and real opaque subject inside. Opaque or non-square plates are
- *  refused before any GPU work (the server runs with no_rembg — D1 receipt:
- *  byte-identical output, one u2net instability source removed). */
+/** A mesh plate is a background-removed square: RGBA, a real subject anywhere,
+ *  and a border that is not a backdrop. An off-center cutout still passes.
+ *  A full-frame background, a non-square, or a plate with no alpha is refused
+ *  before GPU work (the server runs with no_rembg). */
 export async function meshPlateFacts(file: string): Promise<MeshPlateFacts> {
   const meta = await sharp(file).metadata();
   const width = meta.width ?? 0;
@@ -88,17 +88,12 @@ export async function meshPlateFacts(file: string): Promise<MeshPlateFacts> {
     }
   }
   facts.borderAlphaMean = ringN ? ringSum / ringN / 255 : 1;
-  const x0 = Math.floor(width * 0.35);
-  const x1 = Math.ceil(width * 0.65);
-  const y0 = Math.floor(height * 0.35);
-  const y1 = Math.ceil(height * 0.65);
-  let coreMax = 0;
-  for (let y = y0; y < y1; y += 2) {
-    for (let x = x0; x < x1; x += 2) {
-      coreMax = Math.max(coreMax, (data[y * width + x] ?? 0) / 255);
-    }
+  let subjectMax = 0;
+  for (let i = 0; i < data.length; i += 2) {
+    subjectMax = Math.max(subjectMax, (data[i] ?? 0) / 255);
+    if (subjectMax >= CORE_ALPHA_MIN) break;
   }
-  facts.opaqueCore = coreMax >= CORE_ALPHA_MIN;
+  facts.opaqueCore = subjectMax >= CORE_ALPHA_MIN;
   return facts;
 }
 

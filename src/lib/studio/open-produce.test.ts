@@ -17,11 +17,11 @@ test("refuseProduce: scene, until, graph, drama stills, guojia full slate", () =
   assert.equal(refuseProduce(base), null);
 });
 
-test("fleet gate follows the until stop", () => {
-  assert.equal(fleetGateOf("boards"), "boards");
-  assert.equal(fleetGateOf("blockout"), "boards");
-  assert.equal(fleetGateOf("stills"), "stills");
-  assert.equal(fleetGateOf("motion"), "motion");
+test("fleet gate stays full because the chain does not stop at until", () => {
+  assert.equal(fleetGateOf("boards"), "full");
+  assert.equal(fleetGateOf("blockout"), "full");
+  assert.equal(fleetGateOf("stills"), "full");
+  assert.equal(fleetGateOf("motion"), "full");
   assert.equal(fleetGateOf(undefined), "full");
 });
 

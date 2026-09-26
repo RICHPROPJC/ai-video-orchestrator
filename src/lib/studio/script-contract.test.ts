@@ -85,10 +85,9 @@ test("outlineSchema at 300s accepts 5 scenes summing to 300", () => {
   assert.equal(five.success, true, JSON.stringify(five.success ? null : five.error!.issues));
 });
 
-test("outlineSchema at 300s keeps the existing ±10% sum band (270–330)", () => {
+test("outlineSchema at 300s rejects an over-sum, and does not force a short story up to the band", () => {
   const under = outlineSchema({ targetSec: 300, castRoster: [], ranges: rangesFor(300) }).safeParse(outlineWith(5, 300, 50));
-  assert.equal(under.success, false);
-  assert.match(under.error!.issues.map((i) => i.message).join(" "), /sums to 250\.0s; the slate wants 300s \(allowed 270–330s\)/);
+  assert.equal(under.success, true, JSON.stringify(under.success ? null : under.error!.issues));
 
   const over = outlineSchema({ targetSec: 300, castRoster: [], ranges: rangesFor(300) }).safeParse(outlineWith(5, 300, 70));
   assert.equal(over.success, false);
@@ -137,10 +136,10 @@ test("short slates are not forced to one scene; episode and feature bands stay",
   assert.equal(rangesFor(361), FEATURE_RANGES);
 });
 
-test("beat ceiling follows the grid floor, not a 5s copy", () => {
-  assert.equal(maxBeatsIn(16), 6);
-  assert.equal(maxBeatsIn(30), 12);
-  assert.equal(maxBeatsIn(24), 10);
+test("beat ceiling is one beat per story second, not the H3 grid floor", () => {
+  assert.equal(maxBeatsIn(16), 16);
+  assert.equal(maxBeatsIn(30), 30);
+  assert.equal(maxBeatsIn(24), 24);
   const schema = sceneBeatsSchema({ sceneId: "SC01", speakingNames: [], targetSec: 16 });
   const beatsOf = (n: number) => ({
     sceneId: "SC01",
@@ -152,7 +151,8 @@ test("beat ceiling follows the grid floor, not a 5s copy", () => {
   });
   assert.equal(schema.safeParse(beatsOf(3)).success, true, JSON.stringify(schema.safeParse(beatsOf(3)).success ? null : schema.safeParse(beatsOf(3)).error!.issues));
   assert.equal(schema.safeParse(beatsOf(1)).success, true);
-  assert.equal(schema.safeParse(beatsOf(7)).success, false, "16s holds at most 6 beats on the grid floor");
+  assert.equal(schema.safeParse(beatsOf(7)).success, true);
+  assert.equal(schema.safeParse(beatsOf(17)).success, false, "16s holds at most one beat per second");
 });
 
 test("a 16s outline may be one scene or two; it is not locked to exactly one", () => {

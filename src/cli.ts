@@ -50,9 +50,7 @@ Flags
   --steps <n>           測試用 H3 steps 覆寫（默認 4）
   --drama <id>          劇目 id → projects/<id>/（例：guojia-lingdaoren）
   --episode EP01        集號（EP01…EP10）
-  --until boards|blockout|stills|motion 早停閘：boards＝劇本同分鏡出齊即停（status boarded，唔使 wav）；
-                        blockout＝灰塊走位+f0 即停（唔使 pictureQc）；
-                        stills＝photo QC GREEN 即停（stills-ready）；motion＝H3 落片即停
+  --until boards|blockout|stills|motion 唔再中途停。分鏡交走位，走位交靜畫，靜畫交生片，生片交聲同鎖。
   --scene SCxx          淨係燒呢一場嘅 H3（一場一 hop）；唔加＝出齊全部鏡（原有行為）
   --shot SHxx           由呢鏡同後面受影響嘅鏡重做；前面 GREEN 保留
   --resume <slate>      接返舊 slate：callsheet 照舊，過咗閘嘅 blockout／keyframe／片唔重做
@@ -153,14 +151,10 @@ async function produce(brief: string, tui: boolean) {
   if (done?.outputs.pictureLock) {
     console.log(`  LOCK   ${path.join(process.cwd(), "data/jobs", id, done.outputs.pictureLock)}`);
   }
-  if (done?.status === "boarded") {
-    console.log(`  SHEET  ${path.join(process.cwd(), "data/jobs", id, "callsheet.json")}`);
-    console.log(`  NEXT   落好 wav 之後：produce "" --resume ${id} --wav-dir <dir>`);
+  if (done?.error) {
+    console.log(`  ERROR  ${done.error}`);
+    process.exitCode = 1;
   }
-  if (done?.status === "stills-ready") {
-    console.log(`  STILLS ${path.join(process.cwd(), "data/jobs", id, "stills")}`);
-  }
-  if (done?.error) process.exitCode = 1;
 }
 
 async function main() {

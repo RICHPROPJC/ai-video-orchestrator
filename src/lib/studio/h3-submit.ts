@@ -71,9 +71,20 @@ export type H3SubmitReceipt = {
     ms_voice: string | null;
     ms_start: string | null;
   };
-  output?: { filename: string; subfolder?: string; bytes: number };
+  output?: { filename: string; subfolder?: string; bytes: number; sha256?: string };
+  /** Local files this receipt was built from. Absent on older receipts. */
+  sources?: { role: string; path: string; sha256: string }[];
   graph: unknown;
 };
+
+function fileSha(file: string): string {
+  return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+}
+
+function sourceOf(role: string, file?: string | null): { role: string; path: string; sha256: string } | null {
+  if (!file || !fs.existsSync(file)) return null;
+  return { role, path: file, sha256: fileSha(file) };
+}
 
 function writeReceipt(file: string, record: H3SubmitReceipt): string {
   // a real-render receipt is never clobbered by a dry-run one: only a file
@@ -198,14 +209,12 @@ export async function submitH3Shot(opts: {
   if (isMultishot && variant !== "a") {
     throw new Error("multishot runs on the production path only (variant a)");
   }
-  // §5b refuse-to-emit: keyframe stills handed in together with a Video 1 are
-  // the dead coexistence shape — unless this shot wrote its own positions string.
+  // 有 positions 就可以同走位片一齊出。冇寫 positions 先唔好同時塞鍵格檔。
   const freePositions = opts.keyframePositions?.trim() ?? "";
   if (!freePositions && cform && (opts.kfStart || opts.kfEnd || opts.kfExtraFiles?.length)) {
     throw new Error(
-      `keyframes_video1_coexist: ${opts.shot ?? "shot"} carries a Video 1 (${opts.blockoutMp4}) AND keyframe stills ` +
-        `(${opts.kfStart ?? ""}${opts.kfEnd ? " + kfEnd" : ""}) — §5b model-level double exposure; ` +
-        `Video 1 in → C-form zero keyframes, keyframes in → no blockout`,
+      `keyframes_video1_coexist: 冇寫 positions 就同時有走位片 (${opts.blockoutMp4}) 同鍵格檔 ` +
+        `(${opts.kfStart ?? ""}${opts.kfEnd ? " + kfEnd" : ""})`,
     );
   }
   if ((opts.uiPhotoFiles?.length ?? 0) > 0 && variant !== "a") {
@@ -525,7 +534,16 @@ export async function submitH3Shot(opts: {
       ms_voice: uploadedMsVoice,
       ms_start: uploadedMsStart,
     },
-    output: { filename: item.filename, subfolder: item.subfolder, bytes: fs.statSync(opts.outMp4).size },
+    output: { filename: item.filename, subfolder: item.subfolder, bytes: fs.statSync(opts.outMp4).size, sha256: fileSha(opts.outMp4) },
+    sources: [
+      sourceOf("wav", opts.wavFile),
+      sourceOf("blockout", opts.blockoutMp4),
+      sourceOf("kf_start", opts.kfStart),
+      sourceOf("kf_end", opts.kfEnd),
+      ...(opts.kfExtraFiles ?? []).map((file, i) => sourceOf(`kf_extra_${i}`, file)),
+      ...(opts.refImageFiles ?? []).map((file, i) => sourceOf(`ref_image_${i}`, file)),
+      sourceOf("audio_timing", opts.audioTimingFile),
+    ].filter((row): row is { role: string; path: string; sha256: string } => Boolean(row)),
     graph,
   };
   return { receipt, receiptFile: writeReceipt(opts.receiptJson, receipt) };

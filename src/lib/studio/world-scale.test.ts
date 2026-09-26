@@ -8,38 +8,38 @@ const pieces: WorldPiece[] = [
   { id: "樽", role: "prop", glb: "bottle.glb", heldBy: "A" },
 ];
 
-test("resolveScales: 冇寫尺寸就跟唯一角色 heightM", () => {
+test("resolveScales: heightM is puppet proportion and is not world meters", () => {
   const got = resolveScales(pieces);
-  assert.ok("ok" in got);
-  if ("ok" in got) {
-    assert.equal(got.ok.find((r) => r.id === "木檯")!.meters, 1.6);
-    assert.equal(got.ok.find((r) => r.id === "樽")!.meters, 1.6 * 0.25);
+  assert.ok("missing" in got);
+  if ("missing" in got) {
+    assert.match(got.missing.join(" "), /人偶比例/);
   }
 });
 
-test("resolveScales: a confirmed proportion uses that character heightM", () => {
+test("resolveScales: a confirmed proportion uses sourced character size, not heightM", () => {
   const got = resolveScales([
-    pieces[0]!,
-    { ...pieces[1]!, proportion: { of: "A", at: "waist", source: "檯面到阿檸腰" } },
+    { ...pieces[0]!, sizeM: 1.7, sizeSource: "人高 1.7m" },
+    { ...pieces[1]!, proportion: { of: "A", at: "waist", source: "檯面到腰" } },
     { ...pieces[2]!, sizeM: 0.3, sizeSource: "樽高 30cm" },
   ]);
   assert.ok("ok" in got);
   if ("ok" in got) {
-    assert.equal(got.ok.find((r) => r.id === "木檯")!.meters, 1.6 * 0.55);
+    assert.equal(got.ok.find((r) => r.id === "木檯")!.meters, 1.7 * 0.55);
     assert.equal(got.ok.find((r) => r.id === "樽")!.evidence, "樽高 30cm");
+    assert.equal(got.ok.find((r) => r.id === "A")!.meters, 1.7);
   }
 });
 
 test("placeWorld + aimShot: bottle is held, camera looks at it, not at callsheet xyz", () => {
   const scaled = resolveScales([
-    pieces[0]!,
+    { ...pieces[0]!, sizeM: 1.7, sizeSource: "人高 1.7m" },
     { ...pieces[1]!, sizeM: 0.8, sizeSource: "檯高 80cm" },
     { ...pieces[2]!, sizeM: 0.3, sizeSource: "樽高 30cm" },
   ]);
   assert.ok("ok" in scaled);
   if (!("ok" in scaled)) return;
   const placed = placeWorld([
-    pieces[0]!,
+    { ...pieces[0]!, sizeM: 1.7, sizeSource: "人高 1.7m" },
     { ...pieces[1]!, sizeM: 0.8, sizeSource: "檯高 80cm" },
     { ...pieces[2]!, sizeM: 0.3, sizeSource: "樽高 30cm" },
   ], scaled.ok);

@@ -153,6 +153,35 @@ test("pinVideoQcAccepted: GREEN + sha match", () => {
   assert.equal(pinVideoQcAccepted(dir, "SH01"), true);
 });
 
+test("pinVideoQcAccepted: multishot slice binds parent hash, range, and shot", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-vqc-slice-"));
+  const parent = path.join(dir, "SH01-SH02.mp4");
+  const slice = path.join(dir, "SH02.qc.mp4");
+  fs.writeFileSync(parent, Buffer.from("parent-take"));
+  fs.writeFileSync(slice, Buffer.from("slice-sh02"));
+  const parentSha = crypto.createHash("sha256").update(Buffer.from("parent-take")).digest("hex");
+  const sliceSha = crypto.createHash("sha256").update(Buffer.from("slice-sh02")).digest("hex");
+  const write = (extra: Record<string, unknown>) => {
+    fs.writeFileSync(path.join(dir, "SH02.video_qc.json"), JSON.stringify({
+      tool: "slatecrew.video_qc",
+      status: "GREEN",
+      video: slice,
+      sha256: sliceSha,
+      require: WIST_REQUIRE,
+      parent: { file: parent, sha256: parentSha, shotId: "SH02", start: 73, len: 73 },
+      ...extra,
+    }));
+  };
+  write({});
+  assert.equal(pinVideoQcAccepted(dir, "SH02"), true);
+  write({ status: "FAIL" });
+  assert.equal(pinVideoQcAccepted(dir, "SH02"), false);
+  write({ parent: { file: parent, sha256: "deadbeef", shotId: "SH02", start: 73, len: 73 } });
+  assert.equal(pinVideoQcAccepted(dir, "SH02"), false);
+  write({ parent: { file: parent, sha256: parentSha, shotId: "SH01", start: 73, len: 73 } });
+  assert.equal(pinVideoQcAccepted(dir, "SH02"), false);
+});
+
 test("pinVideoQcAccepted: FAIL or missing qc is false", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-vqc-pin2-"));
   fs.writeFileSync(path.join(dir, "SH01.mp4"), Buffer.from("x"));

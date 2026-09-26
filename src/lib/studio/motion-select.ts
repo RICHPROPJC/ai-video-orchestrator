@@ -779,32 +779,10 @@ export type MotionSegment =
  *  the node) */
   | { kind: "multishot"; shots: string[] };
 
-/** Motion-heavy shots stay solo C-form. Simple runs use separate identity-only
- * multishot calls, including runs following a C-form shot. */
+/** Every shot is its own C-form. The Blender mp4 goes in ref_videos.
+ *  H3MultishotSampler has no video socket, so it is not the render. */
 export function motionSegments(shots: { id: string; action: string }[]): MotionSegment[] {
-  const heavy = (action: string) => {
-    const fams = familiesForAction(action);
-    return fams.includes("martial") || fams.includes("run");
-  };
-  const out: MotionSegment[] = [];
-  let pendingSimple: string[] = [];
-  const flushSimple = () => {
-    while (pendingSimple.length) {
-      out.push({ kind: "multishot", shots: pendingSimple.slice(0, 8) });
-      pendingSimple = pendingSimple.slice(8);
-    }
-  };
-  for (const shot of shots) {
-    if (heavy(shot.action)) {
-      flushSimple();
-      out.push({ kind: "cform", anchor: shot.id, chain: [] });
-    } else {
-      pendingSimple.push(shot.id);
-    }
-  }
-  flushSimple();
-  // an anchor with no followers is a plain single-shot C-form render
-  return out;
+  return shots.map((shot) => ({ kind: "cform", anchor: shot.id, chain: [] }));
 }
 
 /** All submissions use the same upward 17k+5 clock as the concat gate. */
