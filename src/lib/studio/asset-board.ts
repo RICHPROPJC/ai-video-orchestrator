@@ -98,8 +98,37 @@ export function momentsForShot(
   const soda = /汽水|檸檬/.test(named) ? "手上嘅樽係瘦高圓柱玻璃樽，樽入面係黃色有汽泡嘅檸檬汽水。" : "";
   const sit = /坐/.test(body) ? "人坐低，臀部挨住凳，雙腳落地。" : "";
   const squint = /瞇眼/.test(body) ? "眼睛瞇住，嘴角向上笑。" : "";
-  const table = /木檯|枱/.test(`${body}${shot.location ?? ""}`) ? "身前係一張木檯，檯面入鏡。" : "";
-  const mods = `${soda}${sit}${squint}${table}`;
+  // closeup/insert 只見頭部同手上嘅物件——「檯面入鏡」同呢個景別自相矛盾（SH02
+  // 三連 FAIL 病根之一：U1.5 畫咗闊檯面 medium）。中景先至講檯。
+  const table = /木檯|枱/.test(`${body}${shot.location ?? ""}`) && shot.size !== "closeup" && shot.size !== "insert"
+    ? "身前係一張木檯，檯面入鏡。" : "";
+  // props 嘅 shape 係機讀規格，正面寫法入 prompt（W4B：forbid 唔直接寫，用
+  // 「有樽頸同樽蓋」正面規格逼退杯形演繹）、「握喺手中」杜絕「放喺旁邊」。
+  const SHAPE_ZH: Record<string, string> = { glass: "玻璃", long: "瘦高", cylindrical: "圓柱", small: "細", round: "圓形", metal: "金屬" };
+  // 手部規格（0926 Chau 裁「單右手」）：扭蓋＝右手扭左手扶；握/提/舉＝右手單手；
+  // 其餘（指向/拍/抹）＝攞喺右手。唔講「握喺手中」呢類雙手歧義句。
+  const twist = /扭/.test(body);
+  const singleHand = /握|提|舉|拿/.test(body);
+  const hold = twist ? "，右手扭蓋，左手扶實樽身" : singleHand ? "，用右手單手握住" : "，攞喺右手";
+  // 樽蓋狀態連戲：開蓋動作／飲／嘴邊／汽泡／放上檯之後＝冇蓋；未開（淨係握）＝有蓋。
+  // 「到嘴邊」但支樽有蓋係自相矛盾（SH06 三連 FAIL 畫返玻璃杯嘅觸發點）。
+  const capless = /扭|飲|嘴|汽泡|放上|提起|手指|手背|拍/.test(body);
+  const heldProps = (shot.props ?? [])
+    .map((p) => {
+      const shape = ((p as { shape?: string[] }).shape ?? []).map((t) => SHAPE_ZH[t] ?? t);
+      if (!shape.length) return "";
+      if (/蓋/.test(p.name)) return `手上嘅${p.name}係${shape.join("")}蓋，完整入鏡${hold}。`;
+      if (/樽|瓶/.test(p.name)) {
+        const capSpec = capless ? "有樽頸，樽口開咗冇蓋" : "有樽頸同樽蓋";
+        const mouth = /嘴|飲/.test(body) ? "，樽口掂住下唇" : "";
+        return `手上嘅${p.name}係瘦高圓柱形玻璃材質，${capSpec}，成件由底到頂完整入鏡${hold}${mouth}。`;
+      }
+      return `手上嘅${p.name}係${shape.join("")}，完整入鏡${hold}。`;
+    })
+    .join("");
+  const mods = `${heldProps}${soda}${sit}${squint}${table}`;
+  // mods 前補句號——beat 同 mods 黐埋會砌出「玻璃樽樽身身前係」呢類爛句
+  const modsStr = mods ? `。${mods}` : "";
   const written = (shot.keyframePositions ?? "").split(/[,，]/).map((s) => s.trim()).filter(Boolean);
   // Action clauses are the beat list: each clause is its own anchor with its
   // own picture. Written positions only time the beats; they never merge them.
@@ -108,20 +137,20 @@ export function momentsForShot(
     const moments = beats.map((beat, i) => ({
       shotId: shot.id,
       at: written[i] ?? "",
-      text: `${place}${sizeLine}${beat}${mods}`,
+      text: `${place}${sizeLine}${beat}${modsStr}`,
       file: path.join(stillDir, `${shot.id}.kf-${String(i).padStart(2, "0")}.png`),
     }));
     for (let i = beats.length; i < written.length; i += 1) {
       moments.push({
         shotId: shot.id,
         at: written[i]!,
-        text: `${place}${sizeLine}${body}${mods}`,
+        text: `${place}${sizeLine}${body}${modsStr}`,
         file: path.join(stillDir, `${shot.id}.kf-${String(i).padStart(2, "0")}.png`),
       });
     }
     return moments;
   }
-  const text = `${place}${sizeLine}${body}${mods}`;
+  const text = `${place}${sizeLine}${body}${modsStr}`;
   return [{ shotId: shot.id, at: written[0] ?? "", text, file: path.join(stillDir, `${shot.id}.png`) }];
 }
 
