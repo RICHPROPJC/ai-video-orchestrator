@@ -2,18 +2,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runPipeline, describeFloor } from "./lib/studio/pipeline";
-import { newSlateId, writeJob, readJob, listJobs, readEvents, readEpEvents, runningBlocker } from "./lib/studio/store";
+import { readJob, listJobs, readEvents, readEpEvents, failedRecent, failedRecentLines } from "./lib/studio/store";
+import { createSlate, fleetGateOf, resumeSlate as openResume } from "./lib/studio/open-produce";
 import { projectsDir } from "./lib/studio/paths";
 import { loadConfig, setConfigPath } from "./lib/studio/config";
 import { doctor, formatDoctor } from "./lib/studio/doctor";
 import { blockersForGate, formatFleet, gateReady, probeFleet, type FleetGate } from "./lib/studio/fleet";
 import { runTui } from "./lib/studio/tui";
-import type { JobRecord, ProduceInput } from "./lib/studio/types";
-import { SCENE_ID_RE } from "./lib/studio/script-contract";
-
-const UNTIL_GATES: NonNullable<ProduceInput["until"]>[] = ["boards", "blockout", "stills", "motion"];
-const GRAPH_VARIANTS: NonNullable<ProduceInput["graphVariant"]>[] = ["a", "b", "bkf", "c"];
-
+import type { ProduceInput } from "./lib/studio/types";
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(name);
   if (i >= 0 && process.argv[i + 1]) return process.argv[i + 1];
@@ -28,8 +24,9 @@ Commands
   produce "<brief>"          行 log 開工
   frames <job> <shot>        從 motion mp4 抽 QC 帧（首/中/尾 + 每 2s）→ jpg
   events [slate] [--follow]  睇 projects/<ep>/events.jsonl；--follow 點住尾
-  doctor                     探兩部機 / ffmpeg / Blender / H3 nodes
+  doctor                     探兩部機 / SF3D / ffmpeg / Blender / H3 nodes
   fleet                      探每個 config endpoint（/health /v1/models /system_stats）；config ≠ live → RED
+  mesh <plate.png>           去背方塊 → sf3d :8018 → mesh_front.glb＋geometry閘（Blender 5.1.2）
   models                     睇而家用緊邊個 checkpoint
   models set <dot.path> <v>  換模型，例：stills.checkpoint foo.safetensors
   status [slate]
@@ -39,21 +36,23 @@ Commands
 
 Flags
   --duration 12  --aspect 16:9|9:16|1:1  --clone ref.wav  --lang yue
-  --wav-dir <dir>       每鏡 SHxx.wav（可加 spine.wav 全片聲軌）；除 --until boards 外必需
-  --portraits <dir>     角色肖像 A.png/B.png（首次出場 /edit 參考圖）
+  --wav-dir <dir>       每鏡 SHxx.wav（可加 spine.wav 全片聲軌）；缺＝voice 席用 AuK :9882 自動出 VO（要 tts.promptWav／--clone）
+  --portraits <dir>     角色肖像 A.png/B.png（首次出場 /edit 參考圖；45°用A_45.png）
+  --no-motion-select    跳過motion-select（唔叫decider、唔bake mocap，workbench灰模照舊）
   --blockout-dir <dir>  預渲染 blockout SHxx.mp4（864x480 24fps，frames=wav snap）
   --callsheet <json>    載入現成 callsheet，跳過兩張檯（結構唔齊即刻 fail）
   --cast-roster <json>  可出聲角色名單（有聲音檔嘅名），編劇檯只准用呢批名
   --gap <sec>           鏡與鏡之間靜音（默許 0）
   --dry-run             行到 prompt/receipt 為止，唔 POST 任何機
-  --graph-variant a|b|bkf|c  H3 graph（默認 a）；b/bkf/c 唔餵 Video 1
+  --graph-variant a|b|bkf|c  H3 graph（默認 a＝官方路：still 已燒身份＋H3Keyframes 錨）
+                        b/bkf＝documented fallback：角色圖 ref 係官方正路（samples #17/#22/#34），
+                        但 A 路 still 已釘身份——淨係冇 still 釘身份嘅鏡頭先用；c＝verify 實驗位
   --steps <n>           測試用 H3 steps 覆寫（默認 4）
   --drama <id>          劇目 id → projects/<id>/（例：guojia-lingdaoren）
   --episode EP01        集號（EP01…EP10）
-  --until boards|blockout|stills|motion 早停閘：boards＝劇本同分鏡出齊即停（status boarded，唔使 wav）；
-                        blockout＝灰塊走位+f0 即停（唔使 pictureQc）；
-                        stills＝photo QC GREEN 即停（stills-ready）；motion＝H3 落片即停
+  --until boards|blockout|stills|motion 唔再中途停。分鏡交走位，走位交靜畫，靜畫交生片，生片交聲同鎖。
   --scene SCxx          淨係燒呢一場嘅 H3（一場一 hop）；唔加＝出齊全部鏡（原有行為）
+  --shot SHxx           由呢鏡同後面受影響嘅鏡重做；前面 GREEN 保留
   --resume <slate>      接返舊 slate：callsheet 照舊，過咗閘嘅 blockout／keyframe／片唔重做
 
 Rack（two-host truth）
@@ -64,9 +63,13 @@ Rack（two-host truth）
 `);
 }
 
-async function makeJob(brief: string) {
-  const id = newSlateId();
-  const input: ProduceInput = {
+function die(opened: { error: string }): never {
+  console.error(opened.error);
+  process.exit(1);
+}
+
+function makeJob(brief: string) {
+  const opened = createSlate({
     brief,
     durationSec: Number(arg("--duration", "12")),
     aspect: (arg("--aspect", "16:9") as ProduceInput["aspect"]) || "16:9",
@@ -76,123 +79,56 @@ async function makeJob(brief: string) {
     portraitsDir: arg("--portraits"),
     blockoutDir: arg("--blockout-dir"),
     gapSec: Number(arg("--gap", "0")),
+    noMotionSelect: process.argv.includes("--no-motion-select"),
     dryRun: process.argv.includes("--dry-run"),
     until: arg("--until") as ProduceInput["until"],
     scene: arg("--scene"),
+    shot: arg("--shot"),
     callSheetPath: arg("--callsheet"),
     castRosterPath: arg("--cast-roster"),
     graphVariant: (arg("--graph-variant", "a") as ProduceInput["graphVariant"]) || "a",
     steps: process.argv.includes("--steps") ? Number(arg("--steps", "4")) : undefined,
     drama: arg("--drama"),
     episode: arg("--episode"),
-  };
-  if (input.graphVariant && !GRAPH_VARIANTS.includes(input.graphVariant)) {
-    console.error(`--graph-variant 只接受 ${GRAPH_VARIANTS.join(" / ")}`);
-    process.exit(1);
-  }
-  if (input.until && !UNTIL_GATES.includes(input.until)) {
-    console.error(`--until 只接受 ${UNTIL_GATES.join(" / ")}`);
-    process.exit(1);
-  }
-  if (input.scene && !SCENE_ID_RE.test(input.scene)) {
-    console.error("--scene 只接受 SCxx（例：--scene SC01）");
-    process.exit(1);
-  }
-  const job: JobRecord = {
-    id,
-    slate: id,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    status: "queued",
-    input,
-    ...(input.drama ? { drama: input.drama } : {}),
-    ...(input.episode ? { episode: input.episode } : {}),
-    progress: 0,
-    retries: { stills: 0, voice: 0, motion: 0 },
-    outputs: { stills: [], shots: [], blockout: [], receipts: [] },
-  };
-  writeJob(job);
-  return { id, input };
+  });
+  if ("error" in opened) die(opened);
+  return opened;
 }
 
-/** Resume keeps the slate's own brief and clock — only the plug paths and the
- *  stop gate come from this command line. */
 function resumeJob(slate: string) {
-  const job = readJob(slate);
-  if (!job) {
-    console.error(`--resume ${slate}：搵唔到呢份 slate`);
-    process.exit(1);
-  }
-  const input: ProduceInput = {
-    ...job.input,
-    resume: true,
-    wavDir: arg("--wav-dir") ?? job.input.wavDir,
-    portraitsDir: arg("--portraits") ?? job.input.portraitsDir,
-    blockoutDir: arg("--blockout-dir") ?? job.input.blockoutDir,
-    gapSec: process.argv.includes("--gap") ? Number(arg("--gap", "0")) : job.input.gapSec,
+  const opened = openResume(slate, {
+    wavDir: arg("--wav-dir"),
+    portraitsDir: arg("--portraits"),
+    blockoutDir: arg("--blockout-dir"),
+    gapSec: process.argv.includes("--gap") ? Number(arg("--gap", "0")) : undefined,
+    noMotionSelect: process.argv.includes("--no-motion-select"),
     dryRun: process.argv.includes("--dry-run"),
-    until: (arg("--until") as ProduceInput["until"]) ?? undefined,
-    scene: arg("--scene") ?? undefined,
-    graphVariant: arg("--graph-variant")
-      ? (arg("--graph-variant") as ProduceInput["graphVariant"])
-      : job.input.graphVariant,
-    steps: process.argv.includes("--steps") ? Number(arg("--steps", "4")) : job.input.steps,
-  };
-  if (input.graphVariant && !GRAPH_VARIANTS.includes(input.graphVariant)) {
-    console.error(`--graph-variant 只接受 ${GRAPH_VARIANTS.join(" / ")}`);
-    process.exit(1);
-  }
-  if (input.until && !UNTIL_GATES.includes(input.until)) {
-    console.error(`--until 只接受 ${UNTIL_GATES.join(" / ")}`);
-    process.exit(1);
-  }
-  if (input.scene && !SCENE_ID_RE.test(input.scene)) {
-    console.error("--scene 只接受 SCxx（例：--scene SC01）");
-    process.exit(1);
-  }
-  writeJob({ ...job, input, status: "queued", error: undefined, updatedAt: new Date().toISOString() });
-  return { id: job.id, input };
+    until: arg("--until") as ProduceInput["until"],
+    scene: arg("--scene"),
+    shot: arg("--shot"),
+    graphVariant: arg("--graph-variant") ? (arg("--graph-variant") as ProduceInput["graphVariant"]) : undefined,
+    steps: process.argv.includes("--steps") ? Number(arg("--steps", "4")) : undefined,
+    voiceClonePath: arg("--clone"),
+  });
+  if ("error" in opened) die(opened);
+  return opened;
 }
 
 async function produce(brief: string, tui: boolean) {
-  // boards stops before the wav is the clock, so it is the one gate that runs dry
-  if (!arg("--wav-dir") && arg("--until") !== "boards") {
-    console.error('produce/tui 需要 --wav-dir <dir>（每鏡 SHxx.wav，可加 spine.wav）；只出分鏡用 --until boards');
-    process.exit(1);
+  // boards stops before the wav is the clock; without --wav-dir the voice seat
+  // speaks the VO through AuK (pipeline fails loud when tts is not armed)
+  if (!arg("--wav-dir") && arg("--until") !== "boards" && !arg("--clone")) {
+    console.error("提示：無 --wav-dir，voice 席會用 AuK :9882 自動出 VO（要 tts.promptWav 或 --clone ref.wav）");
   }
   const fleet = await probeFleet(loadConfig());
-  const gate: FleetGate =
-    arg("--until") === "boards" || arg("--until") === "blockout"
-      ? "boards"
-      : arg("--until") === "stills"
-        ? "stills"
-        : arg("--until") === "motion"
-          ? "motion"
-          : "full";
+  const gate: FleetGate = fleetGateOf(arg("--until") as ProduceInput["until"]);
   if (!gateReady(fleet, gate)) {
     console.error(formatFleet({ ...fleet, ready: false, blockers: blockersForGate(fleet.rows, gate) }));
     process.exit(1);
   }
-  // serial floor: refuse a second concurrent slate before any job is touched
-  const resumeSlate = arg("--resume");
-  const blocker = runningBlocker(resumeSlate);
-  if (blocker) {
-    console.error(`一次一份：slate ${blocker.id} 仲行緊（running）。等佢完先開新工，或者 --resume ${blocker.id} 接返呢份。`);
-    process.exit(1);
-  }
-  const { id, input } = resumeSlate ? resumeJob(resumeSlate) : await makeJob(brief);
-  if (input.drama && input.until === "stills") {
-    console.error(`劇目 ${input.drama}：唔准 --until stills（stills-ready skip）`);
-    process.exit(1);
-  }
-  if (input.drama === "guojia-lingdaoren" && !input.until && !input.scene && !input.dryRun) {
-    console.error("guojia-lingdaoren：唔准一次 H3 全 slate。用 --scene SC01（一場一 hop）");
-    process.exit(1);
-  }
-  if (input.drama === "guojia-lingdaoren" && input.until === "stills") {
-    console.error("guojia-lingdaoren：唔准 --until stills（stills-ready skip）");
-    process.exit(1);
-  }
+  const resumeId = arg("--resume");
+  for (const line of failedRecentLines(failedRecent())) console.error(line);
+  const { id, input } = resumeId ? resumeJob(resumeId) : makeJob(brief);
   const rack = loadConfig();
   if (!tui || !process.stdout.isTTY) {
     console.log(`\n  SLATE  ${id}`);
@@ -215,14 +151,10 @@ async function produce(brief: string, tui: boolean) {
   if (done?.outputs.pictureLock) {
     console.log(`  LOCK   ${path.join(process.cwd(), "data/jobs", id, done.outputs.pictureLock)}`);
   }
-  if (done?.status === "boarded") {
-    console.log(`  SHEET  ${path.join(process.cwd(), "data/jobs", id, "callsheet.json")}`);
-    console.log(`  NEXT   落好 wav 之後：produce "" --resume ${id} --wav-dir <dir>`);
+  if (done?.error) {
+    console.log(`  ERROR  ${done.error}`);
+    process.exitCode = 1;
   }
-  if (done?.status === "stills-ready") {
-    console.log(`  STILLS ${path.join(process.cwd(), "data/jobs", id, "stills")}`);
-  }
-  if (done?.error) process.exitCode = 1;
 }
 
 async function main() {
@@ -278,6 +210,67 @@ async function main() {
     if (process.argv.includes("--json")) console.log(JSON.stringify(fleet, null, 2));
     else console.log(formatFleet(fleet));
     if (!fleet.ready) process.exitCode = 1;
+  }
+
+  if (cmd === "mesh") {
+    const plate = process.argv[3];
+    const meshClass = arg("--class", "figure");
+    const usage = "mesh <plate.png> [--out dir] [--front-ref png] [--class figure|prop] [--target-height 1.7] [--dry-run]";
+    if (!plate || (meshClass !== "figure" && meshClass !== "prop")) {
+      console.error(usage);
+      process.exitCode = 1;
+      return;
+    }
+    const cfg = loadConfig();
+    const { assertMeshPlate, importMeshCall, sf3dGenerate, sf3dHealth } = await import("./lib/studio/mesh-provider");
+    const outDir = path.resolve(arg("--out") ?? path.join(process.cwd(), "data", "mesh", `${path.basename(plate).replace(/\.png$/i, "")}_${Date.now()}`));
+    if (process.argv.includes("--dry-run")) {
+      const facts = await assertMeshPlate(plate).catch((e: Error) => ({ refused: e.message }));
+      const health = await sf3dHealth(cfg.mesher.endpoint).catch((e: Error) => ({ error: e.message }));
+      console.log(JSON.stringify({ dry_run: true, plate, facts, health, outDir }, null, 2));
+      return;
+    }
+    const receipt = await sf3dGenerate({
+      plate,
+      outDir,
+      endpoint: cfg.mesher.endpoint,
+      frontRef: arg("--front-ref"),
+      textureResolution: cfg.mesher.textureResolution,
+    });
+    if (receipt.status !== "succeeded" || !receipt.mesh_front) {
+      console.error(JSON.stringify(receipt, null, 2));
+      process.exitCode = 1;
+      return;
+    }
+    const targetHeightM = Number(arg("--target-height", String(cfg.mesher.targetHeightM)));
+    const { runMeshGeometryGate } = await import("./lib/studio/mesh-geometry-gate");
+    const verdict = await runMeshGeometryGate({
+      glb: receipt.mesh_front,
+      outDir: path.join(outDir, "gate"),
+      blenderBin: cfg.mesher.blender,
+      targetHeightM,
+      meshClass,
+    });
+    console.log(JSON.stringify({
+      receipt,
+      importCall: importMeshCall({
+        path: receipt.mesh_front,
+        name: "Sf3d" + path.basename(outDir).replace(/[^A-Za-z0-9]/g, ""),
+        targetHeightM,
+      }),
+      gate: {
+        ok: verdict.ok,
+        checks: verdict.checks,
+        metrics: {
+          solidity: verdict.metrics.solidity,
+          thinness: verdict.metrics.thinness,
+          vertices: verdict.metrics.vertices,
+          dimensionsM: verdict.metrics.dimensionsM,
+          preview: verdict.metrics.preview,
+        },
+      },
+    }, null, 2));
+    process.exitCode = verdict.ok ? 0 : 1;
     return;
   }
   if (cmd === "models") {
@@ -343,6 +336,7 @@ async function main() {
   if (cmd === "status") {
     const id = process.argv[3];
     if (!id) {
+      for (const line of failedRecentLines(failedRecent())) console.log(line);
       for (const j of listJobs().slice(0, 8)) {
         console.log(`${j.slate}  ${j.status.padEnd(8)}  ${(j.callSheet?.title ?? j.input.brief).slice(0, 40)}`);
       }

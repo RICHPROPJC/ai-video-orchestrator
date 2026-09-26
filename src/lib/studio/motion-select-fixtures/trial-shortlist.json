@@ -1,0 +1,1094 @@
+{
+ "strategy": "deterministic keyword/category layer over full CMU index -> single-token codes -> ONE Jev call decides all shots; martial family seeded by arm-axis ranking evidence",
+ "caps": {
+  "martial": 34,
+  "walk": 22,
+  "run": 14,
+  "bend_pick": 20,
+  "sit": 18,
+  "stand_idle": 12
+ },
+ "n_candidates": 120,
+ "candidates": [
+  {
+   "family": "martial",
+   "id": "74_06",
+   "bvh": "data/074/74_06.bvh",
+   "category": "kicks and walking on slopes",
+   "desc": "kick",
+   "arm": " [arm-axis mean 20deg, min 10deg, 326f]",
+   "code": "C01"
+  },
+  {
+   "family": "martial",
+   "id": "17_10",
+   "bvh": "data/017/17_10.bvh",
+   "category": "different walking styles",
+   "desc": "boxing",
+   "arm": " [arm-axis mean 22deg, min 1deg, 2784f]",
+   "code": "C02"
+  },
+  {
+   "family": "martial",
+   "id": "143_23",
+   "bvh": "data/143/143_23.bvh",
+   "category": "General Subject Capture",
+   "desc": "Punching",
+   "arm": " [arm-axis mean 22deg, min 1deg, 815f]",
+   "code": "C03"
+  },
+  {
+   "family": "martial",
+   "id": "74_03",
+   "bvh": "data/074/74_03.bvh",
+   "category": "kicks and walking on slopes",
+   "desc": "kick",
+   "arm": " [arm-axis mean 23deg, min 11deg, 397f]",
+   "code": "C04"
+  },
+  {
+   "family": "martial",
+   "id": "14_03",
+   "bvh": "data/014/14_03.bvh",
+   "category": "various everyday behaviors",
+   "desc": "boxing",
+   "arm": " [arm-axis mean 24deg, min 1deg, 5537f]",
+   "code": "C05"
+  },
+  {
+   "family": "martial",
+   "id": "74_04",
+   "bvh": "data/074/74_04.bvh",
+   "category": "kicks and walking on slopes",
+   "desc": "kick",
+   "arm": " [arm-axis mean 25deg, min 13deg, 316f]",
+   "code": "C06"
+  },
+  {
+   "family": "martial",
+   "id": "75_16",
+   "bvh": "data/075/75_16.bvh",
+   "category": "jumps; hopscotch; sits",
+   "desc": "jump kick",
+   "arm": " [arm-axis mean 25deg, min 1deg, 344f]",
+   "code": "C07"
+  },
+  {
+   "family": "martial",
+   "id": "14_01",
+   "bvh": "data/014/14_01.bvh",
+   "category": "various everyday behaviors",
+   "desc": "boxing",
+   "arm": " [arm-axis mean 26deg, min 1deg, 5595f]",
+   "code": "C08"
+  },
+  {
+   "family": "martial",
+   "id": "14_02",
+   "bvh": "data/014/14_02.bvh",
+   "category": "various everyday behaviors",
+   "desc": "boxing",
+   "arm": " [arm-axis mean 26deg, min 2deg, 5424f]",
+   "code": "C09"
+  },
+  {
+   "family": "martial",
+   "id": "86_01",
+   "bvh": "data/086/86_01.bvh",
+   "category": "sports and various activities",
+   "desc": "jumps kicks and punches",
+   "arm": " [arm-axis mean 26deg, min 3deg, 4580f]",
+   "code": "C10"
+  },
+  {
+   "family": "martial",
+   "id": "135_04",
+   "bvh": "data/135/135_04.bvh",
+   "category": "Martial Arts Walks",
+   "desc": "Front Kick",
+   "arm": " [arm-axis mean 27deg, min 9deg, 1317f]",
+   "code": "C11"
+  },
+  {
+   "family": "martial",
+   "id": "85_06",
+   "bvh": "data/085/85_06.bvh",
+   "category": "jumps; flips; breakdance",
+   "desc": "KickFlip",
+   "arm": " [arm-axis mean 29deg, min 3deg, 951f]",
+   "code": "C12"
+  },
+  {
+   "family": "martial",
+   "id": "111_19",
+   "bvh": "data/111/111_19.bvh",
+   "category": "Pregnant Woman",
+   "desc": "Punch Kick",
+   "arm": " [arm-axis mean 29deg, min 2deg, 1025f]",
+   "code": "C13"
+  },
+  {
+   "family": "martial",
+   "id": "78_27",
+   "bvh": "data/078/78_27.bvh",
+   "category": "walking",
+   "desc": "DefensiveLeftStopToStop              CleanedGRS",
+   "arm": " [arm-axis mean 29deg, min 3deg, 297f]",
+   "code": "C14"
+  },
+  {
+   "family": "martial",
+   "id": "102_25",
+   "bvh": "data/102/102_25.bvh",
+   "category": "Basketball",
+   "desc": "DefensiveLeftStopToStop",
+   "arm": " [arm-axis mean 29deg, min 3deg, 297f]",
+   "code": "C15"
+  },
+  {
+   "family": "martial",
+   "id": "144_14",
+   "bvh": "data/144/144_14.bvh",
+   "category": "punching female",
+   "desc": "Left_Punch_Sequence002",
+   "arm": " [arm-axis mean 30deg, min 7deg, 2056f]",
+   "code": "C16"
+  },
+  {
+   "family": "martial",
+   "id": "74_05",
+   "bvh": "data/074/74_05.bvh",
+   "category": "kicks and walking on slopes",
+   "desc": "kick",
+   "arm": " [arm-axis mean 30deg, min 19deg, 324f]",
+   "code": "C17"
+  },
+  {
+   "family": "martial",
+   "id": "23_17",
+   "bvh": "data/023/23_17.bvh",
+   "category": "human interaction (2 subjects - subject B)",
+   "desc": "rush up, arm wrestle (2 subjects - subject B)",
+   "arm": " [arm-axis mean 30deg, min 1deg, 833f]",
+   "code": "C18"
+  },
+  {
+   "family": "martial",
+   "id": "144_13",
+   "bvh": "data/144/144_13.bvh",
+   "category": "punching female",
+   "desc": "Left_Punch_Sequence001",
+   "arm": " [arm-axis mean 30deg, min 7deg, 1947f]",
+   "code": "C19"
+  },
+  {
+   "family": "martial",
+   "id": "79_08",
+   "bvh": "data/079/79_08.bvh",
+   "category": "actor everyday activities",
+   "desc": "boxing",
+   "arm": " [arm-axis mean 31deg, min 15deg, 443f]",
+   "code": "C20"
+  },
+  {
+   "family": "martial",
+   "id": "78_26",
+   "bvh": "data/078/78_26.bvh",
+   "category": "walking",
+   "desc": "DefensiveRightStopToStop           CleanedGRS",
+   "arm": " [arm-axis mean 32deg, min 8deg, 327f]",
+   "code": "C21"
+  },
+  {
+   "family": "martial",
+   "id": "102_24",
+   "bvh": "data/102/102_24.bvh",
+   "category": "Basketball",
+   "desc": "DefensiveRightStopToStop",
+   "arm": " [arm-axis mean 32deg, min 8deg, 327f]",
+   "code": "C22"
+  },
+  {
+   "family": "martial",
+   "id": "85_07",
+   "bvh": "data/085/85_07.bvh",
+   "category": "jumps; flips; breakdance",
+   "desc": "KickFlipStumble",
+   "arm": " [arm-axis mean 32deg, min 1deg, 960f]",
+   "code": "C23"
+  },
+  {
+   "family": "martial",
+   "id": "15_13",
+   "bvh": "data/015/15_13.bvh",
+   "category": "various everyday behaviors, dance moves",
+   "desc": "boxing",
+   "arm": " [arm-axis mean 32deg, min 1deg, 9331f]",
+   "code": "C24"
+  },
+  {
+   "family": "martial",
+   "id": "78_25",
+   "bvh": "data/078/78_25.bvh",
+   "category": "walking",
+   "desc": "DefensiveStraightWithStop          CleanedGRS",
+   "arm": " [arm-axis mean 32deg, min 8deg, 357f]",
+   "code": "C25"
+  },
+  {
+   "family": "martial",
+   "id": "102_23",
+   "bvh": "data/102/102_23.bvh",
+   "category": "Basketball",
+   "desc": "DefensiveStraightWithStop",
+   "arm": " [arm-axis mean 32deg, min 8deg, 357f]",
+   "code": "C26"
+  },
+  {
+   "family": "martial",
+   "id": "86_03",
+   "bvh": "data/086/86_03.bvh",
+   "category": "sports and various activities",
+   "desc": "walking, running, jumping, kicking, and stretching",
+   "arm": " [arm-axis mean 32deg, min 3deg, 8402f]",
+   "code": "C27"
+  },
+  {
+   "family": "martial",
+   "id": "143_24",
+   "bvh": "data/143/143_24.bvh",
+   "category": "General Subject Capture",
+   "desc": "Kicking",
+   "arm": " [arm-axis mean 32deg, min 12deg, 1006f]",
+   "code": "C28"
+  },
+  {
+   "family": "martial",
+   "id": "113_13",
+   "bvh": "data/113/113_13.bvh",
+   "category": "Post pregnant woman",
+   "desc": "Punch and kick",
+   "arm": " [arm-axis mean 33deg, min 3deg, 1344f]",
+   "code": "C29"
+  },
+  {
+   "family": "martial",
+   "id": "90_07",
+   "bvh": "data/090/90_07.bvh",
+   "category": "cartwheels; acrobatics; dances",
+   "desc": "jump kick",
+   "arm": " [arm-axis mean 33deg, min 7deg, 896f]",
+   "code": "C30"
+  },
+  {
+   "family": "martial",
+   "id": "86_06",
+   "bvh": "data/086/86_06.bvh",
+   "category": "sports and various activities",
+   "desc": "walking, running, kicking, punching, knee kicking, and stretching",
+   "arm": " [arm-axis mean 34deg, min 1deg, 9940f]",
+   "code": "C31"
+  },
+  {
+   "family": "martial",
+   "id": "56_06",
+   "bvh": "data/056/56_06.bvh",
+   "category": "vignettes - locomotion, upper-body motions (focus: motion transitions)",
+   "desc": "vignettes - throw punches, grab, skip, yawn, stretch, leap, lift open window, walk, jump/bound",
+   "arm": " [arm-axis mean 34deg, min 5deg, 6785f]",
+   "code": "C32"
+  },
+  {
+   "family": "martial",
+   "id": "144_05",
+   "bvh": "data/144/144_05.bvh",
+   "category": "punching female",
+   "desc": "Front_Kicking",
+   "arm": " [arm-axis mean 35deg, min 16deg, 2787f]",
+   "code": "C33"
+  },
+  {
+   "family": "martial",
+   "id": "15_05",
+   "bvh": "data/015/15_05.bvh",
+   "category": "various everyday behaviors, dance moves",
+   "desc": "wash windows, paint; hand signals; dance - Egyptian walk, the Dive, the Twist, the Cabbage Patch; boxing",
+   "arm": " [arm-axis mean 35deg, min 0deg, 22949f]",
+   "code": "C34"
+  },
+  {
+   "family": "walk",
+   "id": "02_01",
+   "bvh": "data/002/02_01.bvh",
+   "category": "various expressions and human behaviors",
+   "desc": "walk",
+   "arm": "",
+   "code": "C35"
+  },
+  {
+   "family": "walk",
+   "id": "02_02",
+   "bvh": "data/002/02_02.bvh",
+   "category": "various expressions and human behaviors",
+   "desc": "walk",
+   "arm": "",
+   "code": "C36"
+  },
+  {
+   "family": "walk",
+   "id": "03_01",
+   "bvh": "data/003/03_01.bvh",
+   "category": "walk on uneven terrain",
+   "desc": "walk on uneven terrain",
+   "arm": "",
+   "code": "C37"
+  },
+  {
+   "family": "walk",
+   "id": "03_02",
+   "bvh": "data/003/03_02.bvh",
+   "category": "walk on uneven terrain",
+   "desc": "walk on uneven terrain",
+   "arm": "",
+   "code": "C38"
+  },
+  {
+   "family": "walk",
+   "id": "03_03",
+   "bvh": "data/003/03_03.bvh",
+   "category": "walk on uneven terrain",
+   "desc": "walk on uneven terrain",
+   "arm": "",
+   "code": "C39"
+  },
+  {
+   "family": "walk",
+   "id": "03_04",
+   "bvh": "data/003/03_04.bvh",
+   "category": "walk on uneven terrain",
+   "desc": "walk on uneven terrain",
+   "arm": "",
+   "code": "C40"
+  },
+  {
+   "family": "walk",
+   "id": "05_01",
+   "bvh": "data/005/05_01.bvh",
+   "category": "modern dance",
+   "desc": "walk",
+   "arm": "",
+   "code": "C41"
+  },
+  {
+   "family": "walk",
+   "id": "06_01",
+   "bvh": "data/006/06_01.bvh",
+   "category": "dribble, shoot basketball",
+   "desc": "walk",
+   "arm": "",
+   "code": "C42"
+  },
+  {
+   "family": "walk",
+   "id": "07_01",
+   "bvh": "data/007/07_01.bvh",
+   "category": "walk",
+   "desc": "walk",
+   "arm": "",
+   "code": "C43"
+  },
+  {
+   "family": "walk",
+   "id": "07_02",
+   "bvh": "data/007/07_02.bvh",
+   "category": "walk",
+   "desc": "walk",
+   "arm": "",
+   "code": "C44"
+  },
+  {
+   "family": "walk",
+   "id": "07_03",
+   "bvh": "data/007/07_03.bvh",
+   "category": "walk",
+   "desc": "walk",
+   "arm": "",
+   "code": "C45"
+  },
+  {
+   "family": "walk",
+   "id": "07_04",
+   "bvh": "data/007/07_04.bvh",
+   "category": "walk",
+   "desc": "slow walk",
+   "arm": "",
+   "code": "C46"
+  },
+  {
+   "family": "walk",
+   "id": "07_05",
+   "bvh": "data/007/07_05.bvh",
+   "category": "walk",
+   "desc": "slow walk",
+   "arm": "",
+   "code": "C47"
+  },
+  {
+   "family": "walk",
+   "id": "07_06",
+   "bvh": "data/007/07_06.bvh",
+   "category": "walk",
+   "desc": "walk",
+   "arm": "",
+   "code": "C48"
+  },
+  {
+   "family": "walk",
+   "id": "07_07",
+   "bvh": "data/007/07_07.bvh",
+   "category": "walk",
+   "desc": "walk",
+   "arm": "",
+   "code": "C49"
+  },
+  {
+   "family": "walk",
+   "id": "07_08",
+   "bvh": "data/007/07_08.bvh",
+   "category": "walk",
+   "desc": "walk",
+   "arm": "",
+   "code": "C50"
+  },
+  {
+   "family": "walk",
+   "id": "07_09",
+   "bvh": "data/007/07_09.bvh",
+   "category": "walk",
+   "desc": "walk",
+   "arm": "",
+   "code": "C51"
+  },
+  {
+   "family": "walk",
+   "id": "07_10",
+   "bvh": "data/007/07_10.bvh",
+   "category": "walk",
+   "desc": "walk",
+   "arm": "",
+   "code": "C52"
+  },
+  {
+   "family": "walk",
+   "id": "07_11",
+   "bvh": "data/007/07_11.bvh",
+   "category": "walk",
+   "desc": "walk",
+   "arm": "",
+   "code": "C53"
+  },
+  {
+   "family": "walk",
+   "id": "07_12",
+   "bvh": "data/007/07_12.bvh",
+   "category": "walk",
+   "desc": "brisk walk",
+   "arm": "",
+   "code": "C54"
+  },
+  {
+   "family": "walk",
+   "id": "08_01",
+   "bvh": "data/008/08_01.bvh",
+   "category": "walk",
+   "desc": "walk",
+   "arm": "",
+   "code": "C55"
+  },
+  {
+   "family": "walk",
+   "id": "08_02",
+   "bvh": "data/008/08_02.bvh",
+   "category": "walk",
+   "desc": "walk",
+   "arm": "",
+   "code": "C56"
+  },
+  {
+   "family": "run",
+   "id": "02_03",
+   "bvh": "data/002/02_03.bvh",
+   "category": "various expressions and human behaviors",
+   "desc": "run/jog",
+   "arm": "",
+   "code": "C57"
+  },
+  {
+   "family": "run",
+   "id": "09_01",
+   "bvh": "data/009/09_01.bvh",
+   "category": "run",
+   "desc": "run",
+   "arm": "",
+   "code": "C58"
+  },
+  {
+   "family": "run",
+   "id": "09_02",
+   "bvh": "data/009/09_02.bvh",
+   "category": "run",
+   "desc": "run",
+   "arm": "",
+   "code": "C59"
+  },
+  {
+   "family": "run",
+   "id": "09_03",
+   "bvh": "data/009/09_03.bvh",
+   "category": "run",
+   "desc": "run",
+   "arm": "",
+   "code": "C60"
+  },
+  {
+   "family": "run",
+   "id": "09_04",
+   "bvh": "data/009/09_04.bvh",
+   "category": "run",
+   "desc": "run",
+   "arm": "",
+   "code": "C61"
+  },
+  {
+   "family": "run",
+   "id": "09_05",
+   "bvh": "data/009/09_05.bvh",
+   "category": "run",
+   "desc": "run",
+   "arm": "",
+   "code": "C62"
+  },
+  {
+   "family": "run",
+   "id": "09_06",
+   "bvh": "data/009/09_06.bvh",
+   "category": "run",
+   "desc": "run",
+   "arm": "",
+   "code": "C63"
+  },
+  {
+   "family": "run",
+   "id": "09_07",
+   "bvh": "data/009/09_07.bvh",
+   "category": "run",
+   "desc": "run",
+   "arm": "",
+   "code": "C64"
+  },
+  {
+   "family": "run",
+   "id": "09_08",
+   "bvh": "data/009/09_08.bvh",
+   "category": "run",
+   "desc": "run",
+   "arm": "",
+   "code": "C65"
+  },
+  {
+   "family": "run",
+   "id": "09_09",
+   "bvh": "data/009/09_09.bvh",
+   "category": "run",
+   "desc": "run",
+   "arm": "",
+   "code": "C66"
+  },
+  {
+   "family": "run",
+   "id": "09_10",
+   "bvh": "data/009/09_10.bvh",
+   "category": "run",
+   "desc": "run",
+   "arm": "",
+   "code": "C67"
+  },
+  {
+   "family": "run",
+   "id": "09_11",
+   "bvh": "data/009/09_11.bvh",
+   "category": "run",
+   "desc": "run",
+   "arm": "",
+   "code": "C68"
+  },
+  {
+   "family": "run",
+   "id": "09_12",
+   "bvh": "data/009/09_12.bvh",
+   "category": "run",
+   "desc": "navigate - walk forward, backward, sideways",
+   "arm": "",
+   "code": "C69"
+  },
+  {
+   "family": "run",
+   "id": "13_30",
+   "bvh": "data/013/13_30.bvh",
+   "category": "various everyday behaviors",
+   "desc": "jumping jacks, side twists, squats, jog",
+   "arm": "",
+   "code": "C70"
+  },
+  {
+   "family": "bend_pick",
+   "id": "02_06",
+   "bvh": "data/002/02_06.bvh",
+   "category": "various expressions and human behaviors",
+   "desc": "bend over, scoop up, rise, lift arm",
+   "arm": "",
+   "code": "C71"
+  },
+  {
+   "family": "bend_pick",
+   "id": "05_04",
+   "bvh": "data/005/05_04.bvh",
+   "category": "modern dance",
+   "desc": "dance - sideways arabesque, folding arms, bending back",
+   "arm": "",
+   "code": "C72"
+  },
+  {
+   "family": "bend_pick",
+   "id": "05_18",
+   "bvh": "data/005/05_18.bvh",
+   "category": "modern dance",
+   "desc": "dance - attitude/arabesque, jete en tourant, bending back",
+   "arm": "",
+   "code": "C73"
+  },
+  {
+   "family": "bend_pick",
+   "id": "05_19",
+   "bvh": "data/005/05_19.bvh",
+   "category": "modern dance",
+   "desc": "dance - attitude/arabesque, jete en tourant, bending back",
+   "arm": "",
+   "code": "C74"
+  },
+  {
+   "family": "bend_pick",
+   "id": "05_20",
+   "bvh": "data/005/05_20.bvh",
+   "category": "modern dance",
+   "desc": "dance - attitude/arabesque, jete en tourant, bending back",
+   "arm": "",
+   "code": "C75"
+  },
+  {
+   "family": "bend_pick",
+   "id": "13_10",
+   "bvh": "data/013/13_10.bvh",
+   "category": "various everyday behaviors",
+   "desc": "jump up to grab, reach for, tiptoe",
+   "arm": "",
+   "code": "C76"
+  },
+  {
+   "family": "bend_pick",
+   "id": "13_12",
+   "bvh": "data/013/13_12.bvh",
+   "category": "various everyday behaviors",
+   "desc": "jump up to grab, reach for, tiptoe",
+   "arm": "",
+   "code": "C77"
+  },
+  {
+   "family": "bend_pick",
+   "id": "13_29",
+   "bvh": "data/013/13_29.bvh",
+   "category": "various everyday behaviors",
+   "desc": "jumping jacks, side twists, bend over, squats",
+   "arm": "",
+   "code": "C78"
+  },
+  {
+   "family": "bend_pick",
+   "id": "13_31",
+   "bvh": "data/013/13_31.bvh",
+   "category": "various everyday behaviors",
+   "desc": "jumping jacks, side twists, bend over, jog",
+   "arm": "",
+   "code": "C79"
+  },
+  {
+   "family": "bend_pick",
+   "id": "14_06",
+   "bvh": "data/014/14_06.bvh",
+   "category": "various everyday behaviors",
+   "desc": "jumping jacks, jog, squats, side twists, stretches",
+   "arm": "",
+   "code": "C80"
+  },
+  {
+   "family": "bend_pick",
+   "id": "14_07",
+   "bvh": "data/014/14_07.bvh",
+   "category": "various everyday behaviors",
+   "desc": "jump up to grab, reach for, tiptoe",
+   "arm": "",
+   "code": "C81"
+  },
+  {
+   "family": "bend_pick",
+   "id": "14_08",
+   "bvh": "data/014/14_08.bvh",
+   "category": "various everyday behaviors",
+   "desc": "jump up to grab, reach for, tiptoe",
+   "arm": "",
+   "code": "C82"
+  },
+  {
+   "family": "bend_pick",
+   "id": "14_09",
+   "bvh": "data/014/14_09.bvh",
+   "category": "various everyday behaviors",
+   "desc": "jump up to grab, reach for, tiptoe",
+   "arm": "",
+   "code": "C83"
+  },
+  {
+   "family": "bend_pick",
+   "id": "14_14",
+   "bvh": "data/014/14_14.bvh",
+   "category": "various everyday behaviors",
+   "desc": "jumping jacks, jog, squats, side twists, stretches",
+   "arm": "",
+   "code": "C84"
+  },
+  {
+   "family": "bend_pick",
+   "id": "14_20",
+   "bvh": "data/014/14_20.bvh",
+   "category": "various everyday behaviors",
+   "desc": "jumping jacks, side twists, reach up, bend over",
+   "arm": "",
+   "code": "C85"
+  },
+  {
+   "family": "bend_pick",
+   "id": "22_03",
+   "bvh": "data/022/22_03.bvh",
+   "category": "human interaction (2 subjects - subject A)",
+   "desc": "A sits, holds face in hands; B kneels, comforts A (2 subjects - subject A)",
+   "arm": "",
+   "code": "C86"
+  },
+  {
+   "family": "bend_pick",
+   "id": "22_14",
+   "bvh": "data/022/22_14.bvh",
+   "category": "human interaction (2 subjects - subject A)",
+   "desc": "alternating squats (2 subjects - subject A)",
+   "arm": "",
+   "code": "C87"
+  },
+  {
+   "family": "bend_pick",
+   "id": "23_03",
+   "bvh": "data/023/23_03.bvh",
+   "category": "human interaction (2 subjects - subject B)",
+   "desc": "A sits, holds face in hands; B kneels, comforts A (2 subjects - subject B)",
+   "arm": "",
+   "code": "C88"
+  },
+  {
+   "family": "bend_pick",
+   "id": "23_14",
+   "bvh": "data/023/23_14.bvh",
+   "category": "human interaction (2 subjects - subject B)",
+   "desc": "alternating squats (2 subjects - subject B)",
+   "arm": "",
+   "code": "C89"
+  },
+  {
+   "family": "bend_pick",
+   "id": "26_01",
+   "bvh": "data/026/26_01.bvh",
+   "category": "nursery rhymes, basketball, bending",
+   "desc": "walk",
+   "arm": "",
+   "code": "C90"
+  },
+  {
+   "family": "sit",
+   "id": "01_06",
+   "bvh": "data/001/01_06.bvh",
+   "category": "climb, swing, hang on playground equipment",
+   "desc": "playground - climb, sit, dangle legs, descend",
+   "arm": "",
+   "code": "C91"
+  },
+  {
+   "family": "sit",
+   "id": "01_07",
+   "bvh": "data/001/01_07.bvh",
+   "category": "climb, swing, hang on playground equipment",
+   "desc": "playground - climb, sit, dangle legs, jump down",
+   "arm": "",
+   "code": "C92"
+  },
+  {
+   "family": "sit",
+   "id": "01_08",
+   "bvh": "data/001/01_08.bvh",
+   "category": "climb, swing, hang on playground equipment",
+   "desc": "playground - climb, sit, dangle legs, rock back, lower self to ground",
+   "arm": "",
+   "code": "C93"
+  },
+  {
+   "family": "sit",
+   "id": "01_09",
+   "bvh": "data/001/01_09.bvh",
+   "category": "climb, swing, hang on playground equipment",
+   "desc": "playground - climb, hang, hold self up with arms straight, swing, drop, sit, dangle legs, go under",
+   "arm": "",
+   "code": "C94"
+  },
+  {
+   "family": "sit",
+   "id": "01_12",
+   "bvh": "data/001/01_12.bvh",
+   "category": "climb, swing, hang on playground equipment",
+   "desc": "playground - climb, pull up, dangle, sit, lower self to ground",
+   "arm": "",
+   "code": "C95"
+  },
+  {
+   "family": "sit",
+   "id": "05_09",
+   "bvh": "data/005/05_09.bvh",
+   "category": "modern dance",
+   "desc": "dance - glissade devant, glissade derriere, attitude/arabesque",
+   "arm": "",
+   "code": "C96"
+  },
+  {
+   "family": "sit",
+   "id": "05_10",
+   "bvh": "data/005/05_10.bvh",
+   "category": "modern dance",
+   "desc": "dance - glissade devant, glissade derriere, attitude/arabesque",
+   "arm": "",
+   "code": "C97"
+  },
+  {
+   "family": "sit",
+   "id": "13_01",
+   "bvh": "data/013/13_01.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on high stool, stand up",
+   "arm": "",
+   "code": "C98"
+  },
+  {
+   "family": "sit",
+   "id": "13_02",
+   "bvh": "data/013/13_02.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on high stool, stand up",
+   "arm": "",
+   "code": "C99"
+  },
+  {
+   "family": "sit",
+   "id": "13_03",
+   "bvh": "data/013/13_03.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on high stool, stand up",
+   "arm": "",
+   "code": "C100"
+  },
+  {
+   "family": "sit",
+   "id": "13_04",
+   "bvh": "data/013/13_04.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on stepstool, chin in hand",
+   "arm": "",
+   "code": "C101"
+  },
+  {
+   "family": "sit",
+   "id": "13_05",
+   "bvh": "data/013/13_05.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on stepstool, hands against chin, fidget, stand up",
+   "arm": "",
+   "code": "C102"
+  },
+  {
+   "family": "sit",
+   "id": "13_06",
+   "bvh": "data/013/13_06.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on stepstool, hands against chin, elbow out, stand up",
+   "arm": "",
+   "code": "C103"
+  },
+  {
+   "family": "sit",
+   "id": "14_27",
+   "bvh": "data/014/14_27.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on high stool, stand up",
+   "arm": "",
+   "code": "C104"
+  },
+  {
+   "family": "sit",
+   "id": "14_28",
+   "bvh": "data/014/14_28.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on high stool, stand up",
+   "arm": "",
+   "code": "C105"
+  },
+  {
+   "family": "sit",
+   "id": "14_29",
+   "bvh": "data/014/14_29.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on stepstool, stand up, swing legs",
+   "arm": "",
+   "code": "C106"
+  },
+  {
+   "family": "sit",
+   "id": "14_30",
+   "bvh": "data/014/14_30.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on stepstool, ankle on other knee, hand on chin",
+   "arm": "",
+   "code": "C107"
+  },
+  {
+   "family": "sit",
+   "id": "14_31",
+   "bvh": "data/014/14_31.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on stepstool, stand up",
+   "arm": "",
+   "code": "C108"
+  },
+  {
+   "family": "stand_idle",
+   "id": "14_32",
+   "bvh": "data/014/14_32.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on stepstool, stand up",
+   "arm": "",
+   "code": "C109"
+  },
+  {
+   "family": "stand_idle",
+   "id": "14_36",
+   "bvh": "data/014/14_36.bvh",
+   "category": "various everyday behaviors",
+   "desc": "sit on stepstool, stand up",
+   "arm": "",
+   "code": "C110"
+  },
+  {
+   "family": "stand_idle",
+   "id": "15_02",
+   "bvh": "data/015/15_02.bvh",
+   "category": "various everyday behaviors, dance moves",
+   "desc": "climb, step over, sit on, stand on stepstool",
+   "arm": "",
+   "code": "C111"
+  },
+  {
+   "family": "stand_idle",
+   "id": "15_10",
+   "bvh": "data/015/15_10.bvh",
+   "category": "various everyday behaviors, dance moves",
+   "desc": "sit on high stool, stand up",
+   "arm": "",
+   "code": "C112"
+  },
+  {
+   "family": "stand_idle",
+   "id": "22_09",
+   "bvh": "data/022/22_09.bvh",
+   "category": "human interaction (2 subjects - subject A)",
+   "desc": "A gives B a shoulder rub; B sits, A stands (2 subjects - subject A)",
+   "arm": "",
+   "code": "C113"
+  },
+  {
+   "family": "stand_idle",
+   "id": "23_09",
+   "bvh": "data/023/23_09.bvh",
+   "category": "human interaction (2 subjects - subject B)",
+   "desc": "A gives B a shoulder rub; B sits, A stands (subjects - subject B)",
+   "arm": "",
+   "code": "C114"
+  },
+  {
+   "family": "stand_idle",
+   "id": "77_02",
+   "bvh": "data/077/77_02.bvh",
+   "category": "careful actions",
+   "desc": "standing",
+   "arm": "",
+   "code": "C115"
+  },
+  {
+   "family": "stand_idle",
+   "id": "82_08",
+   "bvh": "data/082/82_08.bvh",
+   "category": "jumping; pushing; emotional walks",
+   "desc": "stand still; casual walk forward",
+   "arm": "",
+   "code": "C116"
+  },
+  {
+   "family": "stand_idle",
+   "id": "85_05",
+   "bvh": "data/085/85_05.bvh",
+   "category": "jumps; flips; breakdance",
+   "desc": "HandStandKicks",
+   "arm": "",
+   "code": "C117"
+  },
+  {
+   "family": "stand_idle",
+   "id": "86_09",
+   "bvh": "data/086/86_09.bvh",
+   "category": "sports and various activities",
+   "desc": "walking, sitting, looking, stand up",
+   "arm": "",
+   "code": "C118"
+  },
+  {
+   "family": "stand_idle",
+   "id": "86_10",
+   "bvh": "data/086/86_10.bvh",
+   "category": "sports and various activities",
+   "desc": "walk around, sit, stand up, and running",
+   "arm": "",
+   "code": "C119"
+  },
+  {
+   "family": "stand_idle",
+   "id": "88_02",
+   "bvh": "data/088/88_02.bvh",
+   "category": "acrobatics",
+   "desc": "backflips, jump onto platform, handstands, vertical pushups",
+   "arm": "",
+   "code": "C120"
+  }
+ ]
+}

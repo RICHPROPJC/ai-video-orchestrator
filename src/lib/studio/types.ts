@@ -44,6 +44,9 @@ export type ProduceInput = {
   portraitsDir?: string;
   blockoutDir?: string;
   gapSec?: number;
+  /** MULTISHOT_WIRE: skip the motion-select step (no decider call, no mocap
+   *  bake — the workbench grey blockouts stand). */
+  noMotionSelect?: boolean;
   dryRun?: boolean;
   /** stop early: boards = seats have written the callsheet (no wavs yet),
    *  blockout = grey blockout + f0 done (no U1.5 / QC / H3),
@@ -52,13 +55,19 @@ export type ProduceInput = {
   /** C-scene-hop: burn H3 for ONE scene only (must match SCxx). Motion-lane
    *  filter — stills/QC/layout stay full-slate. Omitted = all shots. */
   scene?: string;
+  /** Redo this shot and every later shot. Earlier GREEN stays. */
+  shot?: string;
   /** reuse this slate's callsheet and finished artefacts instead of starting over */
   resume?: boolean;
   /** names the writer may cast speaking parts from (data file, never in src) */
   castRosterPath?: string;
   /** load this callsheet JSON instead of letting the seats author one */
   callSheetPath?: string;
-  /** H3 graph shape: default A (Video 1 + kfinject); B/BKF/C for verify/ab experiments */
+  /** H3 graph shape: default A = official path (Video 1 motion-only + H3Keyframes
+   *  anchors; identity burned into the still by U1.5 /edit). B/BKF = documented
+   *  FALLBACK (card C ②, 0919): the character-image ref route is officially
+   *  legitimate (samples #17/#22/#23/#31/#34) but is only for shots with NO
+   *  still-pinned identity. C = verify alternate (zero refs). */
   graphVariant?: "a" | "b" | "bkf" | "c";
   /** test-only H3 sampler steps override; live default stays config.motion.steps (4) */
   steps?: number;
@@ -107,9 +116,22 @@ export type Character = {
   voice: { pitchHz: number; gender: "f" | "m" | "n" };
   /** blockout mannequin height in metres — data decides, src has no per-name constants */
   heightM?: number;
+  /** Public shelf name. The story name stays; this name must not be a drama noun. */
+  publicName?: string;
 };
 
 export type Stance = "stand" | "lean" | "crouch";
+
+/** §0b angle-ref law (Chau 0920): which angle version a shot's Image ref slots
+ *  carry — "45" = the three-quarter ref (a frontal ref on a sideways shot
+ *  drags the face back to camera). Absent = "front". 90° is prompt-forbidden,
+ *  never a value here. */
+export type RefAngle = "front" | "45";
+
+// type-only: UiShotSpec lives with the prose machinery that validates it
+// (h3-prose imports Shot/CallSheet back — type level only, erased at runtime)
+import type { UiShotSpec } from "./h3-prose";
+export type { UiShotSpec };
 
 export type ShotProp = {
   name: string;
@@ -117,6 +139,54 @@ export type ShotProp = {
   heldBy?: string;
   shape: string[];
   forbid: string[];
+  /** A measurement you wrote. Absent means the world stops. */
+  sizeM?: number;
+  sizeSource?: string;
+  proportion?: { of: string; at: "knee" | "waist" | "chest" | "shoulder"; source: string };
+  /** Public shelf name. The story name stays; this name must not be a drama noun. */
+  publicName?: string;
+};
+
+/** Chau 0919 search-first PE law: one evidence row behind every number a
+ *  frame puts on screen. Packet-authored (boards seat or the PE step writing
+ *  wigolo results back) — code assembles these verbatim, never authors them. */
+export type ShotFact = {
+  claim: string;
+  source: string;
+  /** YYYY-MM-DD, the day the evidence was fetched */
+  fetched_at: string;
+};
+
+export type ShotRequire = {
+  /** evidence rows for text/data screens; a facts-needing shot with none refuses to emit */
+  facts?: ShotFact[];
+  /** the seat marks this shot a text/data screen even when the action words don't say it */
+  factsRequired?: boolean;
+  /** packet scene room — the ONE scene truth source (Fable 1d9bb51):
+   *  keyframeEditPrompt reads require.location ?? shot.location, sheet tail
+   *  last. Prompt and photo-qc gate on this single field. Compound place
+   *  words are the point (地下室檔案室, not 地下室): the word the eye must
+   *  find is the word the packet wrote — never enum-locked to one room. */
+  location?: string;
+  /** B-lane freeze-frame sentence — the pose held at its instant, zero
+   *  process verbs. Packet-authored (boards copies the verified sentence);
+   *  the prompt carries it verbatim, riding after the brief band. */
+  action?: string;
+  /** body-part spatial sentence at 體重由邊度承住 grade (POSE_LEXICON
+   *  register) — the packet copies the lexicon sentence, code only assembles;
+   *  the vocabulary itself never moves into src. */
+  pose?: string;
+  /** background-creep lock (§0b 0920 編輯漂移, Chau 批①): the 【不變】 list —
+   *  background walls / set dressing / left-right object positions every edit
+   *  hop must hold unchanged. Packet-authored, one clause per item; rides
+   *  after the brief band with the other extras. */
+  unchanged?: string[];
+  /** T32 camera line — eye/high/low picks the still's light sentence
+   *  (keyframe-prompt 均勻/低位/頂光); boards-expand copies shot.angle in. */
+  angle?: "eye" | "high" | "low";
+  /** packet-authored ban list per 道具/場景類別 — keyframeEditPrompt
+   *  echoes it as 唔準/唔好 lines (Chau 17:48). */
+  negatives?: string[];
 };
 
 export type Shot = {
@@ -147,12 +217,41 @@ export type Shot = {
     stance?: Stance;
     stanceEnd?: Stance;
   }[];
+  /** callsheet column: the angle of the refs this shot's Image slots hold;
+   *  keyframeEditPrompt aims the facing sentence at the ref when "45".
+   *  Optional — absent reads as "front". */
+  refAngle?: RefAngle;
   props?: ShotProp[];
+  /** T32 rev2: 阿圖 packet 場景 slot — boards author this per shot (sealed+zod);
+   * the stills scene sentence reads it, sheet tail is only the fallback.
+   * Chau 17:48: negatives are packet data (bans authored per 道具/場景類別). */
+  require?: ShotRequire;
   stillPrompt: string;
   motionPrompt: string;
   /** which scene and beat the seats cut this shot from */
   scene?: string;
   beatId?: string;
+  /** card ③b: UI/infographic shot marker — the only gate that opens the H3
+   *  photo channel (law: 文字圖／手機畫面等 UI 反而可以俾 H3 ref). Story shots
+   *  leave this unset and stay ref-free, marker or not. */
+  uiShot?: boolean;
+  /** card ③b prose spec: mapping table + on-screen text engineering; forces
+   *  identity-long prose */
+  uiSpec?: UiShotSpec;
+  /** card ③b photo refs on disk (UI screenshots / data cards) — live submit
+   *  uploads them to ref_images.ref_image_N, dry-run names them. Paths are
+   *  used as given; live submit throws on a missing file. */
+  uiRefs?: string[];
+  /** COMBAT_PORT_0921: causal combat state attached by the boards-stage
+   *  combat pass (combat-adapter) — Beat七欄/state relay/ACTION_RISK. Absent
+   *  on every non-combat shot; type-only import, erased at runtime
+   *  (UiShotSpec precedent). */
+  combat?: import("./combat-adapter").CombatShotState;
+  /** H3Keyframes positions, the shot's own string (e.g. "0%, 30%, 70%, 100%").
+   *  Absent → the factory stops before H3. Not limited to 0% and 100%. */
+  keyframePositions?: string;
+  /** Cut cells from one sheet (one spawn, then cut). Not one image per shot. */
+  keyframeFiles?: string[];
 };
 
 /** Which seat wrote the sheet, on which model, with the receipts to prove it. */
@@ -182,6 +281,9 @@ export type CallSheet = {
   shots: Shot[];
   voiceover: string;
   scenes?: { id: string; heading: string; summary: string; targetSec: number }[];
+  /** One era, ten building types, one 4K board. Absent → the factory does not invent eras. */
+  buildings?: { era: string; types: string[]; publicName?: string }[];
+  storyboard?: { shotId: string; at: string; file: string; board?: string }[];
   provenance?: Provenance;
 };
 
@@ -269,6 +371,10 @@ export type JobRecord = {
     qcReport?: string;
     cutPlan?: string;
     concatGate?: string;
+    /** h3-prose scene preview (lane/crew motion prose card): motion/scene-preview.mp4 */
+    scenePreview?: string;
+    /** Owning seat of the last blocked decision, plus the tail to redo. */
+    redo?: string;
   };
   error?: string;
 };

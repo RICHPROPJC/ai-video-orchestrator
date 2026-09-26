@@ -12,7 +12,7 @@ export default async function Home({
   const { slate, tab } = await searchParams;
   const job = (slate ? readJob(slate) : listJobs()[0]) ?? null;
   const events = job ? readEvents(job.id) : [];
-  const recents = listJobs().slice(0, 6);
+  const recents = listJobs();
   return (
     <StudioFloor
       initialJob={job}

@@ -5,7 +5,8 @@
     "boardsModel": "glm-5.3-flash",
     "blenderModel": "nex-n2.5",
     "blenderFallback": "glm-5.3-flash",
-    "reflectorModel": "qwen38"
+    "reflectorModel": "qwen38",
+    "secondFallback": "qwen38"
   },
   "stills": {
     "url": "http://100.76.131.19:8097",
@@ -19,13 +20,13 @@
     "comfyUrl": "http://100.127.176.64:8188",
     "checkpoint": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
     "fl2va": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
-    "turboLora": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
+    "turboLora": "minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
     "textEncoder": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
     "videoVae": "minimax_h3_video_vae_fp16.safetensors",
     "audioVae": "minimax_h3_audio_vae_fp32.safetensors",
     "width": 864,
     "height": 480,
-    "steps": 4,
+    "steps": 8,
     "seed": 42
   },
   "tts": {
@@ -36,11 +37,28 @@
   },
   "pictureQc": {
     "endpoint": "http://127.0.0.1:8015",
-    "model": "qwen38"
+    "model": "qwen38",
+    "secondEndpoint": "http://127.0.0.1:4000",
+    "secondModel": "glm-5.3-flash"
   },
   "nex": {
     "endpoint": "http://127.0.0.1:8017",
     "model": "nex-n2.5"
+  },
+  "pe": {
+    "endpoint": "http://127.0.0.1:8017",
+    "model": "nex-n2.5",
+    "fallbackEndpoint": "http://127.0.0.1:8015",
+    "fallbackModel": "qwen38",
+    "maxTokens": 6000,
+    "wigoloClient": "/mnt/ssd/u1_canvas_research/wigolo_research.py",
+    "timeoutMs": 300000
+  },
+  "mesher": {
+    "endpoint": "http://127.0.0.1:8018",
+    "blender": "/home/c/applications/blender-5.1.2-linux-x64/blender",
+    "textureResolution": 512,
+    "targetHeightM": 1.7
   },
   "soundQc": {
     "endpoint": "http://127.0.0.1:9881",
@@ -49,6 +67,10 @@
   "embed": {
     "endpoint": "http://127.0.0.1:8016",
     "model": "wemm-2b"
+  },
+  "h3Grid": {
+    "kMin": 3,
+    "kMax": 21
   },
   "ssh": {
     "user": "hojaiv3v",

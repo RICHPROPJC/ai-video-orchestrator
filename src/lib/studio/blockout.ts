@@ -39,7 +39,10 @@ export async function renderBlockout(opts: {
     "--width", String(BLOCKOUT_WIDTH),
     "--height", String(BLOCKOUT_HEIGHT),
     "--fps", String(BLOCKOUT_FPS),
-  ]);
+    // 5.1.2 -b with DISPLAY set picks GLX on this host and segfaults (exit 139, no
+    // ARB_shader_draw_parameters); stripped → surfaceless EGL, pixel-identical to vulkan
+    // (receipts /tmp/bl_egl_run vs /tmp/bl_vk_run). Same rule as lane/front 735dc2e.
+  ], undefined, { DISPLAY: undefined, WAYLAND_DISPLAY: undefined });
   if (render.code !== 0) {
     throw new Error(`blender blockout failed (${opts.shot.id}, exit ${render.code}): ${render.stderr || render.stdout}`);
   }
@@ -104,6 +107,9 @@ export async function assertFiguresVisible(f0png: string, shot: Shot): Promise<v
   const width = meta.width ?? 0;
   const height = meta.height ?? 0;
   if (!width || !height) throw new Error(`${f0png}: cannot read dimensions for figure check`);
+  // insert = detail framing (hands/prop); the body mark is off-frame by design, so the
+  // figure crop sees only figure+floor (5.1.2: 159 vs 179, span 20) — no figure claim to gate
+  if (shot.size === "insert") return;
   for (const mark of shot.marks) {
     const w = Math.round(width * 0.16);
     const h = Math.round(height * 0.4);

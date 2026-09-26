@@ -14,7 +14,8 @@
     "fleet": "tsx src/cli.ts fleet",
     "tap": "tsx src/run-tap.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/studio/*.test.ts"
+    "test": "tsx --test src/lib/studio/*.test.ts",
+    "photo-qc": "bun src/lib/studio/photo-qc-cli.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

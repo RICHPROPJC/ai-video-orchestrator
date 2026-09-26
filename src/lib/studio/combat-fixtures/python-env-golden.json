@@ -1,0 +1,760 @@
+{
+ "source": "combat_environment_engine.py",
+ "h3studio_commit": "2bc8c90755161d15536a23b35714103a7d532e5c",
+ "cases": [
+  {
+   "name": "env_reconcile_indoor_basic",
+   "input": {
+    "duration_seconds": 30.0,
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0,
+      "end_seconds": 2.5,
+      "subject_action": "S1 launches a low kick at S2. S2 checks the kick."
+     },
+     {
+      "id": "S2",
+      "start_seconds": 2.5,
+      "end_seconds": 5.0,
+      "subject_action": "S2 counters with a rising knee. S1 absorbs it."
+     }
+    ]
+   },
+   "output": {
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0,
+      "end_seconds": 2.5,
+      "subject_action": "S1 launches a low kick at S2. S2 checks the kick.",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S1; action=committed kick or checked-kick momentum; contact_target_id=env_shallow_floor_puddle; contact_target=shallow floor puddle; contact_material=water; contact_time=0.65s; force_direction=screen-right, level, forward; force_magnitude=medium; primary_response=a low directional splash follows the planted foot; shallow floor puddle responds along screen-right, level, forward: fans low across the floor, then follows the existing drain gradient; secondary_response=water spreads along the existing drain; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.25s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions.",
+      "contact_material": "water",
+      "environment_force_vector": {
+       "horizontal": "screen-right",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "medium",
+       "label": "screen-right, level, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S1; action=committed kick or checked-kick momentum; contact_target_id=env_shallow_floor_puddle; contact_target=shallow floor puddle; contact_material=water; contact_time=0.65s; force_direction=screen-right, level, forward; force_magnitude=medium; primary_response=a low directional splash follows the planted foot; shallow floor puddle responds along screen-right, level, forward: fans low across the floor, then follows the existing drain gradient; secondary_response=water spreads along the existing drain; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.25s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; all tracked fixtures retain their established state\n[ENV-OUT] Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S1 performs committed kick or checked-kick momentum; EVENT RESPONSE: shallow floor puddle receives the visible contact; EVENT CONSEQUENCE: a low directional splash follows the planted foot; shallow floor puddle responds along screen-right, level, forward: fans low across the floor, then follows the existing drain gradient; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: water responds along screen-right, level, forward with medium magnitude; show contact before the response and preserve the result."
+     },
+     {
+      "id": "S2",
+      "start_seconds": 2.5,
+      "end_seconds": 5.0,
+      "subject_action": "S2 counters with a rising knee. S1 absorbs it.",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S2; action=active close-combat momentum; contact_target_id=env_hanging_scale_chain; contact_target=hanging scale chain; contact_material=hanging_metal; contact_time=3.15s; force_direction=screen-left, upward, forward; force_magnitude=medium; primary_response=the scale swings once from the transferred vibration; hanging scale chain responds along screen-left, upward, forward: swings from its suspension point and returns with diminishing amplitude; secondary_response=nearby hooks rattle briefly; all loose secondary material continues along screen-left, upward, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.35s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions.",
+      "contact_material": "hanging_metal",
+      "environment_force_vector": {
+       "horizontal": "screen-left",
+       "vertical": "upward",
+       "depth": "forward",
+       "magnitude": "medium",
+       "label": "screen-left, upward, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S2; action=active close-combat momentum; contact_target_id=env_hanging_scale_chain; contact_target=hanging scale chain; contact_material=hanging_metal; contact_time=3.15s; force_direction=screen-left, upward, forward; force_magnitude=medium; primary_response=the scale swings once from the transferred vibration; hanging scale chain responds along screen-left, upward, forward: swings from its suspension point and returns with diminishing amplitude; secondary_response=nearby hooks rattle briefly; all loose secondary material continues along screen-left, upward, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.35s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; all tracked fixtures retain their established state\n[ENV-OUT] Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S2 performs active close-combat momentum; EVENT RESPONSE: hanging scale chain receives the visible contact; EVENT CONSEQUENCE: the scale swings once from the transferred vibration; hanging scale chain responds along screen-left, upward, forward: swings from its suspension point and returns with diminishing amplitude; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: hanging_metal responds along screen-left, upward, forward with medium magnitude; show contact before the response and preserve the result."
+     }
+    ],
+    "warnings": []
+   }
+  },
+  {
+   "name": "env_reconcile_crossing_threshold",
+   "input": {
+    "duration_seconds": 45.0,
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 26.0,
+      "end_seconds": 28.0,
+      "subject_action": "S1 clinches and drives S2 toward the gate."
+     },
+     {
+      "id": "S2",
+      "start_seconds": 28.0,
+      "end_seconds": 31.0,
+      "subject_action": "S2 pivots out and both cross into the alley."
+     },
+     {
+      "id": "S3",
+      "start_seconds": 31.0,
+      "end_seconds": 34.0,
+      "subject_action": "S1 slips on the wet concrete and recovers guard."
+     }
+    ]
+   },
+   "output": {
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 26.0,
+      "end_seconds": 28.0,
+      "subject_action": "S1 clinches and drives S2 toward the gate.",
+      "incoming_environment_state": "Location=market_loading_threshold; all tracked fixtures retain their established state",
+      "outgoing_environment_state": "Location=market_loading_threshold; persistent state: metal market gate and latch: the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; the gate remains open onto the rainy alley; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR→OUTDOOR ROUTE: active attack, defence, clinch or throw carries P1/S1 and P2/S2 through the visible market loading passage toward the gate at 30.00s; never insert walking coverage, an establishing cut or teleportation.",
+      "environment_interaction": "cause_actor=S1; action=clinch or grip drive; contact_target_id=env_metal_market_gate_and_latch; contact_target=metal market gate and latch; contact_material=aged_metal; contact_time=26.65s; force_direction=screen-right, level, forward; force_magnitude=heavy; primary_response=the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=the gate remains open onto the rainy alley; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.25s after the visible contact, the nearest vendors recoil and pull one companion clear of the opening while the rest part toward both sides of the gate.",
+      "contact_material": "aged_metal",
+      "environment_force_vector": {
+       "horizontal": "screen-right",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-right, level, forward"
+      },
+      "environment_state_status": "transition",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S1; action=clinch or grip drive; contact_target_id=env_metal_market_gate_and_latch; contact_target=metal market gate and latch; contact_material=aged_metal; contact_time=26.65s; force_direction=screen-right, level, forward; force_magnitude=heavy; primary_response=the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=the gate remains open onto the rainy alley; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.25s after the visible contact, the nearest vendors recoil and pull one companion clear of the opening while the rest part toward both sides of the gate.",
+      "continuity_state": "[ENV-IN] Location=market_loading_threshold; all tracked fixtures retain their established state\n[ENV-OUT] Location=market_loading_threshold; persistent state: metal market gate and latch: the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; the gate remains open onto the rainy alley; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR→OUTDOOR ROUTE: active attack, defence, clinch or throw carries P1/S1 and P2/S2 through the visible market loading passage toward the gate at 30.00s; never insert walking coverage, an establishing cut or teleportation. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S1 performs clinch or grip drive; EVENT RESPONSE: metal market gate and latch receives the visible contact; EVENT CONSEQUENCE: the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: aged_metal responds along screen-right, level, forward with heavy magnitude; show contact before the response and preserve the result."
+     },
+     {
+      "id": "S2",
+      "start_seconds": 28.0,
+      "end_seconds": 31.0,
+      "subject_action": "S2 pivots out and both cross into the alley.",
+      "incoming_environment_state": "Location=market_loading_threshold; persistent state: metal market gate and latch: the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; the gate remains open onto the rainy alley; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force",
+      "outgoing_environment_state": "Location=market_loading_threshold; persistent state: metal market gate and latch: the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; the gate remains open onto the rainy alley; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR→OUTDOOR ROUTE: active attack, defence, clinch or throw carries P1/S1 and P2/S2 through the visible market loading passage toward the gate at 30.00s; never insert walking coverage, an establishing cut or teleportation.",
+      "environment_interaction": "",
+      "crowd_reaction": "",
+      "contact_material": "",
+      "environment_force_vector": {},
+      "environment_state_status": "transition",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] No material contact is authored in this Shot; preserve the established environment state without spontaneous damage.",
+      "continuity_state": "[ENV-IN] Location=market_loading_threshold; persistent state: metal market gate and latch: the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; the gate remains open onto the rainy alley; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force\n[ENV-OUT] Location=market_loading_threshold; persistent state: metal market gate and latch: the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; the gate remains open onto the rainy alley; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR→OUTDOOR ROUTE: active attack, defence, clinch or throw carries P1/S1 and P2/S2 through the visible market loading passage toward the gate at 30.00s; never insert walking coverage, an establishing cut or teleportation. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: no fighter-to-material contact is authored; EVENT RESPONSE: no object moves or breaks; NEXT EVENT: preserve the incoming environment state unchanged.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: none required without visible contact; stable fighter recovery is not damage."
+     },
+     {
+      "id": "S3",
+      "start_seconds": 31.0,
+      "end_seconds": 34.0,
+      "subject_action": "S1 slips on the wet concrete and recovers guard.",
+      "incoming_environment_state": "Location=outdoor_rain_alley; persistent state: metal market gate and latch: the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; the gate remains open onto the rainy alley; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force",
+      "outgoing_environment_state": "Location=outdoor_rain_alley; persistent state: metal market gate and latch: the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; the gate remains open onto the rainy alley; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force",
+      "location_transition": "OUTDOOR CONTINUATION: remain immediately outside the same now-open market gate; preserve screen direction, wetness, carried debris, fighter momentum and the FPV orbit.",
+      "environment_interaction": "cause_actor=S1; action=controlled submission release and recovery; contact_target_id=env_rain_filled_alley_puddle; contact_target=rain-filled alley puddle; contact_material=water; contact_time=31.65s; force_direction=screen-right, level, forward; force_magnitude=medium; primary_response=a broad directional splash follows the visible landing; rain-filled alley puddle responds along screen-right, level, forward: fans low across the floor, then follows the existing drain gradient; secondary_response=runoff carries loose ice toward the street drain; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.45s after the visible contact, alley spectators retreat against the shopfronts and keep the centre route clear; none approaches or joins the fight.",
+      "contact_material": "water",
+      "environment_force_vector": {
+       "horizontal": "screen-right",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "medium",
+       "label": "screen-right, level, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S1; action=controlled submission release and recovery; contact_target_id=env_rain_filled_alley_puddle; contact_target=rain-filled alley puddle; contact_material=water; contact_time=31.65s; force_direction=screen-right, level, forward; force_magnitude=medium; primary_response=a broad directional splash follows the visible landing; rain-filled alley puddle responds along screen-right, level, forward: fans low across the floor, then follows the existing drain gradient; secondary_response=runoff carries loose ice toward the street drain; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.45s after the visible contact, alley spectators retreat against the shopfronts and keep the centre route clear; none approaches or joins the fight.",
+      "continuity_state": "[ENV-IN] Location=outdoor_rain_alley; persistent state: metal market gate and latch: the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; the gate remains open onto the rainy alley; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force\n[ENV-OUT] Location=outdoor_rain_alley; persistent state: metal market gate and latch: the latch bends and the gate is forced outward by the visible body momentum; metal market gate and latch responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; the gate remains open onto the rainy alley; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] OUTDOOR CONTINUATION: remain immediately outside the same now-open market gate; preserve screen direction, wetness, carried debris, fighter momentum and the FPV orbit. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S1 performs controlled submission release and recovery; EVENT RESPONSE: rain-filled alley puddle receives the visible contact; EVENT CONSEQUENCE: a broad directional splash follows the visible landing; rain-filled alley puddle responds along screen-right, level, forward: fans low across the floor, then follows the existing drain gradient; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: water responds along screen-right, level, forward with medium magnitude; show contact before the response and preserve the result."
+     }
+    ],
+    "warnings": []
+   }
+  },
+  {
+   "name": "env_reconcile_explicit_targets",
+   "input": {
+    "duration_seconds": 30.0,
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0,
+      "end_seconds": 2.5,
+      "subject_action": "S1 slams S2 into the stacked wet produce crates."
+     },
+     {
+      "id": "S2",
+      "start_seconds": 2.5,
+      "end_seconds": 5.0,
+      "subject_action": "S2 stumbles back into the shallow puddle."
+     },
+     {
+      "id": "S3",
+      "start_seconds": 5.0,
+      "end_seconds": 7.5,
+      "subject_action": "S1 drives S2 into the fish tank support frame."
+     },
+     {
+      "id": "S4",
+      "start_seconds": 7.5,
+      "end_seconds": 10.0,
+      "subject_action": "S2 ducks under the hanging scale and counters."
+     }
+    ]
+   },
+   "output": {
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0,
+      "end_seconds": 2.5,
+      "subject_action": "S1 slams S2 into the stacked wet produce crates.",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S1; action=active close-combat momentum; contact_target_id=env_stacked_wet_produce_crates; contact_target=stacked wet produce crates; contact_material=wet_plastic; contact_time=0.65s; force_direction=screen-right, downward, forward; force_magnitude=heavy; primary_response=the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; secondary_response=vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.25s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "contact_material": "wet_plastic",
+      "environment_force_vector": {
+       "horizontal": "screen-right",
+       "vertical": "downward",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-right, downward, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S1; action=active close-combat momentum; contact_target_id=env_stacked_wet_produce_crates; contact_target=stacked wet produce crates; contact_material=wet_plastic; contact_time=0.65s; force_direction=screen-right, downward, forward; force_magnitude=heavy; primary_response=the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; secondary_response=vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.25s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; all tracked fixtures retain their established state\n[ENV-OUT] Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S1 performs active close-combat momentum; EVENT RESPONSE: stacked wet produce crates receives the visible contact; EVENT CONSEQUENCE: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: wet_plastic responds along screen-right, downward, forward with heavy magnitude; show contact before the response and preserve the result."
+     },
+     {
+      "id": "S2",
+      "start_seconds": 2.5,
+      "end_seconds": 5.0,
+      "subject_action": "S2 stumbles back into the shallow puddle.",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "",
+      "crowd_reaction": "",
+      "contact_material": "",
+      "environment_force_vector": {},
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] No material contact is authored in this Shot; preserve the established environment state without spontaneous damage.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force\n[ENV-OUT] Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: no fighter-to-material contact is authored; EVENT RESPONSE: no object moves or breaks; NEXT EVENT: preserve the incoming environment state unchanged.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: none required without visible contact; stable fighter recovery is not damage."
+     },
+     {
+      "id": "S3",
+      "start_seconds": 5.0,
+      "end_seconds": 7.5,
+      "subject_action": "S1 drives S2 into the fish tank support frame.",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S1; action=active close-combat momentum; contact_target_id=env_fish_tank_support_frame; contact_target=fish-tank support frame; contact_material=glass_water_frame; contact_time=5.65s; force_direction=screen-right, level, forward; force_magnitude=heavy; primary_response=the frame vibrates while the intact tank water sloshes; fish-tank support frame responds along screen-right, level, forward: the frame vibrates first and the contained water sloshes after it; secondary_response=cyan reflections tremble across the puddle; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.45s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions.",
+      "contact_material": "glass_water_frame",
+      "environment_force_vector": {
+       "horizontal": "screen-right",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-right, level, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S1; action=active close-combat momentum; contact_target_id=env_fish_tank_support_frame; contact_target=fish-tank support frame; contact_material=glass_water_frame; contact_time=5.65s; force_direction=screen-right, level, forward; force_magnitude=heavy; primary_response=the frame vibrates while the intact tank water sloshes; fish-tank support frame responds along screen-right, level, forward: the frame vibrates first and the contained water sloshes after it; secondary_response=cyan reflections tremble across the puddle; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.45s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force\n[ENV-OUT] Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S1 performs active close-combat momentum; EVENT RESPONSE: fish-tank support frame receives the visible contact; EVENT CONSEQUENCE: the frame vibrates while the intact tank water sloshes; fish-tank support frame responds along screen-right, level, forward: the frame vibrates first and the contained water sloshes after it; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: glass_water_frame responds along screen-right, level, forward with heavy magnitude; show contact before the response and preserve the result."
+     },
+     {
+      "id": "S4",
+      "start_seconds": 7.5,
+      "end_seconds": 10.0,
+      "subject_action": "S2 ducks under the hanging scale and counters.",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S2; action=active close-combat momentum; contact_target_id=env_hanging_scale_chain; contact_target=hanging scale chain; contact_material=hanging_metal; contact_time=8.15s; force_direction=screen-left, level, forward; force_magnitude=medium; primary_response=the scale swings once from the transferred vibration; hanging scale chain responds along screen-left, level, forward: swings from its suspension point and returns with diminishing amplitude; secondary_response=nearby hooks rattle briefly; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.25s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions.",
+      "contact_material": "hanging_metal",
+      "environment_force_vector": {
+       "horizontal": "screen-left",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "medium",
+       "label": "screen-left, level, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S2; action=active close-combat momentum; contact_target_id=env_hanging_scale_chain; contact_target=hanging scale chain; contact_material=hanging_metal; contact_time=8.15s; force_direction=screen-left, level, forward; force_magnitude=medium; primary_response=the scale swings once from the transferred vibration; hanging scale chain responds along screen-left, level, forward: swings from its suspension point and returns with diminishing amplitude; secondary_response=nearby hooks rattle briefly; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.25s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force\n[ENV-OUT] Location=indoor_seafood_aisle; persistent state: stacked wet produce crates: the upper crate overturns toward the wall; stacked wet produce crates responds along screen-right, downward, forward: skids first, then yaws and stops against the nearest fixed obstacle; vegetables roll along the sloped wet floor; all loose secondary material continues along screen-right, downward, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S2 performs active close-combat momentum; EVENT RESPONSE: hanging scale chain receives the visible contact; EVENT CONSEQUENCE: the scale swings once from the transferred vibration; hanging scale chain responds along screen-left, level, forward: swings from its suspension point and returns with diminishing amplitude; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: hanging_metal responds along screen-left, level, forward with medium magnitude; show contact before the response and preserve the result."
+     }
+    ],
+    "warnings": []
+   }
+  },
+  {
+   "name": "env_reconcile_recovery_action",
+   "input": {
+    "duration_seconds": 30.0,
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0,
+      "end_seconds": 2.5,
+      "subject_action": "S2 releases the wrist and both recover to a guarded base."
+     }
+    ]
+   },
+   "output": {
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0,
+      "end_seconds": 2.5,
+      "subject_action": "S2 releases the wrist and both recover to a guarded base.",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S2; action=controlled submission release and recovery; contact_target_id=env_shallow_floor_puddle; contact_target=shallow floor puddle; contact_material=water; contact_time=0.65s; force_direction=screen-left, level, forward; force_magnitude=medium; primary_response=a low directional splash follows the planted foot; shallow floor puddle responds along screen-left, level, forward: fans low across the floor, then follows the existing drain gradient; secondary_response=water spreads along the existing drain; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.25s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions.",
+      "contact_material": "water",
+      "environment_force_vector": {
+       "horizontal": "screen-left",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "medium",
+       "label": "screen-left, level, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S2; action=controlled submission release and recovery; contact_target_id=env_shallow_floor_puddle; contact_target=shallow floor puddle; contact_material=water; contact_time=0.65s; force_direction=screen-left, level, forward; force_magnitude=medium; primary_response=a low directional splash follows the planted foot; shallow floor puddle responds along screen-left, level, forward: fans low across the floor, then follows the existing drain gradient; secondary_response=water spreads along the existing drain; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.25s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; all tracked fixtures retain their established state\n[ENV-OUT] Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S2 performs controlled submission release and recovery; EVENT RESPONSE: shallow floor puddle receives the visible contact; EVENT CONSEQUENCE: a low directional splash follows the planted foot; shallow floor puddle responds along screen-left, level, forward: fans low across the floor, then follows the existing drain gradient; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: water responds along screen-left, level, forward with medium magnitude; show contact before the response and preserve the result.",
+      "causal_risk_repair_status": "auto_fixed",
+      "causal_risk_repair_notes": "Added a minimal recovery contact and directional physical feedback; no destructive event was invented."
+     }
+    ],
+    "warnings": []
+   }
+  },
+  {
+   "name": "env_reconcile_user_edited_uncaused",
+   "input": {
+    "duration_seconds": 30.0,
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0,
+      "end_seconds": 2.5,
+      "subject_action": "Both fighters circle slowly.",
+      "environment_interaction_user_edited": true,
+      "environment_interaction": "a crate explodes for no reason"
+     }
+    ]
+   },
+   "output": {
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0,
+      "end_seconds": 2.5,
+      "subject_action": "Both fighters circle slowly.",
+      "environment_interaction_user_edited": true,
+      "environment_interaction": "a crate explodes for no reason",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "crowd_reaction": "",
+      "contact_material": "",
+      "environment_force_vector": {},
+      "environment_state_status": "warning",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] a crate explodes for no reason CROWD RESPONSE -",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; all tracked fixtures retain their established state\n[ENV-OUT] Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: no fighter-to-material contact is authored; EVENT RESPONSE: no object moves or breaks; NEXT EVENT: preserve the incoming environment state unchanged.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: none required without visible contact; stable fighter recovery is not damage."
+     }
+    ],
+    "warnings": [
+     "S1 has no visible environmental contact cause for its user-edited interaction."
+    ]
+   }
+  },
+  {
+   "name": "env_reconcile_aftermath_only",
+   "input": {
+    "duration_seconds": 30.0,
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0,
+      "end_seconds": 2.5,
+      "subject_action": "Wind carries fine grit through the final frame."
+     }
+    ]
+   },
+   "output": {
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0,
+      "end_seconds": 2.5,
+      "subject_action": "Wind carries fine grit through the final frame.",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "",
+      "crowd_reaction": "",
+      "contact_material": "",
+      "environment_force_vector": {},
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] No material contact is authored in this Shot; preserve the established environment state without spontaneous damage.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; all tracked fixtures retain their established state\n[ENV-OUT] Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: no fighter-to-material contact is authored; EVENT RESPONSE: no object moves or breaks; NEXT EVENT: preserve the incoming environment state unchanged.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: none required without visible contact; stable fighter recovery is not damage."
+     }
+    ],
+    "warnings": []
+   }
+  },
+  {
+   "name": "env_reconcile_stored_force_vector",
+   "input": {
+    "duration_seconds": 30.0,
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0,
+      "end_seconds": 2.5,
+      "subject_action": "S1 drives a palm strike into S2.",
+      "combat_force_vector": {
+       "horizontal": "screen-left",
+       "vertical": "downward",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-left, downward, forward"
+      }
+     }
+    ]
+   },
+   "output": {
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0,
+      "end_seconds": 2.5,
+      "subject_action": "S1 drives a palm strike into S2.",
+      "combat_force_vector": {
+       "horizontal": "screen-left",
+       "vertical": "downward",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-left, downward, forward"
+      },
+      "incoming_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S1; action=redirected palm, forearm or elbow contact; contact_target_id=env_shallow_floor_puddle; contact_target=shallow floor puddle; contact_material=water; contact_time=0.65s; force_direction=screen-left, downward, forward; force_magnitude=heavy; primary_response=a low directional splash follows the planted foot; shallow floor puddle responds along screen-left, downward, forward: fans low across the floor, then follows the existing drain gradient; secondary_response=water spreads along the existing drain; all loose secondary material continues along screen-left, downward, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.25s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions.",
+      "contact_material": "water",
+      "environment_force_vector": {
+       "horizontal": "screen-left",
+       "vertical": "downward",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-left, downward, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S1; action=redirected palm, forearm or elbow contact; contact_target_id=env_shallow_floor_puddle; contact_target=shallow floor puddle; contact_material=water; contact_time=0.65s; force_direction=screen-left, downward, forward; force_magnitude=heavy; primary_response=a low directional splash follows the planted foot; shallow floor puddle responds along screen-left, downward, forward: fans low across the floor, then follows the existing drain gradient; secondary_response=water spreads along the existing drain; all loose secondary material continues along screen-left, downward, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.25s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; all tracked fixtures retain their established state\n[ENV-OUT] Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S1 performs redirected palm, forearm or elbow contact; EVENT RESPONSE: shallow floor puddle receives the visible contact; EVENT CONSEQUENCE: a low directional splash follows the planted foot; shallow floor puddle responds along screen-left, downward, forward: fans low across the floor, then follows the existing drain gradient; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: water responds along screen-left, downward, forward with heavy magnitude; show contact before the response and preserve the result."
+     }
+    ],
+    "warnings": []
+   }
+  },
+  {
+   "name": "env_ledger_bounds_at_six",
+   "input": {
+    "duration_seconds": 30.0,
+    "shots": 8
+   },
+   "output": {
+    "rows": [
+     {
+      "id": "S1",
+      "start_seconds": 0.0,
+      "end_seconds": 2.5,
+      "subject_action": "S1 drives a takedown into S1 near the stalls.",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; all tracked fixtures retain their established state",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S1; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=0.65s; force_direction=screen-right, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.25s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "contact_material": "aged_metal",
+      "environment_force_vector": {
+       "horizontal": "screen-right",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-right, level, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S1; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=0.65s; force_direction=screen-right, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.25s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; all tracked fixtures retain their established state\n[ENV-OUT] Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S1 performs throw or takedown momentum; EVENT RESPONSE: aged metal stall side panel receives the visible contact; EVENT CONSEQUENCE: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: aged_metal responds along screen-right, level, forward with heavy magnitude; show contact before the response and preserve the result."
+     },
+     {
+      "id": "S2",
+      "start_seconds": 2.5,
+      "end_seconds": 5.0,
+      "subject_action": "S2 drives a takedown into S2 near the stalls.",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S2; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=3.15s; force_direction=screen-left, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.35s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "contact_material": "aged_metal",
+      "environment_force_vector": {
+       "horizontal": "screen-left",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-left, level, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S2; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=3.15s; force_direction=screen-left, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.35s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force\n[ENV-OUT] Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S2 performs throw or takedown momentum; EVENT RESPONSE: aged metal stall side panel receives the visible contact; EVENT CONSEQUENCE: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: aged_metal responds along screen-left, level, forward with heavy magnitude; show contact before the response and preserve the result."
+     },
+     {
+      "id": "S3",
+      "start_seconds": 5.0,
+      "end_seconds": 7.5,
+      "subject_action": "S1 drives a takedown into S1 near the stalls.",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S1; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=5.65s; force_direction=screen-right, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.45s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "contact_material": "aged_metal",
+      "environment_force_vector": {
+       "horizontal": "screen-right",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-right, level, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S1; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=5.65s; force_direction=screen-right, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.45s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force\n[ENV-OUT] Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S1 performs throw or takedown momentum; EVENT RESPONSE: aged metal stall side panel receives the visible contact; EVENT CONSEQUENCE: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: aged_metal responds along screen-right, level, forward with heavy magnitude; show contact before the response and preserve the result."
+     },
+     {
+      "id": "S4",
+      "start_seconds": 7.5,
+      "end_seconds": 10.0,
+      "subject_action": "S2 drives a takedown into S2 near the stalls.",
+      "incoming_environment_state": "Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "outgoing_environment_state": "Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S2; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=8.15s; force_direction=screen-left, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.25s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "contact_material": "aged_metal",
+      "environment_force_vector": {
+       "horizontal": "screen-left",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-left, level, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S2; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=8.15s; force_direction=screen-left, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.25s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "continuity_state": "[ENV-IN] Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force\n[ENV-OUT] Location=indoor_seafood_aisle; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S2 performs throw or takedown momentum; EVENT RESPONSE: aged metal stall side panel receives the visible contact; EVENT CONSEQUENCE: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: aged_metal responds along screen-left, level, forward with heavy magnitude; show contact before the response and preserve the result."
+     },
+     {
+      "id": "S5",
+      "start_seconds": 10.0,
+      "end_seconds": 12.5,
+      "subject_action": "S1 drives a takedown into S1 near the stalls.",
+      "incoming_environment_state": "Location=fish_vegetable_junction; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "outgoing_environment_state": "Location=fish_vegetable_junction; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S1; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=10.65s; force_direction=screen-right, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.35s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "contact_material": "aged_metal",
+      "environment_force_vector": {
+       "horizontal": "screen-right",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-right, level, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S1; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=10.65s; force_direction=screen-right, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.35s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "continuity_state": "[ENV-IN] Location=fish_vegetable_junction; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force\n[ENV-OUT] Location=fish_vegetable_junction; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S1 performs throw or takedown momentum; EVENT RESPONSE: aged metal stall side panel receives the visible contact; EVENT CONSEQUENCE: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: aged_metal responds along screen-right, level, forward with heavy magnitude; show contact before the response and preserve the result."
+     },
+     {
+      "id": "S6",
+      "start_seconds": 12.5,
+      "end_seconds": 15.0,
+      "subject_action": "S2 drives a takedown into S2 near the stalls.",
+      "incoming_environment_state": "Location=fish_vegetable_junction; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "outgoing_environment_state": "Location=fish_vegetable_junction; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S2; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=13.15s; force_direction=screen-left, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.45s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "contact_material": "aged_metal",
+      "environment_force_vector": {
+       "horizontal": "screen-left",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-left, level, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S2; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=13.15s; force_direction=screen-left, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.45s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "continuity_state": "[ENV-IN] Location=fish_vegetable_junction; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force\n[ENV-OUT] Location=fish_vegetable_junction; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S2 performs throw or takedown momentum; EVENT RESPONSE: aged metal stall side panel receives the visible contact; EVENT CONSEQUENCE: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: aged_metal responds along screen-left, level, forward with heavy magnitude; show contact before the response and preserve the result."
+     },
+     {
+      "id": "S7",
+      "start_seconds": 15.0,
+      "end_seconds": 17.5,
+      "subject_action": "S1 drives a takedown into S1 near the stalls.",
+      "incoming_environment_state": "Location=fish_vegetable_junction; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "outgoing_environment_state": "Location=fish_vegetable_junction; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange.",
+      "environment_interaction": "cause_actor=S1; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=15.65s; force_direction=screen-right, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.25s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "contact_material": "aged_metal",
+      "environment_force_vector": {
+       "horizontal": "screen-right",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-right, level, forward"
+      },
+      "environment_state_status": "continuous",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S1; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=15.65s; force_direction=screen-right, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.25s after the visible contact, the nearest vendors shield their faces and pull one another one step behind the stalls; distant spectators remain at the perimeter.",
+      "continuity_state": "[ENV-IN] Location=fish_vegetable_junction; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force\n[ENV-OUT] Location=fish_vegetable_junction; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S1 performs throw or takedown momentum; EVENT RESPONSE: aged metal stall side panel receives the visible contact; EVENT CONSEQUENCE: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: aged_metal responds along screen-right, level, forward with heavy magnitude; show contact before the response and preserve the result."
+     },
+     {
+      "id": "S8",
+      "start_seconds": 17.5,
+      "end_seconds": 20.0,
+      "subject_action": "S2 drives a takedown into S2 near the stalls.",
+      "incoming_environment_state": "Location=market_loading_threshold; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "outgoing_environment_state": "Location=market_loading_threshold; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "location_transition": "INDOOR→OUTDOOR ROUTE: active attack, defence, clinch or throw carries P1/S1 and P2/S2 through the visible market loading passage toward the gate at 20.00s; never insert walking coverage, an establishing cut or teleportation.",
+      "environment_interaction": "cause_actor=S2; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=18.15s; force_direction=screen-left, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response.",
+      "crowd_reaction": "About 0.35s after the visible contact, the nearest vendors recoil and pull one companion clear of the opening while the rest part toward both sides of the gate.",
+      "contact_material": "aged_metal",
+      "environment_force_vector": {
+       "horizontal": "screen-left",
+       "vertical": "level",
+       "depth": "forward",
+       "magnitude": "heavy",
+       "label": "screen-left, level, forward"
+      },
+      "environment_state_status": "transition",
+      "environment_physics_schema_version": 1,
+      "environment_response": "[ENV-PHYSICS] cause_actor=S2; action=throw or takedown momentum; contact_target_id=env_aged_metal_stall_side_panel; contact_target=aged metal stall side panel; contact_material=aged_metal; contact_time=18.15s; force_direction=screen-left, level, forward; force_magnitude=heavy; primary_response=the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; secondary_response=rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force. Show the action and exact contact before either response. CROWD RESPONSE - About 0.35s after the visible contact, the nearest vendors recoil and pull one companion clear of the opening while the rest part toward both sides of the gate.",
+      "continuity_state": "[ENV-IN] Location=market_loading_threshold; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force\n[ENV-OUT] Location=market_loading_threshold; persistent state: aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-right, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force | aged metal stall side panel: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; rust dust falls only after the impact; all loose secondary material continues along screen-left, level, forward with less energy and never travels against the applied force",
+      "additional_direction": "[LOCATION] INDOOR→OUTDOOR ROUTE: active attack, defence, clinch or throw carries P1/S1 and P2/S2 through the visible market loading passage toward the gate at 20.00s; never insert walking coverage, an establishing cut or teleportation. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+      "event_causality_chain": "EVENT CAUSE: S2 performs throw or takedown momentum; EVENT RESPONSE: aged metal stall side panel receives the visible contact; EVENT CONSEQUENCE: the panel dents inward at the contact point; aged metal stall side panel responds along screen-left, level, forward: dents or flexes at the contact point before vibration travels through its supports; NEXT EVENT: the resulting state persists into the following Shot.",
+      "physical_feedback_chain": "PHYSICAL FEEDBACK: aged_metal responds along screen-left, level, forward with heavy magnitude; show contact before the response and preserve the result."
+     }
+    ],
+    "warnings": []
+   }
+  },
+  {
+   "name": "env_transition_time_unit",
+   "input": {
+    "durations": [
+     45.0,
+     30.0,
+     5.0,
+     0.5
+    ]
+   },
+   "output": {
+    "transitions": [
+     30.0,
+     20.0,
+     3.5,
+     0.5
+    ]
+   }
+  },
+  {
+   "name": "env_prompt_clause",
+   "input": {
+    "row_from": "reconcile('S1 launches a low kick at S2. S2 checks the kick.')"
+   },
+   "output": {
+    "clause_with_contract": "ENVIRONMENT INTERACTION - cause_actor=S1; action=committed kick or checked-kick momentum; contact_target_id=env_shallow_floor_puddle; contact_target=shallow floor puddle; contact_material=water; contact_time=0.65s; force_direction=screen-right, level, forward; force_magnitude=medium; primary_response=a low directional splash follows the planted foot; shallow floor puddle responds along screen-right, level, forward: fans low across the floor, then follows the existing drain gradient; secondary_response=water spreads along the existing drain; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before e… CROWD REACTION - About 0.25s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions. INCOMING ENVIRONMENT STATE - Location=indoor_seafood_aisle; all tracked fixtures retain their established state OUTGOING ENVIRONMENT STATE - Location=indoor_seafood_aisle; all tracked fixtures retain their established state LOCATION TRANSITION - INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. EVENT CAUSALITY - EVENT CAUSE: S1 performs committed kick or checked-kick momentum; EVENT RESPONSE: shallow floor puddle receives the visible contact; EVENT CONSEQUENCE: a low directional splash follows the planted foot; shallow floor puddle responds along screen-right, level, forward: fans low across the floor, then follows the existing drain gradient; NEXT EVENT: the resul… PHYSICAL FEEDBACK - PHYSICAL FEEDBACK: water responds along screen-right, level, forward with medium magnitude; show contact before the response and preserve the result. ENVIRONMENTAL COMBAT CAUSALITY: show the fighter action and exact contact first; only then show one primary physical response and at most one secondary response. Preserve every displaced, dented, leaking, open or broken state in all later shots. No spontaneous damage, instant repair, unrelated explosion, reset prop, duplicate fighter or crowd member entering the central combat lane.",
+    "clause_without_contract": "ENVIRONMENT INTERACTION - cause_actor=S1; action=committed kick or checked-kick momentum; contact_target_id=env_shallow_floor_puddle; contact_target=shallow floor puddle; contact_material=water; contact_time=0.65s; force_direction=screen-right, level, forward; force_magnitude=medium; primary_response=a low directional splash follows the planted foot; shallow floor puddle responds along screen-right, level, forward: fans low across the floor, then follows the existing drain gradient; secondary_response=water spreads along the existing drain; all loose secondary material continues along screen-right, level, forward with less energy and never travels against the applied force. Show the action and exact contact before e… CROWD REACTION - About 0.25s after the visible contact, the nearest spectators flinch and shift one step away while the distant crowd keeps its established perimeter positions. INCOMING ENVIRONMENT STATE - Location=indoor_seafood_aisle; all tracked fixtures retain their established state OUTGOING ENVIRONMENT STATE - Location=indoor_seafood_aisle; all tracked fixtures retain their established state LOCATION TRANSITION - INDOOR CONTINUITY: remain inside the visibly connected market aisle; any movement between stalls is caused only by the ongoing exchange. EVENT CAUSALITY - EVENT CAUSE: S1 performs committed kick or checked-kick momentum; EVENT RESPONSE: shallow floor puddle receives the visible contact; EVENT CONSEQUENCE: a low directional splash follows the planted foot; shallow floor puddle responds along screen-right, level, forward: fans low across the floor, then follows the existing drain gradient; NEXT EVENT: the resul… PHYSICAL FEEDBACK - PHYSICAL FEEDBACK: water responds along screen-right, level, forward with medium magnitude; show contact before the response and preserve the result.",
+    "clause_plain_row": ""
+   }
+  }
+ ]
+}

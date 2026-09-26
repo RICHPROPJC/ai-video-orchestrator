@@ -1,4 +1,15 @@
-import type { CallSheet } from "./types";
+import type { CallSheet, Shot } from "./types";
+
+/** Exterior wins ties (野外射擊場 has 場/堂-adjacent noise): a doorway is outside,
+ *  and unknown locations default exterior so no shot ever grows walls by accident. */
+const EXTERIOR_HINTS = ["野外", "戶外", "室外", "門口", "街", "路", "廣場", "操場", "海", "山", "天台", "庭園", "空地", "岸", "橋"];
+const INTERIOR_HINTS = ["室", "宿舍", "禮堂", "公寓", "中心", "廳", "館", "樓", "院", "倉", "庫", "店", "房", "教室", "辦公", "指揮", "走廊", "電梯", "醫院", "酒吧", "餐廳", "廚房"];
+
+export function isInteriorShot(shot: Shot): boolean {
+  const loc = shot.location;
+  if (EXTERIOR_HINTS.some((h) => loc.includes(h))) return false;
+  return INTERIOR_HINTS.some((h) => loc.includes(h));
+}
 
 function sceneJson(sheet: CallSheet) {
   const chars = JSON.stringify(
@@ -14,6 +25,7 @@ function sceneJson(sheet: CallSheet) {
       camera: s.camera,
       marks: s.marks,
       props: s.props ?? [],
+      interior: isInteriorShot(s),
     })),
     null,
     2,
@@ -42,6 +54,43 @@ def make_ground():
     ground = bpy.context.active_object
     ground.name = "Floor"
     ground.data.materials.append(grey("WetFloor", 0.62))
+
+# T34 interior shell: three walls + ceiling, camera-relative so every lens sees
+# them; reads the camera, never moves it. Measured WORKBENCH-FLAT greys: void bg
+# ~64, figure 0.40 ~170, floor 0.62 ~207 — walls 0.95 (~248) keep every mark crop
+# at span >=78 (brighter than the old floor-only span), ceiling 0.30 (~140) is
+# apart from void/floor/wall, so the ceiling line reads as a hard step.
+def make_room(cam):
+    o = cam.matrix_world.translation
+    fwd = cam.matrix_world.to_3x3() @ Vector((0, 0, -1))
+    f = Vector((fwd.x, fwd.y, 0))
+    if f.length < 1e-6:
+        f = Vector((0, 1, 0))
+    else:
+        f.normalize()
+    r3 = cam.matrix_world.to_3x3() @ Vector((1, 0, 0))
+    r = Vector((r3.x, r3.y, 0))
+    if r.length < 1e-6:
+        r = Vector((f.y, -f.x, 0))
+    r.normalize()
+    back_d = 14.0
+    hw = math.tan(cam.data.angle_x / 2.0) * back_d  # frustum half-width at back wall
+    side = max(1.2, hw * 0.55)
+    wall_h = 3.2
+    wall_mat = grey("Wall", 0.95)
+    ceil_mat = grey("Ceiling", 0.30)
+    mid = o + f * (back_d / 2.0)
+    back = o + f * back_d
+    # cube(scale) is FULL size per local axis; rot z picks the long axis:
+    # yaw_f -> local X runs along forward (depth), yaw_r -> along camera-right.
+    yaw_f = math.atan2(f.y, f.x)
+    yaw_r = math.atan2(r.y, r.x)
+    # back wall + ceiling span hw + 1 so no void sliver shows past their far edges
+    cube((back.x, back.y, wall_h / 2.0), (2.0 * (hw + 1.0), 0.2, wall_h), wall_mat, rot=(0, 0, yaw_r))
+    for s in (-1.0, 1.0):
+        c = mid + r * (s * side)
+        cube((c.x, c.y, wall_h / 2.0), (back_d + 2.0, 0.2, wall_h), wall_mat, rot=(0, 0, yaw_f))
+    cube((mid.x, mid.y, wall_h), (2.0 * (hw + 1.0), back_d + 2.0, 0.05), ceil_mat, rot=(0, 0, yaw_r))
 
 def cube(loc, scl, mat, rot=None):
     kw = {"size": 1, "location": loc, "scale": scl}
@@ -236,7 +285,11 @@ def main():
     bpy.context.active_object.data.size = 3
 
     build_shot(shot, 1, frames)
-    bpy.context.scene.camera = bpy.data.objects[shot["id"] + "_Camera"]
+    cam = bpy.data.objects[shot["id"] + "_Camera"]
+    bpy.context.scene.camera = cam
+    if shot.get("interior"):
+        bpy.context.view_layer.update()
+        make_room(cam)
 
     scene = bpy.context.scene
     scene.frame_start = 1
@@ -246,6 +299,11 @@ def main():
     # cannot pass the YMAX-YMIN>=40 figure gate; FLAT renders pure material greys
     scene.display.shading.light = "FLAT"
     scene.display.shading.color_type = "MATERIAL"
+    # Blender 4/5 default view transform (AgX) compresses the material greys
+    # (wall 0.95 -> ~194, figure -> ~159) and breaks every luma gate calibrated on
+    # 3.0's Standard; pin Standard so the measured greys above hold on 5.1.2.
+    scene.view_settings.view_transform = "Standard"
+    scene.view_settings.look = "None"
     scene.render.fps = fps
     scene.render.resolution_x = width
     scene.render.resolution_y = height

@@ -1,11 +1,24 @@
 import { z } from "zod";
+import { shotSecMin } from "./frame-grid";
 
 export const CHARACTER_ID_RE = /^[A-Z]$/;
 export const SCENE_ID_RE = /^SC\d{2}$/;
 export const BEAT_ID_RE = /^SC\d{2}\.B\d{2}$/;
 
 export const DIALOGUE_MAX_CHARS = 32;
-export const ACTION_MAX_CHARS = 120;
+/** T38: 120 let literary sentences through and T35's 0.5 gate killed the
+ *  37-gram SH01 action — a beat is one filmable move, short by construction. */
+export const ACTION_MAX_CHARS = 48;
+
+/** T38 visible-verb starter list (跪／押／提／畫／坐／站… curated, extensible
+ *  by card): an action must contain at least one verb a camera can see, so
+ *  description cannot pose as action. Lenient by design — any listed char
+ *  passes; the refine message teaches the fix on retry. */
+export const VISIBLE_ACTION_VERBS =
+  "站坐跪躺臥蹲企走跑行轉停退追拉推扯拖拽抓握提拎揹背扛抬舉伸縮放擱掛遞收拋扔擲撿拾掉按壓押指點畫寫塗擦抹掃洗倒灑撒撕拍打踢踏踩跳跌撲滾爬滑衝撞倚靠挨扶摟抱攬揮搖望看望瞧瞄盯聽聞嗅咬嚼吞喝飲扭擰咳嘆笑喊叫唱講哭戴脫著解鬆綁鎖扣";
+export function hasVisibleActionVerb(action: string): boolean {
+  return [...VISIBLE_ACTION_VERBS].some((v) => action.includes(v));
+}
 const BEATS_PER_SCENE_MIN = 4;
 const BEATS_PER_SCENE_MAX = 12;
 
@@ -18,24 +31,43 @@ export const FEATURE_RANGES: ScriptRanges = { scenes: [6, 14], totalBeats: [60, 
 export const EPISODE_RANGES: ScriptRanges = { scenes: [4, 8], totalBeats: [28, 60] };
 export const EPISODE_MAX_SEC = 360;
 
+/** Short slates are not forced into one scene. Scene count comes from the story. */
+export const SHORT_RANGES: ScriptRanges = { scenes: [1, 8], totalBeats: [1, 40] };
+/** Kept so older ad-band callers still import. rangesFor no longer selects it from duration. */
+export const AD_RANGES: ScriptRanges = { scenes: [1, 1], totalBeats: [3, 6] };
+export const AD_MAX_SEC = 30;
+
 export function rangesFor(targetSec: number): ScriptRanges {
+  if (targetSec <= AD_MAX_SEC) return SHORT_RANGES;
   return targetSec <= EPISODE_MAX_SEC ? EPISODE_RANGES : FEATURE_RANGES;
+}
+
+/** Story beat count is not the H3 generate floor. shotSecMin() stays the grid. */
+export function beatsFloorFor(_targetSec: number): number {
+  return 1;
+}
+
+export const SECONDS_PER_BEAT_FLOOR = shotSecMin();
+
+/** scene targetSec clamp bounds by band. */
+export function sceneClampBounds(targetSec: number): { min: number; max: number } {
+  const floor = shotSecMin();
+  return targetSec <= AD_MAX_SEC
+    ? { min: Math.min(floor, targetSec), max: Math.max(targetSec, floor) }
+    : { min: SCENE_TARGET_MIN, max: SCENE_TARGET_MAX };
 }
 export const SCENE_TARGET_MIN = 24;
 export const SCENE_TARGET_MAX = 120;
 const TARGET_TOLERANCE = 0.1;
 
-/** A beat becomes at least one shot and no shot is shorter than the frame grid
- *  allows, so a scene's second budget is a hard ceiling on how many beats fit. */
-export const SECONDS_PER_BEAT_FLOOR = 5.5;
-
 export function maxBeatsIn(sceneTargetSec: number): number {
-  return Math.floor(sceneTargetSec / SECONDS_PER_BEAT_FLOOR);
+  return Math.floor(sceneTargetSec / beatsFloorFor(sceneTargetSec));
 }
 
-/** The wav is the clock; this is the estimate the seats budget against. */
-export const SECONDS_PER_CHAR = 0.23;
-export const DIALOGUE_LEAD_IN = 0.6;
+/** Spoken pace, not a slow read. 0.23s/char + 0.6s lead-in made one line
+ *  look like 8s, so the writer dropped the rest of the scene's lines. */
+export const SECONDS_PER_CHAR = 0.12;
+export const DIALOGUE_LEAD_IN = 0.15;
 
 export function dialogueSeconds(line: string): number {
   const text = line.trim();
@@ -64,6 +96,7 @@ export const characterSchema = z.object({
     gender: z.enum(["f", "m", "n"]),
   }),
   heightM: z.number().min(0.8).max(1.2),
+  publicName: omittable(z.string().min(1).max(24)),
   speaks: z.boolean(),
 });
 
@@ -74,7 +107,9 @@ export const sceneSchema = z.object({
   timeOfDay: z.enum(["dawn", "day", "dusk", "night"]),
   weather: z.enum(["clear", "rain", "wind", "neon"]),
   summary: z.string().min(1).max(200),
-  targetSec: z.number().min(SCENE_TARGET_MIN).max(SCENE_TARGET_MAX),
+  // band bounds live in sceneClampBounds / outlineSchema — the shape only
+  // guards the sanity floor so ad slates (15–30s scenes) parse too
+  targetSec: z.number().min(1).max(SCENE_TARGET_MAX),
 });
 
 export const worldSchema = z.object({
@@ -92,7 +127,7 @@ const outlineShape = z.object({
   mood: z.string().min(1).max(80),
   language: z.enum(["zh-Hant", "yue", "en"]),
   world: worldSchema,
-  characters: z.array(characterSchema).min(2).max(12),
+  characters: z.array(characterSchema).min(1).max(12),
   scenes: z.array(sceneSchema).min(1),
   targetSec: z.number().positive(),
 });
@@ -144,7 +179,7 @@ export function outlineSchema(ctx: { targetSec: number; castRoster: string[]; ra
     const sum = outline.scenes.reduce((a, s) => a + s.targetSec, 0);
     const lo = ctx.targetSec * (1 - TARGET_TOLERANCE);
     const hi = ctx.targetSec * (1 + TARGET_TOLERANCE);
-    if (sum < lo || sum > hi) {
+    if (sum > hi) {
       report.addIssue({
         code: "custom",
         path: ["scenes"],
@@ -156,25 +191,33 @@ export function outlineSchema(ctx: { targetSec: number; castRoster: string[]; ra
 
 const beatShape = z.object({
   id: z.string().regex(BEAT_ID_RE, "beat id must be SCxx.Byy"),
-  action: z.string().min(1).max(ACTION_MAX_CHARS),
+  action: z
+    .string()
+    .min(1)
+    .max(ACTION_MAX_CHARS)
+    .refine(hasVisibleActionVerb, {
+      message: `action 要有一個鏡頭見得到嘅動詞（跪／押／提／畫／坐／站…），唔係一段描寫`,
+    }),
   dialogue: omittable(z.string().max(DIALOGUE_MAX_CHARS)),
   speaker: omittable(z.string().min(1).max(12)),
   emotion: omittable(z.string().min(1).max(20)),
 });
 
-const sceneBeatsShape = z.object({
-  sceneId: z.string().regex(SCENE_ID_RE),
-  thinking: z.string().min(1).max(600),
-  beats: z.array(beatShape).min(BEATS_PER_SCENE_MIN).max(BEATS_PER_SCENE_MAX),
-});
+const sceneBeatsShape = (min: number) =>
+  z.object({
+    sceneId: z.string().regex(SCENE_ID_RE),
+    thinking: z.string().min(1).max(600),
+    beats: z.array(beatShape).min(min).max(BEATS_PER_SCENE_MAX),
+  });
 
-export type SceneBeats = z.infer<typeof sceneBeatsShape>;
+export type SceneBeats = z.infer<ReturnType<typeof sceneBeatsShape>>;
 export type Beat = z.infer<typeof beatShape>;
 
 export function sceneBeatsSchema(ctx: { sceneId: string; speakingNames: string[]; targetSec: number }) {
   const speaking = new Set(ctx.speakingNames);
+  const beatsMin = ctx.targetSec <= AD_MAX_SEC ? 1 : BEATS_PER_SCENE_MIN;
   const beatCeiling = maxBeatsIn(ctx.targetSec);
-  return sceneBeatsShape.superRefine((scene, report) => {
+  return sceneBeatsShape(beatsMin).superRefine((scene, report) => {
     if (scene.sceneId !== ctx.sceneId) {
       report.addIssue({ code: "custom", path: ["sceneId"], message: `this envelope is scene ${ctx.sceneId}, not ${scene.sceneId}` });
     }

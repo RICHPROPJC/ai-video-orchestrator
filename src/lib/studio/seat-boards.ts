@@ -1,8 +1,12 @@
 import crypto from "node:crypto";
-import { chatJson, type RepairNote } from "./crew-llm";
+import path from "node:path";
+import type { BoardLane } from "./asset-board";
+import { renderBoards, type BoardsVisualOptions } from "./boards-visual";
+import { loadConfig } from "./config";
+import { chatJsonSeat, type RepairNote } from "./crew-llm";
 import { BOARDS_CHARTER } from "./seat-charters";
 import { assemblePlaybook, markPass } from "./playbook";
-import { boardsSceneSchema, SHOT_SEC_MAX, SHOT_SEC_MIN, SCENE_BUDGET_TOLERANCE, type BoardsScene } from "./boards-contract";
+import { boardsSceneSchema, TEXT_SHOT_SEC_MIN, SCENE_BUDGET_TOLERANCE, SLOT_VALUES, DEPTH_VALUES, STANCE_VALUES, type BoardsScene } from "./boards-contract";
 import { assertSheetGates, expandBoards } from "./boards-expand";
 import { dialogueSeconds, type Script } from "./script-contract";
 import type { CallSheet } from "./types";
@@ -14,6 +18,9 @@ type Handoff = Record<string, { slot: string; depth: string; stance: string; pro
 
 const SCENE_ID_RE = /^SC\d{2}$/;
 const GAITS = new Set(["plant", "walk", "reach", "turn"]);
+const SLOTS = new Set<string>(SLOT_VALUES);
+const DEPTHS = new Set<string>(DEPTH_VALUES);
+const STANCES = new Set<string>(STANCE_VALUES);
 
 /** qwen JSON-mode sometimes stores sceneId under "." / "," / "/sceneId". */
 export function recoverBoardsKeys(raw: unknown, note?: RepairNote): unknown {
@@ -64,8 +71,55 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
           repair(`repair: shots[${i}].cast[${j}].gait saw ${JSON.stringify(m.gait)} became plant`);
           m.gait = "plant";
         }
+        // b5 2Y0V grave: a gait word in stanceEnd enum-fails zod and burned a
+        // fail-closed ×3 round; the honest local fix is to drop the end stance
+        if (m.stanceEnd !== undefined && !STANCES.has(String(m.stanceEnd))) {
+          const why = GAITS.has(String(m.stanceEnd)) ? "gait word, not a stance" : `not one of ${STANCE_VALUES.join("/")}`;
+          repair(`repair: shots[${i}].cast[${j}].stanceEnd saw ${JSON.stringify(m.stanceEnd)} became (dropped: ${why})`);
+          delete m.stanceEnd;
+        }
+        // b6 2Y0V grave: a depth word in travelTo enum-fails zod the same way;
+        // drop the travel rather than guess a slot the boards never declared
+        if (m.travelTo !== undefined && !SLOTS.has(String(m.travelTo))) {
+          const why = DEPTHS.has(String(m.travelTo)) ? "depth word, not a slot" : `not one of ${SLOT_VALUES.join("/")}`;
+          repair(`repair: shots[${i}].cast[${j}].travelTo saw ${JSON.stringify(m.travelTo)} became (dropped: ${why})`);
+          delete m.travelTo;
+        }
         return m;
       });
+      // b7 BO9W grave: two figures on one slot/depth seat custom-fails zod
+      // ("two figures cannot share slot"); nudge the later one to the first
+      // free seat — same depth first — before zod burns a repair round
+      const seated = cast as unknown[];
+      if (seated.every((m) => m && typeof m === "object" && !Array.isArray(m))) {
+        const taken = new Set<string>();
+        for (const [j, member] of (seated as Record<string, unknown>[]).entries()) {
+          const m = member as { slot?: unknown; depth?: unknown };
+          if (typeof m.slot !== "string" || typeof m.depth !== "string") continue; // zod reports these
+          if (!SLOTS.has(m.slot) || !DEPTHS.has(m.depth)) continue; // zod reports these
+          const seat = `${m.slot}/${m.depth}`;
+          if (!taken.has(seat)) {
+            taken.add(seat);
+            continue;
+          }
+          const free =
+            SLOT_VALUES.map((s) => (taken.has(`${s}/${m.depth}`) ? null : { slot: s, depth: m.depth as string })).find(Boolean)
+            ?? DEPTH_VALUES.map((d) => (taken.has(`${m.slot}/${d}`) ? null : { slot: m.slot as string, depth: d })).find(Boolean)
+            ?? DEPTH_VALUES.flatMap((d) => SLOT_VALUES.map((s) => (taken.has(`${s}/${d}`) ? null : { slot: s, depth: d }))).find(Boolean);
+          if (free) {
+            if (free.slot !== m.slot) {
+              repair(`repair: shots[${i}].cast[${j}].slot saw ${JSON.stringify(m.slot)} became ${JSON.stringify(free.slot)} (seat ${seat} already taken in this shot)`);
+              m.slot = free.slot;
+            }
+            if (free.depth !== m.depth) {
+              repair(`repair: shots[${i}].cast[${j}].depth saw ${JSON.stringify(m.depth)} became ${JSON.stringify(free.depth)} (seat ${seat} already taken in this shot)`);
+              m.depth = free.depth;
+            }
+            taken.add(`${m.slot}/${m.depth}`);
+          }
+          // no free seat at all: leave it — zod's shared-seat issue is the report
+        }
+      }
     }
     const ids = new Set(
       (Array.isArray(cast) ? cast : [])
@@ -86,9 +140,9 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
       });
     }
     const dialogueClock = dialogueSeconds(dialogue);
-    const floor = Math.max(dialogueClock, SHOT_SEC_MIN);
+    const floor = Math.max(dialogueClock, TEXT_SHOT_SEC_MIN);
     if (durationSec < floor) {
-      const why = dialogue && dialogueClock >= SHOT_SEC_MIN ? "dialogue clock" : `floor ${SHOT_SEC_MIN}`;
+      const why = dialogue && dialogueClock >= TEXT_SHOT_SEC_MIN ? "dialogue clock" : `floor ${TEXT_SHOT_SEC_MIN}`;
       repair(`repair: shots[${i}].durationSec saw ${durationSec} became ${floor.toFixed(1)} (${why})`);
     }
     return { ...shot, cast, props, durationSec: Math.max(durationSec, floor) };
@@ -97,19 +151,7 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
     const lo = budgetSec * (1 - SCENE_BUDGET_TOLERANCE);
     const hi = budgetSec * (1 + SCENE_BUDGET_TOLERANCE);
     const sum = shots.reduce((a, s) => a + (s.durationSec as number), 0);
-    if (sum < lo) {
-      let need = lo - sum + 0.05;
-      for (let i = 0; i < shots.length && need > 0; i += 1) {
-        const shot = shots[i]!;
-        const room = SHOT_SEC_MAX - (shot.durationSec as number);
-        if (room <= 0) continue;
-        const add = Math.min(room, need);
-        const before = shot.durationSec as number;
-        shot.durationSec = tenth(before + add);
-        need -= add;
-        repair(`repair: shots[${i}].durationSec saw ${before} became ${shot.durationSec} (sum lift toward band ${lo.toFixed(1)}–${hi.toFixed(1)})`);
-      }
-    } else if (sum > hi) {
+    if (sum > hi) {
       // the 07JZ SC06 grave: cutting exactly sum - hi let tenth() round the
       // cut shot back up (7 − 0.05 → 7), so the sum stayed 49.1 against a true
       // hi of 49.05 (45 × 1.09) and zod's `runtime > hi` killed the scene.
@@ -122,7 +164,7 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
         for (let k = shots.length - 1; k >= 0 && extra > 0; k -= 1) {
           const shot = shots[k]!;
           const dialogue = typeof shot.dialogue === "string" ? shot.dialogue.trim() : "";
-          const floor = Math.max(SHOT_SEC_MIN, dialogueSeconds(dialogue));
+          const floor = Math.max(TEXT_SHOT_SEC_MIN, dialogueSeconds(dialogue));
           const room = (shot.durationSec as number) - floor;
           if (room <= 0) continue;
           const cut = Math.min(room, extra);
@@ -163,21 +205,26 @@ export function sheetDigest(sheet: CallSheet): string {
 
 /** 阿圖 boards one scene per turn so the handoff is real continuity, then the
  *  desk — not the model — assigns SH ids and turns the grammar into geometry. */
+type BoardsOptions = { script: Script; targetSec: number; aspect?: CallSheet["aspect"]; writer: { model: string; receipts: string[] }; draftOnly?: boolean };
+type BoardsIo = SeatIo & { boardLane?: BoardLane; boardsDir?: string };
+export function runBoards(opts: { render: BoardsVisualOptions }): ReturnType<typeof renderBoards>;
+export function runBoards(opts: BoardsOptions, io: BoardsIo): Promise<BoardsResult>;
 export async function runBoards(
-  opts: { script: Script; targetSec: number; aspect?: CallSheet["aspect"]; writer: { model: string; receipts: string[] } },
-  io: SeatIo,
-): Promise<BoardsResult> {
+  opts: BoardsOptions | { render: BoardsVisualOptions },
+  io?: BoardsIo,
+): Promise<BoardsResult | Awaited<ReturnType<typeof renderBoards>>> {
+  if ("render" in opts) return renderBoards(opts.render);
+  if (!io) throw new Error("boards: seat IO required");
   const { script } = opts;
   const characters = script.outline.characters.map((c) => ({ id: c.id, name: c.name }));
   const receipts: string[] = [];
   // system = charter (law) + global playbook + own playbook; charter never shrinks
-  const book = assemblePlaybook("boards", io.playbookDir);
+  const book = assemblePlaybook("boards", io.playbookDir, io.drama);
   const boards: BoardsScene[] = [];
   let carried: Handoff = {};
-  // the writer's scene targets are within 10% of the slate; rescaling them to
-  // land exactly on it keeps the per-scene gate and the sheet gate the same gate
+  // Locked scene seconds are the clock. The form number is not applied again.
   const declared = script.outline.scenes.reduce((a, s) => a + s.targetSec, 0) || 1;
-  const budget = (sec: number) => (sec / declared) * opts.targetSec;
+  const budget = (sec: number) => sec;
 
   for (const [i, scene] of script.outline.scenes.entries()) {
     // qwen on litellm sometimes returns an empty JSON object if the prior scene
@@ -185,9 +232,13 @@ export async function runBoards(
     if (i > 0 && !io.fetchImpl) await new Promise((r) => setTimeout(r, 5000));
     const beats = script.scenes.find((s) => s.sceneId === scene.id)?.beats ?? [];
     const budgetSec = budget(scene.targetSec);
-    const pass = await chatJson({
+    const pass = await chatJsonSeat({
       seat: "boards",
       unit: scene.id,
+      fallbackModel: io.crew.secondFallback,
+      onAttempt: io.warn && ((r: { attempt: number; valid: boolean; errors: string[] }) => {
+        if (!r.valid) void io.warn?.(`boards ${scene.id} attempt ${r.attempt} ✗ ${r.errors[0] ?? ""}`);
+      }),
       model: io.model,
       crew: io.crew,
       system: BOARDS_CHARTER + book.text,
@@ -216,10 +267,11 @@ export async function runBoards(
     io.index?.({ id: `boards:${scene.id}`, text: pass.value.shots.map((s) => s.action).join(" ") });
   }
 
-  const expanded = expandBoards({ script, boards, targetSec: opts.targetSec, aspect: opts.aspect });
-  assertSheetGates(expanded, { script, targetSec: opts.targetSec });
-  // the boards stage passed with these bullets in the prompt: ship gate
-  receipts.push(...markPass(["boards", "global"], io.playbookDir));
+  const expanded = expandBoards({ script, boards, targetSec: declared, aspect: opts.aspect });
+  assertSheetGates(expanded, { script, targetSec: declared });
+  if (!opts.draftOnly) {
+    receipts.push(...markPass(["boards", "global"], io.playbookDir, io.drama));
+  }
   const sheet: CallSheet = {
     ...expanded,
     provenance: {
@@ -228,5 +280,8 @@ export async function runBoards(
       sha256: sheetDigest(expanded),
     },
   };
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/ed012a9f-01ce-40d6-a4fe-5aa6a237c57d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'244f6d'},body:JSON.stringify({sessionId:'244f6d',hypothesisId:'B',location:'seat-boards.ts:return',message:'boards seat returns text sheet without U1.5',data:{shots:sheet.shots.length,storyboard:sheet.storyboard?.length ?? 0},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   return { sheet, model: io.model, receipts };
 }

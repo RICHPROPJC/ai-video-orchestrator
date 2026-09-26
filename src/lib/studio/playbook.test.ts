@@ -219,10 +219,13 @@ test("assemblePlaybook reads all + own, primitive before drama; Chau's raw lines
     { kind: "bullet", bullet: bullet({ id: "w7", class: "prop.garment", field: "props.note", saw: "將軍袍", rule: "將軍袍嘅鏡頭唔好落農具提示句" }) },
   ]);
 
-  const book = assemblePlaybook("writer", seats);
+  const unnamed = assemblePlaybook("writer", seats);
+  assert.equal(unnamed.bullets.length, 2, "public bullets only — the one project on disk is not guessed");
+  assert.doesNotMatch(unnamed.text, /劇目 wist/);
+  const book = assemblePlaybook("writer", seats, "wist");
   assert.match(book.text, /全部 seat（跨劇目）/);
   assert.match(book.text, /### writer 檯（跨劇目）/);
-  assert.match(book.text, /### writer 檯（劇目 wist）/, "the single drama's file rides along");
+  assert.match(book.text, /### writer 檯（劇目 wist）/, "the named project's file rides along");
   assert.equal(book.bullets.length, 3, "all-primitive + writer-primitive + writer-drama");
   assert.ok(book.text.indexOf("machine.429") < book.text.indexOf("schema.enum"), "all-scope first");
   assert.ok(book.text.indexOf("schema.enum") < book.text.indexOf("prop.garment"), "primitive before drama");

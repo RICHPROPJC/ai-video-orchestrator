@@ -3,6 +3,8 @@ import * as nodeTest from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
+import type { BoardLane } from "./asset-board";
 import { DEFAULT_CREW, type CrewConfig } from "./crew-llm";
 import { runWriter, type SeatDoc } from "./seat-writer";
 import { handoffFrom, padBoardDurations, recoverBoardsKeys, runBoards, sheetDigest } from "./seat-boards";
@@ -56,7 +58,17 @@ function replayFetch(replies: string[]) {
   return { impl, seen };
 }
 
-async function runBothSeats() {
+async function runBothSeats(draftOnly = true) {
+  const boardLane: BoardLane = {
+    edit: async (o) => { await sharp({ create: { width: 128, height: 128, channels: 3, background: "white" } }).png().toFile(o.outFile); },
+    cut: async (board, cells) => { for (const c of cells) await sharp(board).extract({ left: c.x, top: c.y, width: c.w, height: c.h }).png().toFile(c.file); },
+    qc: async (_file, out) => {
+      const result: Awaited<ReturnType<BoardLane["qc"]>> = { status: "GREEN", checks: { status: "GREEN", fail_reasons: [] } };
+      fs.writeFileSync(out, JSON.stringify(result));
+      return result;
+    },
+    rembg: async () => { throw new Error("not for storyboards"); },
+  };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seats-e2e-"));
   const { impl, seen } = replayFetch(FIXTURE.replies.map((r) => r.content));
   const spoken: string[] = [];
@@ -74,11 +86,24 @@ async function runBothSeats() {
     FIXTURE.ranges,
   );
   const boards = await runBoards(
-    { script: writer.script, targetSec: FIXTURE.targetSec, writer: { model: writer.model, receipts: writer.receipts } },
-    { ...io, model: crew.boardsModel },
+    { script: writer.script, targetSec: FIXTURE.targetSec, draftOnly, writer: { model: writer.model, receipts: writer.receipts } },
+    { ...io, model: crew.boardsModel, boardLane },
   );
   return { writer, boards, dir, seen, spoken, docs };
 }
+
+test("runBoards completes only with visible mapped cuts and a visual receipt", async () => {
+  const { boards, dir } = await runBothSeats(false);
+  assert.equal(boards.sheet.storyboard?.length, boards.sheet.shots.length);
+  for (const cell of boards.sheet.storyboard!) {
+    assert.equal(cell.at, "0%");
+    assert.ok(fs.existsSync(cell.file));
+    assert.ok(boards.sheet.shots.some((s) => s.id === cell.shotId));
+  }
+  const receipt = boards.receipts.find((r) => r.endsWith(".visual.json"));
+  assert.ok(receipt);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, receipt), "utf8")).status, "GREEN");
+});
 
 test("the two seats drive a frozen fixture to a valid three-scene callsheet", async () => {
   const { writer, boards } = await runBothSeats();
@@ -378,6 +403,83 @@ test("padBoardDurations drops heldBy when that letter is not in the shot cast", 
   };
   const padded = padBoardDurations(raw) as { shots: { props: { heldBy?: string }[] }[] };
   assert.equal(padded.shots[0]!.props[0]!.heldBy, undefined);
+});
+
+test("2Y0V grave: gait word in stanceEnd and depth word in travelTo drop before zod, no retry burned", () => {
+  // b5+b6 pre-send self-check: both enum misses used to fail zod and burn a
+  // fail-closed ×3 repair round; the desk now drops them with a receipt line
+  const raw = {
+    sceneId: "SC01",
+    thinking: "修。",
+    shots: [{
+      beatId: "SC01.B01",
+      size: "medium" as const,
+      angle: "eye" as const,
+      side: "frontal" as const,
+      durationSec: 6.5,
+      action: "holds",
+      dialogue: "",
+      cast: [{ characterId: "A", slot: "C" as const, depth: "mid" as const, facing: 1 as const, gait: "plant" as const, stance: "stand" as const, stanceEnd: "walk" as unknown as "lean", travelTo: "far" as unknown as "R" }],
+    }],
+  };
+  const beats = [{ id: "SC01.B01", action: "holds" }];
+  const schema = boardsSceneSchema({
+    sceneId: "SC01",
+    beats,
+    characters: [{ id: "A", name: "Cast-A" }],
+    budgetSec: 7,
+  });
+  assert.equal(schema.safeParse(raw).success, false, "the grave must fail zod before the pad");
+  const notes: string[] = [];
+  const repaired = padBoardDurations(raw, 7, (line) => notes.push(line));
+  const parsed = schema.safeParse(repaired);
+  assert.equal(parsed.success, true, JSON.stringify(parsed.success ? [] : parsed.error?.issues.map((i) => i.message)));
+  assert.equal(parsed.data!.shots[0]!.cast[0]!.stanceEnd, undefined);
+  assert.equal(parsed.data!.shots[0]!.cast[0]!.travelTo, undefined);
+  assert.ok(notes.some((l) => l === 'repair: shots[0].cast[0].stanceEnd saw "walk" became (dropped: gait word, not a stance)'), notes.join(" | "));
+  assert.ok(notes.some((l) => l === 'repair: shots[0].cast[0].travelTo saw "far" became (dropped: depth word, not a slot)'), notes.join(" | "));
+});
+
+test("BO9W grave: two figures on C/mid — the later one is nudged to a free seat before zod", () => {
+  // b7 pre-send self-check: the shared-seat custom issue used to fail zod and
+  // burn a repair round; the desk now moves the later figure, valid fields survive
+  const raw = {
+    sceneId: "SC01",
+    thinking: "修。",
+    shots: [{
+      beatId: "SC01.B01",
+      size: "medium" as const,
+      angle: "eye" as const,
+      side: "frontal" as const,
+      durationSec: 6.5,
+      action: "holds",
+      dialogue: "",
+      cast: [
+        { characterId: "A", slot: "C" as const, depth: "mid" as const, facing: 1 as const, gait: "plant" as const, stance: "stand" as const, stanceEnd: "lean" as const, travelTo: "R" as const },
+        { characterId: "B", slot: "C" as const, depth: "mid" as const, facing: -1 as const, gait: "plant" as const, stance: "stand" as const },
+      ],
+    }],
+  };
+  const beats = [{ id: "SC01.B01", action: "holds" }];
+  const schema = boardsSceneSchema({
+    sceneId: "SC01",
+    beats,
+    characters: [
+      { id: "A", name: "Cast-A" },
+      { id: "B", name: "Cast-B" },
+    ],
+    budgetSec: 7,
+  });
+  assert.equal(schema.safeParse(raw).success, false, "the grave must fail zod before the pad");
+  const notes: string[] = [];
+  const repaired = padBoardDurations(raw, 7, (line) => notes.push(line));
+  const parsed = schema.safeParse(repaired);
+  assert.equal(parsed.success, true, JSON.stringify(parsed.success ? [] : parsed.error?.issues.map((i) => i.message)));
+  const seats = parsed.data!.shots[0]!.cast.map((c) => `${c.slot}/${c.depth}`);
+  assert.deepEqual(seats, ["C/mid", "L/mid"], "the later figure moves to the first free seat at the same depth");
+  assert.equal(parsed.data!.shots[0]!.cast[0]!.stanceEnd, "lean", "valid fields survive the self-check");
+  assert.equal(parsed.data!.shots[0]!.cast[0]!.travelTo, "R");
+  assert.ok(notes.some((l) => l === 'repair: shots[0].cast[1].slot saw "C" became "L" (seat C/mid already taken in this shot)'), notes.join(" | "));
 });
 
 test("recoverBoardsKeys maps qwen punctuation keys onto sceneId", () => {

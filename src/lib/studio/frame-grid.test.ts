@@ -11,8 +11,10 @@ test("snap receipts (ceil, 17k+5, k∈[7,21])", () => {
   assert.equal(snapDurationToFrames(12.92), 311); // v6 receipt wav (PROVENANCE: shingx-proof 12.92 s → 311 f)
   assert.equal(snapDurationToFrames(12.96), 328); // 12.96 s is past the 311 boundary (311/24 = 12.9583…)
   assert.equal(snapDurationToFrames(8.12), 209);
-  assert.equal(snapDurationToFrames(1), 124);
-  assert.equal(snapDurationToFrames(60), 362);
+  assert.equal(snapDurationToFrames(2.5), 73); // k=4, 73f ≈ 3.04s — not lifted to 124
+  assert.equal(snapDurationToFrames(1.5), 56); // story 1.5s, H3 floor k=3
+  assert.equal(snapDurationToFrames(1), 56);
+  assert.throws(() => snapDurationToFrames(60), /h3_grid/);
 });
 
 test("wavSeconds reads a canonical PCM wav", async () => {

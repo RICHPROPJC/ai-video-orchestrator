@@ -1,0 +1,658 @@
+TAP version 13
+# Subtest: boards repairs only rejected cells, keeps shot/position/hash/QC receipts
+ok 1 - boards repairs only rejected cells, keeps shot/position/hash/QC receipts
+  ---
+  duration_ms: 1201.349201
+  type: 'test'
+  ...
+# Subtest: H3 anchor seven onwards use the batch in the original order
+ok 2 - H3 anchor seven onwards use the batch in the original order
+  ---
+  duration_ms: 5.406262
+  type: 'test'
+  ...
+# Subtest: eight 68-frame requests budget 73 each; measured 577 cannot override the gate
+ok 3 - eight 68-frame requests budget 73 each; measured 577 cannot override the gate
+  ---
+  duration_ms: 19.877793
+  type: 'test'
+  ...
+# Subtest: W4 角度板：one /edit call → 4 cut cells 2×2（front/45/side/back），wire 板面 4608×4608（2304×2304級）
+ok 4 - W4 角度板：one /edit call → 4 cut cells 2×2（front/45/side/back），wire 板面 4608×4608（2304×2304級）
+  ---
+  duration_ms: 6015.773221
+  type: 'test'
+  ...
+# Subtest: 轉面帶只切頂條，半張會切到下面嘅剪影帶
+ok 5 - 轉面帶只切頂條，半張會切到下面嘅剪影帶
+  ---
+  duration_ms: 1.261857
+  type: 'test'
+  ...
+# Subtest: W4 角度板 prompt：版式規格式＋跨格一致＋純白flat底；grade同角標黑框唔准入肖像板（W4C）
+ok 6 - W4 角度板 prompt：版式規格式＋跨格一致＋純白flat底；grade同角標黑框唔准入肖像板（W4C）
+  ---
+  duration_ms: 1.10645
+  type: 'test'
+  ...
+# Subtest: W4 逐張QC：FAIL 格唔入庫（RGBA 缺席），其餘格照釘；零 GREEN 兩 seed 後 throw
+ok 7 - W4 逐張QC：FAIL 格唔入庫（RGBA 缺席），其餘格照釘；零 GREEN 兩 seed 後 throw
+  ---
+  duration_ms: 7369.472136
+  type: 'test'
+  ...
+# Subtest: W4 角度板 resume：四角度 GREEN pin 已齊就唔重板
+ok 8 - W4 角度板 resume：四角度 GREEN pin 已齊就唔重板
+  ---
+  duration_ms: 3849.092116
+  type: 'test'
+  ...
+# Subtest: W4 換衫板：Image-1＝現有板，一板過換晒四角度（全部 GREEN 先准收）
+ok 9 - W4 換衫板：Image-1＝現有板，一板過換晒四角度（全部 GREEN 先准收）
+  ---
+  duration_ms: 6637.893944
+  type: 'test'
+  ...
+# Subtest: W4 道具板：4 props 一板四格入 assets/，6 props 同一張板再切；逐格 QC people_count=0；FAIL 即死
+ok 10 - W4 道具板：4 props 一板四格入 assets/，6 props 同一張板再切；逐格 QC people_count=0；FAIL 即死
+  ---
+  duration_ms: 11885.130849
+  type: 'test'
+  ...
+# Subtest: W4 道具/場景板 prompt：純白flat底＋純道具靜物／跨格一致；內容negative掃除（W4B）
+ok 11 - W4 道具/場景板 prompt：純白flat底＋純道具靜物／跨格一致；內容negative掃除（W4B）
+  ---
+  duration_ms: 2.992682
+  type: 'test'
+  ...
+# Subtest: W4 場景板分流：cells 入 assets/scenes/ 做 Blender look-dev（唔入 still refs），manifest 帶紅線
+ok 12 - W4 場景板分流：cells 入 assets/scenes/ 做 Blender look-dev（唔入 still refs），manifest 帶紅線
+  ---
+  duration_ms: 5553.736497
+  type: 'test'
+  ...
+# Subtest: W4 分鏡動作板 prompt＝pre-vis 層（整張用，唔切割）；唔強加資產白底
+ok 13 - W4 分鏡動作板 prompt＝pre-vis 層（整張用，唔切割）；唔強加資產白底
+  ---
+  duration_ms: 7.060043
+  type: 'test'
+  ...
+# Subtest: W4 換衫板 prompt：版式照舊＋只換衫＋四格齊換（W4B正面寫法）
+ok 14 - W4 換衫板 prompt：版式照舊＋只換衫＋四格齊換（W4B正面寫法）
+  ---
+  duration_ms: 0.573599
+  type: 'test'
+  ...
+# Subtest: W4C P0：live 兩條lane嘅qc交eyes——armed second令stale cache必MISS（漏交＝hit假GREEN死鎖）
+ok 15 - W4C P0：live 兩條lane嘅qc交eyes——armed second令stale cache必MISS（漏交＝hit假GREEN死鎖）
+  ---
+  duration_ms: 602.621725
+  type: 'test'
+  ...
+# Subtest: 鍵格板：一張 U1.5 裝多個分鏡，鍵格數量唔鎖死
+ok 16 - 鍵格板：一張 U1.5 裝多個分鏡，鍵格數量唔鎖死
+  ---
+  duration_ms: 2588.443861
+  type: 'test'
+  ...
+# Subtest: snap receipts (ceil, 17k+5, k∈[7,21])
+ok 17 - snap receipts (ceil, 17k+5, k∈[7,21])
+  ---
+  duration_ms: 13.25679
+  type: 'test'
+  ...
+# Subtest: wavSeconds reads a canonical PCM wav
+ok 18 - wavSeconds reads a canonical PCM wav
+  ---
+  duration_ms: 43.007975
+  type: 'test'
+  ...
+# Subtest: wavSeconds walks past a LIST chunk before data
+ok 19 - wavSeconds walks past a LIST chunk before data
+  ---
+  duration_ms: 4.991398
+  type: 'test'
+  ...
+# Subtest: C-form deep-equals the production golden (§5b, CFORM_0921)
+ok 20 - C-form deep-equals the production golden (§5b, CFORM_0921)
+  ---
+  duration_ms: 11.099873
+  type: 'test'
+  ...
+# Subtest: 9:16 C-form deep-equals the portrait golden (ECOM1A probe: verify/motion/H3.object_info.node1.CFORM-ECOM.json)
+ok 21 - 9:16 C-form deep-equals the portrait golden (ECOM1A probe: verify/motion/H3.object_info.node1.CFORM-ECOM.json)
+  ---
+  duration_ms: 1.933449
+  type: 'test'
+  ...
+# Subtest: ECOM1A: VHS_LoadVideo __VIDEO__ canvas stays in sync with the sampler canvas
+ok 22 - ECOM1A: VHS_LoadVideo __VIDEO__ canvas stays in sync with the sampler canvas
+  ---
+  duration_ms: 2.226624
+  type: 'test'
+  ...
+# Subtest: ECOM1A: h3SizeForAspect — probe-backed sizes, default 16:9, unknown refuses
+ok 23 - ECOM1A: h3SizeForAspect — probe-backed sizes, default 16:9, unknown refuses
+  ---
+  duration_ms: 0.904557
+  type: 'test'
+  ...
+# Subtest: A-form deep-equals the still-to-video golden (§5b keyframes lane)
+ok 24 - A-form deep-equals the still-to-video golden (§5b keyframes lane)
+  ---
+  duration_ms: 2.34438
+  type: 'test'
+  ...
+# Subtest: C-form golden: Video 1 wired, zero keyframe nodes, portrait at ref_image_0
+ok 25 - C-form golden: Video 1 wired, zero keyframe nodes, portrait at ref_image_0
+  ---
+  duration_ms: 1.236192
+  type: 'test'
+  ...
+# Subtest: §5b prohibition: Video 1 + keyframes in one build refuses to emit (prompt_too_thin family)
+ok 26 - §5b prohibition: Video 1 + keyframes in one build refuses to emit (prompt_too_thin family)
+  ---
+  duration_ms: 1.391237
+  type: 'test'
+  ...
+# Subtest: A-form without kfStartName refuses to emit (0% anchor is mandatory)
+ok 27 - A-form without kfStartName refuses to emit (0% anchor is mandatory)
+  ---
+  duration_ms: 0.675267
+  type: 'test'
+  ...
+# Subtest: FBC/SolAttn ride ONLY the 4-step road (§5b: 8-step v1.0 structurally crashes FBC)
+ok 28 - FBC/SolAttn ride ONLY the 4-step road (§5b: 8-step v1.0 structurally crashes FBC)
+  ---
+  duration_ms: 1.920044
+  type: 'test'
+  ...
+# Subtest: A-form: official H3Keyframes node, positions one entry per anchor
+ok 29 - A-form: official H3Keyframes node, positions one entry per anchor
+  ---
+  duration_ms: 2.399266
+  type: 'test'
+  ...
+# Subtest: A-form keyframes positive is combined with the refs conditioning chain
+ok 30 - A-form keyframes positive is combined with the refs conditioning chain
+  ---
+  duration_ms: 0.613427
+  type: 'test'
+  ...
+# Subtest: steps and length are numbers, not coerced strings
+ok 31 - steps and length are numbers, not coerced strings
+  ---
+  duration_ms: 0.548726
+  type: 'test'
+  ...
+# Subtest: audio is exactly one dialogue wav (ref_audio_0) unless a timing ref is given
+ok 32 - audio is exactly one dialogue wav (ref_audio_0) unless a timing ref is given
+  ---
+  duration_ms: 0.466062
+  type: 'test'
+  ...
+# Subtest: card ③a: montage timing ref rides as ref_audio_1 after the portrait (sample \#31)
+ok 33 - card ③a: montage timing ref rides as ref_audio_1 after the portrait (sample \#31)
+  ---
+  duration_ms: 0.693095
+  type: 'test'
+  ...
+# Subtest: card ③b: UI photo refs ride after the identity slots on the C-form
+ok 34 - card ③b: UI photo refs ride after the identity slots on the C-form
+  ---
+  duration_ms: 0.965116
+  type: 'test'
+  ...
+# Subtest: variant B (documented fallback): ref_images populated, no Video 1, no keyframes
+ok 35 - variant B (documented fallback): ref_images populated, no Video 1, no keyframes
+  ---
+  duration_ms: 0.781167
+  type: 'test'
+  ...
+# Subtest: variant BKF (documented fallback): ref_images + start anchor, no Video 1
+ok 36 - variant BKF (documented fallback): ref_images + start anchor, no Video 1
+  ---
+  duration_ms: 0.772945
+  type: 'test'
+  ...
+# Subtest: variant C: zero refs, start anchor, no Video 1
+ok 37 - variant C: zero refs, start anchor, no Video 1
+  ---
+  duration_ms: 0.830461
+  type: 'test'
+  ...
+# Subtest: C8b knob: visualStrength override reaches every cond entry; 0.999 default unchanged
+ok 38 - C8b knob: visualStrength override reaches every cond entry; 0.999 default unchanged
+  ---
+  duration_ms: 1.26109
+  type: 'test'
+  ...
+# Subtest: chained golden deep-equals + pack topology wiring (H3LastFrame→ms.start_image, ConcatAV)
+ok 39 - chained golden deep-equals + pack topology wiring (H3LastFrame→ms.start_image, ConcatAV)
+  ---
+  duration_ms: 4.211337
+  type: 'test'
+  ...
+# Subtest: standalone multishot golden = the MS-A identity-only shape
+ok 40 - standalone multishot golden = the MS-A identity-only shape
+  ---
+  duration_ms: 1.752574
+  type: 'test'
+  ...
+# Subtest: multishot refuse matrix: chain needs C-form; chain×multishot; standalone purity
+ok 41 - multishot refuse matrix: chain needs C-form; chain×multishot; standalone purity
+  ---
+  duration_ms: 1.464382
+  type: 'test'
+  ...
+# Subtest: dry run C-form (Video 1 asset given): 56-frame receipt, zero keyframe nodes, portrait ref_image_0
+ok 42 - dry run C-form (Video 1 asset given): 56-frame receipt, zero keyframe nodes, portrait ref_image_0
+  ---
+  duration_ms: 53.179853
+  type: 'test'
+  ...
+# Subtest: dry run A-form (no Video 1 asset): keyframes 0%, 100%, kf uploads wired
+ok 43 - dry run A-form (no Video 1 asset): keyframes 0%, 100%, kf uploads wired
+  ---
+  duration_ms: 27.90897
+  type: 'test'
+  ...
+# Subtest: §5b prohibition: blockoutMp4 + kfEnd in one submit refuses to emit
+ok 44 - §5b prohibition: blockoutMp4 + kfEnd in one submit refuses to emit
+  ---
+  duration_ms: 16.26664
+  type: 'test'
+  ...
+# Subtest: dry-run: blockout plus keyframes rides when keyframePositions is set
+ok 45 - dry-run: blockout plus keyframes rides when keyframePositions is set
+  ---
+  duration_ms: 10.775702
+  type: 'test'
+  ...
+# Subtest: dry run never clobbers a real receipt
+ok 46 - dry run never clobbers a real receipt
+  ---
+  duration_ms: 10.223453
+  type: 'test'
+  ...
+# Subtest: dry run wires UI photo refs and audio timing on the C-form (cards ③a/③b)
+ok 47 - dry run wires UI photo refs and audio timing on the C-form (cards ③a/③b)
+  ---
+  duration_ms: 16.420557
+  type: 'test'
+  ...
+# Subtest: UI photos and timing ref are rejected off the A path (fallback variants stay frozen)
+ok 48 - UI photos and timing ref are rejected off the A path (fallback variants stay frozen)
+  ---
+  duration_ms: 13.716905
+  type: 'test'
+  ...
+# Subtest: prose that fails validateProse throws before anything else
+ok 49 - prose that fails validateProse throws before anything else
+  ---
+  duration_ms: 6.034107
+  type: 'test'
+  ...
+# Subtest: MULTISHOT_WIRE dry-run: chain rides the C-form receipt (true-endframe start, flatten, seed_per_shot)
+ok 50 - MULTISHOT_WIRE dry-run: chain rides the C-form receipt (true-endframe start, flatten, seed_per_shot)
+  ---
+  duration_ms: 14.555969
+  type: 'test'
+  ...
+# Subtest: MULTISHOT_WIRE dry-run: standalone multishot (MS-A shape, motion_form=ms)
+ok 51 - MULTISHOT_WIRE dry-run: standalone multishot (MS-A shape, motion_form=ms)
+  ---
+  duration_ms: 10.812849
+  type: 'test'
+  ...
+# Subtest: MULTISHOT_WIRE refuse: chain without a Video 1; multishot with r2v refs
+ok 52 - MULTISHOT_WIRE refuse: chain without a Video 1; multishot with r2v refs
+  ---
+  duration_ms: 26.671962
+  type: 'test'
+  ...
+# Subtest: one moment is the still; several moments are kf cells
+ok 53 - one moment is the still; several moments are kf cells
+  ---
+  duration_ms: 4.940149
+  type: 'test'
+  ...
+# Subtest: location change starts a new column; keyframes stay in order
+ok 54 - location change starts a new column; keyframes stay in order
+  ---
+  duration_ms: 1.780628
+  type: 'test'
+  ...
+# Subtest: own boards sit beside the chain and are not keyframes
+ok 55 - own boards sit beside the chain and are not keyframes
+  ---
+  duration_ms: 0.918747
+  type: 'test'
+  ...
+# Subtest: index parse: subject headers + clip lines, zero-padded ids
+ok 56 - index parse: subject headers + clip lines, zero-padded ids
+  ---
+  duration_ms: 9.411314
+  type: 'test'
+  ...
+# Subtest: live index counts: 2548 BVH on disk / 2435 covered (trial receipt)
+ok 57 - live index counts: 2548 BVH on disk / 2435 covered (trial receipt)
+  ---
+  duration_ms: 219.854364
+  type: 'test'
+  ...
+# Subtest: combat sweep ranking: 73 clips, arm-axis numbers parse
+ok 58 - combat sweep ranking: 73 clips, arm-axis numbers parse
+  ---
+  duration_ms: 5.164979
+  type: 'test'
+  ...
+# Subtest: live buildShortlist: caps exactly the trial caps, siblings deduped, codes unique
+ok 59 - live buildShortlist: caps exactly the trial caps, siblings deduped, codes unique
+  ---
+  duration_ms: 218.145736
+  type: 'test'
+  ...
+# Subtest: decision prompt lines carry the category (111_19 Pregnant Woman lesson)
+ok 60 - decision prompt lines carry the category (111_19 Pregnant Woman lesson)
+  ---
+  duration_ms: 7.632473
+  type: 'test'
+  ...
+# Subtest: parseDecisionLines: strict rows incl. the three-digit C101 case
+ok 61 - parseDecisionLines: strict rows incl. the three-digit C101 case
+  ---
+  duration_ms: 2.686948
+  type: 'test'
+  ...
+# Subtest: golden replay: frozen trial stream → picks, runners and chain-rule conf all hit
+ok 62 - golden replay: frozen trial stream → picks, runners and chain-rule conf all hit
+  ---
+  duration_ms: 57.201064
+  type: 'test'
+  ...
+# Subtest: chain-rule math: three-digit C101 renormalizes over still-valid digits only
+ok 63 - chain-rule math: three-digit C101 renormalizes over still-valid digits only
+  ---
+  duration_ms: 1.90267
+  type: 'test'
+  ...
+# Subtest: one-call hard constraint: short parse retries ONCE, then fails loud; per-shot calls would count >1
+ok 64 - one-call hard constraint: short parse retries ONCE, then fails loud; per-shot calls would count >1
+  ---
+  duration_ms: 47.963899
+  type: 'test'
+  ...
+# Subtest: verb gate: any-of must hit desc or category; all-of partial flags but stays green
+ok 65 - verb gate: any-of must hit desc or category; all-of partial flags but stays green
+  ---
+  duration_ms: 1.862974
+  type: 'test'
+  ...
+# Subtest: decideSelection: no character-motion family leaves the verb gate off
+ok 66 - decideSelection: no character-motion family leaves the verb gate off
+  ---
+  duration_ms: 3.677763
+  type: 'test'
+  ...
+# Subtest: 抹走唔係行路；坐低同 turn／stand 矛盾
+ok 67 - 抹走唔係行路；坐低同 turn／stand 矛盾
+  ---
+  duration_ms: 1.090934
+  type: 'test'
+  ...
+# Subtest: bake window: 4.82s → start 1, len 578 source frames, step 2 (trial bake receipt)
+ok 68 - bake window: 4.82s → start 1, len 578 source frames, step 2 (trial bake receipt)
+  ---
+  duration_ms: 1.009909
+  type: 'test'
+  ...
+# Subtest: bvh frame read: 111_19=1025, 07_01=317 (Frames: sits ~4KB in, not the first KB)
+ok 69 - bvh frame read: 111_19=1025, 07_01=317 (Frames: sits ~4KB in, not the first KB)
+  ---
+  duration_ms: 1.221703
+  type: 'test'
+  ...
+# Subtest: decideSelection: conf ≥0.7 auto; verb-miss walks runner-ups; three misses fail loud
+ok 70 - decideSelection: conf ≥0.7 auto; verb-miss walks runner-ups; three misses fail loud
+  ---
+  duration_ms: 33.19242
+  type: 'test'
+  ...
+# Subtest: selection schema + job-dir write + §5b blockout path convention
+ok 71 - selection schema + job-dir write + §5b blockout path convention
+  ---
+  duration_ms: 29.22462
+  type: 'test'
+  ...
+# Subtest: F4 dry-run: SC-0921-9V4Y callsheet → selection.json (SH01=111_19 auto, SH02 tie-break record)
+ok 72 - F4 dry-run: SC-0921-9V4Y callsheet → selection.json (SH01=111_19 auto, SH02 tie-break record)
+  ---
+  duration_ms: 30.507556
+  type: 'test'
+  ...
+# Subtest: motionSegments: martial/run anchor C-form, trailing simples chain, leading simples = one multishot
+ok 73 - motionSegments: martial/run anchor C-form, trailing simples chain, leading simples = one multishot
+  ---
+  duration_ms: 6.911743
+  type: 'test'
+  ...
+# Subtest: snapFramesPerShot: 17k+5 grid rounds upward (4.82s → 124)
+ok 74 - snapFramesPerShot: 17k+5 grid rounds upward (4.82s → 124)
+  ---
+  duration_ms: 3.701509
+  type: 'test'
+  ...
+# Subtest: msGridFrames: multishot delivers on the 17k+5 grid (119 → 124, run5 live)
+ok 75 - msGridFrames: multishot delivers on the 17k+5 grid (119 → 124, run5 live)
+  ---
+  duration_ms: 0.550202
+  type: 'test'
+  ...
+# Subtest: empty soundQc.endpoint = FAIL unconfigured, pass:false
+ok 76 - empty soundQc.endpoint = FAIL unconfigured, pass:false
+  ---
+  duration_ms: 7.173202
+  type: 'test'
+  ...
+# Subtest: unreachable ear also fails loud with the endpoint named
+ok 77 - unreachable ear also fails loud with the endpoint named
+  ---
+  duration_ms: 1.153632
+  type: 'test'
+  ...
+# Subtest: config pins soundQc.endpoint to :9881
+ok 78 - config pins soundQc.endpoint to :9881
+  ---
+  duration_ms: 2.60899
+  type: 'test'
+  ...
+# Subtest: ocr slot exists in config and defaults empty
+ok 79 - ocr slot exists in config and defaults empty
+  ---
+  duration_ms: 0.887249
+  type: 'test'
+  ...
+# Subtest: ocrHttp with empty endpoint throws unconfigured — no fake pass
+ok 80 - ocrHttp with empty endpoint throws unconfigured — no fake pass
+  ---
+  duration_ms: 3.355402
+  type: 'test'
+  ...
+# Subtest: soundQcFromRemote: matching SenseVoice transcript is a real verdict
+ok 81 - soundQcFromRemote: matching SenseVoice transcript is a real verdict
+  ---
+  duration_ms: 6.363857
+  type: 'test'
+  ...
+# Subtest: soundQcFromRemote: CJK char edit + clipping block the delivery
+ok 82 - soundQcFromRemote: CJK char edit + clipping block the delivery
+  ---
+  duration_ms: 1.167549
+  type: 'test'
+  ...
+# Subtest: scriptEditRate: CJK is char edit, EN is word miss
+ok 83 - scriptEditRate: CJK is char edit, EN is word miss
+  ---
+  duration_ms: 4.0623
+  type: 'test'
+  ...
+# Subtest: config pins tts to AuK :9882, not CosyVoice
+ok 84 - config pins tts to AuK :9882, not CosyVoice
+  ---
+  duration_ms: 2.385967
+  type: 'test'
+  ...
+# Subtest: ttsHttp uses AuK adapter, never CosyVoice skip
+ok 85 - ttsHttp uses AuK adapter, never CosyVoice skip
+  ---
+  duration_ms: 7.410482
+  type: 'test'
+  ...
+# Subtest: tripwire: no *-local-schema provider id anywhere in studio src
+ok 86 - tripwire: no *-local-schema provider id anywhere in studio src
+  ---
+  duration_ms: 20.06345
+  type: 'test'
+  ...
+# Subtest: the two seats drive a frozen fixture to a valid three-scene callsheet
+ok 87 - the two seats drive a frozen fixture to a valid three-scene callsheet
+  ---
+  duration_ms: 165.891956
+  type: 'test'
+  ...
+# Subtest: every shot carries a camera a mark ray can reach and marks for its cast
+ok 88 - every shot carries a camera a mark ray can reach and marks for its cast
+  ---
+  duration_ms: 59.591641
+  type: 'test'
+  ...
+# Subtest: speaking parts stay inside the cast roster and every line is a cast member's
+ok 89 - speaking parts stay inside the cast roster and every line is a cast member's
+  ---
+  duration_ms: 46.444381
+  type: 'test'
+  ...
+# Subtest: provenance names both models, lists receipts and digests the sheet
+ok 90 - provenance names both models, lists receipts and digests the sheet
+  ---
+  duration_ms: 65.80455
+  type: 'test'
+  ...
+# Subtest: the seat-authored sheet passes loadCallSheet, the same gate the plug path uses
+ok 91 - the seat-authored sheet passes loadCallSheet, the same gate the plug path uses
+  ---
+  duration_ms: 42.394696
+  type: 'test'
+  ...
+# Subtest: each seat gets its own charter and only its sealed packet
+ok 92 - each seat gets its own charter and only its sealed packet
+  ---
+  duration_ms: 41.363938
+  type: 'test'
+  ...
+# Subtest: the seats speak their own thinking and index the script into the vault
+ok 93 - the seats speak their own thinking and index the script into the vault
+  ---
+  duration_ms: 33.147568
+  type: 'test'
+  ...
+# Subtest: the handoff carries each figure's last slot, stance and props forward
+ok 94 - the handoff carries each figure's last slot, stance and props forward
+  ---
+  duration_ms: 1.373056
+  type: 'test'
+  ...
+# Subtest: padBoardDurations lifts durationSec before the dialogue-clock zod gate
+ok 95 - padBoardDurations lifts durationSec before the dialogue-clock zod gate
+  ---
+  duration_ms: 4.258068
+  type: 'test'
+  ...
+# Subtest: padBoardDurations lifts a short scene sum into the budget band
+ok 96 - padBoardDurations lifts a short scene sum into the budget band
+  ---
+  duration_ms: 3.137052
+  type: 'test'
+  ...
+# Subtest: 07JZ SC06 grave: a 49.1 sum against hi 49.05 cuts back inside the band
+ok 97 - 07JZ SC06 grave: a 49.1 sum against hi 49.05 cuts back inside the band
+  ---
+  duration_ms: 6.419382
+  type: 'test'
+  ...
+# Subtest: SC02 grave: facing 0 and heldBy "null" are repaired, then zod passes
+ok 98 - SC02 grave: facing 0 and heldBy "null" are repaired, then zod passes
+  ---
+  duration_ms: 2.196908
+  type: 'test'
+  ...
+# Subtest: T5MM SC01 grave: missing, null and illegal gait become plant, then zod passes
+ok 99 - T5MM SC01 grave: missing, null and illegal gait become plant, then zod passes
+  ---
+  duration_ms: 2.564097
+  type: 'test'
+  ...
+# Subtest: padBoardDurations drops heldBy when that letter is not in the shot cast
+ok 100 - padBoardDurations drops heldBy when that letter is not in the shot cast
+  ---
+  duration_ms: 0.578782
+  type: 'test'
+  ...
+# Subtest: 2Y0V grave: gait word in stanceEnd and depth word in travelTo drop before zod, no retry burned
+ok 101 - 2Y0V grave: gait word in stanceEnd and depth word in travelTo drop before zod, no retry burned
+  ---
+  duration_ms: 1.817964
+  type: 'test'
+  ...
+# Subtest: BO9W grave: two figures on C/mid — the later one is nudged to a free seat before zod
+ok 102 - BO9W grave: two figures on C/mid — the later one is nudged to a free seat before zod
+  ---
+  duration_ms: 1.846938
+  type: 'test'
+  ...
+# Subtest: recoverBoardsKeys maps qwen punctuation keys onto sceneId
+ok 103 - recoverBoardsKeys maps qwen punctuation keys onto sceneId
+  ---
+  duration_ms: 1.415704
+  type: 'test'
+  ...
+# Subtest: a denied model never reaches the wire, whichever seat asks
+ok 104 - a denied model never reaches the wire, whichever seat asks
+  ---
+  duration_ms: 3.378855
+  type: 'test'
+  ...
+# Subtest: given wavDir: audible SHxx.wav is copied, no synthesis
+ok 105 - given wavDir: audible SHxx.wav is copied, no synthesis
+  ---
+  duration_ms: 59.598392
+  type: 'test'
+  ...
+# Subtest: no wavDir: AuK speaks the continuity dialogue, cloneRef reaches the take
+ok 106 - no wavDir: AuK speaks the continuity dialogue, cloneRef reaches the take
+  ---
+  duration_ms: 11.32383
+  type: 'test'
+  ...
+# Subtest: fail loud: --wav-dir that lacks the shot file still stops
+ok 107 - fail loud: --wav-dir that lacks the shot file still stops
+  ---
+  duration_ms: 3.986584
+  type: 'test'
+  ...
+# Subtest: picture beat with no dialogue writes silence and does not call AuK
+ok 108 - picture beat with no dialogue writes silence and does not call AuK
+  ---
+  duration_ms: 4.058155
+  type: 'test'
+  ...
+1..108
+# tests 108
+# suites 0
+# pass 108
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 46637.392916

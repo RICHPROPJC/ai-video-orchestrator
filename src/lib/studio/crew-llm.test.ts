@@ -6,6 +6,7 @@ import { z } from "zod";
 import * as nodeTest from "node:test";
 import {
   chatJson,
+  chatJsonSeat,
   chatJsonWithFallback,
   DEFAULT_CREW,
   extractJsonObject,
@@ -88,6 +89,34 @@ function call(opts: {
     sleepImpl: opts.sleepImpl,
   });
 }
+
+test("INSIDE_VISIBLE 卡A attempt燈: every attempt fires onAttempt the moment its receipt lands", async () => {
+  const seen: { attempt: number; valid: boolean; errors: string[] }[] = [];
+  const reply = (content: string) =>
+    new Response(JSON.stringify({ choices: [{ message: { content, reasoning_content: "" } }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  let n = 0;
+  const impl = (async () => reply(n++ === 2 ? '{"title":"片","beats":["a","b"]}' : '{"title":"缺拍"}')) as unknown as typeof fetch;
+  const out = await chatJson({
+    seat: "writer",
+    unit: "outline",
+    model: "kimi-k3",
+    crew,
+    system: "你係編劇檯。",
+    user: "{\"brief\":\"x\"}",
+    schema,
+    receiptDir: tmpDir(),
+    fetchImpl: impl,
+    onAttempt: (r) => seen.push({ ...r }),
+  });
+  assert.equal(out.value.beats.length, 2, "third reply parses");
+  assert.equal(seen.length, 3, "one onAttempt per attempt, receipt-adjacent");
+  assert.deepEqual(seen.map((r) => [r.attempt, r.valid]), [[1, false], [2, false], [3, true]]);
+  assert.ok(seen[0]!.errors.length > 0, "failed attempt carries its error lines");
+  assert.deepEqual(seen[2]!.errors, [], "the valid attempt reports clean");
+});
 
 test("stripThink drops a leaked leading think block", () => {
   assert.equal(stripThink("<think>諗緊</think>\n{\"a\":1}"), '{"a":1}');
@@ -496,6 +525,76 @@ test("non-429 HTTP errors stay immediate: no backoff sleep at all", async () => 
     /HTTP 502/,
   );
   assert.deepEqual(clock.slept, []);
+});
+
+/** First call answers 429 with a quota-window body; the rest answer 200. */
+function quota429Then(ok: string, body = "使用上限：請於5小时後再試") {
+  const sent: Record<string, unknown>[] = [];
+  const impl = (async (_url: string | URL | Request, init?: RequestInit) => {
+    sent.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    if (sent.length === 1) {
+      return new Response(JSON.stringify({ error: { message: body } }), { status: 429 });
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { content: ok, reasoning_content: "" } }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  return { impl, sent };
+}
+
+const OK_OUTLINE = JSON.stringify({ title: "門", beats: ["a", "b"] });
+
+test("RE2P W1: 429 quota (使用上限/5小时) throws at once — no backoff, no retry", async () => {
+  const { impl, sent } = quota429Then(OK_OUTLINE);
+  const clock = fakeClock();
+  await assert.rejects(
+    () => call({ replies: [], dir: tmpDir(), fetchImpl: impl, sleepImpl: clock.sleepImpl }),
+    /HTTP 429 quota exhausted/,
+  );
+  assert.equal(sent.length, 1, "quota 429 must not burn backoff tries");
+  assert.deepEqual(clock.slept, [], "backoff can't refund a quota window");
+});
+
+test("RE2P W1: chatJsonSeat quota-429 falls to secondFallback and succeeds", async () => {
+  const { impl, sent } = quota429Then(OK_OUTLINE);
+  const out = await chatJsonSeat({
+    seat: "writer",
+    unit: "outline",
+    model: "kimi-k3",
+    fallbackModel: "qwen38",
+    crew,
+    system: "你係編劇檯。",
+    user: "{\"brief\":\"x\"}",
+    schema,
+    receiptDir: tmpDir(),
+    fetchImpl: impl,
+  });
+  assert.equal(out.fellBack, true);
+  assert.equal(out.model, "qwen38");
+  assert.match(out.primaryError ?? "", /quota exhausted/);
+  assert.equal(sent[1]!.model, "qwen38", "fallback goes through the same LiteLLM door with the second model id");
+});
+
+test("RE2P W1: 5小時 variant also throws, and empty secondFallback stays single-door", async () => {
+  const thrower = quota429Then(OK_OUTLINE, "已達上限，5小時後重置");
+  await assert.rejects(
+    () => call({ replies: [], dir: tmpDir(), fetchImpl: thrower.impl }),
+    /quota exhausted/,
+  );
+
+  const noDoor = fakeFetch([JSON.stringify({ sceneId: "SC01", shots: [{ durationSec: 6 }] })]);
+  const out = await chatJsonSeat({
+    seat: "boards",
+    unit: "SC01",
+    model: "kimi-k3",
+    crew,
+    system: "分鏡",
+    user: "{}",
+    schema: z.object({ sceneId: z.string(), shots: z.array(z.object({ durationSec: z.number() })).min(1) }),
+    receiptDir: tmpDir(),
+    fetchImpl: noDoor.impl,
+  });
+  assert.equal(out.fellBack, false);
+  assert.equal(noDoor.sent.length, 1);
+  assert.equal(out.model, "kimi-k3");
 });
 
 if (bareBun) {

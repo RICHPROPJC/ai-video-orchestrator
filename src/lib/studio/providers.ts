@@ -43,9 +43,14 @@ export async function ttsHttp(opts: {
 
 export async function senseVoiceHttp(audioFile: string): Promise<Partial<SoundQc> | null> {
   const cfg = loadConfig();
-  if (!cfg.soundQc.endpoint) return null;
-  const b64 = fs.readFileSync(audioFile).toString("base64");
-  const res = await postJson(cfg.soundQc.endpoint, { audio_b64: b64, language: "auto" }, apiKey());
+  const base = cfg.soundQc.endpoint.replace(/\/$/, "");
+  if (!base) return null;
+  const url = base.endsWith("/asr") ? base : `${base}/asr`;
+  const form = new FormData();
+  form.append("audio", new File([new Uint8Array(fs.readFileSync(audioFile))], path.basename(audioFile), { type: "audio/wav" }));
+  form.append("language", "zh");
+  const res = await fetch(url, { method: "POST", body: form, signal: AbortSignal.timeout(120_000) });
+  if (!res.ok) throw new Error(`SenseVoice /asr HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const json = (await res.json()) as {
     text?: string;
     emotion?: string;
@@ -108,7 +113,6 @@ export function scriptEditRate(ref: string, hyp: string): { rate: number; code: 
   }
   return { rate: wer(ref, hyp), code: "wer" };
 }
-
 /** A3 fail-loud: an ear is a provider. No endpoint = stage FAIL "unconfigured",
  *  never a schema stand-in. */
 export function soundQcUnconfigured(reason = "soundQc.endpoint not set — no ASR ear on this stage"): SoundQc {
@@ -162,15 +166,13 @@ export function soundQcFromRemote(opts: {
       severity: "block" as const,
       detail: `${code.toUpperCase()} ${rate.toFixed(2)} vs script`,
     });
-  }
-  return {
+  }  return {
     provider: opts.remote.provider ?? "sensevoice-http",
     transcript: opts.remote.transcript ?? "",
     language: opts.remote.language ?? (/[㐀-鿿]/.test(opts.expectedText) ? "yue/zh" : "en"),
     emotion: opts.remote.emotion ?? opts.expectedEmotion,
     events: opts.remote.events ?? ["Speech"],
-    wer: rate,
-    durationSec: opts.wav.durationSec,
+    wer: rate,    durationSec: opts.wav.durationSec,
     peak: opts.wav.peak,
     silenceRatio: opts.wav.silenceRatio,
     cloneSimilarity: opts.cloneSimilarity,

@@ -10,9 +10,12 @@ import {
   COPY_MIN,
   DRIFT_MAX,
   ingestVector,
+  parseEmbed,
+  EMBED_DIM,
   queryRefs,
   cosine,
   distance,
+  type EmbedFn,
 } from "./memory";
 import type { VideoQcRecord } from "./video-qc";
 
@@ -32,7 +35,14 @@ test("cosine is 1 for identical vectors and drift/copy thresholds fire", () => {
   assert.equal(blockoutCopy(a, far).fail, false);
 });
 
-test("sqlite store query stills by character under projects/<ep>/memory/", (t) => {
+test("parseEmbed keeps a 2048-d WeMM vector and refuses a short plug", () => {
+  const ok = Array.from({ length: EMBED_DIM }, () => 0.1);
+  assert.equal(parseEmbed({ embeddings: { float: [ok] } }).length, EMBED_DIM);
+  assert.throws(() => parseEmbed({ embeddings: { float: [[1, 2, 3]] } }), /embed_dim/);
+  assert.throws(() => parseEmbed({ data: [{ embedding: [1, 2, 3] }] }), /embed_dim/);
+});
+
+test("sqlite store query stills by REAL cosine under projects/<ep>/memory/", async (t) => {
   t.after(() => {
     process.chdir(origCwd);
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -51,14 +61,39 @@ test("sqlite store query stills by character under projects/<ep>/memory/", (t) =
     ep: "SC-A2-MEM",
     shot: "SH02",
     kind: "still",
-    character: "B",
+    character: "A",
     scene: "plaza",
     rel: "stills/SH02.png",
+    vector: [1, 1, 0, 0],
+  });
+  ingestVector({
+    ep: "SC-A2-MEM",
+    shot: "SH03",
+    kind: "still",
+    character: "B",
+    scene: "plaza",
+    rel: "stills/SH03.png",
     vector: [0, 1, 0, 0],
   });
-  const hits = queryRefs("SC-A2-MEM", { characters: ["A"], k: 3 });
-  assert.equal(hits.length, 1);
+  // T44 R5: the hit score is computed against the query's own embedding —
+  // a query of [2,0,0,0] ranks SH01 (cos 1) above SH02 (cos 1/√2); B is
+  // filtered by character; no query file can never fabricate hits
+  fs.writeFileSync(path.join(tmp, "query.png"), "png");
+  const fakeEmbed: EmbedFn = async (file) =>
+    path.basename(file) === "query.png" ? [2, 0, 0, 0] : [0, 0, 0, 0];
+  const hits = await queryRefs("SC-A2-MEM", {
+    queryFile: path.join(tmp, "query.png"),
+    characters: ["A"],
+    k: 3,
+    embed: fakeEmbed,
+  });
+  assert.equal(hits.length, 2);
   assert.equal(hits[0]?.shot, "SH01");
+  assert.equal(hits[0]?.cosine, 1);
+  assert.ok(Math.abs((hits[1]?.cosine ?? 0) - 1 / Math.sqrt(2)) < 1e-9);
+  assert.equal(hits[1]?.shot, "SH02");
+  const noQuery = await queryRefs("SC-A2-MEM", { characters: ["A"], k: 3, embed: fakeEmbed });
+  assert.equal(noQuery.length, 0);
   assert.ok(fs.existsSync(path.join(tmp, "projects", "SC-A2-MEM", "memory", "memory.sqlite")));
 });
 

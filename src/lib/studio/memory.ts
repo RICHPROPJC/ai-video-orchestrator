@@ -95,25 +95,34 @@ function withDb<T>(ep: string, fn: (db: DatabaseSync) => T): T {
   }
 }
 
-function parseEmbed(json: unknown): number[] {
+export const EMBED_DIM = 2048;
+
+export function parseEmbed(json: unknown): number[] {
   if (!json || typeof json !== "object") throw new Error("embed: empty reply");
   const o = json as Record<string, unknown>;
   if (Array.isArray(o.data) && o.data[0] && typeof o.data[0] === "object") {
     const emb = (o.data[0] as { embedding?: unknown }).embedding;
-    if (Array.isArray(emb) && typeof emb[0] === "number") return emb as number[];
+    if (Array.isArray(emb) && typeof emb[0] === "number") return acceptEmbed(emb as number[]);
   }
   const embeddings = o.embeddings;
   if (Array.isArray(embeddings) && Array.isArray(embeddings[0]) && typeof embeddings[0][0] === "number") {
-    return embeddings[0] as number[];
+    return acceptEmbed(embeddings[0] as number[]);
   }
   if (embeddings && typeof embeddings === "object") {
     const pack = embeddings as { float?: unknown };
     if (Array.isArray(pack.float) && Array.isArray(pack.float[0]) && typeof pack.float[0][0] === "number") {
-      return pack.float[0] as number[];
+      return acceptEmbed(pack.float[0] as number[]);
     }
-    if (Array.isArray(pack.float) && typeof pack.float[0] === "number") return pack.float as number[];
+    if (Array.isArray(pack.float) && typeof pack.float[0] === "number") return acceptEmbed(pack.float as number[]);
   }
   throw new Error("embed: no vector in reply");
+}
+
+function acceptEmbed(vec: number[]): number[] {
+  if (vec.length !== EMBED_DIM || vec.some((n) => typeof n !== "number")) {
+    throw new Error(`embed_dim: got ${vec.length}, want ${EMBED_DIM}`);
+  }
+  return vec;
 }
 
 export async function embedImage(file: string, fetchImpl: typeof fetch = fetch): Promise<number[]> {
@@ -128,7 +137,6 @@ export async function embedImage(file: string, fetchImpl: typeof fetch = fetch):
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       model: cfg.embed.model || undefined,
-      input_type: "image",
       images: [`data:${mime};base64,${b64}`],
     }),
     signal: AbortSignal.timeout(20_000),
@@ -137,13 +145,26 @@ export async function embedImage(file: string, fetchImpl: typeof fetch = fetch):
   return parseEmbed(await res.json());
 }
 
-export function queryRefs(
+/** T44 §5 (card R5): retrieval ranks candidates by REAL cosine between the
+ *  query's own embedding (WeMM) and each stored vector — the score is
+ *  computed, never assumed. Rows whose vector can't be scored against the
+ *  query (dimension mismatch, another embed model's run) never surface. */
+export async function queryRefs(
   ep: string,
-  opts: { characters?: string[]; scene?: string; k?: number },
-): MemoryHit[] {
+  opts: {
+    queryFile?: string;
+    characters?: string[];
+    scene?: string;
+    k?: number;
+    embed?: EmbedFn;
+  },
+): Promise<MemoryHit[]> {
   const wantChars = new Set((opts.characters ?? []).filter(Boolean));
   const scene = (opts.scene ?? "").trim();
   const k = opts.k ?? 3;
+  const embed = opts.embed ?? embedImage;
+  if (!opts.queryFile || !fs.existsSync(opts.queryFile)) return [];
+  const query = await embed(opts.queryFile);
   return withDb(ep, (db) => {
     const rows = db.prepare("SELECT shot, kind, character, scene, rel, vector FROM items WHERE kind = 'still'").all() as Array<{
       shot: string;
@@ -158,16 +179,18 @@ export function queryRefs(
       const byChar = wantChars.size > 0 && wantChars.has(row.character);
       const byScene = Boolean(scene) && row.scene === scene;
       if (!byChar && !byScene) continue;
+      const vec = unpack(row.vector);
+      if (vec.length !== query.length) continue;
       hits.push({
         shot: row.shot,
         kind: row.kind as MemoryKind,
         character: row.character,
         scene: row.scene,
         rel: row.rel,
-        cosine: 1,
+        cosine: cosine(query, vec),
       });
     }
-    return hits.slice(0, k);
+    return hits.sort((a, b) => b.cosine - a.cosine).slice(0, k);
   });
 }
 

@@ -1,0 +1,20 @@
+{
+  "src/lib/studio/seat-boards.ts": "1f56b0d08bb491e2daca4c8c4cceb4e1e44e3c0d96d74728bd504741ede3340a",
+  "src/lib/studio/boards-visual.ts": "7f8c37bfe05e6cef1c48434cc0de5e5c389fa015e173df0892d8b442c15ca88e",
+  "src/lib/studio/asset-board.ts": "9608a36d00cc80c84e4d9cf62f3e298c9007acffbdcbb0f3a2abd74855fa2554",
+  "src/lib/studio/pipeline.ts": "28ed05448ce9997b6ae1eb9baa8862aa4ead95768add9cf5f963656332179025",
+  "src/lib/studio/h3-r2v-graph.ts": "896da4dc2d7dd02dae2b566101c0646d1bc531ce638ad6756487e374caacfb09",
+  "src/lib/studio/h3-submit.ts": "f6f61d3103aad782018b108652dce91584a5f89acd98946038b05870cae0511c",
+  "src/lib/studio/motion-select.ts": "10181c9813cc3b3d61e0923fc055e766dff7e818d93e848d9ded5aaa05b5cc3a",
+  "src/lib/studio/concat-gate.ts": "7254faff9a89c74dadf3e7de4a05e4c0717ebd59b3e4c262a6dd2516d4846785",
+  "src/components/shot-canvas.tsx": "b260b06340bbb14dd1f347391bcd011f7f1b05709e3a0768a170af4a69e282ec",
+  "src/components/studio-floor.tsx": "2d9d8741ece1313c664e4740324a59ad609e5d2d986a64b3fc32c485d14ae1c0",
+  "src/app/api/media/[...path]/route.ts": "2e82dde4df5c5e2a0d4f6ce1d691ea0598f306726c0a09e530327a22702a9888",
+  "src/lib/studio/align-lock.test.ts": "eeb57e28393a1cb40bebc5127df86e6aaec2d4dfd5d7df7986978a5a4b39b751",
+  "src/lib/studio/seat-charters.ts": "a10bc5021f8ebafe045741ace876ed80c0b1b3969b1818348164e4cfb534f13f",
+  "seats/boards.primitive.md": "02c31d8b26645d3ffed680764d1dd33975c9107d6acc14c780a2d13ab3952db1",
+  "verify/align-lock-20260925/regressions-4.tap": "5b361e2373a5957dbea6eb1e9e3c0b6c6836effeb529c129cce6111d901ec93e",
+  "verify/align-lock-20260925/routing-57.tap": "684988101ca09475549739b827b96ba3fecbc330b187af599a90df251fe890af",
+  "verify/align-lock-20260925/visual-23.tap": "c8f4830733d1688111cd6b90257ed2ad9566371102c1bed00987798e1760786d",
+  "verify/align-lock-20260925/targeted-108.tap": "88d0b1445e47f9d9935af3acd12f180686b15d96596e585b0a8cc4e55c601451"
+}

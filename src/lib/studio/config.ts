@@ -25,14 +25,44 @@ export type SlateConfig = {
     steps: number;
     seed: number;
   };
+  /** AuK :9882 verbatim clone (CosyVoice :9880 is dead). promptWav = the clone
+   *  ref whose speaker the /tts output follows; empty = env AUK_REF_WAV or
+   *  job-level --clone upload must supply it, else the voice hop fails loud. */
   tts: { endpoint: string; model: string; promptWav: string; seed: number };
-  pictureQc: { endpoint: string; model: string };
-  /** Layout / 3D tool brain. Not pictureQc. Empty = fleet UNCONFIG, not a QC skip. */
+  /** CARD_BUG3_0920 item4 (Fable): the photo-qc second eye now lives in config,
+   *  not just env. Empty secondEndpoint = not armed — judge GREEN stays capped
+   *  at PASS_UNCONFIRMED. Env SLATECREW_SECOND_ENDPOINT/SLATECREW_SECOND_MODEL
+   *  override (test seam, same chain seats photo-qc reads: opts → env → config). */
+  pictureQc: { endpoint: string; model: string; secondEndpoint: string; secondModel: string };
+  /** PACKAGE-QC-0917 眼：nex-n2.5 五路 describe（判官先係 pictureQc 端點）。空 endpoint＝fleet UNCONFIG（唔係 QC skip），live :8017 由 slatecrew.config.json 提供。 */
   nex: { endpoint: string; model: string };
+  /** Card D 掣3 search-first PE step: local brains only (nex :8017 first,
+   *  qwen38 :8015 backup). GLM cloud brains are banned for PE — thinking
+   *  bursts the content field (0919 wire receipts). */
+  pe: {
+    endpoint: string;
+    model: string;
+    fallbackEndpoint: string;
+    fallbackModel: string;
+    maxTokens: number;
+    wigoloClient: string;
+    timeoutMs: number;
+    /** 簡單改寫，上網搜尋關住。sensenova-v6.8-flash-lite via LiteLLM. */
+    rewriteEndpoint: string;
+    rewriteModel: string;
+  };
+  mesher: {
+    endpoint: string;
+    blender: string;
+    textureResolution: number;
+    targetHeightM: number;
+  };
   soundQc: { endpoint: string; model: string };
   /** A3: every sense is a provider. Empty = the stage that needs it FAILs loud. */
   ocr: { endpoint: string; model: string };
   embed: { endpoint: string; model: string };
+  /** H3 frame grid 17k+5. kMin 3 ≈ 2.3s. Do not clamp every shot up to k=7. */
+  h3Grid: { kMin: number; kMax: number };
   ssh: { user: string; motionInputDir: string; stillsRefsDir: string };
 };
 
@@ -50,13 +80,13 @@ const DEFAULTS: SlateConfig = {
     comfyUrl: "http://100.127.176.64:8188",
     checkpoint: "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
     fl2va: "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
-    turboLora: "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
+    turboLora: "minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
     textEncoder: "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
     videoVae: "minimax_h3_video_vae_fp16.safetensors",
     audioVae: "minimax_h3_audio_vae_fp32.safetensors",
     width: 864,
     height: 480,
-    steps: 4,
+    steps: 8,
     seed: 42,
   },
   tts: {
@@ -65,11 +95,30 @@ const DEFAULTS: SlateConfig = {
     promptWav: "",
     seed: 20260914,
   },
-  pictureQc: { endpoint: "http://127.0.0.1:8015", model: "qwen38" },
+  pictureQc: { endpoint: "http://127.0.0.1:8015", model: "qwen38", secondEndpoint: "", secondModel: "" },
   nex: { endpoint: "", model: "nex-n2.5" },
+  pe: {
+    endpoint: "http://127.0.0.1:8017",
+    model: "nex-n2.5",
+    fallbackEndpoint: "http://127.0.0.1:8015",
+    fallbackModel: "qwen38",
+    // nex call-shape law: effort none + official sampling 0.7/0.95/40 + max_tokens >= 5000
+    maxTokens: 6000,
+    wigoloClient: "/mnt/ssd/u1_canvas_research/wigolo_research.py",
+    timeoutMs: 300_000,
+    rewriteEndpoint: "http://127.0.0.1:4000",
+    rewriteModel: "sensenova-v6.8-flash-lite",
+  },
+  mesher: {
+    endpoint: "http://127.0.0.1:8018",
+    blender: "/home/c/applications/blender-5.1.2-linux-x64/blender",
+    textureResolution: 512,
+    targetHeightM: 1.7,
+  },
   soundQc: { endpoint: "", model: "FunAudioLLM/SenseVoiceSmall" },
   ocr: { endpoint: "", model: "" },
   embed: { endpoint: "", model: "wemm-2b" },
+  h3Grid: { kMin: 3, kMax: 21 },
   ssh: {
     user: "hojaiv3v",
     motionInputDir: "~/comfy/ComfyUI/input",
@@ -94,9 +143,12 @@ export function loadConfig(): SlateConfig {
     tts: { ...DEFAULTS.tts, ...raw.tts },
     pictureQc: { ...DEFAULTS.pictureQc, ...raw.pictureQc },
     nex: { ...DEFAULTS.nex, ...raw.nex },
+    pe: { ...DEFAULTS.pe, ...raw.pe },
+    mesher: { ...DEFAULTS.mesher, ...raw.mesher },
     soundQc: { ...DEFAULTS.soundQc, ...raw.soundQc },
     ocr: { ...DEFAULTS.ocr, ...raw.ocr },
     embed: { ...DEFAULTS.embed, ...raw.embed },
+    h3Grid: { ...DEFAULTS.h3Grid, ...raw.h3Grid },
     ssh: { ...DEFAULTS.ssh, ...raw.ssh },
   };
   const h3 = process.env.H3_COMFY_URL?.trim();
@@ -105,6 +157,10 @@ export function loadConfig(): SlateConfig {
   if (u15) merged.stills.url = u15;
   const mars = process.env.MARS_URL?.trim();
   if (mars) merged.pictureQc.endpoint = mars;
+  const secondE = process.env.SLATECREW_SECOND_ENDPOINT?.trim();
+  if (secondE) merged.pictureQc.secondEndpoint = secondE;
+  const secondM = process.env.SLATECREW_SECOND_MODEL?.trim();
+  if (secondM) merged.pictureQc.secondModel = secondM;
   const nex = process.env.NEX_URL?.trim();
   if (nex) merged.nex.endpoint = nex;
   const crew = process.env.CREW_LLM_URL?.trim();
@@ -113,6 +169,8 @@ export function loadConfig(): SlateConfig {
   if (auk) merged.tts.endpoint = auk;
   const aukRef = process.env.AUK_REF_WAV?.trim();
   if (aukRef) merged.tts.promptWav = aukRef;
+  const sf3d = process.env.SF3D_URL?.trim();
+  if (sf3d) merged.mesher.endpoint = sf3d;
   return merged;
 }
 

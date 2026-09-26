@@ -1,0 +1,393 @@
+{
+  "label": "ld0f-sh01",
+  "frozen": true,
+  "kind": "keyframe-scene-slot",
+  "note": "Frozen excerpt of SC-0915-LD0F SH01-SH05 (T29 street regression, T32 fix): all five shots share one indoor set while the sheet-wide tail reads 'night, neon'. The T32 scene slot must take the shot's own location and drop the sheet tail for indoor shots. Story nouns are allowed here — fixtures are exempt from the noun-lint.",
+  "sheet": {
+    "location": "滄瀾國（虛構國家）——首都臨京與滄瀾軍校",
+    "timeOfDay": "night",
+    "weather": "neon"
+  },
+  "characters": [
+    {
+      "id": "A",
+      "name": "沈孟舟",
+      "role": "重生者，滄瀾軍校三年級學員，未來的執政者",
+      "wardrobe": "洗舊軍校常服，肩披黑色呢大衣",
+      "palette": [
+        "#1c2733",
+        "#8a9bb0",
+        "#c8a24a"
+      ],
+      "voice": {
+        "pitchHz": 110,
+        "gender": "m"
+      },
+      "heightM": 1
+    },
+    {
+      "id": "E",
+      "name": "白慎行",
+      "role": "政變主腦，總統府秘書長，本集末段以年輕議員姿態登場",
+      "wardrobe": "黑色中山裝，胸前口袋插鋼筆",
+      "palette": [
+        "#14161a",
+        "#6b6f76",
+        "#9e2b25"
+      ],
+      "voice": {
+        "pitchHz": 80,
+        "gender": "m"
+      },
+      "heightM": 1
+    }
+  ],
+  "shots": [
+    {
+      "id": "SH01",
+      "index": 1,
+      "heading": "WIDE / 地下室的最後一夜",
+      "size": "wide",
+      "location": "總統府地下審判室",
+      "action": "白慎行提筆蘸紅墨，喺判決書上緩緩畫上一勾；鏡前沈孟舟被按住肩膀，強行押跪落水泥地。",
+      "dialogue": "",
+      "durationSec": 7.5,
+      "camera": {
+        "pos": {
+          "x": 0,
+          "y": -9,
+          "z": 1.7
+        },
+        "lookAt": {
+          "x": 0.2,
+          "y": 0.4,
+          "z": 1.1
+        },
+        "lensMm": 24
+      },
+      "marks": [
+        {
+          "characterId": "E",
+          "start": {
+            "x": 50,
+            "y": 54
+          },
+          "end": {
+            "x": 50,
+            "y": 54
+          },
+          "facing": -1,
+          "handL": {
+            "x": 44,
+            "y": 59.32
+          },
+          "handR": {
+            "x": 56,
+            "y": 59.32
+          },
+          "footL": {
+            "x": 47,
+            "y": 76
+          },
+          "footR": {
+            "x": 53,
+            "y": 76
+          },
+          "gait": "reach",
+          "stance": "lean"
+        },
+        {
+          "characterId": "A",
+          "start": {
+            "x": 26,
+            "y": 58
+          },
+          "end": {
+            "x": 26,
+            "y": 58
+          },
+          "facing": 1,
+          "handL": {
+            "x": 19.73,
+            "y": 63.61
+          },
+          "handR": {
+            "x": 31.73,
+            "y": 63.61
+          },
+          "footL": {
+            "x": 23,
+            "y": 84.4
+          },
+          "footR": {
+            "x": 29,
+            "y": 84.4
+          },
+          "gait": "plant",
+          "stance": "stand",
+          "stanceEnd": "crouch"
+        }
+      ],
+      "props": [
+        {
+          "name": "判決書",
+          "heldBy": "E",
+          "shape": [
+            "flat",
+            "white",
+            "paper"
+          ],
+          "forbid": [
+            "book",
+            "tablet",
+            "map"
+          ]
+        },
+        {
+          "name": "紅墨鋼筆",
+          "heldBy": "E",
+          "shape": [
+            "long",
+            "slim",
+            "glossy"
+          ],
+          "forbid": [
+            "knife",
+            "brush"
+          ]
+        }
+      ],
+      "stillPrompt": "",
+      "motionPrompt": ""
+    },
+    {
+      "id": "SH02",
+      "index": 2,
+      "heading": "CLOSEUP / 地下室的最後一夜",
+      "size": "closeup",
+      "location": "總統府地下審判室",
+      "action": "沈孟舟被按住仍用力抬頭，目光鎖死白慎行方向，嘴角滲血，慢慢扯出一記冷笑。",
+      "dialogue": "",
+      "durationSec": 7.5,
+      "camera": {
+        "pos": {
+          "x": -1.4,
+          "y": -3.2,
+          "z": 1.1
+        },
+        "lookAt": {
+          "x": 0.2,
+          "y": 0.4,
+          "z": 0.7500000000000001
+        },
+        "lensMm": 50
+      },
+      "marks": [
+        {
+          "characterId": "A",
+          "start": {
+            "x": 50,
+            "y": 58
+          },
+          "end": {
+            "x": 50,
+            "y": 58
+          },
+          "facing": 1,
+          "handL": {
+            "x": 44,
+            "y": 40.86
+          },
+          "handR": {
+            "x": 56,
+            "y": 40.86
+          },
+          "footL": {
+            "x": 47,
+            "y": 84.4
+          },
+          "footR": {
+            "x": 53,
+            "y": 84.4
+          },
+          "gait": "plant",
+          "stance": "crouch"
+        }
+      ],
+      "stillPrompt": "",
+      "motionPrompt": ""
+    },
+    {
+      "id": "SH03",
+      "index": 3,
+      "heading": "MEDIUM / 地下室的最後一夜",
+      "size": "medium",
+      "location": "總統府地下審判室",
+      "action": "白慎行合上筆帽起身，整理袖口冇回頭，朝鐵門方向行過去，皮鞋聲喺地下室迴響。",
+      "dialogue": "",
+      "durationSec": 6.5,
+      "camera": {
+        "pos": {
+          "x": 1.4,
+          "y": -5,
+          "z": 1.7
+        },
+        "lookAt": {
+          "x": 0.2,
+          "y": 0.4,
+          "z": 1.1
+        },
+        "lensMm": 35
+      },
+      "marks": [
+        {
+          "characterId": "E",
+          "start": {
+            "x": 50,
+            "y": 54
+          },
+          "end": {
+            "x": 70,
+            "y": 54
+          },
+          "facing": 1,
+          "handL": {
+            "x": 44,
+            "y": 53.82
+          },
+          "handR": {
+            "x": 56,
+            "y": 53.82
+          },
+          "footL": {
+            "x": 47,
+            "y": 76
+          },
+          "footR": {
+            "x": 53,
+            "y": 76
+          },
+          "gait": "walk",
+          "stance": "stand"
+        }
+      ],
+      "stillPrompt": "",
+      "motionPrompt": ""
+    },
+    {
+      "id": "SH04",
+      "index": 4,
+      "heading": "WIDE / 地下室的最後一夜",
+      "size": "wide",
+      "location": "總統府地下審判室",
+      "action": "行刑隊舉槍上膛，氣窗鐵網雨水滴落地下；沈孟舟直視鏡前槍口，胸口起伏一下，閉眼收緊下顎。",
+      "dialogue": "",
+      "durationSec": 6.5,
+      "camera": {
+        "pos": {
+          "x": 0,
+          "y": -9,
+          "z": 2.6
+        },
+        "lookAt": {
+          "x": 0.2,
+          "y": 0.4,
+          "z": 1.1
+        },
+        "lensMm": 24
+      },
+      "marks": [
+        {
+          "characterId": "A",
+          "start": {
+            "x": 50,
+            "y": 58
+          },
+          "end": {
+            "x": 50,
+            "y": 58
+          },
+          "facing": 1,
+          "handL": {
+            "x": 44,
+            "y": 67.73
+          },
+          "handR": {
+            "x": 56,
+            "y": 67.73
+          },
+          "footL": {
+            "x": 47,
+            "y": 84.4
+          },
+          "footR": {
+            "x": 53,
+            "y": 84.4
+          },
+          "gait": "plant",
+          "stance": "crouch"
+        }
+      ],
+      "stillPrompt": "",
+      "motionPrompt": ""
+    },
+    {
+      "id": "SH05",
+      "index": 5,
+      "heading": "FULL / 地下室的最後一夜",
+      "size": "full",
+      "location": "總統府地下審判室",
+      "action": "槍聲同頭頂炸雷同一瞬爆開，沈孟舟身體前撲僕倒，雙眼圓睜，嘴角嗰抹冷笑凝住。",
+      "dialogue": "",
+      "durationSec": 7.8,
+      "camera": {
+        "pos": {
+          "x": 0,
+          "y": -6.5,
+          "z": 1.7
+        },
+        "lookAt": {
+          "x": 0.2,
+          "y": 0.4,
+          "z": 1.1
+        },
+        "lensMm": 28
+      },
+      "marks": [
+        {
+          "characterId": "A",
+          "start": {
+            "x": 50,
+            "y": 58
+          },
+          "end": {
+            "x": 50,
+            "y": 58
+          },
+          "facing": 1,
+          "handL": {
+            "x": 44,
+            "y": 61.45
+          },
+          "handR": {
+            "x": 56,
+            "y": 61.45
+          },
+          "footL": {
+            "x": 47,
+            "y": 84.4
+          },
+          "footR": {
+            "x": 53,
+            "y": 84.4
+          },
+          "gait": "plant",
+          "stance": "crouch",
+          "stanceEnd": "lean"
+        }
+      ],
+      "stillPrompt": "",
+      "motionPrompt": ""
+    }
+  ]
+}

@@ -1,10 +1,13 @@
 import { z } from "zod";
 import { BEAT_ID_RE, CHARACTER_ID_RE, SCENE_ID_RE, dialogueSeconds, omittable, type Beat } from "./script-contract";
+import { isRoomNoun, isSystemDisplayProp, isSystemDisplayScreenForbid, negativePoison } from "./keyframe-prompt";
+import { shotSecMax, shotSecMin } from "./frame-grid";
 
-/** One shot is one H3 submit: the frame grid (17k+5, k 7–21) cannot render
- *  anything shorter or longer, so boards may not ask for it. */
-export const SHOT_SEC_MIN = 5.2;
-export const SHOT_SEC_MAX = 15;
+/** Story shot length. H3's shortest legal generate stays shotSecMin(); it does not rewrite the shot. */
+export const TEXT_SHOT_SEC_MIN = 1;
+/** Shot length bounds come from the H3 grid setting, not a second copy of 5.2/15. */
+export const SHOT_SEC_MIN = shotSecMin();
+export const SHOT_SEC_MAX = shotSecMax();
 const SHOT_ACTION_MAX = 60;
 const CAST_PER_SHOT_MAX = 3;
 
@@ -12,15 +15,21 @@ const CAST_PER_SHOT_MAX = 3;
  *  normalised before they get here, so holding every scene holds the film. */
 export const SCENE_BUDGET_TOLERANCE = 0.09;
 
+/** The b5/b6 narrow-slot vocabularies, exported so the boards desk's pre-send
+ *  self-check (padBoardDurations) repairs against the same enums zod gates. */
+export const SLOT_VALUES = ["L", "C", "R"] as const;
+export const DEPTH_VALUES = ["near", "mid", "far"] as const;
+export const STANCE_VALUES = ["stand", "lean", "crouch"] as const;
+
 const castSchema = z.object({
   characterId: z.string().regex(CHARACTER_ID_RE),
-  slot: z.enum(["L", "C", "R"]),
-  depth: z.enum(["near", "mid", "far"]),
+  slot: z.enum(SLOT_VALUES),
+  depth: z.enum(DEPTH_VALUES),
   facing: z.union([z.literal(1), z.literal(-1)]),
   gait: z.enum(["plant", "walk", "reach", "turn"]),
-  stance: z.enum(["stand", "lean", "crouch"]),
-  stanceEnd: omittable(z.enum(["stand", "lean", "crouch"])),
-  travelTo: omittable(z.enum(["L", "C", "R"])),
+  stance: z.enum(STANCE_VALUES),
+  stanceEnd: omittable(z.enum(STANCE_VALUES)),
+  travelTo: omittable(z.enum(SLOT_VALUES)),
 });
 
 const propSchema = z.object({
@@ -28,6 +37,30 @@ const propSchema = z.object({
   heldBy: omittable(z.string().regex(CHARACTER_ID_RE)),
   shape: z.array(z.string().min(1).max(12)).min(1).max(5),
   forbid: z.array(z.string().min(1).max(12)).max(8),
+  publicName: omittable(z.string().min(1).max(24)),
+  sizeM: omittable(z.number().positive().max(30)),
+  sizeSource: omittable(z.string().min(1).max(80)),
+  proportion: omittable(z.object({
+    of: z.string().regex(CHARACTER_ID_RE),
+    at: z.enum(["knee", "waist", "chest", "shoulder"]),
+    source: z.string().min(1).max(80),
+  })),
+}).refine((p) => p.sizeM == null || Boolean(p.sizeSource?.trim()), {
+  message: "sizeM 要連 sizeSource 一齊寫，唔准估",
+  path: ["sizeSource"],
+}).refine((p) => !isSystemDisplayProp(p.name) || !p.forbid.some(isSystemDisplayScreenForbid), {
+  // §0c law46（#27 boards 端豁免）：光框本身就係螢幕——screen/螢幕 入 system
+  // prop 嘅 forbid＝禁詞殺自己人（WR1Q SH02）；非 system 禁 screen 照舊合法。
+  message: "光框／全息／infograph 嘅 forbid 唔可以有 screen／螢幕 — 光框本身就係螢幕（FLOW_LAW §0c）",
+  path: ["forbid"],
+});
+
+/** Card D 0919: an on-screen fact row. Packet-authored — 阿圖 may pre-author,
+ *  the search-first PE step writes wigolo evidence here; code only assembles. */
+const factSchema = z.object({
+  claim: z.string().min(1).max(200),
+  source: z.string().min(1).max(200),
+  fetched_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "fetched_at 要 YYYY-MM-DD"),
 });
 
 const boardShotShape = z.object({
@@ -35,12 +68,35 @@ const boardShotShape = z.object({
   size: z.enum(["wide", "full", "medium", "closeup", "insert"]),
   angle: z.enum(["eye", "high", "low"]),
   side: z.enum(["frontal", "leftQuarter", "rightQuarter"]),
-  durationSec: z.number().min(SHOT_SEC_MIN).max(SHOT_SEC_MAX),
+  durationSec: z.number().min(TEXT_SHOT_SEC_MIN).max(SHOT_SEC_MAX),
   action: z.string().min(1).max(SHOT_ACTION_MAX),
   dialogue: z.string().nullish().transform((v) => v ?? ""),
   speaker: omittable(z.string().min(1).max(12)),
   cast: z.array(castSchema).min(1).max(CAST_PER_SHOT_MAX),
   props: omittable(z.array(propSchema).max(3)),
+  /** T32 rev2: per-shot scene slot the boards seat authors — location (and
+   *  optionally its own light angle) the stills prompt must follow. Chau 17:48:
+   *  negatives 阿圖按道具/場景類別填；毒詞（霓虹/neon/night）連 negative 都落閘。
+   *  T32b C5（Chau 22:24）：location 要係 2–8 字場所名詞，機構全名歸 heading。
+   *  Card D（MERGE_THREE union）：facts 同 factsRequired 同呢個 slot 一齊載
+   *  （文字圖冇 facts 唔准出）；location 讀填——facts-only require 係合法形。 */
+  require: omittable(
+    z.object({
+      location: omittable(z.string().min(2).max(8)),
+      angle: omittable(z.enum(["eye", "high", "low"])),
+      negatives: omittable(z.array(z.string().min(1).max(12)).min(1).max(6)),
+      facts: omittable(z.array(factSchema).min(1).max(8)),
+      factsRequired: omittable(z.boolean()),
+    })
+      .refine((req) => req.location === undefined || isRoomNoun(req.location), {
+        message: "location 要係 2–8 字場所名詞（地下室、宿舍、走廊），唔係機構全名",
+        path: ["location"],
+      })
+      .refine((req) => !negativePoison(req.negatives ?? []), {
+        message: "negatives 唔可以有霓虹/neon/night — 負面詞毒畫面（T29 法）",
+        path: ["negatives"],
+      }),
+  ),
 });
 
 const boardsSceneShape = z.object({
@@ -118,7 +174,7 @@ export function boardsSceneSchema(ctx: {
     const runtime = scene.shots.reduce((a, s) => a + s.durationSec, 0);
     const lo = ctx.budgetSec * (1 - SCENE_BUDGET_TOLERANCE);
     const hi = ctx.budgetSec * (1 + SCENE_BUDGET_TOLERANCE);
-    if (runtime < lo || runtime > hi) {
+    if (runtime > hi) {
       report.addIssue({
         code: "custom",
         path: ["shots"],

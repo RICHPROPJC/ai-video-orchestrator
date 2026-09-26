@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs";
 import { loadConfig } from "@/lib/studio/config";
-import { blockersForGate, formatFleet, gateReady, probeFleet, type FleetGate } from "@/lib/studio/fleet";
-import { runPipeline } from "@/lib/studio/pipeline";
+import { blockersForGate, formatFleet, gateReady, probeFleet } from "@/lib/studio/fleet";
 import { jobFile } from "@/lib/studio/paths";
-import { newSlateId, writeJob, listJobs } from "@/lib/studio/store";
-import type { JobRecord, ProduceInput } from "@/lib/studio/types";
+import { runPipeline } from "@/lib/studio/pipeline";
+import { createSlate, fleetGateOf, resumeSlate, type ResumePatch } from "@/lib/studio/open-produce";
+import { listJobs, readJob, writeJob } from "@/lib/studio/store";
+import type { ProduceInput } from "@/lib/studio/types";
 
 export const runtime = "nodejs";
 
@@ -13,60 +14,92 @@ export async function GET() {
   return NextResponse.json({ jobs: listJobs() });
 }
 
+function opt(form: FormData, key: string): string | undefined {
+  const v = String(form.get(key) ?? "").trim();
+  return v || undefined;
+}
+
+function flag(form: FormData, key: string): boolean {
+  const v = String(form.get(key) ?? "");
+  return v === "1" || v === "on" || v === "true";
+}
+
+async function saveClone(id: string, file: FormDataEntryValue | null): Promise<string | undefined> {
+  if (!(file instanceof File) || file.size === 0) return undefined;
+  const dest = jobFile(id, "audio", "clone-ref.wav");
+  fs.writeFileSync(dest, Buffer.from(await file.arrayBuffer()));
+  return dest;
+}
+
 export async function POST(req: Request) {
   const contentType = req.headers.get("content-type") ?? "";
-  const id = newSlateId();
-  let input: ProduceInput;
   let wantsRedirect = false;
+  let resumeId: string | undefined;
+  let input: ProduceInput;
+  let patch: ResumePatch = {};
+  let cloneFile: FormDataEntryValue | null = null;
 
   if (contentType.includes("multipart/form-data") || contentType.includes("application/x-www-form-urlencoded")) {
     const form = await req.formData();
     wantsRedirect = String(form.get("_redirect") ?? "") === "1";
-    const file = form.get("clone");
-    let voiceClonePath: string | undefined;
-    if (file instanceof File && file.size > 0) {
-      const buf = Buffer.from(await file.arrayBuffer());
-      voiceClonePath = jobFile(id, "audio", "clone-ref.wav");
-      fs.writeFileSync(voiceClonePath, buf);
-    }
+    resumeId = opt(form, "resume");
+    cloneFile = form.get("clone");
     input = {
       brief: String(form.get("brief") ?? ""),
       durationSec: Number(form.get("durationSec") ?? 12) || 12,
-      aspect: (String(form.get("aspect") ?? "16:9") as ProduceInput["aspect"]) || "16:9",
-      language: (String(form.get("language") ?? "auto") as ProduceInput["language"]) || "auto",
-      voiceClonePath,
-      wavDir: String(form.get("wavDir") ?? ""),
-      drama: String(form.get("drama") ?? "") || undefined,
-      episode: String(form.get("episode") ?? "") || undefined,
-      scene: String(form.get("scene") ?? "") || undefined,
-      until: (String(form.get("until") ?? "") as ProduceInput["until"]) || undefined,
+      aspect: (opt(form, "aspect") as ProduceInput["aspect"]) || "16:9",
+      language: (opt(form, "language") as ProduceInput["language"]) || "auto",
+      wavDir: opt(form, "wavDir") ?? "",
+      portraitsDir: opt(form, "portraitsDir"),
+      blockoutDir: opt(form, "blockoutDir"),
+      gapSec: opt(form, "gapSec") ? Number(form.get("gapSec")) : 0,
+      noMotionSelect: flag(form, "noMotionSelect"),
+      dryRun: flag(form, "dryRun"),
+      until: opt(form, "until") as ProduceInput["until"],
+      scene: opt(form, "scene"),
+      shot: opt(form, "shot"),
+      callSheetPath: opt(form, "callSheetPath"),
+      castRosterPath: opt(form, "castRosterPath"),
+      graphVariant: (opt(form, "graphVariant") as ProduceInput["graphVariant"]) || "a",
+      steps: opt(form, "steps") ? Number(form.get("steps")) : undefined,
+      drama: opt(form, "drama"),
+      episode: opt(form, "episode"),
+    };
+    patch = {
+      wavDir: opt(form, "wavDir"),
+      portraitsDir: opt(form, "portraitsDir"),
+      blockoutDir: opt(form, "blockoutDir"),
+      gapSec: opt(form, "gapSec") ? Number(form.get("gapSec")) : undefined,
+      noMotionSelect: flag(form, "noMotionSelect"),
+      dryRun: flag(form, "dryRun"),
+      until: opt(form, "until") as ProduceInput["until"],
+      scene: opt(form, "scene"),
+      shot: opt(form, "shot"),
+      graphVariant: opt(form, "graphVariant") as ProduceInput["graphVariant"],
+      steps: opt(form, "steps") ? Number(form.get("steps")) : undefined,
     };
   } else {
-    input = (await req.json()) as ProduceInput;
-  }
-
-  if (!input.brief?.trim()) {
-    return NextResponse.json({ error: "brief required" }, { status: 400 });
-  }
-  if (input.drama && input.until === "stills") {
-    return NextResponse.json({ error: "stills-ready skip forbidden for drama runs" }, { status: 400 });
-  }
-  if (input.drama === "guojia-lingdaoren" && !input.until && !input.scene && !input.dryRun) {
-    return NextResponse.json(
-      { error: "guojia-lingdaoren requires --scene SCxx (one hop at a time)" },
-      { status: 400 },
-    );
+    const body = (await req.json()) as ProduceInput & { resumeSlate?: string };
+    resumeId = body.resumeSlate;
+    input = body;
+    patch = {
+      wavDir: body.wavDir,
+      portraitsDir: body.portraitsDir,
+      blockoutDir: body.blockoutDir,
+      gapSec: body.gapSec,
+      noMotionSelect: body.noMotionSelect,
+      dryRun: body.dryRun,
+      until: body.until,
+      scene: body.scene,
+      shot: body.shot,
+      graphVariant: body.graphVariant,
+      steps: body.steps,
+      voiceClonePath: body.voiceClonePath,
+    };
   }
 
   const fleet = await probeFleet(loadConfig());
-  const gate: FleetGate =
-    input.until === "boards" || input.until === "blockout"
-      ? "boards"
-      : input.until === "stills"
-        ? "stills"
-        : input.until === "motion"
-          ? "motion"
-          : "full";
+  const gate = fleetGateOf(resumeId ? patch.until : input.until);
   if (!gateReady(fleet, gate)) {
     const blockers = blockersForGate(fleet.rows, gate);
     return NextResponse.json(
@@ -75,26 +108,25 @@ export async function POST(req: Request) {
     );
   }
 
-  const job: JobRecord = {
-    id,
-    slate: id,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    status: "queued",
-    input,
-    ...(input.drama ? { drama: input.drama } : {}),
-    ...(input.episode ? { episode: input.episode } : {}),
-    progress: 0,
-    retries: { stills: 0, voice: 0, motion: 0 },
-    outputs: { stills: [], shots: [], blockout: [], receipts: [] },
-  };
-  writeJob(job);
-  void runPipeline(id, input);
+  const opened = resumeId ? resumeSlate(resumeId, patch) : createSlate(input);
+  if ("error" in opened) {
+    return NextResponse.json({ error: opened.error }, { status: 400 });
+  }
+
+  const voiceClonePath = await saveClone(opened.id, cloneFile);
+  let live = opened.input;
+  if (voiceClonePath) {
+    live = { ...opened.input, voiceClonePath };
+    const job = readJob(opened.id);
+    if (job) writeJob({ ...job, input: live });
+  }
+
+  void runPipeline(opened.id, live);
 
   if (wantsRedirect) {
     const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "127.0.0.1:43127";
     const proto = req.headers.get("x-forwarded-proto") || "http";
-    return NextResponse.redirect(`${proto}://${host}/?slate=${id}`, 303);
+    return NextResponse.redirect(`${proto}://${host}/?slate=${opened.id}`, 303);
   }
-  return NextResponse.json(job);
+  return NextResponse.json(readJob(opened.id));
 }

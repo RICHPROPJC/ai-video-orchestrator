@@ -63,7 +63,7 @@ function scriptOf(sceneCount: number, beatsPerScene: number, targetSec: number):
       const spoken = b % 2 === 0;
       return {
         id: `${scene.id}.B${String(b + 1).padStart(2, "0")}`,
-        action: `beat ${s + 1}-${b + 1} action`,
+        action: `行一步講一句 ${s + 1}-${b + 1}`,
         ...(spoken ? { dialogue: `line ${s + 1}-${b + 1}`, speaker: b % 4 === 0 ? "Cast-A" : "Cast-B" } : {}),
       };
     }),
@@ -100,6 +100,42 @@ function fixture() {
   const script = scriptOf(SCENES, BEATS, TARGET);
   return { script, boards: boardsOf(script) };
 }
+
+
+test("ECOM1A: a 16s ad brief rides the whole chain — 3 beats, 3 shots @5.33s, 9:16 callsheet", () => {
+  const script = scriptOf(1, 3, 16);
+  const boards: BoardsScene[] = script.scenes.map((scene) => ({
+    sceneId: scene.sceneId,
+    thinking: "一拍一鏡，三鏡到底。",
+    shots: scene.beats.map((beat, b) => ({
+      beatId: beat.id,
+      size: (["wide", "medium", "closeup"] as const)[b]!,
+      angle: "eye" as const,
+      side: (["frontal", "leftQuarter", "rightQuarter"] as const)[b]!,
+      durationSec: 16 / 3,
+      action: beat.action,
+      dialogue: beat.dialogue ?? "",
+      ...(beat.speaker ? { speaker: beat.speaker } : {}),
+      cast: [
+        { characterId: "A", slot: "L" as const, depth: "mid" as const, facing: 1 as const, gait: "plant" as const, stance: "stand" as const },
+        { characterId: "B", slot: "R" as const, depth: "near" as const, facing: -1 as const, gait: "plant" as const, stance: "stand" as const },
+      ],
+    })),
+  }));
+  for (const scene of boards) {
+    const parsed = boardsSceneSchema({
+      sceneId: scene.sceneId,
+      beats: script.scenes[0]!.beats,
+      characters: script.outline.characters,
+      budgetSec: 16,
+    }).safeParse(scene);
+    assert.equal(parsed.success, true, JSON.stringify(parsed.success ? null : parsed.error!.issues));
+  }
+  const sheet = expandBoards({ script, boards, targetSec: 16, aspect: "9:16" });
+  assert.equal(sheet.aspect, "9:16");
+  assert.equal(sheet.shots.length, 3);
+  assert.doesNotThrow(() => assertSheetGates(sheet, { script, targetSec: 16 }));
+});
 
 test("SH ids run in cut order across every scene, two digits, never restarting", () => {
   const { script, boards } = fixture();
@@ -223,6 +259,44 @@ test("the beats schema binds speakers to speaking cast and ids to their scene", 
   assert.match(JSON.stringify(schema.safeParse(mute).error!.issues), /drop the speaker or write the line/);
 });
 
+test("T32 Chau 17:48: require.negatives are packet data — poison gated at zod, carried through expand", () => {
+  const script = scriptOf(SCENES, BEATS, TARGET);
+  const boards = boardsOf(script);
+  const schema = boardsSceneSchema({
+    sceneId: "SC01",
+    beats: script.scenes[0]!.beats,
+    characters: script.outline.characters.map((c) => ({ id: c.id, name: c.name })),
+    budgetSec: BEATS * SHOT_SEC,
+  });
+
+  const clean = structuredClone(boards[0]!);
+  clean.shots[0]!.require = { location: "地下室", angle: "high", negatives: ["街道", "路燈"] };
+  assert.equal(schema.safeParse(clean).success, true, "clean packet negatives parse (C5 房名詞)");
+
+  const poisoned = structuredClone(boards[0]!);
+  poisoned.shots[0]!.require = { location: "地下室", negatives: ["neon signs"] };
+  assert.match(JSON.stringify(schema.safeParse(poisoned).error!.issues), /negatives/, "poison token rejected at the contract");
+
+  const named = structuredClone(boards[0]!);
+  named.shots[0]!.require = { location: "總統府地下審判室" };
+  assert.match(JSON.stringify(schema.safeParse(named).error!.issues), /場所名詞/, "T32b C5: 機構全名拒");
+
+  const withReq = boards.map((b, i) =>
+    i === 0
+      ? {
+          ...b,
+          shots: b.shots.map((s, j) =>
+            j === 0 ? { ...s, require: { location: "地下室", angle: "high" as const, negatives: ["街道", "路燈"] } } : s,
+          ),
+        }
+      : b,
+  );
+  const carried = expandBoards({ script, boards: withReq, targetSec: TARGET, aspect: "16:9" });
+  assert.equal(carried.shots[0]!.require?.location, "地下室");
+  assert.equal(carried.shots[0]!.require?.angle, "high", "angle defaults from shot.angle when packet omits it");
+  assert.deepEqual(carried.shots[0]!.require?.negatives, ["街道", "路燈"], "negatives ride the packet into the Shot");
+});
+
 test("the boards schema covers every beat, quotes the line verbatim and seats the speaker", () => {
   const script = scriptOf(SCENES, BEATS, TARGET);
   const boards = boardsOf(script);
@@ -270,6 +344,32 @@ test("a prop can only be held by someone in the shot", () => {
   const held = structuredClone(boards[0]!);
   held.shots[0]!.props = [{ name: "prop-one", heldBy: "C", shape: ["long"], forbid: [] }];
   assert.match(JSON.stringify(schema.safeParse(held).error!.issues), /not cast in this shot/);
+});
+
+test("hologram/infograph props cannot forbid screen or 螢幕（§0c law46 boards 端豁免）", () => {
+  const script = scriptOf(SCENES, BEATS, TARGET);
+  const boards = boardsOf(script);
+  const schema = boardsSceneSchema({
+    sceneId: "SC01",
+    beats: script.scenes[0]!.beats,
+    characters: script.outline.characters.map((c) => ({ id: c.id, name: c.name })),
+    budgetSec: BEATS * SHOT_SEC,
+  });
+  // WR1Q SH02 形：光框本身係螢幕——screen 入 forbid＝禁詞殺自己人
+  const poison = structuredClone(boards[0]!);
+  poison.shots[0]!.props = [{ name: "全息光框", heldBy: "A", shape: ["glow"], forbid: ["phone", "screen", "book"] }];
+  assert.match(JSON.stringify(schema.safeParse(poison).error!.issues), /screen／螢幕/);
+  const han = structuredClone(boards[0]!);
+  han.shots[0]!.props = [{ name: "infograph", heldBy: "A", shape: ["chart"], forbid: ["螢幕"] }];
+  assert.equal(schema.safeParse(han).success, false);
+  // 剷走 screen 族就過；非 screen 禁詞（phone／book）照寫得
+  const ok = structuredClone(boards[0]!);
+  ok.shots[0]!.props = [{ name: "全息光框", heldBy: "A", shape: ["glow"], forbid: ["phone", "book"] }];
+  assert.equal(schema.safeParse(ok).success, true);
+  // 非 system 道具禁 screen 照舊合法——角色亂生螢幕先係犯規
+  const spear = structuredClone(boards[0]!);
+  spear.shots[0]!.props = [{ name: "長槍", heldBy: "A", shape: ["long"], forbid: ["screen"] }];
+  assert.equal(schema.safeParse(spear).success, true, "non-display tool may forbid screen");
 });
 
 test("the beat total is gated once every scene is back", () => {

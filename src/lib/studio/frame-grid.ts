@@ -1,17 +1,47 @@
 import fs from "node:fs";
 import { runCommand } from "./audio";
+import { loadConfig } from "./config";
 
 export const FPS = 24;
 const GRID_K = 17;
 const GRID_B = 5; // frames = 17k+5 (H3 official grid)
-const K_MIN = 7;
-const K_MAX = 21; // 124≈5.2s … 362≈15.1s (trained max)
+const K_MIN_DEFAULT = 3; // 56f ≈ 2.33s. k=7 (124f) is not the formula's floor.
+const K_MAX_DEFAULT = 21; // 362f ≈ 15.1s
 
+export function gridK(): { kMin: number; kMax: number } {
+  try {
+    const g = loadConfig().h3Grid;
+    const kMin = Number.isFinite(g?.kMin) ? Math.floor(g.kMin) : K_MIN_DEFAULT;
+    const kMax = Number.isFinite(g?.kMax) ? Math.floor(g.kMax) : K_MAX_DEFAULT;
+    return { kMin: Math.max(1, kMin), kMax: Math.max(Math.max(1, kMin), kMax) };
+  } catch {
+    return { kMin: K_MIN_DEFAULT, kMax: K_MAX_DEFAULT };
+  }
+}
+
+export function framesForK(k: number): number {
+  return GRID_K * k + GRID_B;
+}
+
+export function shotSecMin(): number {
+  return framesForK(gridK().kMin) / FPS;
+}
+
+export function shotSecMax(): number {
+  return framesForK(gridK().kMax) / FPS;
+}
+
+/** Ceil onto 17k+5. Story seconds shorter than kMin still generate at kMin.
+ *  kMin stays the H3 floor. Above kMax throws. Do not lift a short shot to 124 frames. */
 export function snapDurationToFrames(duration: number): number {
-  // ceil, not round — the wav must be fully covered: 8.12s wav round→192f=8.0s
-  // truncates the audio, ceil→209f covers it (shotdag frame_grid receipt).
+  const { kMin, kMax } = gridK();
   const k = Math.ceil((duration * FPS - GRID_B) / GRID_K);
-  return GRID_K * Math.max(K_MIN, Math.min(K_MAX, k)) + GRID_B;
+  if (k > kMax) {
+    throw new Error(
+      `h3_grid: ${duration}s needs k=${k}, allowed ${kMin}–${kMax} (${shotSecMin().toFixed(2)}–${shotSecMax().toFixed(2)}s)`,
+    );
+  }
+  return framesForK(Math.max(k, kMin));
 }
 
 async function ffprobeDuration(file: string): Promise<number> {

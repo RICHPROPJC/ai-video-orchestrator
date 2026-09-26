@@ -1,0 +1,58 @@
+{
+  "owner": "boards",
+  "status": "GREEN",
+  "attempts": [
+    {
+      "board": "/tmp/align-boards-aVhQ4d/boards/fixture-85cf6cfe/fixture-r0-1.png",
+      "sha256": "0af39b98b9995e12e81db3974aff7a870ab8c1571a99735804c03d842ff882e0",
+      "inputs": [],
+      "cells": [
+        {
+          "shotId": "SH01",
+          "at": "0%",
+          "file": "/tmp/align-boards-aVhQ4d/boards/fixture-85cf6cfe/fixture-r0-1.cell-1.png",
+          "destination": "/tmp/align-boards-aVhQ4d/cell-0.png",
+          "sha256": "2387f5ed03ea858fa536bdfa0fa6d5c075499e8bec29a22e4c9b94f63ce92b6d",
+          "qc": "/tmp/align-boards-aVhQ4d/boards/fixture-85cf6cfe/fixture-r0-1.cell-1.photo_qc.json",
+          "status": "GREEN"
+        },
+        {
+          "shotId": "SH01",
+          "at": "50%",
+          "file": "/tmp/align-boards-aVhQ4d/boards/fixture-85cf6cfe/fixture-r0-1.cell-2.png",
+          "destination": "/tmp/align-boards-aVhQ4d/cell-1.png",
+          "sha256": "2387f5ed03ea858fa536bdfa0fa6d5c075499e8bec29a22e4c9b94f63ce92b6d",
+          "qc": "/tmp/align-boards-aVhQ4d/boards/fixture-85cf6cfe/fixture-r0-1.cell-2.photo_qc.json",
+          "status": "FAIL"
+        },
+        {
+          "shotId": "SH01",
+          "at": "100%",
+          "file": "/tmp/align-boards-aVhQ4d/boards/fixture-85cf6cfe/fixture-r0-1.cell-3.png",
+          "destination": "/tmp/align-boards-aVhQ4d/cell-2.png",
+          "sha256": "2387f5ed03ea858fa536bdfa0fa6d5c075499e8bec29a22e4c9b94f63ce92b6d",
+          "qc": "/tmp/align-boards-aVhQ4d/boards/fixture-85cf6cfe/fixture-r0-1.cell-3.photo_qc.json",
+          "status": "GREEN"
+        }
+      ]
+    },
+    {
+      "board": "/tmp/align-boards-aVhQ4d/boards/fixture-85cf6cfe/fixture-r1-1.png",
+      "sha256": "92f993b37460a45476d5315d4a94e43373188ff3bf5190ed99f4a1d2a6bfd2d9",
+      "inputs": [
+        "/tmp/align-boards-aVhQ4d/boards/fixture-85cf6cfe/fixture-r1-1.repair-input.png"
+      ],
+      "cells": [
+        {
+          "shotId": "SH01",
+          "at": "50%",
+          "file": "/tmp/align-boards-aVhQ4d/boards/fixture-85cf6cfe/fixture-r1-1.cell-1.png",
+          "destination": "/tmp/align-boards-aVhQ4d/cell-1.png",
+          "sha256": "92f993b37460a45476d5315d4a94e43373188ff3bf5190ed99f4a1d2a6bfd2d9",
+          "qc": "/tmp/align-boards-aVhQ4d/boards/fixture-85cf6cfe/fixture-r1-1.cell-1.photo_qc.json",
+          "status": "GREEN"
+        }
+      ]
+    }
+  ]
+}

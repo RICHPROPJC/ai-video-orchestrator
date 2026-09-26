@@ -1,20 +1,47 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { CallSheet, Character } from "./types";
+import type { CallSheet, Character, RefAngle } from "./types";
 import { buildGeneratePayload, u15Generate, type GeneratePayload } from "./u15-generate";
-import { runPhotoQc, type PhotoQcRecord, type QcRequire } from "./photo-qc";
+import { photoQcEyesFromEnv, runPhotoQc, type PhotoQcRecord, type QcRequire } from "./photo-qc";
+import { ensureAngleBoard, liveBoardLane, type BoardAngle, type BoardLane } from "./asset-board";
 
-/** One face, alone, no placeholders — the same eye that gates the keyframes. */
-export const PORTRAIT_REQUIRE: QcRequire = { people_count: 1, grey_blocks: false };
+/** One face, alone, no placeholders, no scene — the same eye that gates the
+ *  keyframes, plus the portrait-only plain-background gate (T43b: a night
+ *  street behind the face is a scene still, not a portrait anchor). */
+export const PORTRAIT_REQUIRE: QcRequire = { people_count: 1, grey_blocks: false, plain_background: true };
 
-/** The template is the desk's; every noun in it comes from the callsheet. */
-export function portraitPrompt(character: Character, sheet: CallSheet): string {
+/** Backdrop complaints are not a dead portrait. The person stays in color;
+ *  rembg cuts the backdrop to alpha before mesh. */
+export function backgroundOnlyFail(reasons: string[]): boolean {
+  return reasons.length > 0 && reasons.every((r) => /背景|plain_background/.test(r));
+}
+
+/** T43 (Chau: embed 同一張垃圾圖一路塞返 /edit，源頭 1＝肖像抄 world night/neon):
+ * a portrait is a face reference, not a scene — the sheet's world line
+ * (location/timeOfDay/weather/grade) NEVER enters it. Only: 一人半身、wardrobe、
+ * palette、Plain background. The sheet param rides for the lane/crew call
+ * shape but is never read — the leak cannot come back by accident.
+ *
+ * angle "45" (card C2, §0b 0920) returns the /edit sentence that turns the
+ * FRONT portrait into the three-quarter ref — it is fed to u15Edit with
+ * Image-1 = the front portrait, never to t2i generate (that's why it names
+ * the character: identity rides the image). The verified v2 formula must
+ * name the eye guard and the 90° ban — without it U1.5 runs to a pure
+ * profile (angle-test-45 receipt: v1 without the ban came out 90°). */
+export function portraitPrompt(character: Character, sheet?: CallSheet, angle: RefAngle = "front"): string {
+  if (angle === "45") {
+    return [
+      `【編輯】Image-1係角色${character.name}嘅正面參考圖（${character.wardrobe}、純色studio底）。`,
+      `將佢嘅頭部同身體輕微轉側45度（three-quarter三份一側面）：同一個人——面容輪廓、髮型、成套衫著全部照Image-1不變；`,
+      `頭轉向畫面左前方約45度，唔好轉成90度純側面，要仍然見到雙眼同兩邊面頰，鼻樑喺兩眼之間突出嚟。`,
+      `身體微微轉側唔好完全側晒。背景照舊純色。唔好加嘢唔好變第二個人。`,
+    ].join("");
+  }
   return [
       `Photoreal portrait, one person alone, head and shoulders, facing camera, neutral expression.`,
     `${character.role}: ${character.wardrobe}.`,
     `Palette ${character.palette.join(", ")}.`,
-    `${sheet.location}, ${sheet.timeOfDay}, ${sheet.weather}. ${sheet.styleBible.grade}.`,
-    `Single frame only. Plain background. No collage, no split panels, no other people, no text, no captions, no grey mannequins, no props held.`,
+    `Single frame only. Plain background. No collage, no split panels. No other people, no text, no captions, no grey mannequins, no props held.`,
   ].join(" ");
 }
 
@@ -23,17 +50,31 @@ export type PortraitLane = {
   qc: (png: string, outJson: string, require: QcRequire) => Promise<Pick<PhotoQcRecord, "status" | "checks">>;
 };
 
-function liveLane(server: string): PortraitLane {
+export function liveLane(server: string): PortraitLane {
   return {
     generate: (o) => u15Generate({ server, ...o }),
-    qc: (png, outJson, require) => runPhotoQc(png, outJson, require),
+    // W4C P0：eyes 跟call走（同 asset-board liveBoardLane／pipeline.ts:1194）——
+    // 漏交＝GREEN降級PASS_UNCONFIRMED，角度板pin閘永遠零格。
+    qc: (png, outJson, require) => runPhotoQc(png, outJson, require, {}, photoQcEyesFromEnv()),
   };
 }
 
-export type PortraitResult = { files: Record<string, string>; made: string[]; plugged: string[] };
+export type PortraitResult = {
+  files: Record<string, string>;
+  made: string[];
+  plugged: string[];
+  /** W4 批量資產板：per-character RGBA angle pins ({id}.{angle}.png) when
+   *  angleBoard mode ran; angles that never went GREEN stay absent. */
+  anglePins?: Record<string, Partial<Record<BoardAngle, string>>>;
+  /** Uncut angle board per character. Identity ref is this sheet, not a cut cell. */
+  sheets?: Record<string, string>;
+};
 
 /** A plugged portrait is honoured as-is; anything missing is cast by the stills
- *  seat and must pass the blind eye before it can anchor a keyframe. */
+ *  seat and must pass the blind eye before it can anchor a keyframe.
+ *  angleBoard (W4 批量資產板): after each GREEN front, one /edit board yields
+ *  the 45°/side/back refs (RGBA, per-cell QC) — replaces the manual single-45
+ *  route. Off = the C123 single-front behaviour, untouched. */
 export async function ensurePortraits(opts: {
   sheet: CallSheet;
   outDir: string;
@@ -43,6 +84,8 @@ export async function ensurePortraits(opts: {
   /** when set, only cast these ids (scene hop) */
   onlyIds?: string[];
   lane?: PortraitLane;
+  angleBoard?: boolean;
+  boardLane?: BoardLane;
   onEvent?: (message: string, data?: Record<string, unknown>) => void;
 }): Promise<PortraitResult> {
   const lane = opts.lane ?? liveLane(opts.server ?? "");
@@ -51,6 +94,8 @@ export async function ensurePortraits(opts: {
   const files: Record<string, string> = {};
   const made: string[] = [];
   const plugged: string[] = [];
+  const anglePins: Record<string, Partial<Record<BoardAngle, string>>> = {};
+  const sheets: Record<string, string> = {};
   const cast = opts.onlyIds?.length
     ? opts.sheet.characters.filter((c) => opts.onlyIds!.includes(c.id))
     : opts.sheet.characters;
@@ -61,10 +106,11 @@ export async function ensurePortraits(opts: {
       files[character.id] = plug;
       plugged.push(character.id);
       opts.onEvent?.(`${character.id} 用返 plug 肖像`, { file: plug });
+      if (opts.angleBoard) await runAngleBoard(character);
       continue;
     }
     const outFile = path.join(opts.outDir, `${character.id}.png`);
-    const prompt = portraitPrompt(character, opts.sheet);
+    const prompt = portraitPrompt(character);
     let last = "";
     for (const [attempt, trySeed] of [seed, seed + 1].entries()) {
       await lane.generate({
@@ -73,10 +119,17 @@ export async function ensurePortraits(opts: {
         recordJson: path.join(opts.outDir, `${character.id}.u15_generate.json`),
       });
       const verdict = await lane.qc(outFile, path.join(opts.outDir, `${character.id}.photo_qc.json`), PORTRAIT_REQUIRE);
-      if (verdict.status === "GREEN") {
+      const reasons = verdict.checks.fail_reasons;
+      const backdrop = verdict.status === "FAIL" && backgroundOnlyFail(reasons);
+      if (verdict.status !== "FAIL" || backdrop) {
         files[character.id] = outFile;
         made.push(character.id);
-        opts.onEvent?.(`${character.id} 肖像 GREEN（seed ${trySeed}）`, { file: outFile, attempt: attempt + 1 });
+        opts.onEvent?.(
+          backdrop
+            ? `${character.id} 肖像背景留低（${reasons.join("; ")}）。去 mesh 之前先去背，人本身仍然有色。`
+            : `${character.id} 肖像 ${verdict.status}（seed ${trySeed}）`,
+          { file: outFile, attempt: attempt + 1 },
+        );
         break;
       }
       last = verdict.checks.fail_reasons.join("; ") || "not GREEN";
@@ -85,6 +138,25 @@ export async function ensurePortraits(opts: {
     if (!files[character.id]) {
       throw new Error(`portrait for ${character.id} failed the eye twice (seeds ${seed}, ${seed + 1}): ${last}`);
     }
+    if (opts.angleBoard) await runAngleBoard(character);
   }
-  return { files, made, plugged };
+  return { files, made, plugged, anglePins, sheets };
+
+  async function runAngleBoard(character: Character) {
+    const boardLane = opts.boardLane ?? liveBoardLane(opts.server ?? "");
+    const res = await ensureAngleBoard({
+      character,
+      frontPng: files[character.id]!,
+      outDir: opts.outDir,
+      server: opts.server,
+      seed,
+      sheet: opts.sheet,
+      lane: boardLane,
+      onEvent: opts.onEvent,
+    });
+    anglePins[character.id] = Object.fromEntries(
+      Object.entries(res.pinned).filter(([, f]) => fs.existsSync(f)),
+    ) as Partial<Record<BoardAngle, string>>;
+    if (res.board && fs.existsSync(res.board)) sheets[character.id] = res.board;
+  }
 }

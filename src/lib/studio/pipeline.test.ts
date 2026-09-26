@@ -109,6 +109,11 @@ test("resume + all stills GREEN skips portraits and reaches motion-prep", async 
   const cwd = process.cwd();
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pipe-skip-"));
   process.chdir(tmp);
+  // T39: the earn GPU gate reads the real /mnt/ssd/earn/.lock by default —
+  // point it at a nonexistent temp path so a parked earn lock can never hang
+  // this test (the gate itself is covered in earn-gpu-lock.test.ts)
+  const hadLockEnv = process.env.SLATECREW_EARN_LOCK;
+  process.env.SLATECREW_EARN_LOCK = path.join(tmp, "no-earn.lock");
   try {
     const jobId = "SC-0913-SKIP";
     const sheet = resumeSheet();
@@ -143,8 +148,10 @@ test("resume + all stills GREEN skips portraits and reaches motion-prep", async 
     pinGreenStill(path.join(jdir, "stills"), "SH01");
 
     const portraitDir = path.join(jdir, "portraits");
-    fs.mkdirSync(portraitDir, { recursive: true });
+    fs.mkdirSync(path.join(portraitDir, "boards"), { recursive: true });
     fs.writeFileSync(path.join(portraitDir, "A.png"), Buffer.from("89504e470d0a1a2a0001", "hex"));
+    fs.writeFileSync(path.join(portraitDir, "boards", "A.angles.png"), Buffer.from("uncut-a"));
+    fs.writeFileSync(path.join(portraitDir, "boards", "B.angles.png"), Buffer.from("uncut-b"));
     fs.writeFileSync(
       path.join(portraitDir, "A.photo_qc.json"),
       JSON.stringify({ status: "FAIL", checks: { fail_reasons: ["people_count: 2"] } }),
@@ -174,6 +181,8 @@ test("resume + all stills GREEN skips portraits and reaches motion-prep", async 
     );
     assert.ok(events.some((e) => e.agent === "motion" && e.message.includes("packet")), events.map((e) => e.message).join(" | "));
   } finally {
+    if (hadLockEnv === undefined) delete process.env.SLATECREW_EARN_LOCK;
+    else process.env.SLATECREW_EARN_LOCK = hadLockEnv;
     process.chdir(cwd);
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -254,6 +263,311 @@ test("shotsForScene: a shot without .scene still matches via beatId prefix", asy
   const { shotsForScene } = await import("./pipeline");
   const shots = [shotOf("SH04", undefined, "SC02.B01"), shotOf("SH05", "SC01")];
   assert.deepEqual(shotsForScene(shots, "SC02").map((s) => s.id), ["SH04"]);
+});
+
+test("T36 B2: a photo-QC retry re-issues the packet verbatim — no fail_reasons token, no absolute path", async () => {
+  const { sealEditRecord } = await import("./pipeline");
+  const { buildEditPayload } = await import("./u15-edit");
+  const inputs = {
+    prompt: "Image-1 係呢一鏡嘅 Blender 灰模概念圖……左起第1個人偶＝角色一。",
+    first: true,
+    base: "/tmp/SC-FIX/data/jobs/SC-FIX/blocking/SH01.f0.png",
+    refs: [
+      "/tmp/SC-FIX/data/jobs/SC-FIX/portraits/A.png",
+      "/tmp/SC-FIX/data/jobs/SC-FIX/stills/SH01.png",
+    ],
+  };
+  const payload = buildEditPayload({ prompt: inputs.prompt, images: ["/node/base.png", "/node/ref.png"], width: 1024, height: 576 });
+  // the fail_reasons a QC miss would surface — none may ride into the prompt.
+  // the old retry suffix is spelled in halves so B1's literal src-grep stays 0
+  const failReasons = ["people_count: 2", "grey_blocks: mannequin visible", "not GREEN", `Fix ${"these"}: people_count: 2.`];
+  const record = sealEditRecord(inputs, payload);
+  assert.equal(record.prompt, payload.prompt, "retry prompt = packet prompt, untouched");
+  assert.equal(record.prompt, inputs.prompt.trim());
+  for (const token of failReasons) {
+    assert.ok(!record.prompt.includes(token), `fail_reasons token leaked into prompt: ${token}`);
+  }
+  assert.equal(record.base, "SH01.f0.png", "base lands as a bare filename");
+  assert.deepEqual(record.refs, ["A.png", "SH01.png"], "refs land as bare filenames");
+});
+
+test("T44 R1: `first` tracks unseen faces only — a size change no longer re-portraits", async () => {
+  const { stillFirstFlags } = await import("./pipeline");
+  const boards = [
+    { marks: [{ characterId: "A" }] }, // i=0 → first
+    { marks: [{ characterId: "A" }] }, // same face, any size change → not first
+    { marks: [{ characterId: "A" }, { characterId: "B" }] }, // B unseen → first
+    { marks: [{ characterId: "B" }] }, // B seen, A gone → not first
+  ];
+  assert.deepEqual(stillFirstFlags(boards), [true, false, true, false]);
+});
+
+test("T44 R2/R4: only GREEN-photo_qc files may feed /edit refs — the rest come back rejected", async () => {
+  const { refsGreenOnly } = await import("./pipeline");
+  const { pinQcAccepted } = await import("./photo-qc");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "t44-refs-"));
+  const bytes = Buffer.concat([Buffer.from("89504e470d0a1a1a0000", "hex"), Buffer.alloc(9000)]);
+  const mk = (id: string, status: "GREEN" | "FAIL") => {
+    fs.writeFileSync(path.join(dir, `${id}.png`), bytes);
+    fs.writeFileSync(
+      path.join(dir, `${id}.photo_qc.json`),
+      JSON.stringify({
+        tool: "slatecrew.photo_qc",
+        status,
+        sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+        blind: "fixture",
+        require: { people_count: 1, grey_blocks: false },
+      }),
+    );
+    return path.join(dir, `${id}.png`);
+  };
+  const greenStill = mk("SH01", "GREEN");
+  const failStill = mk("SH02", "FAIL");
+  const portrait = mk("A", "GREEN");
+  // R4: the FAILed still is rejected, the GREEN still and portrait pass
+  const gate = refsGreenOnly([greenStill, failStill, portrait]);
+  assert.deepEqual(gate.kept, [greenStill, portrait]);
+  assert.deepEqual(gate.rejected, [failStill]);
+  // R2's mechanism: a FAILed still can never enter refs, so a retry built
+  // from kept files cannot contain it
+  assert.ok(!gate.kept.includes(failStill));
+  // R3's mechanism: pinQcAccepted is GREEN-only — a FAIL png never skips /edit on resume
+  assert.equal(pinQcAccepted(dir, "SH02"), false);
+  assert.equal(pinQcAccepted(dir, "SH01"), true);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("hopGeometrySheet: no scene keeps the whole slate, a hop crops to its shots", async () => {
+  const { hopGeometrySheet } = await import("./pipeline");
+  const shots = [shotOf("SH01", "SC01"), shotOf("SH02", "SC01"), shotOf("SH03", "SC02")];
+  const sheet = { ...resumeSheet(), shots };
+  assert.equal(hopGeometrySheet(sheet).shots.length, 3, "no scene = the full sheet");
+  assert.deepEqual(hopGeometrySheet(sheet, "SC01").shots.map((s) => s.id), ["SH01", "SH02"]);
+  assert.equal(hopGeometrySheet(sheet, "SC01").title, sheet.title, "the rest of the sheet travels unchanged");
+  assert.throws(() => hopGeometrySheet(sheet, "SC99"), /一鏡都對唔上/);
+});
+
+test("g6 LD0F grave: hop stills vs the full slate's sheet cried missing-still; the hop sheet does not", async () => {
+  const { hopGeometrySheet } = await import("./pipeline");
+  const { localPictureQc } = await import("./providers");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "g6-hop-"));
+  const stills = ["SH01", "SH02"].map((id) => {
+    const file = path.join(tmp, `${id}.png`);
+    fs.writeFileSync(file, Buffer.concat([Buffer.from("89504e470d0a1a0a0000", "hex"), Buffer.alloc(9000)]));
+    return file;
+  });
+  const shots = [shotOf("SH01", "SC01"), shotOf("SH02", "SC01"), shotOf("SH03", "SC02")];
+  const sheet = { ...resumeSheet(), shots };
+  // the old behaviour: 2 hop stills scored against all 3 shots → "Missing stills"
+  const fullSlate = localPictureQc({ stills, sheet, target: "stills" });
+  assert.ok(fullSlate.issues.some((i) => i.code === "missing-still"), "full-sheet geometry blocks the hop");
+  // g6 fix: the same 2 stills against the hop's 2 shots is a clean geometry
+  const hop = localPictureQc({ stills, sheet: hopGeometrySheet(sheet, "SC01"), target: "stills" });
+  assert.ok(!hop.issues.some((i) => i.code === "missing-still"), "hop sheet scores hop shots only");
+});
+
+// ---- card ③b (sample #20): the UI/infographic photo channel at the pipeline
+// layer. uiShot is the only gate; story shots stay zero-photo even with stray
+// uiRefs. Fixtures are synthetic — nothing from data/jobs.
+
+function uiChannelSheet(): CallSheet {
+  const sheet = resumeSheet();
+  return {
+    ...sheet,
+    shots: [
+      {
+        ...sheet.shots[0]!,
+        id: "SH01",
+        action: "The interface holds a full-bleed dashboard: a header bar, three metric cards, a line chart, and a footnote row. The cursor drifts across the cards, pausing on each metric, while the chart draws its final segment and the highlighted card lifts slightly. The grid gutters hold still and the typography never reflows; the whole panel reads as one flat surface under even studio light. Nothing else in the layout moves.",
+        uiShot: true,
+        uiSpec: {
+          cards: [{ label: "revenue card" }],
+          onscreen: [{ text: "HK$1.2M", where: "top-left metric card" }],
+          moving: ["the cursor", "the highlighted card"],
+        },
+        uiRefs: ["/fixtures/ui/dashboard.png"],
+      },
+      {
+        ...sheet.shots[0]!,
+        id: "SH02",
+        action: "Cast-A crosses the stage and lifts the crate onto the table while Cast-B watches from the doorway, arms folded, weight on the doorframe. Dust lifts through the single hard backlight as the lamp swings once and settles, and the floorboards creak under the crate's weight.",
+        // stray refs without the marker: the channel must stay shut
+        uiRefs: ["/fixtures/ui/accidental.png"],
+      },
+    ],
+  };
+}
+
+test("h3MotionPack: §5b C-form story pack wires angle portraits; uiShot keeps the ③b channel", async () => {
+  const { h3MotionPack } = await import("./pipeline");
+  const sheet = uiChannelSheet();
+  const [ui, story] = sheet.shots;
+  const portraitDir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pack-portraits-"));
+  const boards = path.join(portraitDir, "boards");
+  fs.mkdirSync(boards);
+  const portraitFiles: Record<string, string> = {};
+  for (const id of ["A", "B"]) {
+    const f = path.join(portraitDir, `${id}.png`);
+    fs.writeFileSync(f, Buffer.from("fake-portrait"));
+    fs.writeFileSync(path.join(boards, `${id}.angles.png`), Buffer.from("uncut"));
+    portraitFiles[id] = f;
+  }
+  const uiPack = h3MotionPack(sheet, ui!, "a", "/stills/SH01.png", portraitFiles, undefined, { portraitDir });
+  assert.deepEqual(uiPack.uiPhotoFiles, ["/fixtures/ui/dashboard.png"]);
+  assert.match(uiPack.prose, /<Picture 1> = the UI layout/);
+  assert.match(uiPack.prose, /「HK\$1\.2M」/);
+  assert.match(uiPack.prose, /Only the cursor, the highlighted card move/);
+  assert.equal(uiPack.kfEnd, undefined, "C-form ui shot wires zero keyframes");
+  const storyPack = h3MotionPack(sheet, story!, "a", "/stills/SH02.png", portraitFiles, undefined, { portraitDir });
+  assert.equal(storyPack.uiPhotoFiles, undefined);
+  // §5b C-form: identity = angle portraits on ref_images (left-to-right), pin names <Picture 1>
+  assert.ok(storyPack.refImageFiles?.length === 2, "two marked characters → two uncut sheets");
+  assert.match(path.basename(storyPack.refImageFiles![0]!), /^A\.angles\.png$/, "left mark first");
+  assert.match(path.basename(storyPack.refImageFiles![1]!), /^B\.angles\.png$/);
+  assert.match(storyPack.prose, /continue exactly from <Picture 1>/);
+  assert.doesNotMatch(storyPack.prose, /start keyframe image/);
+  assert.doesNotMatch(storyPack.prose, /accidental/);
+  assert.equal(storyPack.kfEnd, undefined, "C-form story shot wires zero keyframes");
+  // A-form (no Video 1 asset): still-to-video keeps keyframes and the old pin
+  const aPack = h3MotionPack(sheet, story!, "a", "/stills/SH02.png", portraitFiles, undefined, {
+    hasVideo1: false,
+    portraitDir,
+  });
+  assert.equal(aPack.kfEnd, "/stills/SH02.png");
+  assert.equal(aPack.refImageFiles, undefined);
+  assert.match(aPack.prose, /start keyframe image/);
+});
+
+test("h3MotionPack: a cut cell does not stand in for the uncut sheet", async () => {
+  const { h3MotionPack } = await import("./pipeline");
+  const sheet = uiChannelSheet();
+  const story = sheet.shots[1]!;
+  story.refAngle = "45";
+  const portraitDir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pack-45-"));
+  fs.writeFileSync(path.join(portraitDir, "A.png"), Buffer.from("fake-front"));
+  fs.writeFileSync(path.join(portraitDir, "A_45.png"), Buffer.from("fake-45"));
+  fs.writeFileSync(path.join(portraitDir, "B_45.png"), Buffer.from("fake-45"));
+  assert.throws(
+    () => h3MotionPack(sheet, story, "a", "/stills/SH02.png", { A: path.join(portraitDir, "A.png") }, undefined, { portraitDir }),
+    /identity_sheet_missing/,
+  );
+  const boards = path.join(portraitDir, "boards");
+  fs.mkdirSync(boards);
+  fs.writeFileSync(path.join(boards, "A.angles.png"), Buffer.from("uncut-a"));
+  fs.writeFileSync(path.join(boards, "B.angles.png"), Buffer.from("uncut-b"));
+  const pack = h3MotionPack(sheet, story, "a", "/stills/SH02.png", { A: path.join(portraitDir, "A.png") }, undefined, { portraitDir });
+  assert.equal(pack.refImageFiles!.length, 2);
+  assert.equal(path.basename(pack.refImageFiles![0]!), "A.angles.png");
+  assert.equal(path.basename(pack.refImageFiles![1]!), "B.angles.png");
+  const plugDir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pack-45-plug-"));
+  fs.mkdirSync(path.join(plugDir, "boards"), { recursive: true });
+  fs.writeFileSync(path.join(plugDir, "boards", "A.angles.png"), Buffer.from("plug-a"));
+  fs.writeFileSync(path.join(plugDir, "boards", "B.angles.png"), Buffer.from("plug-b"));
+  const plugged = h3MotionPack(sheet, story, "a", "/stills/SH02.png", {}, undefined, { portraitDir: "/nonexistent", plugDir });
+  assert.equal(plugged.refImageFiles!.length, 2, "plug dir supplies the uncut sheets");
+});
+
+test("h3MotionPack: UI channel is A-path only — fallback variants stay frozen", async () => {
+  const { h3MotionPack } = await import("./pipeline");
+  const sheet = uiChannelSheet();
+  const ui = sheet.shots[0]!;
+  for (const variant of ["b", "bkf", "c"] as const) {
+    const pack = h3MotionPack(sheet, ui, variant, "/stills/SH01.png", {});
+    assert.equal(pack.uiPhotoFiles, undefined, `${variant} must not feed ui photos`);
+  }
+});
+
+test("h3MotionPack: UI channel is A-path only — fallback variants stay frozen", async () => {
+  const { h3MotionPack } = await import("./pipeline");
+  const sheet = uiChannelSheet();
+  const ui = sheet.shots[0]!;
+  for (const variant of ["b", "bkf", "c"] as const) {
+    const pack = h3MotionPack(sheet, ui, variant, "/stills/SH01.png", {});
+    assert.equal(pack.uiPhotoFiles, undefined, `${variant} must not feed ui photos`);
+  }
+});
+
+test("card ③b end-to-end: C-form dry receipts — ui photos ride ref_images, story rides the portrait", async () => {
+  const { h3MotionPack } = await import("./pipeline");
+  const { submitH3Shot } = await import("./h3-submit");
+  const sheet = uiChannelSheet();
+  const [ui, story] = sheet.shots;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-ui-channel-"));
+  const portraitDir = path.join(dir, "portraits");
+  fs.mkdirSync(portraitDir, { recursive: true });
+  const boards = path.join(portraitDir, "boards");
+  fs.mkdirSync(boards, { recursive: true });
+  const portraitFiles: Record<string, string> = {};
+  for (const id of ["A", "B"]) {
+    const f = path.join(portraitDir, `${id}.png`);
+    fs.writeFileSync(f, Buffer.from("fake-portrait"));
+    fs.writeFileSync(path.join(boards, `${id}.angles.png`), Buffer.from("uncut"));
+    portraitFiles[id] = f;
+  }
+  for (const id of ["SH01", "SH02"]) {
+    writeWav(path.join(dir, `${id}.wav`), new Float32Array(22050 * 2), 22050); // 2.0s → 124f
+  }
+  for (const id of ["SH01", "SH02"]) {
+    fs.writeFileSync(path.join(dir, `${id}.mp4`), Buffer.from("fake-blockout"));
+    fs.writeFileSync(path.join(dir, `${id}.png`), Buffer.from("fake-kf"));
+  }
+  for (const [shot, stillId] of [[ui!, "SH01"], [story!, "SH02"]] as const) {
+    const pack = h3MotionPack(sheet, shot, "a", path.join(dir, `${stillId}.png`), portraitFiles, undefined, { portraitDir });
+    const { receipt } = await submitH3Shot({
+      prose: pack.prose,
+      wavFile: path.join(dir, `${stillId}.wav`),
+      blockoutMp4: path.join(dir, `${stillId}.mp4`),
+      refImageFiles: pack.refImageFiles,
+      uiPhotoFiles: pack.uiPhotoFiles,
+      outMp4: path.join(dir, "motion", `${stillId}.mp4`),
+      receiptJson: path.join(dir, "motion", `${stillId}.receipt.json`),
+      dryRun: true,
+      shot: stillId,
+      requireQuote: false,
+    });
+    assert.equal(receipt.motion_form, "c");
+    assert.equal(receipt.uploads.kf_start, null, "C-form uploads zero keyframe stills");
+    const graph = receipt.graph as Record<string, { class_type: string }>;
+    assert.equal("keyframes" in graph, false, "C-form wires zero keyframe nodes");
+    const r2v = (receipt.graph as { r2v: { inputs: Record<string, unknown> } }).r2v;
+    if (shot.uiShot) {
+      assert.equal(receipt.uploads.ui_photos.length, 1);
+      assert.match(receipt.uploads.ui_photos[0]!, /_ui_0\.png$/);
+      assert.deepEqual(r2v.inputs["ref_images.ref_image_0"], ["ref_img_0", 0]);
+      assert.match(receipt.prompt, /<Picture 1>/);
+    } else {
+      assert.deepEqual(receipt.uploads.ui_photos, []);
+      assert.equal(receipt.uploads.ref_images.length, 2, "two identity portraits ride ref_image_0/1");
+      assert.match(receipt.uploads.ref_images[0]!, /_ref_img_0\.png$/);
+      assert.deepEqual(r2v.inputs["ref_images.ref_image_0"], ["ref_img_0", 0]);
+      assert.deepEqual(r2v.inputs["ref_images.ref_image_1"], ["ref_img_1", 0]);
+    }
+  }
+
+});
+
+test("CFORM7: motionClipRequire swaps the freeze line for the clip's temporal action, other keys untouched", async () => {
+  const { motionClipRequire } = await import("./pipeline");
+  const base = {
+    people_count: 1,
+    grey_blocks: false,
+    location: "地下室檔案室",
+    action: "沈北辰企定喺兩排金屬檔案架之間嘅空地，雙拳收腰提喺腰側，肩線沉定，眼神堅定望向前方",
+    size: "full",
+  };
+  const clip = { ...resumeSheet().shots[0]!, action: "企定，連環兩記右直拳，側踢，落地收勢立正", motionPrompt: "motion script" };
+  const out = motionClipRequire(base, clip);
+  assert.equal(out.action, clip.action, "motion require reads the clip's temporal script");
+  assert.equal(out.location, base.location, "location gate rides the keyframe require");
+  assert.equal(out.size, base.size, "size gate rides the keyframe require");
+  assert.equal(out.people_count, base.people_count);
+  // motionPrompt stands in when the action line is blank
+  const bare = motionClipRequire(base, { ...clip, action: "  " });
+  assert.equal(bare.action, "motion script");
+  // no shot / no script at all → keyframe require verbatim (no invented action)
+  assert.equal(motionClipRequire(base, undefined), base);
+  const noAction = motionClipRequire({ people_count: 1, grey_blocks: false }, { ...clip, action: "", motionPrompt: "" });
+  assert.equal("action" in noAction, false);
 });
 
 if (bareBun) {

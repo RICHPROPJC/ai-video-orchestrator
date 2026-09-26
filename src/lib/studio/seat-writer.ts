@@ -1,13 +1,12 @@
-import { chatJson, type CrewConfig, type RepairNote } from "./crew-llm";
+import { chatJsonSeat, type CrewConfig, type RepairNote } from "./crew-llm";
 import { WRITER_BEATS_CHARTER, WRITER_OUTLINE_CHARTER } from "./seat-charters";
 import { assemblePlaybook, markPass } from "./playbook";
 import {
-  SCENE_TARGET_MAX,
-  SCENE_TARGET_MIN,
   assertBeatTotal,
   outlineSchema,
   rangesFor,
   sceneBeatsSchema,
+  sceneClampBounds,
   type Outline,
   type Script,
   type ScriptRanges,
@@ -25,9 +24,11 @@ export type SeatDoc = { id: string; text: string; shotId?: string };
 
 export type WriterResult = { script: Script; model: string; receipts: string[] };
 
-function clampSceneSec(n: number): number {
-  if (!Number.isFinite(n)) return SCENE_TARGET_MIN;
-  return Math.min(SCENE_TARGET_MAX, Math.max(SCENE_TARGET_MIN, n));
+function clampSceneSec(n: number, slateSec?: number): number {
+  // ECOM1A: band-aware bounds — ad slates (≤30s) clamp 15–30, episode/feature stay 24–120
+  const { min, max } = sceneClampBounds(slateSec ?? Infinity);
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
 }
 
 function coerceLang(raw: unknown): "zh-Hant" | "yue" | "en" {
@@ -95,9 +96,10 @@ export function coerceOutline(raw: unknown, slateSec?: number, note?: RepairNote
       if ("timeOfDay" in s) s.timeOfDay = coerceTimeOfDay(s.timeOfDay, (saw, became) => repair(`repair: scenes[${i}].timeOfDay saw ${JSON.stringify(saw)} became ${JSON.stringify(became)}`));
       if ("weather" in s) s.weather = coerceWeather(s.weather, (saw, became) => repair(`repair: scenes[${i}].weather saw ${JSON.stringify(saw)} became ${JSON.stringify(became)}`));
       if ("targetSec" in s) {
-        const clamped = clampSceneSec(Number(s.targetSec));
+        const clamped = clampSceneSec(Number(s.targetSec), slateSec);
         if (clamped !== s.targetSec) {
-          repair(`repair: scenes[${i}].targetSec saw ${JSON.stringify(s.targetSec)} became ${clamped} (clamp ${SCENE_TARGET_MIN}–${SCENE_TARGET_MAX})`);
+          const { min, max } = sceneClampBounds(slateSec ?? Infinity);
+          repair(`repair: scenes[${i}].targetSec saw ${JSON.stringify(s.targetSec)} became ${clamped} (clamp ${min}–${max})`);
         }
         s.targetSec = clamped;
       }
@@ -105,18 +107,7 @@ export function coerceOutline(raw: unknown, slateSec?: number, note?: RepairNote
     }) as Record<string, unknown>[];
     const scenes = o.scenes as Record<string, unknown>[];
     if (typeof slateSec === "number" && slateSec > 0 && scenes.length) {
-      const sum = scenes.reduce((a, s) => a + (typeof s.targetSec === "number" ? s.targetSec : 0), 0);
-      const lo = slateSec * 0.9;
-      const hi = slateSec * 1.1;
-      if (sum > 0 && (sum < lo || sum > hi)) {
-        const scale = slateSec / sum;
-        let after = 0;
-        for (const s of scenes) {
-          if (typeof s.targetSec === "number") s.targetSec = clampSceneSec(s.targetSec * scale);
-          after += typeof s.targetSec === "number" ? s.targetSec : 0;
-        }
-        repair(`repair: scenes[].targetSec saw sum ${sum.toFixed(1)} became sum ${after.toFixed(1)} (slate ${slateSec}s ±10%)`);
-      }
+      // Story seconds stay as written. Do not scale scenes up to fill the slate.
     }
   }
   return o;
@@ -132,6 +123,11 @@ export type SeatIo = {
   /** seats/ dir: set it and every writer system prompt carries the global +
    *  writer playbooks (charter untouched), and a PASS promotes their trials. */
   playbookDir?: string;
+  /** Named project. Unset = public playbooks only. Never guess the only drama on disk. */
+  drama?: string;
+  /** INSIDE_VISIBLE 卡A attempt燈: the pipeline wires this to a warn event —
+   *  a failed attempt is visible the moment it happens, not only in receipts. */
+  warn?: (message: string) => void | Promise<void>;
 };
 
 /** 阿文 works twice: the shape of the film, then the beats of one scene at a
@@ -141,10 +137,18 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
   ranges ??= rangesFor(packet.targetSec);
   const receipts: string[] = [];
   // system = charter (law) + global playbook + own playbook; charter never shrinks
-  const book = assemblePlaybook("writer", io.playbookDir);
-  const outlinePass = await chatJson<Outline>({
+  const book = assemblePlaybook("writer", io.playbookDir, io.drama);
+  const attemptLamp = (unit: string) =>
+    io.warn &&
+    ((r: { attempt: number; valid: boolean; errors: string[] }) => {
+      if (!r.valid) void io.warn?.(`writer ${unit} attempt ${r.attempt} ✗ ${r.errors[0] ?? ""}`);
+    });
+
+  const outlinePass = await chatJsonSeat<Outline>({
     seat: "writer",
     unit: "outline",
+    fallbackModel: io.crew.secondFallback,
+    onAttempt: attemptLamp("outline"),
     model: io.model,
     crew: io.crew,
     system: WRITER_OUTLINE_CHARTER + book.text,
@@ -172,9 +176,11 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
   const scenes: Script["scenes"] = [];
   for (const [i, scene] of outline.scenes.entries()) {
     if (i > 0 && !io.fetchImpl) await new Promise((r) => setTimeout(r, 5000));
-    const pass = await chatJson({
+    const pass = await chatJsonSeat({
       seat: "writer",
       unit: scene.id,
+      fallbackModel: io.crew.secondFallback,
+      onAttempt: attemptLamp(scene.id),
       model: io.model,
       crew: io.crew,
       system: WRITER_BEATS_CHARTER + book.text,
@@ -205,6 +211,6 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
   const script: Script = { outline, scenes };
   assertBeatTotal(script, ranges);
   // the writer's whole stage passed with these bullets in the prompt: ship gate
-  receipts.push(...markPass(["writer", "global"], io.playbookDir));
+  receipts.push(...markPass(["writer", "global"], io.playbookDir, io.drama));
   return { script, model: outlinePass.model, receipts };
 }

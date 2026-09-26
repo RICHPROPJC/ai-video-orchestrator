@@ -34,49 +34,24 @@
     "class_type": "H3EpisodeSplit",
     "inputs": {
       "script": "__PROMPT__",
-      "bindings": "The start and end keyframe images are the physical beginning and near-end of this shot: faces, costumes and props come only from them and continue exactly. The grey placeholders of <Video 1> are motion-only: follow positions and timing, ignore their appearance. Do not add people."
-    }
-  },
-  "fbc_ref2va": {
-    "class_type": "H3FirstBlockCache",
-    "inputs": {
-      "model": [
-        "ref2va",
-        0
-      ],
-      "threshold": 0.15,
-      "start_step": 2,
-      "end_dense_steps": 2,
-      "max_consecutive_skips": 2
-    }
-  },
-  "solattn_ref2va": {
-    "class_type": "SolAttnMiniMaxH3Patcher",
-    "inputs": {
-      "model": [
-        "fbc_ref2va",
-        0
-      ],
-      "enabled": true,
-      "tau": 0.5,
-      "thresh_type": "diag"
+      "bindings": "<Picture 1> is the sole appearance and identity reference. <Video 1> is motion only: follow its positions, choreography and timing, ignore its appearance, clothing, background and lighting entirely — it is never a look reference. Do not add people."
     }
   },
   "lora_a": {
     "class_type": "H3LoraStack",
     "inputs": {
       "model": [
-        "solattn_ref2va",
+        "ref2va",
         0
       ],
-      "lora_1": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
-      "strength_1": 1.0,
+      "lora_1": "minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
+      "strength_1": 1,
       "lora_2": "None",
-      "strength_2": 1.0,
+      "strength_2": 1,
       "lora_3": "None",
-      "strength_3": 1.0,
+      "strength_3": 1,
       "lora_4": "None",
-      "strength_4": 1.0
+      "strength_4": 1
     }
   },
   "sigma_lora_a": {
@@ -86,50 +61,25 @@
         "lora_a",
         0
       ],
-      "shift_video": 12.0,
-      "shift_audio": 3.0
-    }
-  },
-  "fbc_fl2va": {
-    "class_type": "H3FirstBlockCache",
-    "inputs": {
-      "model": [
-        "fl2va",
-        0
-      ],
-      "threshold": 0.15,
-      "start_step": 2,
-      "end_dense_steps": 2,
-      "max_consecutive_skips": 2
-    }
-  },
-  "solattn_fl2va": {
-    "class_type": "SolAttnMiniMaxH3Patcher",
-    "inputs": {
-      "model": [
-        "fbc_fl2va",
-        0
-      ],
-      "enabled": true,
-      "tau": 0.5,
-      "thresh_type": "diag"
+      "shift_video": 12,
+      "shift_audio": 3
     }
   },
   "lora_b": {
     "class_type": "H3LoraStack",
     "inputs": {
       "model": [
-        "solattn_fl2va",
+        "fl2va",
         0
       ],
-      "lora_1": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
-      "strength_1": 1.0,
+      "lora_1": "minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
+      "strength_1": 1,
       "lora_2": "None",
-      "strength_2": 1.0,
+      "strength_2": 1,
       "lora_3": "None",
-      "strength_3": 1.0,
+      "strength_3": 1,
       "lora_4": "None",
-      "strength_4": 1.0
+      "strength_4": 1
     }
   },
   "sigma_lora_b": {
@@ -139,8 +89,8 @@
         "lora_b",
         0
       ],
-      "shift_video": 12.0,
-      "shift_audio": 3.0
+      "shift_video": 12,
+      "shift_audio": 3
     }
   },
   "voice_in": {
@@ -156,7 +106,7 @@
         "voice_in",
         0
       ],
-      "max_seconds": 16.0
+      "max_seconds": 16
     }
   },
   "blender_vid": {
@@ -165,10 +115,16 @@
       "video": "__VIDEO__",
       "custom_width": 864,
       "custom_height": 480,
-      "force_rate": 24.0,
+      "force_rate": 24,
       "frame_load_cap": 32,
       "skip_first_frames": 0,
       "select_every_nth": 10
+    }
+  },
+  "ref_img_0": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__PORTRAIT_A__"
     }
   },
   "r2v": {
@@ -201,6 +157,10 @@
       "ref_videos.ref_video_0": [
         "blender_vid",
         0
+      ],
+      "ref_images.ref_image_0": [
+        "ref_img_0",
+        0
       ]
     }
   },
@@ -225,43 +185,7 @@
         0
       ],
       "visual_strength": 0.999,
-      "audio_strength": 1.0
-    }
-  },
-  "kf_start_in": {
-    "class_type": "LoadImage",
-    "inputs": {
-      "image": "__KF_START__"
-    }
-  },
-  "kf_end_in": {
-    "class_type": "LoadImage",
-    "inputs": {
-      "image": "__KF_END__"
-    }
-  },
-  "kfinject": {
-    "class_type": "H3KeyframeInject",
-    "inputs": {
-      "conditioning": [
-        "cond_cs",
-        0
-      ],
-      "vae": [
-        "vvae",
-        0
-      ],
-      "start_image": [
-        "kf_start_in",
-        0
-      ],
-      "width": 864,
-      "height": 480,
-      "length": 260,
-      "end_image": [
-        "kf_end_in",
-        0
-      ]
+      "audio_strength": 1
     }
   },
   "noise_a": {
@@ -284,8 +208,8 @@
         0
       ],
       "scheduler": "simple",
-      "steps": 4,
-      "denoise": 1.0
+      "steps": 8,
+      "denoise": 1
     }
   },
   "guider_a": {
@@ -296,7 +220,7 @@
         0
       ],
       "conditioning": [
-        "kfinject",
+        "cond_cs",
         0
       ]
     }

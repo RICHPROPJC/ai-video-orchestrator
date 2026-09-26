@@ -70,6 +70,15 @@ export function expandBoards(opts: {
         camera,
         marks: marksFor(shot, heightById),
         ...(shot.props?.length ? { props: shot.props } : {}),
+        ...(shot.require
+          ? {
+              require: {
+                ...shot.require,
+                // T32: the packet's own light angle wins, else the shot's camera angle
+                ...(shot.require.angle === undefined && shot.angle !== undefined ? { angle: shot.angle } : {}),
+              },
+            }
+          : {}),
         stillPrompt: shot.action,
         motionPrompt: shot.action,
         scene: scene.id,

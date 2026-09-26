@@ -1,0 +1,965 @@
+{
+ "EmptyMiniMaxH3LatentAV": {
+  "input": {
+   "required": {
+    "width": [
+     "INT",
+     {
+      "default": 1344,
+      "min": 32,
+      "max": 16384,
+      "step": 32
+     }
+    ],
+    "height": [
+     "INT",
+     {
+      "default": 768,
+      "min": 32,
+      "max": 16384,
+      "step": 32
+     }
+    ],
+    "length": [
+     "INT",
+     {
+      "tooltip": "Frame count at 24 fps, snapped up to the model's 17k+5 grid (124 = ~5s; trained range is ~124-362, longer is untested)",
+      "default": 124,
+      "min": 5,
+      "max": 3600,
+      "step": 17
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "width",
+    "height",
+    "length"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "LATENT"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "LATENT"
+  ],
+  "output_tooltips": [
+   null
+  ],
+  "output_matchtypes": null,
+  "name": "EmptyMiniMaxH3LatentAV",
+  "display_name": "Empty MiniMax H3 AV Latent",
+  "description": "Joint video+audio latent for MiniMax H3. Duration snaps to the model's 17k+5 frame grid at 24 fps.",
+  "python_module": "comfy_extras.nodes_minimax_h3",
+  "category": "model/latent/minimax",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": null,
+  "essentials_category": null,
+  "has_intermediate_output": false
+ },
+ "MiniMaxH3ReferenceToVideo": {
+  "input": {
+   "required": {
+    "clip": [
+     "CLIP",
+     {}
+    ],
+    "vae": [
+     "VAE",
+     {}
+    ],
+    "audio_vae": [
+     "VAE",
+     {}
+    ],
+    "prompt": [
+     "STRING",
+     {
+      "multiline": true,
+      "dynamicPrompts": true
+     }
+    ],
+    "width": [
+     "INT",
+     {
+      "default": 1344,
+      "min": 32,
+      "max": 16384,
+      "step": 32
+     }
+    ],
+    "height": [
+     "INT",
+     {
+      "default": 768,
+      "min": 32,
+      "max": 16384,
+      "step": 32
+     }
+    ],
+    "length": [
+     "INT",
+     {
+      "tooltip": "Frame count at 24 fps, (124 = ~5s, trained range is ~124-362)",
+      "default": 124,
+      "min": 5,
+      "max": 3600,
+      "step": 17
+     }
+    ],
+    "ref_image_size": [
+     "COMBO",
+     {
+      "tooltip": "Reference image sizing. 'match' scales each ref (down only, keeping aspect) to the generation's pixel area; 'max' uses the reference pipeline's 2048px short edge for best identity fidelity. Reference tokens ride through every sampling step, so 'max' can be several times slower.",
+      "default": "match",
+      "multiselect": false,
+      "options": [
+       "match",
+       "max"
+      ]
+     }
+    ]
+   },
+   "optional": {
+    "ref_images": [
+     "COMFY_AUTOGROW_V3",
+     {
+      "template": {
+       "input": {
+        "required": {
+         "ref_image": [
+          "IMAGE",
+          {
+           "tooltip": "Reference image (downscaled to 2048 short edge if larger, never upscaled)"
+          }
+         ]
+        }
+       },
+       "prefix": "ref_image_",
+       "min": 0,
+       "max": 9
+      }
+     }
+    ],
+    "ref_videos": [
+     "COMFY_AUTOGROW_V3",
+     {
+      "template": {
+       "input": {
+        "required": {
+         "ref_video": [
+          "IMAGE",
+          {
+           "tooltip": "Reference video frames at 24 fps (2-15s)"
+          }
+         ]
+        }
+       },
+       "prefix": "ref_video_",
+       "min": 0,
+       "max": 3
+      }
+     }
+    ],
+    "ref_video_audios": [
+     "COMFY_AUTOGROW_V3",
+     {
+      "template": {
+       "input": {
+        "required": {
+         "ref_video_audio": [
+          "AUDIO",
+          {
+           "tooltip": "Soundtrack of the same-numbered reference video"
+          }
+         ]
+        }
+       },
+       "prefix": "ref_video_audio_",
+       "min": 0,
+       "max": 3
+      }
+     }
+    ],
+    "ref_audios": [
+     "COMFY_AUTOGROW_V3",
+     {
+      "template": {
+       "input": {
+        "required": {
+         "ref_audio": [
+          "AUDIO",
+          {
+           "tooltip": "Standalone reference audio"
+          }
+         ]
+        }
+       },
+       "prefix": "ref_audio_",
+       "min": 0,
+       "max": 3
+      }
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "clip",
+    "vae",
+    "audio_vae",
+    "prompt",
+    "width",
+    "height",
+    "length",
+    "ref_image_size"
+   ],
+   "optional": [
+    "ref_images",
+    "ref_videos",
+    "ref_video_audios",
+    "ref_audios"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "CONDITIONING",
+   "LATENT"
+  ],
+  "output_is_list": [
+   false,
+   false
+  ],
+  "output_name": [
+   "positive",
+   "LATENT"
+  ],
+  "output_tooltips": [
+   null,
+   null
+  ],
+  "output_matchtypes": null,
+  "name": "MiniMaxH3ReferenceToVideo",
+  "display_name": "MiniMax H3 Reference to Video",
+  "description": "<Picture i> / <Video k> / <Audio j> reference conditioning for MiniMax H3. Use the same tags when prompting.",
+  "python_module": "comfy_extras.nodes_minimax_h3",
+  "category": "model/conditioning/minimax",
+  "output_node": false,
+  "deprecated": false,
+  "experimental": false,
+  "dev_only": false,
+  "api_node": false,
+  "price_badge": null,
+  "search_aliases": null,
+  "essentials_category": null,
+  "has_intermediate_output": false
+ },
+ "H3MultishotSampler": {
+  "input": {
+   "required": {
+    "model": [
+     "MODEL"
+    ],
+    "clip": [
+     "CLIP"
+    ],
+    "video_vae": [
+     "VAE"
+    ],
+    "audio_vae": [
+     "VAE"
+    ],
+    "script": [
+     "STRING",
+     {
+      "multiline": true,
+      "dynamicPrompts": false,
+      "default": "Shot 1 prompt goes here.\n---\nShot 2 prompt goes here.\n---\nShot 3 prompt goes here.",
+      "tooltip": "One prompt per shot, separated by --- on its own line. JSON {\"prompts\": [...]} also accepted."
+     }
+    ],
+    "shot_count": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 8,
+      "tooltip": "0 = one shot per script prompt. 1-8 forces the count: extra prompts drop, missing ones continue the last prompt. Every shot renders - this is the real thing here."
+     }
+    ],
+    "width": [
+     "INT",
+     {
+      "default": 768,
+      "min": 32,
+      "max": 4096,
+      "step": 32
+     }
+    ],
+    "height": [
+     "INT",
+     {
+      "default": 1344,
+      "min": 32,
+      "max": 4096,
+      "step": 32
+     }
+    ],
+    "frames_per_shot": [
+     "INT",
+     {
+      "default": 243,
+      "min": 5,
+      "max": 481,
+      "step": 17,
+      "tooltip": "Frames at 24fps on H3's 17k+5 grid (243 = ~10.1s; 362 = trained max ~15.1s; beyond is untested)."
+     }
+    ],
+    "seed": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 18446744073709551615,
+      "control_after_generate": true
+     }
+    ],
+    "steps": [
+     "INT",
+     {
+      "default": 20,
+      "min": 1,
+      "max": 50
+     }
+    ],
+    "seed_per_shot": [
+     "BOOLEAN",
+     {
+      "default": true,
+      "label_on": "vary per shot",
+      "label_off": "same seed every shot",
+      "tooltip": "Leave ON. Measured: varying the seed per shot holds the face across the chain; using one seed for every shot made BOTH the face and the voice drift. Identity lives in the conditioning, not the seed."
+     }
+    ]
+   },
+   "optional": {
+    "start_image": [
+     "IMAGE",
+     {
+      "tooltip": "Optional first frame (I2V). Shot 1 starts from this image; later shots continue chaining from the previous shot's last frame as usual. Leave unconnected for pure text-to-video."
+     }
+    ],
+    "reference_images": [
+     "IMAGE",
+     {
+      "tooltip": "Optional SUBJECT/CHARACTER reference images (batch = multiple refs, e.g. via Batch Images), carried into EVERY shot as <Picture 1>, <Picture 2>, ... - distinct from start_image (which only seeds the I2V chain frame). Bind them in each shot's prompt: 'She looks like the woman in <Picture 1>.' Verified on the ref2va checkpoint."
+     }
+    ],
+    "voice_ref": [
+     "AUDIO",
+     {
+      "tooltip": "Optional VOICE ANCHOR carried into EVERY shot as a reference audio (<Audio 1>). Feed a clean solo line of the character - e.g. a slice of stage A's output - and the voice is PINNED across the chain instead of re-performed from text (verified: control drifted, voice-ref held). Bind it in each shot's prompt: 'Her voice is the voice in <Audio 1>.' Works with keyframe chaining via the refs+keyframes merge patch. NOTE: verified on the ref2va checkpoint; fl2va was not trained with reference rows, so wire the ref2va model when using this."
+     }
+    ],
+    "sampler_name": [
+     [
+      "euler",
+      "euler_cfg_pp",
+      "euler_ancestral",
+      "euler_ancestral_cfg_pp",
+      "heun",
+      "heunpp2",
+      "exp_heun_2_x0",
+      "exp_heun_2_x0_sde",
+      "dpm_2",
+      "dpm_2_ancestral",
+      "lms",
+      "dpm_fast",
+      "dpm_adaptive",
+      "dpmpp_2s_ancestral",
+      "dpmpp_2s_ancestral_cfg_pp",
+      "dpmpp_sde",
+      "dpmpp_sde_gpu",
+      "dpmpp_2m",
+      "dpmpp_2m_cfg_pp",
+      "dpmpp_2m_sde",
+      "dpmpp_2m_sde_gpu",
+      "dpmpp_2m_sde_heun",
+      "dpmpp_2m_sde_heun_gpu",
+      "dpmpp_3m_sde",
+      "dpmpp_3m_sde_gpu",
+      "ddpm",
+      "lcm",
+      "ipndm",
+      "ipndm_v",
+      "deis",
+      "res_multistep",
+      "res_multistep_cfg_pp",
+      "res_multistep_ancestral",
+      "res_multistep_ancestral_cfg_pp",
+      "gradient_estimation",
+      "gradient_estimation_cfg_pp",
+      "er_sde",
+      "seeds_2",
+      "seeds_3",
+      "sa_solver",
+      "sa_solver_pece",
+      "ddim",
+      "uni_pc",
+      "uni_pc_bh2",
+      "mini_max_h3_turbo"
+     ],
+     {
+      "default": "res_multistep",
+      "tooltip": "Sampling algorithm. res_multistep is the default and what every measurement in the docs used."
+     }
+    ],
+    "scheduler": [
+     [
+      "simple",
+      "sgm_uniform",
+      "karras",
+      "exponential",
+      "ddim_uniform",
+      "beta",
+      "normal",
+      "linear_quadratic",
+      "kl_optimal"
+     ],
+     {
+      "default": "simple",
+      "tooltip": "Sigma schedule. simple is the default and what the docs measured."
+     }
+    ],
+    "sampler_override": [
+     "STRING",
+     {
+      "forceInput": true,
+      "tooltip": "Link a sampler NAME here (e.g. from H3 Studio Controls) to drive this widget from one master source. Overrides sampler_name when connected."
+     }
+    ],
+    "scheduler_override": [
+     "STRING",
+     {
+      "forceInput": true,
+      "tooltip": "Link a scheduler NAME here to single-source it. Overrides scheduler when connected."
+     }
+    ],
+    "self_anchor_voice": [
+     "BOOLEAN",
+     {
+      "default": false,
+      "label_on": "anchor to shot 1's voice",
+      "label_off": "off",
+      "tooltip": "AUTOMATIC voice identity: after shot 1 renders, its own audio becomes the reference (<Audio 1>) for every later shot - the voice the model actually performed is pinned, no file needed. Write shot 1 so the character speaks a clean solo line. An external voice_ref, if connected, takes priority. Use with a ref2va checkpoint."
+     }
+    ],
+    "two_pass_upscale": [
+     "BOOLEAN",
+     {
+      "default": false,
+      "label_on": "low-res pass + upscale",
+      "label_off": "single pass",
+      "tooltip": "EVERY SHOT renders pass 1 at width/upscale_factor through pass1_fraction of the steps, the latent is spatially upscaled to the full width x height, and the remaining steps finish at full res. Faster than a native full-res render and sharper than rendering low-res alone. Needs the ComfyUI-MiniMaxH3_LatentUpscaler pack installed (github.com/Tr1dae) - its re-noise math is used."
+     }
+    ],
+    "upscale_factor": [
+     "FLOAT",
+     {
+      "default": 1.5,
+      "min": 1.0,
+      "max": 4.0,
+      "step": 0.05,
+      "tooltip": "Pass-1 renders at width/factor x height/factor (snapped to /32). Pass 2 always lands EXACTLY on width x height."
+     }
+    ],
+    "pass1_fraction": [
+     "FLOAT",
+     {
+      "default": 0.4,
+      "min": 0.1,
+      "max": 0.95,
+      "step": 0.05,
+      "tooltip": "Share of the steps spent in the low-res pass. 0.4 is RENDER-VERIFIED clean; splits much past ~0.5 start pass 2 at too low a sigma to erase the latent-upscale interpolation pattern and the output grows a ghost/moire lattice (A/B'd at 0.7 vs 0.4, same seed)."
+     }
+    ],
+    "upscale_audio_denoise": [
+     "FLOAT",
+     {
+      "default": 0.35,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05,
+      "tooltip": "How hard pass 2 may rewrite the audio. 0 = pass-1 audio is locked (safest for voice identity), 1 = full remix. 0.35 = light polish that preserves the voice."
+     }
+    ],
+    "reference_image_size": [
+     [
+      "match",
+      "max"
+     ],
+     {
+      "default": "match",
+      "tooltip": "Reference image sizing. 'match' scales each ref (down only, keeping aspect) to the generation's pixel area; 'max' uses the reference pipeline's 2048px short edge for best identity fidelity. Reference tokens ride through every sampling step, so 'max' can be several times slower."
+     }
+    ],
+    "preview_first_shot": [
+     "BOOLEAN",
+     {
+      "default": false,
+      "label_on": "save shot 1 early",
+      "label_off": "off",
+      "tooltip": "Write shot 1 to output/video/H3_FIRSTSHOT/ the MOMENT it finishes decoding - minutes before the full chain completes - so a bad take can be cancelled early. The full path is printed to the console. The first_shot_frames/audio OUTPUTS always carry shot 1 regardless of this toggle."
+     }
+    ],
+    "chain_gain_control": [
+     [
+      "off",
+      "flatten",
+      "anchor_level",
+      "match_output",
+      "frozen_anchor"
+     ],
+     {
+      "default": "off",
+      "tooltip": "Fixes SEAM SHARPENING in chained shots. Measured: each shot tail anchors the next, and the model returns ~1.25-1.47x the anchor texture energy, so sharpness RATCHETS (3.3x over 6 shots) with a visible step at every seam. flatten = RECOMMENDED. Levels every shot to the house texture level per block, so head == tail == house: no ratchet AND no step at the seam. Blur only, never sharpens. match_output = lighter: matches each shot head to the house level with one blanket blur (leaves the within-shot ramp, so a small seam step remains). anchor_level = pre-compensate the ANCHOR ONLY by the measured gain so each shot lands at shot 1 level; no output pixel is altered (the anchor frame is dropped from the master anyway). frozen_anchor = DIAGNOSTIC: every shot anchors on shot 1 tail; flattens the ratchet but identity may drift - use to prove the loop, not to ship."
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "model",
+    "clip",
+    "video_vae",
+    "audio_vae",
+    "script",
+    "shot_count",
+    "width",
+    "height",
+    "frames_per_shot",
+    "seed",
+    "steps",
+    "seed_per_shot"
+   ],
+   "optional": [
+    "start_image",
+    "reference_images",
+    "voice_ref",
+    "sampler_name",
+    "scheduler",
+    "sampler_override",
+    "scheduler_override",
+    "self_anchor_voice",
+    "two_pass_upscale",
+    "upscale_factor",
+    "pass1_fraction",
+    "upscale_audio_denoise",
+    "reference_image_size",
+    "preview_first_shot",
+    "chain_gain_control"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "IMAGE",
+   "AUDIO",
+   "INT",
+   "IMAGE",
+   "AUDIO"
+  ],
+  "output_is_list": [
+   false,
+   false,
+   false,
+   false,
+   false
+  ],
+  "output_name": [
+   "master_frames",
+   "master_audio",
+   "shots_rendered",
+   "first_shot_frames",
+   "first_shot_audio"
+  ],
+  "name": "H3MultishotSampler",
+  "display_name": "H3 Multishot Sampler (one node)",
+  "description": "",
+  "python_module": "custom_nodes.ComfyUI-H3-Multishot",
+  "category": "sampling/minimax",
+  "output_node": false,
+  "has_intermediate_output": false,
+  "search_aliases": []
+ },
+ "H3Keyframes": {
+  "input": {
+   "required": {
+    "clip": [
+     "CLIP"
+    ],
+    "vae": [
+     "VAE"
+    ],
+    "prompt": [
+     "STRING",
+     {
+      "multiline": true,
+      "dynamicPrompts": true,
+      "default": ""
+     }
+    ],
+    "width": [
+     "INT",
+     {
+      "default": 960,
+      "min": 32,
+      "max": 4096,
+      "step": 32
+     }
+    ],
+    "height": [
+     "INT",
+     {
+      "default": 544,
+      "min": 32,
+      "max": 4096,
+      "step": 32
+     }
+    ],
+    "length": [
+     "INT",
+     {
+      "default": 243,
+      "min": 5,
+      "max": 3600,
+      "step": 17,
+      "tooltip": "Frames at 24fps, on H3's 17k+5 grid. 243 = ~10.1s, 362 = trained max ~15.1s."
+     }
+    ],
+    "positions": [
+     "STRING",
+     {
+      "default": "0%, 50%",
+      "tooltip": "One position per connected image, in order. A value with a % is a FRACTION of the clip (0% = first frame, 50% = halfway, 100% = last). A value without a % is an absolute frame index. Example: '0%, 50%, 100%' anchors the start, the middle and the end. Additionally, position ranges such as '2-5' or '15%-30%' may be specified. Example: '0-3, 10%, 90%-100%'. Ranges may be descending, such as 30%-20%, which would reverse that section of the input image batch. Please note that specifying large numbers of keyframes will massively increase VRAM requirements."
+     }
+    ]
+   },
+   "optional": {
+    "image_1": [
+     "IMAGE"
+    ],
+    "image_2": [
+     "IMAGE"
+    ],
+    "image_3": [
+     "IMAGE"
+    ],
+    "image_4": [
+     "IMAGE"
+    ],
+    "image_5": [
+     "IMAGE"
+    ],
+    "image_6": [
+     "IMAGE"
+    ],
+    "images_batch": [
+     "IMAGE",
+     {
+      "tooltip": "A BATCH of anchors, for when six slots is not enough - e.g. several frames at each end to pin complex motion, or a set of frames kept from a source video. Every frame is one anchor, in order, and they come AFTER any individually connected image_N. Give one entry in `positions` per anchor across both."
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "clip",
+    "vae",
+    "prompt",
+    "width",
+    "height",
+    "length",
+    "positions"
+   ],
+   "optional": [
+    "image_1",
+    "image_2",
+    "image_3",
+    "image_4",
+    "image_5",
+    "image_6",
+    "images_batch"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "CONDITIONING",
+   "LATENT",
+   "STRING"
+  ],
+  "output_is_list": [
+   false,
+   false,
+   false
+  ],
+  "output_name": [
+   "positive",
+   "latent",
+   "info"
+  ],
+  "name": "H3Keyframes",
+  "display_name": "H3 Keyframes (any position)",
+  "description": "MiniMax H3 conditioning with keyframes at ARBITRARY positions, not just first/last. Connect images to the image_N slots and give one position per image.",
+  "python_module": "custom_nodes.ComfyUI-H3-Multishot",
+  "category": "conditioning/video_models",
+  "output_node": false,
+  "has_intermediate_output": false,
+  "search_aliases": []
+ },
+ "H3StudioControls": {
+  "input": {
+   "required": {
+    "width": [
+     "INT",
+     {
+      "default": 768,
+      "min": 32,
+      "max": 4096,
+      "step": 32
+     }
+    ],
+    "height": [
+     "INT",
+     {
+      "default": 1344,
+      "min": 32,
+      "max": 4096,
+      "step": 32
+     }
+    ],
+    "frames_per_shot": [
+     "INT",
+     {
+      "default": 362,
+      "min": 5,
+      "max": 481,
+      "step": 17,
+      "tooltip": "H3's 17k+5 grid at 24fps. 362 = ~15.1s, the trained max. Drives stage A's length AND stage B's per-shot length."
+     }
+    ],
+    "steps": [
+     "INT",
+     {
+      "default": 12,
+      "min": 1,
+      "max": 50
+     }
+    ],
+    "sampler_name": [
+     [
+      "euler",
+      "euler_cfg_pp",
+      "euler_ancestral",
+      "euler_ancestral_cfg_pp",
+      "heun",
+      "heunpp2",
+      "exp_heun_2_x0",
+      "exp_heun_2_x0_sde",
+      "dpm_2",
+      "dpm_2_ancestral",
+      "lms",
+      "dpm_fast",
+      "dpm_adaptive",
+      "dpmpp_2s_ancestral",
+      "dpmpp_2s_ancestral_cfg_pp",
+      "dpmpp_sde",
+      "dpmpp_sde_gpu",
+      "dpmpp_2m",
+      "dpmpp_2m_cfg_pp",
+      "dpmpp_2m_sde",
+      "dpmpp_2m_sde_gpu",
+      "dpmpp_2m_sde_heun",
+      "dpmpp_2m_sde_heun_gpu",
+      "dpmpp_3m_sde",
+      "dpmpp_3m_sde_gpu",
+      "ddpm",
+      "lcm",
+      "ipndm",
+      "ipndm_v",
+      "deis",
+      "res_multistep",
+      "res_multistep_cfg_pp",
+      "res_multistep_ancestral",
+      "res_multistep_ancestral_cfg_pp",
+      "gradient_estimation",
+      "gradient_estimation_cfg_pp",
+      "er_sde",
+      "seeds_2",
+      "seeds_3",
+      "sa_solver",
+      "sa_solver_pece",
+      "ddim",
+      "uni_pc",
+      "uni_pc_bh2",
+      "mini_max_h3_turbo"
+     ],
+     {
+      "default": "euler"
+     }
+    ],
+    "scheduler": [
+     [
+      "simple",
+      "sgm_uniform",
+      "karras",
+      "exponential",
+      "ddim_uniform",
+      "beta",
+      "normal",
+      "linear_quadratic",
+      "kl_optimal"
+     ],
+     {
+      "default": "beta"
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "width",
+    "height",
+    "frames_per_shot",
+    "steps",
+    "sampler_name",
+    "scheduler"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "INT",
+   "INT",
+   "INT",
+   "INT",
+   "STRING",
+   "STRING"
+  ],
+  "output_is_list": [
+   false,
+   false,
+   false,
+   false,
+   false,
+   false
+  ],
+  "output_name": [
+   "width",
+   "height",
+   "frames_per_shot",
+   "steps",
+   "sampler_name",
+   "scheduler"
+  ],
+  "name": "H3StudioControls",
+  "display_name": "H3 Studio Controls (one source, both stages)",
+  "description": "",
+  "python_module": "custom_nodes.ComfyUI-H3-Multishot",
+  "category": "video/minimax",
+  "output_node": false,
+  "has_intermediate_output": false,
+  "search_aliases": []
+ },
+ "H3KeyframeInject": {
+  "input": {
+   "required": {
+    "conditioning": [
+     "CONDITIONING"
+    ],
+    "vae": [
+     "VAE"
+    ],
+    "start_image": [
+     "IMAGE"
+    ],
+    "width": [
+     "INT",
+     {
+      "default": 544,
+      "min": 32,
+      "max": 4096,
+      "step": 32
+     }
+    ],
+    "height": [
+     "INT",
+     {
+      "default": 960,
+      "min": 32,
+      "max": 4096,
+      "step": 32
+     }
+    ],
+    "length": [
+     "INT",
+     {
+      "default": 362,
+      "min": 5,
+      "max": 3600,
+      "step": 17,
+      "tooltip": "Must match the generation's frame count."
+     }
+    ]
+   },
+   "optional": {
+    "end_image": [
+     "IMAGE",
+     {
+      "tooltip": "Optional last-frame anchor."
+     }
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "conditioning",
+    "vae",
+    "start_image",
+    "width",
+    "height",
+    "length"
+   ],
+   "optional": [
+    "end_image"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "CONDITIONING"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "CONDITIONING"
+  ],
+  "name": "H3KeyframeInject",
+  "display_name": "H3 Keyframe Inject (experimental: refs + start frame)",
+  "description": "",
+  "python_module": "custom_nodes.ComfyUI-H3-Multishot",
+  "category": "model/conditioning/minimax",
+  "output_node": false,
+  "has_intermediate_output": false,
+  "search_aliases": []
+ }
+}

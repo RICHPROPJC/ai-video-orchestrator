@@ -1,0 +1,353 @@
+{
+  "clip": {
+    "class_type": "H3ClipLoaderAny",
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "type": "minimax"
+    }
+  },
+  "vvae": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+    }
+  },
+  "avae": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+    }
+  },
+  "ref2va": {
+    "class_type": "H3ModelLoaderAny",
+    "inputs": {
+      "model_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+    }
+  },
+  "fl2va": {
+    "class_type": "H3ModelLoaderAny",
+    "inputs": {
+      "model_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+    }
+  },
+  "split": {
+    "class_type": "H3EpisodeSplit",
+    "inputs": {
+      "script": "__PROMPT__",
+      "bindings": "The start and end keyframe images are the physical beginning and near-end of this shot: faces, costumes and props come only from them and continue exactly. The grey placeholders of <Video 1> are motion-only: follow positions and timing, ignore their appearance. Do not add people."
+    }
+  },
+  "lora_a": {
+    "class_type": "H3LoraStack",
+    "inputs": {
+      "model": [
+        "ref2va",
+        0
+      ],
+      "lora_1": "minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
+      "strength_1": 1,
+      "lora_2": "None",
+      "strength_2": 1,
+      "lora_3": "None",
+      "strength_3": 1,
+      "lora_4": "None",
+      "strength_4": 1
+    }
+  },
+  "sigma_lora_a": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+      "model": [
+        "lora_a",
+        0
+      ],
+      "shift_video": 12,
+      "shift_audio": 3
+    }
+  },
+  "lora_b": {
+    "class_type": "H3LoraStack",
+    "inputs": {
+      "model": [
+        "fl2va",
+        0
+      ],
+      "lora_1": "minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
+      "strength_1": 1,
+      "lora_2": "None",
+      "strength_2": 1,
+      "lora_3": "None",
+      "strength_3": 1,
+      "lora_4": "None",
+      "strength_4": 1
+    }
+  },
+  "sigma_lora_b": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+      "model": [
+        "lora_b",
+        0
+      ],
+      "shift_video": 12,
+      "shift_audio": 3
+    }
+  },
+  "voice_in": {
+    "class_type": "LoadAudio",
+    "inputs": {
+      "audio": "__AUDIO__"
+    }
+  },
+  "voice_guard": {
+    "class_type": "H3ReferenceAudio",
+    "inputs": {
+      "audio": [
+        "voice_in",
+        0
+      ],
+      "max_seconds": 16
+    }
+  },
+  "r2v": {
+    "class_type": "MiniMaxH3ReferenceToVideo",
+    "inputs": {
+      "clip": [
+        "clip",
+        0
+      ],
+      "vae": [
+        "vvae",
+        0
+      ],
+      "audio_vae": [
+        "avae",
+        0
+      ],
+      "prompt": [
+        "split",
+        0
+      ],
+      "width": 864,
+      "height": 480,
+      "length": 260,
+      "ref_image_size": "max",
+      "ref_audios.ref_audio_0": [
+        "voice_guard",
+        0
+      ]
+    }
+  },
+  "cond_evict": {
+    "class_type": "H3FreeTextEncoder",
+    "inputs": {
+      "conditioning": [
+        "r2v",
+        0
+      ],
+      "clip": [
+        "clip",
+        0
+      ]
+    }
+  },
+  "cond_cs": {
+    "class_type": "H3ConditionStrength",
+    "inputs": {
+      "conditioning": [
+        "cond_evict",
+        0
+      ],
+      "visual_strength": 0.999,
+      "audio_strength": 1
+    }
+  },
+  "kf_start_in": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__KF_START__"
+    }
+  },
+  "kf_end_in": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__KF_END__"
+    }
+  },
+  "keyframes": {
+    "class_type": "H3Keyframes",
+    "inputs": {
+      "clip": [
+        "clip",
+        0
+      ],
+      "vae": [
+        "vvae",
+        0
+      ],
+      "prompt": [
+        "split",
+        0
+      ],
+      "width": 864,
+      "height": 480,
+      "length": 260,
+      "positions": "0%, 100%",
+      "image_1": [
+        "kf_start_in",
+        0
+      ],
+      "image_2": [
+        "kf_end_in",
+        0
+      ]
+    }
+  },
+  "kf_strength": {
+    "class_type": "H3ConditionStrength",
+    "inputs": {
+      "conditioning": [
+        "keyframes",
+        0
+      ],
+      "visual_strength": 0.999,
+      "audio_strength": 1
+    }
+  },
+  "cond_combine": {
+    "class_type": "ConditioningCombine",
+    "inputs": {
+      "conditioning_1": [
+        "cond_cs",
+        0
+      ],
+      "conditioning_2": [
+        "kf_strength",
+        0
+      ]
+    }
+  },
+  "noise_a": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 42
+    }
+  },
+  "sampler_sel": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "sched_a": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": [
+        "sigma_lora_a",
+        0
+      ],
+      "scheduler": "simple",
+      "steps": 8,
+      "denoise": 1
+    }
+  },
+  "guider_a": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": [
+        "sigma_lora_a",
+        0
+      ],
+      "conditioning": [
+        "cond_combine",
+        0
+      ]
+    }
+  },
+  "samp_a": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "noise_a",
+        0
+      ],
+      "guider": [
+        "guider_a",
+        0
+      ],
+      "sampler": [
+        "sampler_sel",
+        0
+      ],
+      "sigmas": [
+        "sched_a",
+        0
+      ],
+      "latent_image": [
+        "r2v",
+        1
+      ]
+    }
+  },
+  "dec_v": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "samp_a",
+        0
+      ],
+      "vae": [
+        "vvae",
+        0
+      ]
+    }
+  },
+  "dec_a": {
+    "class_type": "VAEDecodeAudio",
+    "inputs": {
+      "samples": [
+        "samp_a",
+        0
+      ],
+      "vae": [
+        "avae",
+        0
+      ]
+    }
+  },
+  "lastf": {
+    "class_type": "H3LastFrame",
+    "inputs": {
+      "images": [
+        "dec_v",
+        0
+      ]
+    }
+  },
+  "cv": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "dec_v",
+        0
+      ],
+      "fps": 24,
+      "audio": [
+        "dec_a",
+        0
+      ]
+    }
+  },
+  "save": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "cv",
+        0
+      ],
+      "filename_prefix": "video/SLATECREW/__SHOT__",
+      "format": "auto",
+      "codec": "auto"
+    }
+  }
+}

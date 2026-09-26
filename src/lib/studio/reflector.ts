@@ -5,7 +5,6 @@ import { chatJson, type CrewConfig, type CrewReceipt } from "./crew-llm";
 import { BOARDS_CHARTER, WRITER_BEATS_CHARTER, WRITER_OUTLINE_CHARTER } from "./seat-charters";
 import { curatePlaybook, type PlaybookOp } from "./playbook";
 import {
-  dramasWithPlaybooks,
   jobDir,
   playbookPath,
   projectsRootFromSeatsDir,
@@ -201,7 +200,7 @@ export async function runReflector(opts: {
   const proot = opts.projectsDir ?? projectsRootFromSeatsDir(booksDir);
   // one drama in play, or exactly one drama owning playbooks — two or more
   // without opts.drama means noun demotion has no target, so none is claimed
-  const drama = opts.drama ?? (dramasWithPlaybooks(proot).length === 1 ? dramasWithPlaybooks(proot)[0] : undefined);
+  const drama = opts.drama?.trim() || undefined;
 
   const files: { label: string; addr: PlaybookAddress }[] = [
     { label: "all.primitive.md", addr: { lifetime: "primitive", scope: "all", dir: booksDir } },

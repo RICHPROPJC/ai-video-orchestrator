@@ -51,16 +51,19 @@ export function H3PlanCard({
   title: string;
   plan: H3ShotPlan;
 }) {
-  const hop = plan.keyframes.prevLastFrame.policy === "forbidden";
+  // §5b: C-form plans carry no keyframes — hop/red edge rides the form line
+  const hop = plan.form === "c" ? false : plan.keyframes?.prevLastFrame.policy === "forbidden";
   return (
     <Card className={hop ? "border-destructive/40" : "border-emerald-500/40"}>
       <CardHeader className="border-b">
         <CardTitle className="flex items-center justify-between gap-2 text-base">
           {title}
-          <Badge variant={hop ? "destructive" : "default"}>{plan.keyframes.prevLastFrame.policy}</Badge>
+          <Badge variant={hop ? "destructive" : "default"}>
+            {plan.form === "c" ? "c-form · zero keyframes" : plan.keyframes?.prevLastFrame.policy}
+          </Badge>
         </CardTitle>
         <p className="text-muted-foreground text-xs">
-          {plan.shotId} · generate={plan.generation} · sampler={plan.sampler} · fl2va loaded
+          {plan.shotId} · form={plan.form} (§5b) · generate={plan.generation} · sampler={plan.sampler} · fl2va loaded
         </p>
       </CardHeader>
       <CardContent className="space-y-4 pt-4">
@@ -74,20 +77,29 @@ export function H3PlanCard({
             </li>
           ))}
         </ol>
-        <div className="grid gap-2 sm:grid-cols-3">
-          {H3_KEYFRAME_STATIONS.map((s) => (
-            <div key={s.at} className="rounded-md border px-2 py-2">
-              <p className="font-mono text-sm">{s.at}</p>
-              <p className="text-[11px] leading-snug">{s.take}</p>
-              <p className="mt-1 text-[10px] text-muted-foreground">{s.node}</p>
-              <p className="text-[10px] text-destructive">never {s.never}</p>
-            </div>
-          ))}
-        </div>
+        {plan.form === "c" ? (
+          <div className="rounded-md border border-primary/40 bg-primary/5 px-2 py-2">
+            <p className="font-mono text-sm">§5b C-form</p>
+            <p className="text-[11px] leading-snug">
+              真鍵格可以同灰模參考片一齊入。灰模圖唔可以當鍵格。身份參考係角度肖像，Video 1 只交動作。
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-3">
+            {H3_KEYFRAME_STATIONS.map((s) => (
+              <div key={s.at} className="rounded-md border px-2 py-2">
+                <p className="font-mono text-sm">{s.at}</p>
+                <p className="text-[11px] leading-snug">{s.take}</p>
+                <p className="mt-1 text-[10px] text-muted-foreground">{s.node}</p>
+                <p className="text-[10px] text-destructive">never {s.never}</p>
+              </div>
+            ))}
+          </div>
+        )}
         <SlotGrid plan={plan} />
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <p className="text-[10px] tracking-widest text-muted-foreground">MISS KEYFRAME → TUNE</p>
+            <p className="text-[10px] tracking-widest text-muted-foreground">MISS IDENTITY → TUNE</p>
             <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] leading-snug">
               {plan.missKeyframe.tune.map((s) => (
                 <li key={s}>{s}</li>
@@ -95,7 +107,7 @@ export function H3PlanCard({
             </ul>
           </div>
           <div>
-            <p className="text-[10px] tracking-widest text-muted-foreground">MISS KEYFRAME → NEVER</p>
+            <p className="text-[10px] tracking-widest text-muted-foreground">MISS IDENTITY → NEVER</p>
             <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] leading-snug text-destructive">
               {plan.missKeyframe.never.map((s) => (
                 <li key={s}>{s}</li>
