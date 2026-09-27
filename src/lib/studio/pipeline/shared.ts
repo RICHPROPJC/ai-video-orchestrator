@@ -96,6 +96,10 @@ export function patch(job: JobRecord, partial: Partial<JobRecord>) {
   const next = { ...job, ...partial };
   if (!("blockedShots" in partial)) next.blockedShots = disk?.blockedShots ?? next.blockedShots;
   if (!("placementGaps" in partial)) next.placementGaps = disk?.placementGaps ?? next.placementGaps;
+  // §14.1a：episode 同一規則承接——未提交＝磁碟最新（author 攔截 attempts+1
+  // 唔被 authorStage 舊 ctx.job 覆寫）；明確提交 null＝閂（in 運算子計
+  // own-property，null 唔當缺值復活舊 episode）。
+  if (!("soundRepairEpisode" in partial)) next.soundRepairEpisode = disk?.soundRepairEpisode ?? next.soundRepairEpisode;
   writeJob(next, activeOwner);
   return next;
 }

@@ -60,8 +60,11 @@ async function authorCallSheet(
   } else if (placementGaps.length && epAttempts >= GAP_BUDGET) {
     await io.speak("producer", `修訂額度耗盡（episode 已消耗 ${epAttempts}/${GAP_BUDGET} 輪，${placementGaps.length} 條 gap 未解）——唔再攔截 callsheet，gaps 留底收尾 blocked 判斷。`, "warn");
   }
-  // §9④：唔再要求 input.resume——行內回修（pipeline world 後返嚟）一樣要攔
-  if (fs.existsSync(existing) && placementGaps.length) {
+  // §9④＋§14.1b：唔再要求 input.resume；額度准入喺實際 revise consumer——
+  // 耗盡唔攔截唔進修訂（inline loop guard 保護唔到先行嘅 authorStage/resume），
+  // gaps/blocked 留底收尾 verdict。
+  const canRevise = placementGaps.length > 0 && epAttempts < GAP_BUDGET;
+  if (fs.existsSync(existing) && canRevise) {
     await io.speak(
       "producer",
       `回修：${placementGaps.length} 句聲畫對位缺口積留（${placementGaps.map((g) => g.text.slice(0, 24)).join("、").slice(0, 200)}）——唔照食 callsheet，帶差距返導演席修訂落點。`,
@@ -142,7 +145,7 @@ async function authorCallSheet(
   const creativeFresh = fs.existsSync(planOnDiskFile) && (!manHere || manHere.briefSha === briefSha(input.brief)) && !placementGaps.length;
   if (!creativeFresh) {
     // §7②：gaps 情況＝revise 輪（帶磁碟上嘅 plan＋script＋差距 hint 返導演席）
-    const reviseForGaps = placementGaps.length && fs.existsSync(planOnDiskFile)
+    const reviseForGaps = canRevise && fs.existsSync(planOnDiskFile)
       ? {
           previousPlan: JSON.parse(fs.readFileSync(planOnDiskFile, "utf8")) as unknown,
           scriptMd: fs.existsSync(path.join(creativeDir, "script.md"))

@@ -67,6 +67,10 @@ const factSchema = z.object({
 });
 
 const boardShotShape = z.object({
+  /** §14.4d：場內自編鏡鍵（唯一，短）——onImageAdoptions.shotIds 用佢指認
+   *  精確一鏡（beatId 指認＝組覆蓋會放大意圖）；同一句前半講者後半聽者
+   *  =兩條 adoption 各指唔同 localKey。 */
+  localKey: z.string().min(1).max(12).optional(),
   beatId: z.string().regex(BEAT_ID_RE),
   /** SC-CREATIVE-OS-0927 P1：一鏡可覆蓋多個 beat（多對多）。beatId 保留做
    *  primary（舊消費者照讀）；覆蓋閘同對白歸屬改食 beatIds ?? [beatId]。
@@ -156,14 +160,30 @@ export function boardsSceneSchema(ctx: {
   /** §13.3.1：導演聲畫採用意圖（directorSkeleton.dialoguePlacements）——
    *  有意圖嘅 callsheet，boards 必須交採用結果（onImageAdoptions 或
    *  adoptionIssues 任一）；冇意圖嘅流程合法 N/A 唔強制填表。 */
-  dialoguePlacements?: unknown[];
+  dialoguePlacements?: { word: string }[];
 }) {
   const byBeat = new Map(ctx.beats.map((b) => [b.id, b]));
   const cast = new Set(ctx.characters.map((c) => c.id));
   return boardsSceneShape.superRefine((scene, report) => {
-    // §13.3.1：採用 coverage gate——optional 欄唔可以「靜靜省略當無 gap」
-    if ((ctx.dialoguePlacements?.length ?? 0) > 0 && !(scene.onImageAdoptions?.length) && !(scene.adoptionIssues?.length)) {
-      report.addIssue({ code: "custom", path: ["onImageAdoptions"], message: "callsheet 有 dialoguePlacements（聲畫採用意圖）但本場冇交 onImageAdoptions 亦冇 adoptionIssues——每條 placement 要有明示採用結果" });
+    // §13.3.1＋§14.4a：採用 coverage 逐條——每條本場相關 placement 要有明示
+    // 採用結果（onImageAdoptions.placement 對得上）或具名未解（adoptionIssues
+    // 字串提返個 word）；淨交一條唔夠，未知 word 唔收貨。
+    if ((ctx.dialoguePlacements?.length ?? 0) > 0) {
+      const adopted = new Set((scene.onImageAdoptions ?? []).map((a) => a.placement));
+      const issueText = (scene.adoptionIssues ?? []).join("\n");
+      for (const need of ctx.dialoguePlacements!) {
+        if (!adopted.has(need.word) && !issueText.includes(need.word)) {
+          report.addIssue({ code: "custom", path: ["onImageAdoptions"], message: `placement「${need.word}」冇採用結果——onImageAdoptions 要有一條 placement 對得上，或 adoptionIssues 具名講明未解` });
+        }
+      }
+    }
+    // §14.4d：localKey 場內唯一（重複＝指認含糊，拒收）
+    {
+      const seen = new Map<string, number>();
+      for (const sh of scene.shots) if (sh.localKey) seen.set(sh.localKey, (seen.get(sh.localKey) ?? 0) + 1);
+      for (const [k, n] of seen) if (n > 1) {
+        report.addIssue({ code: "custom", path: ["shots"], message: `localKey「${k}」場內重複出現 ${n} 次——鏡鍵要唯一先可以俾採用記錄精確指認` });
+      }
     }
     if (scene.sceneId !== ctx.sceneId) {
       report.addIssue({ code: "custom", path: ["sceneId"], message: `this envelope is scene ${ctx.sceneId}, not ${scene.sceneId}` });

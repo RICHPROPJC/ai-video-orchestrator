@@ -185,29 +185,46 @@ export function expandBoards(opts: {
       motionModel: MOTION_MODEL,
     },
     shots,
-    ...(audioEvents.length ? { audioEvents } : {}),
+    // §14.3：audioEvents 恆寫（含空 []）——新式 producer 明示空集，同空
+    // expected 契約一致；loader 要求 Array（真缺欄照拒收，legacy 邊界保留）。
+    audioEvents,
     // §13.4：聲音契約——新編譯 sheet 明示 events 模式＋必要事件身份（loader
     // 載入完整性對呢個 gate；零對白一樣寫，空集都係明示契約）。
     soundContract: { mode: "events", expectedDialogueBeats: audioEvents.map((e) => e.beatId) },
-    // §12 優先2＋§13.3.2：boards 席採用收據收齊落 sheet——shotIds 係 beatId 指認
-    // （阿圖 packet 有 beats，最終 SH 編號呢度映射）：查 beat 涵蓋鏡（beatIds/
-    // audioBeats）；指認唔到→自動 adoptionIssue 回責任席，唔靜靜丟失。
+    // §12 優先2＋§13.3.2＋§14.2/14.4c/d：採用收據收齊——issues 無條件先行
+    // 收集（零成功 adoptions 唔吞失敗）；shotIds 支援兩種指認：localKey（board
+    // 場內自編鏡鍵——精確一鏡，映射最終 SH）優先，beatId（組覆蓋）fallback；
+    // 每個引用各自驗證（[有效,無效] 唔可以總映射非空就靜靜掉無效）。
     ...((() => {
+      const localKeyToBeat = new Map<string, string>();
+      for (const b of opts.boards) for (const sh of b.shots) if (sh.localKey) localKeyToBeat.set(sh.localKey, sh.beatId);
+      const shOfLocalKey = new Map<string, string[]>();
+      for (const b of opts.boards) for (const sh of b.shots) if (sh.localKey) {
+        // localKey 對本 board shot 嘅 beatId→最終 SH（經涵蓋該 beat 嘅鏡）
+        shOfLocalKey.set(sh.localKey, shots
+          .filter((f) => (f.beatIds ?? [f.beatId]).includes(sh.beatId) || (f.audioBeats ?? []).includes(sh.beatId))
+          .map((f) => f.id));
+      }
       const shIdsOfBeat = (beat: string) => shots
         .filter((sh) => (sh.beatIds ?? [sh.beatId]).includes(beat) || (sh.audioBeats ?? []).includes(beat))
         .map((sh) => sh.id);
+      const boardIssues = opts.boards.flatMap((b) => b.adoptionIssues ?? []);
       const rows = opts.boards.flatMap((b) => b.onImageAdoptions ?? []);
-      if (!rows.length) return {};
       const mapped = rows.map((a) => {
-        const shotIds = [...new Set(a.shotIds.flatMap((id) => shIdsOfBeat(id)))];
-        return { row: { ...a, shotIds }, unmapped: shotIds.length === 0 ? a.shotIds : [] as string[] };
+        const per = a.shotIds.map((id) => {
+          const sh = localKeyToBeat.has(id) ? shOfLocalKey.get(id)! : shIdsOfBeat(id);
+          return { id, sh };
+        });
+        const unmapped = per.filter((x) => x.sh.length === 0).map((x) => x.id);
+        return { row: { ...a, shotIds: [...new Set(per.flatMap((x) => x.sh))] }, unmapped };
       });
       const extraIssues = mapped
         .filter((m) => m.unmapped.length)
-        .map((m) => `onImageAdoption 指認嘅 beat（${m.unmapped.join("、")}）喺 callsheet 搵唔到對應鏡——回 boards 席重新指認`);
+        .map((m) => `onImageAdoption 指認（${m.unmapped.join("、")}）喺 callsheet 搵唔到對應鏡——回 boards 席重新指認`);
+      const allIssues = [...boardIssues, ...extraIssues];
       return {
-        onImageAdoptions: mapped.map((m) => m.row),
-        ...(extraIssues.length ? { adoptionIssues: [...(opts.boards.flatMap((b) => b.adoptionIssues ?? [])), ...extraIssues] } : opts.boards.some((b) => b.adoptionIssues?.length) ? { adoptionIssues: opts.boards.flatMap((b) => b.adoptionIssues ?? []) } : {}),
+        ...(rows.length ? { onImageAdoptions: mapped.map((m) => m.row) } : {}),
+        ...(allIssues.length ? { adoptionIssues: allIssues } : {}),
       };
     })()),
     voiceover: audioEvents.map((e) => e.text).join(" ") || shots.map((s) => s.dialogue).filter(Boolean).join(" "),

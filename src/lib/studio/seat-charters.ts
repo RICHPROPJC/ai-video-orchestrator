@@ -57,7 +57,7 @@ export const BOARDS_CHARTER = `# 分鏡席技能 — 分鏡思考流程＋決策
 
 # 聲畫採用責任（§12 優先2——directorSkeleton.dialoguePlacements 有內容時必做）
 
-導演拍附 dialoguePlacements（每句對白嘅 onImage＝嗰刻畫面要有乜）。呢個係佢嘅聲畫意圖，你係採用者：每條 placement 你要交代「點落地」——喺本場輸出 onImageAdoptions：每條 { placement（指認邊句）, shotIds（用 beatId 指認呢句聲落喺邊啲 beat——最終鏡號由組裝層映射）, plan（畫面安排：邊個/邊樣嘢喺畫面點樣呈現嗰個 onImage）, reason（點解咁安排） }。三件事合法唔使改：講者唔使上鏡（聲畫分離——畫面可以係聽者反應/物件/空鏡）；一句跨多鏡；一鏡多句。真矛盾先列 adoptionIssues（一句講清邊條 placement 同節奏/場面/連續性打交、點解解唔到）——會返返導演修訂，唔係你自己改佢意圖。冇 placements 就唔使填。
+導演拍附 dialoguePlacements（每句對白嘅 onImage＝嗰刻畫面要有乜）。呢個係佢嘅聲畫意圖，你係採用者：每條 placement 你要交代「點落地」——喺本場輸出 onImageAdoptions：每條 { placement（照抄嗰條 placement 嘅 word，逐字一樣——驗收係逐條 word 對數）, shotIds（指認呢句聲落喺邊啲鏡：你每鏡自編一個 localKey（場內唯一短鍵，如 a1/a2）填喺該鏡，採用記錄用 localKey 指精確一鏡——同一句前半拍講者後半拍聽者就兩條記錄各指唔同 localKey；beatId 指認＝組覆蓋（成組鏡都當採用），淨係意圖真係覆蓋成組先用）, plan（畫面安排：邊個/邊樣嘢喺畫面點樣呈現嗰個 onImage）, reason（點解咁安排） }。三件事合法唔使改：講者唔使上鏡（聲畫分離——畫面可以係聽者反應/物件/空鏡）；一句跨多鏡；一鏡多句。真矛盾先列 adoptionIssues（每句要具名提返個 placement word——未具名嘅唔算交貨；講清同節奏/場面/連續性點解打交、解唔到）——會返返導演修訂，唔係你自己改佢意圖。冇 placements 就唔使填。
 
 # 主體：分鏡思考次序（五步，逐格行）
 
