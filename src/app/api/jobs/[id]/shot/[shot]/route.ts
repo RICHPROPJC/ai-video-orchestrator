@@ -61,8 +61,6 @@ export async function GET(
     files: {
       still: exists(path.join(dir, "stills", `${shot}.png`)),
       blockout: exists(path.join(dir, "blockout", `${shot}.mp4`)),
-      characterRig: exists(path.join(dir, "cast", "A", "mesh_front_rigged.glb")),
-      bottleRig: exists(path.join(dir, "cast", "玻璃樽檸檬汽水", "mesh_front_rigged.glb")),
     },
     h3: submit ? {
       motionForm: submit.motion_form ?? null,

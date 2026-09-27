@@ -10,12 +10,6 @@ import { ensureAngleBoard, liveBoardLane, type BoardAngle, type BoardLane } from
  *  street behind the face is a scene still, not a portrait anchor). */
 export const PORTRAIT_REQUIRE: QcRequire = { people_count: 1, grey_blocks: false, plain_background: true };
 
-/** Backdrop complaints are not a dead portrait. The person stays in color;
- *  rembg cuts the backdrop to alpha before mesh. */
-export function backgroundOnlyFail(reasons: string[]): boolean {
-  return reasons.length > 0 && reasons.every((r) => /背景|plain_background/.test(r));
-}
-
 /** T43 (Chau: embed 同一張垃圾圖一路塞返 /edit，源頭 1＝肖像抄 world night/neon):
  * a portrait is a face reference, not a scene — the sheet's world line
  * (location/timeOfDay/weather/grade) NEVER enters it. Only: 一人半身、wardrobe、
@@ -119,15 +113,12 @@ export async function ensurePortraits(opts: {
         recordJson: path.join(opts.outDir, `${character.id}.u15_generate.json`),
       });
       const verdict = await lane.qc(outFile, path.join(opts.outDir, `${character.id}.photo_qc.json`), PORTRAIT_REQUIRE);
-      const reasons = verdict.checks.fail_reasons;
-      const backdrop = verdict.status === "FAIL" && backgroundOnlyFail(reasons);
-      if (verdict.status !== "FAIL" || backdrop) {
+      // 0927：背景死因當合格（backdropOnlyFail）已拆——QC 判咗就係判咗。
+      if (verdict.status === "GREEN") {
         files[character.id] = outFile;
         made.push(character.id);
         opts.onEvent?.(
-          backdrop
-            ? `${character.id} 肖像背景留低（${reasons.join("; ")}）。去 mesh 之前先去背，人本身仍然有色。`
-            : `${character.id} 肖像 ${verdict.status}（seed ${trySeed}）`,
+          `${character.id} 肖像 GREEN（seed ${trySeed}）`,
           { file: outFile, attempt: attempt + 1 },
         );
         break;

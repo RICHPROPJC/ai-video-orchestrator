@@ -1,0 +1,654 @@
+import fs from "node:fs";
+import path from "node:path";
+import { Resvg } from "@resvg/resvg-js";
+import { blenderBlockingScript } from "../blender";
+import { emit } from "../store";
+import { renderBlockingSvg } from "../painter";
+import { ensureDir, jobDir, jobFile } from "../paths";
+import { snapDurationToFrames, wavSeconds } from "../frame-grid";
+import { layDialogueBed } from "../dialogue-bed";
+import { plugShotWavs, plugVoiceEvents } from "../shot-wav-plug";
+import { buildCutPlan } from "../cut-plan";
+import { writeAnchors } from "../dhash-anchors";
+import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "../blockout";
+import { ensurePortraits } from "../portraits";
+import { lookupShelf } from "../asset-library";
+import { writeStoryWorld, ensureWorldSizes, type WorldPlan } from "../world-assemble";
+import { piecesFromCallSheet, resolveScales, type WorldPiece } from "../world-scale";
+import { ensurePropBoard, ensureSceneBoard } from "../asset-board";
+import { diffPropPlates, nextPropBoardSeq, propAssetId, writePropPinManifest } from "../prop-plate-index";
+import { assertStoryPlatesReady, ensureCastOnce } from "../cast-mesh";
+import { pinQcAccepted } from "../photo-qc";
+import { audioTimelineRows } from "../creative";
+import { blockoutPlugGap, gapEvent, gapMessage, motionNeedsHumanGap } from "../capability-gap";
+import {
+  DECIDER_DEFAULTS,
+  MOTION_LIB_ROOT,
+  bakeSelectionFrames,
+  buildCmuIndex,
+  buildShortlist,
+  decideSelection,
+  legalCandidates,
+  parseCombatSweepRanking,
+  postureConflict,
+  selectMotions,
+  verbsForGate,
+  writeSelections,
+  type MotionShotLine,
+} from "../motion-select";
+import type { CallSheet, Shot } from "../types";
+import { relInJob } from "../isolate";
+import { ffmpeg, mediaSeconds, patch, shotsForScene, type Ctx } from "./shared";
+
+async function raster(svg: string, outFile: string) {
+  ensureDir(path.dirname(outFile));
+  const png = new Resvg(svg, {
+    fitTo: { mode: "original" },
+    font: {
+      loadSystemFonts: true,
+      fontFiles: [
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+      ],
+    },
+  })
+    .render()
+    .asPng();
+  fs.writeFileSync(outFile, png);
+}
+
+/** 拆層段（world）：由 runPipeline 原序搬入，行為零變——絕唔重排 call 次序、
+ *  絕唔刪／合併任何 emit/speak/patch；early-return 以 ctx.stopped 回報。 */
+export async function worldStage(ctx: Ctx): Promise<void> {
+  const { jobId, input, cfg } = ctx;
+  const { speak, think } = ctx;
+  const trace = ctx.trace;
+  const motionSelections = ctx.motionSelections;
+  {
+    const idxFile = path.join(MOTION_LIB_ROOT, "cmu-mocap/cmu-mocap-index-text.txt");
+    if (!fs.existsSync(idxFile)) {
+      await speak("layout", "motion-select 跳過：motion library index 唔在盤（workbench 灰模照舊）。", "warn");
+    } else if (input.noMotionSelect) {
+      await speak("layout", "motion-select 關咗（--no-motion-select）：workbench 灰模照舊。");
+    } else if (input.dryRun) {
+      await speak("layout", "motion-select 跳過：--dry-run 零 socket（decider call 留畀 live run）。");
+    } else {
+      await think("layout");
+      const idx = buildCmuIndex(MOTION_LIB_ROOT);
+      const rankFile = path.join(MOTION_LIB_ROOT, "out/combat_sweep_ranking.txt");
+      const rank = fs.existsSync(rankFile)
+        ? parseCombatSweepRanking(fs.readFileSync(rankFile, "utf8"))
+        : new Map();
+      const selShots = shotsForScene(ctx.locked!.shots, input.scene);
+      const shortlist = buildShortlist(idx, rank, selShots.map((s) => s.action));
+      const lines: MotionShotLine[] = selShots.map((s) => ({
+        id: s.id,
+        heading: s.heading,
+        action: s.action,
+        durationSec: s.durationSec,
+        gait: s.marks[0]?.gait,
+        stance: s.marks[0]?.stance,
+      }));
+      for (const line of lines) {
+        const clash = postureConflict(line);
+        if (clash) await speak("layout", clash, "warn");
+        if (verbsForGate(line.action).needAny.length > 0 && legalCandidates(shortlist, line.action).length === 0) {
+          throw new Error(`${line.id}: 冇合法 motion，GPU 前停`);
+        }
+      }
+      const { rows, calls } = await selectMotions({ shots: lines, shortlist });
+      const sels = lines.map((s) =>
+        decideSelection(rows.find((r) => r.shot === s.id)!, shortlist, rank, s, null),
+      );
+      writeSelections(path.join(jobDir(jobId), "motion"), sels, {
+        job: jobId,
+        one_call: true,
+        calls,
+        n_candidates: shortlist.nCandidates,
+        decider_model: DECIDER_DEFAULTS.model,
+      });
+      // CAPGAP_0927：needs_human 由死人 flag 變真閘——未有人手接嘅揀片
+      // 唔准入 motionSelections（bake map），collect 成 capability gap block 成 job。
+      const humanSels = sels.filter((s) => s.needs_human);
+      for (const sel of sels) {
+        if (!sel.needs_human) motionSelections.set(sel.shot, sel);
+      }
+      const auto = sels.filter((s) => s.auto).length;
+      await speak(
+        "layout",
+        `motion-select：${calls} 個 decider call 揀齊 ${sels.length} 鏡 → motion/selection.json（${auto} auto${humanSels.length ? `、${humanSels.length} needs_human` : ""}；120候選）。`,
+      );
+      const humanGap = motionNeedsHumanGap(sels);
+      if (humanGap) {
+        ctx.job = patch(ctx.job, {
+          status: "blocked",
+          currentAgent: "layout",
+          providers: trace,
+          error: gapMessage(humanGap),
+        });
+        emit(jobId, gapEvent(jobId, humanGap));
+        ctx.stopped = true;
+        return;
+      }
+    }
+  }
+
+  // portraits before any keyframe: a first appearance needs a face to anchor on
+  // --until blockout stops before U1.5/QC — skip the eye (pictureQc may be DOWN)
+  const stillDir = path.join(jobDir(jobId), "stills");
+  ctx.stillDir = stillDir;
+  const skipPortraits =
+    input.resume && ctx.continuity!.boards.every((shot) => pinQcAccepted(stillDir, shot.id));
+  let portraits: Awaited<ReturnType<typeof ensurePortraits>>;
+  let hopCast: string[] | undefined;
+  if (skipPortraits) {
+    emit(jobId, {
+      agent: "stills",
+      level: "info",
+      message: "repair: portraits saw ensurePortraits became skip (all stills pinned GREEN on resume)",
+    });
+    await speak("stills", "肖像跳過：stills 已全 GREEN，肖像唔再守門");
+    const portraitDir = path.join(jobDir(jobId), "portraits");
+    const files: Record<string, string> = {};
+    const sheets: Record<string, string> = {};
+    const anglePins: NonNullable<Awaited<ReturnType<typeof ensurePortraits>>["anglePins"]> = {};
+    for (const c of ctx.locked!.characters) {
+      const angles = path.join(portraitDir, "boards", `${c.id}.angles.png`);
+      const front = path.join(portraitDir, `${c.id}.front.cut.png`);
+      if (fs.existsSync(angles)) sheets[c.id] = angles;
+      if (!fs.existsSync(front)) continue;
+      files[c.id] = front;
+      anglePins[c.id] = { front };
+      for (const angle of ["45", "side", "back"] as const) {
+        const cut = path.join(portraitDir, `${c.id}.${angle}.cut.png`);
+        if (fs.existsSync(cut)) anglePins[c.id]![angle] = cut;
+      }
+    }
+    portraits = { files, made: [], plugged: [], anglePins, sheets };
+  } else {
+    await think("stills");
+    hopCast = input.scene
+      ? [...new Set(shotsForScene(ctx.locked!.shots, input.scene).flatMap((s) => s.marks.map((m) => m.characterId)))]
+      : undefined;
+    portraits = await ensurePortraits({
+      sheet: ctx.locked!,
+      outDir: path.join(jobDir(jobId), "portraits"),
+      plugDir: input.portraitsDir,
+      server: cfg.stills.url,
+      seed: cfg.motion.seed,
+      onlyIds: hopCast,
+      angleBoard: true,
+      onEvent: (message, data) => emit(jobId, { agent: "stills", level: "info", message, data }),
+    });
+    await speak(
+      "stills",
+      `肖像齊：plug ${portraits.plugged.length}、新做 ${portraits.made.length}${hopCast ? `（hop ${hopCast.join(",")}）` : ""}；角度板釘 ${Object.values(portraits.anglePins ?? {}).reduce((n, m) => n + Object.keys(m).length, 0)} 張 RGBA 角度肖像（{角度}檔入 portraits/）。`,
+    );
+  }
+  ctx.portraits = portraits;
+
+  await think("art");
+  await speak("art", `Grade: ${ctx.locked!.styleBible.grade}. 只描述已有 ${ctx.continuity!.boards.length} 鏡，唔另開世界。`);
+  // 世界米數（g41）：art seat 係 art_direction 真源——sizes.json 缺席時由
+  // 阿釉出（character 真身高＋props 實物尺寸，每條帶 source 口徑）。已有檔
+  // （手補／上輪 resume）＝唔掂。boards seat 唔做呢件事：charter 話 brief
+  // 冇寫唔准估——估唔係 boards 職責，藝術決定先係。
+  if (!input.dryRun) {
+    const propSeen = new Set<string>();
+    const namedProps = ctx.locked!.shots.flatMap((s) => s.props ?? []).filter((p) => {
+      if (propSeen.has(p.name)) return false;
+      propSeen.add(p.name);
+      return true;
+    });
+    const sizes = await ensureWorldSizes({
+      dir: path.join(jobDir(jobId), "world"),
+      brief: input.brief?.trim() ? input.brief : ctx.locked!.logline,
+      characters: ctx.locked!.characters.map((c) => ({ id: c.id, name: c.name, heightM: c.heightM })),
+      props: namedProps.map((p) => ({ name: p.name, ...(p.heldBy ? { heldBy: p.heldBy } : {}) })),
+      locations: [...new Set(ctx.locked!.shots.map((s) => s.location).filter((l): l is string => Boolean(l)))],
+      io: {
+        crew: cfg.crew,
+        // art 係細 seat：full glm-5.3 淨係導演席（creative）carve-out 准用
+        // （crew-llm deny 閘），呢度行 flash 級。
+        model: cfg.crew.boardsModel ?? (() => { throw new Error("boards_model_missing"); })(),
+        receiptDir: jobDir(jobId),
+        fallbackModel: cfg.crew.secondFallback,
+      },
+    });
+    await speak(
+      "art",
+      sizes.wrote
+        ? `世界米數 ${sizes.count} 件入 world/sizes.json（art_direction 口徑，每條帶 source）。`
+        : `世界米數沿用 world/sizes.json（${sizes.count} 件，唔掂）。`,
+    );
+    // 預檢同 world 段 fatal 閘（planStoryWorld）同一口徑：merge sizes.json 先
+    // resolve。唔係嘅話 character 淨得 heightM，piecesFromCallSheet 結構上永遠
+    // 報 missing——預檢長期誤報，seats 學會忽略 warn。
+    const sizeFile = path.join(jobDir(jobId), "world", "sizes.json");
+    const sizeEv = fs.existsSync(sizeFile)
+      ? (JSON.parse(fs.readFileSync(sizeFile, "utf8")) as Record<string, { sizeM?: number; source?: string }>)
+      : {};
+    const preflightPieces = piecesFromCallSheet(ctx.locked!.characters, ctx.locked!.shots).map((p) => ({
+      ...p,
+      sizeM: p.sizeM ?? sizeEv[p.id]?.sizeM,
+      sizeSource: p.sizeSource ?? sizeEv[p.id]?.source,
+    }));
+    const sized = resolveScales(preflightPieces);
+    if ("missing" in sized) {
+      await speak("layout", `世界米數未齊，人偶 heightM 唔當米：${sized.missing.join("；")}`, "warn");
+    } else {
+      await speak("layout", "尺寸齊，先鎖動作，先出圖。");
+    }
+  }
+
+  await think("layout");
+  await speak("layout", "走位只跟分鏡 mark：camera、手 IK、腳 IK。wav 係時鐘。");
+  const blenderFile = jobFile(jobId, "blender", "blocking.py");
+  fs.writeFileSync(blenderFile, blenderBlockingScript(ctx.locked!));
+  const blockingDir = path.join(jobDir(jobId), "blocking");
+  ensureDir(blockingDir);
+  for (const shot of ctx.continuity!.boards) {
+    await raster(renderBlockingSvg(ctx.locked!, shot), path.join(blockingDir, `${shot.id}.png`));
+  }
+
+  // voice hop: copy the given SHxx.wav plugs, or AuK speaks the continuity
+  // dialogue (clone ref = job --clone upload, else tts.promptWav)
+  const gapSec = input.gapSec ?? 0;
+  ctx.gapSec = gapSec;
+  const audioDir = path.join(jobDir(jobId), "audio");
+  ctx.audioDir = audioDir;
+  ensureDir(audioDir);
+  const cloneRef = input.voiceClonePath && fs.existsSync(input.voiceClonePath) ? input.voiceClonePath : undefined;
+  ctx.cloneRef = cloneRef;
+  // DIALOGUE_RULE_PROVENANCE_0927：有聲音事件時間線（新 callsheet）行事件
+  // 路徑——一句一條連續 take、逐鏡切片；舊 plug callsheet（冇 audioEvents）
+  // 照行每鏡一句舊路，位元組行為不變。
+  const eventTakes = ctx.locked!.audioEvents?.length
+    ? (await plugVoiceEvents({
+        boards: ctx.continuity!.boards,
+        events: ctx.locked!.audioEvents,
+        wavDir: input.wavDir || undefined,
+        audioDir,
+        cloneRef,
+      }))
+    : undefined;
+  // PROVENANCE_0927 第4點後半：實際音軌時長回填共同時間線——每事件 take
+  // 實長對事件窗口（鏡組成）。短過＝bed 照墊；長過＝逐鏡切片會截尾（記
+  // overflow 警告，唔靜靜食）。落 creative/audio-timeline.json 俾 producer/
+  // 下游讀實際時鐘，唔改窗口（窗口＝callsheet，要改係修訂輪嘅事）。
+  if (eventTakes && ctx.locked!.audioEvents) {
+    const rows = await audioTimelineRows(ctx.locked!.audioEvents, eventTakes.takes, wavSeconds);
+    fs.writeFileSync(jobFile(jobId, "creative", "audio-timeline.json"), JSON.stringify({
+      generatedAt: new Date().toISOString(),
+      note: "實際音軌時長回填（共同時間線）；take 一次生成逐鏡切片，呢度係事件層時鐘",
+      events: rows,
+    }, null, 2));
+    const overs = rows.filter((r) => r.overflowSec);
+    if (overs.length) {
+      await speak("voice", `音軌回填：${overs.length} 句 take 長過事件窗口（${overs.map((o) => `${o.beatId}+${o.overflowSec}s`).join("、")}）——切片會截尾，見 creative/audio-timeline.json。`, "warn");
+    }
+  }
+  const plugged = eventTakes ? eventTakes.perShot : await plugShotWavs({
+        boards: ctx.continuity!.boards,
+        wavDir: input.wavDir || undefined,
+        audioDir,
+        cloneRef,
+      });
+  ctx.plugged = plugged;
+  const wavByShot = ctx.wavByShot;
+  const h3WavByShot = ctx.h3WavByShot;
+  const gapDelivered = ctx.gapDelivered;
+  const bedRows: { id: string; take: string; story: string; grid: string; storySec: number; gridSec: number }[] = [];
+  for (const shot of ctx.continuity!.boards) {
+    const dst = plugged.find((p) => p.shotId === shot.id)!.file;
+    const take = path.join(audioDir, `${shot.id}.take.wav`);
+    fs.copyFileSync(dst, take);
+    wavByShot.set(shot.id, dst);
+    const frames = snapDurationToFrames(shot.durationSec);
+    const gridSec = frames / 24;
+    bedRows.push({
+      id: shot.id,
+      take,
+      story: dst,
+      grid: path.join(audioDir, `${shot.id}.h3.wav`),
+      storySec: shot.durationSec,
+      gridSec,
+    });
+    gapDelivered.set(shot.id, Math.round((gridSec - (await wavSeconds(take))) * 1e4) / 1e4);
+  }
+  await layDialogueBed({
+    segments: bedRows.map((r) => ({ id: r.id, take: r.take, out: r.story, seconds: r.storySec })),
+    workDir: path.join(audioDir, "bed-story"),
+  });
+  // Sol 0926 凍結令：resume 唔重鋪 grid bed（H3 ref_audio）——bed render 非
+  // bytes-deterministic，每跑一個樣本 sha 就變（R0/R2 實證），H3 音訊要凍結
+  // 同一份 bytes。已有檔＋時長吱一 gridSec 就照用。
+  const gridSegs = [];
+  for (const r of bedRows) {
+    const keep = input.resume && fs.existsSync(r.grid) && Math.abs((await wavSeconds(r.grid)) - r.gridSec) <= 1 / 48;
+    if (!keep) gridSegs.push({ id: r.id, take: r.take, out: r.grid, seconds: r.gridSec });
+  }
+  if (gridSegs.length) {
+    await layDialogueBed({ segments: gridSegs, workDir: path.join(audioDir, "bed-grid") });
+  }
+  for (const row of bedRows) h3WavByShot.set(row.id, row.grid);
+  await speak("voice", "對白留 AuK 原長。底下鋪連續床，只喺成片頭淡入、尾淡出。");
+  const spineGiven = input.wavDir ? path.join(input.wavDir, "spine.wav") : undefined;
+  const spineWav = spineGiven && fs.existsSync(spineGiven) ? path.join(audioDir, "spine.wav") : undefined;
+  ctx.spineWav = spineWav;
+  if (spineGiven && spineWav) fs.copyFileSync(spineGiven, spineWav);
+  const cutPlan = await buildCutPlan({
+    cut: ctx.continuity!.cut,
+    wavDir: audioDir,
+    gapSec,
+    spineWav,
+    outFile: jobFile(jobId, "cut_plan.json"),
+    lockedSec: Object.fromEntries(ctx.continuity!.boards.map((s) => [s.id, s.durationSec])),
+  });
+  ctx.cutPlan = cutPlan;
+  // h3_clock_s is data for the report (the gate still snaps the ORIGINAL wav)
+  const cutPlanFile = jobFile(jobId, "cut_plan.json");
+  const cutPlanOnDisk = JSON.parse(fs.readFileSync(cutPlanFile, "utf8")) as { shots: { id: string; h3_clock_s?: number }[] };
+  for (const s of cutPlanOnDisk.shots ?? []) {
+    const h3 = h3WavByShot.get(s.id);
+    if (h3) s.h3_clock_s = Math.round((await wavSeconds(h3)) * 1e4) / 1e4;
+  }
+  fs.writeFileSync(cutPlanFile, JSON.stringify(cutPlanOnDisk, null, 2));
+  const timed: CallSheet = ctx.locked!;
+  ctx.timed = timed;
+
+  const sceneBoards = ctx.locked!.buildings ?? [];
+  if (!input.dryRun && sceneBoards.length) {
+    const assetsDir = path.join(jobDir(jobId), "assets");
+    for (const board of sceneBoards) {
+      const slug = board.era.trim().replace(/[\s/\\]+/g, "-");
+      const manifest = path.join(assetsDir, "scenes", `${slug}.lookdev.json`);
+      if (fs.existsSync(manifest)) {
+        await speak("layout", `${board.era} 建築板已切，唔重出。`);
+        continue;
+      }
+      const made = await ensureSceneBoard({
+        era: board.era,
+        types: board.types,
+        assetsDir,
+        server: cfg.stills.url,
+        seed: cfg.motion.seed,
+      });
+      await speak("layout", `${board.era} 建築板一次出 ${board.types.length} 款再切（${made.cells.length} 格）。`);
+    }
+  }
+
+  if (!input.dryRun) {
+    const assetsDir = path.join(jobDir(jobId), "assets");
+    const props = new Map<string, NonNullable<Shot["props"]>[number]>();
+    for (const shot of ctx.locked!.shots) {
+      for (const prop of shot.props ?? []) {
+        const key = propAssetId(prop.name);
+        if (!props.has(key)) props.set(key, prop);
+      }
+    }
+    const propMark = path.join(assetsDir, "props.pinned.json");
+    let plateDiff = diffPropPlates(assetsDir, propMark, [...props.keys()]);
+    if (props.size > 0 && plateDiff.missingIds.length > 0) {
+      fs.mkdirSync(assetsDir, { recursive: true });
+      const missingProps = plateDiff.missingIds
+        .map((id) => props.get(id))
+        .filter((prop): prop is NonNullable<typeof prop> => Boolean(prop));
+      const madeProps = await ensurePropBoard({
+        props: missingProps,
+        assetsDir,
+        server: cfg.stills.url,
+        seed: cfg.motion.seed,
+        boardSeqStart: nextPropBoardSeq(assetsDir),
+      });
+      plateDiff = diffPropPlates(assetsDir, propMark, [...props.keys()]);
+      if (plateDiff.missingIds.length > 0) {
+        throw new Error(`道具板未補齊：${plateDiff.missingIds.join("、")}（今次入庫 ${madeProps.pinned.length}）`);
+      }
+      await speak("layout", `道具差集補 ${madeProps.pinned.length} 件，已有板唔重出。`);
+    }
+    if (plateDiff.resolved.length > 0) writePropPinManifest(propMark, plateDiff.manifest);
+  }
+
+  let castRigs: Record<string, string> = {};
+  if (!input.dryRun && ctx.locked!.characters.length > 0) {
+    const assetsDir = path.join(jobDir(jobId), "assets");
+    const propMark = path.join(assetsDir, "props.pinned.json");
+    const plateDiff = diffPropPlates(assetsDir, propMark, [...new Set(ctx.locked!.shots.flatMap((s) => (s.props ?? []).map((p) => p.name)))]);
+    const propPlate = (name: string) => plateDiff.resolved.find((row) => row.assetId === propAssetId(name))?.file;
+    const propNames = [...new Set(ctx.locked!.shots.flatMap((s) => (s.props ?? []).map((p) => p.name)))];
+    const propPublic = (name: string) => ctx.locked!.shots.flatMap((s) => s.props ?? []).find((p) => p.name === name)?.publicName;
+    const fromShelf = (id: string, role: "characters" | "props" | "scenes", own?: string, publicName?: string) => {
+      if (own && fs.existsSync(own)) return { file: own };
+      const hit = lookupShelf(id, role, undefined, publicName);
+      return { file: hit?.plate ?? hit?.rig, rig: hit?.rig };
+    };
+    const characters = ctx.locked!.characters.map((c) => {
+      const got = fromShelf(c.id, "characters", portraits.anglePins?.[c.id]?.front, c.publicName);
+      return { id: c.id, pin: got.file, rig: got.rig, deform: "rig" as const };
+    });
+    const props = propNames.map((name) => {
+      const got = fromShelf(name, "props", propPlate(name), propPublic(name));
+      const row = plateDiff.resolved.find((item) => item.assetId === propAssetId(name));
+      return { name, file: got.file, rig: got.rig, deform: "rigid" as const, meshAliasId: row?.aliasFrom };
+    });
+    const items = assertStoryPlatesReady({ characters, props }).map((item) => {
+      const row = [...characters, ...props].find((entry) => ("id" in entry ? entry.id : entry.name) === item.id);
+      return {
+        ...item,
+        rig: row?.rig,
+        deform: row?.deform,
+        meshAliasId: row && "meshAliasId" in row ? row.meshAliasId : undefined,
+      };
+    });
+    castRigs = await ensureCastOnce({
+      characters: ctx.locked!.characters,
+      items,
+      meshRoot: path.join(jobDir(jobId), "cast"),
+      endpoint: cfg.mesher.endpoint,
+      // Chau 0927 拍板：成套片一個窗口——SkinTokens 批量綁晒所有 pending
+      // 先返 SF3D（cast-mesh 內置 stop→waitGpu2→rig all→start 返，失敗都拉返）
+      allowGpuHandoff: true,
+    });
+    await speak("layout", `故事元素 ${items.length} 件齊晒。人物先對來源哈希。`);
+  }
+
+  // per-shot grey blockout (plug, mocap bake, or the cast rig), frame 0, dHash anchors
+  // --scene hop: only render that scene's blockouts (rest wait for their hop)
+  let worldPlan: WorldPlan | undefined;
+  const worldDir = path.join(jobDir(jobId), "world");
+  if (!input.dryRun && Object.keys(castRigs).length) {
+    const sizeFile = path.join(worldDir, "sizes.json");
+    const sizes = fs.existsSync(sizeFile)
+      ? JSON.parse(fs.readFileSync(sizeFile, "utf8")) as Record<string, {
+          sizeM?: number; source?: string;
+          proportion?: WorldPiece["proportion"];
+        }>
+      : {};
+    const sceneNames = new Set(ctx.locked!.shots.map((s) => s.location).filter(Boolean));
+    const pieces: WorldPiece[] = [];
+    for (const person of ctx.locked!.characters) {
+      const glb = castRigs[person.id];
+      const evidence = sizes[person.id] ?? {};
+      if (glb) pieces.push({
+        id: person.id,
+        role: "character",
+        glb,
+        heightM: person.heightM,
+        sizeM: evidence.sizeM,
+        sizeSource: evidence.source,
+      });
+    }
+    // A location string never goes to SF3D on its own; but an already-meshed
+    // canonical with a succeeded receipt may stand in the world as the
+    // support surface (SH04 放蓋上木檯 needs a real tabletop to land on).
+    for (const loc of sceneNames) {
+      if (castRigs[loc]) continue;
+      const canonical = path.join(jobDir(jobId), "cast", loc, "sf3d", "0", "mesh_front.glb");
+      const receiptFile = path.join(jobDir(jobId), "cast", loc, "sf3d", "mesh-receipt.json");
+      if (!fs.existsSync(canonical) || !fs.existsSync(receiptFile)) continue;
+      try {
+        const receipt = JSON.parse(fs.readFileSync(receiptFile, "utf8")) as { status?: string };
+        if (receipt.status !== "succeeded") continue;
+      } catch {
+        continue;
+      }
+      const evidence = sizes[loc] ?? {};
+      pieces.push({
+        id: loc,
+        role: "scene",
+        glb: canonical,
+        sizeM: evidence.sizeM,
+        sizeSource: evidence.source,
+      });
+    }
+    for (const [id, glb] of Object.entries(castRigs)) {
+      if (pieces.some((p) => p.id === id)) continue;
+      const evidence = sizes[id] ?? {};
+      const named = ctx.locked!.shots.flatMap((s) => s.props ?? []).find((p) => p.name === id);
+      pieces.push({
+        id,
+        role: sceneNames.has(id) ? "scene" : "prop",
+        glb,
+        sizeM: named?.sizeM ?? evidence.sizeM,
+        sizeSource: named?.sizeSource ?? evidence.source,
+        proportion: named?.proportion ?? evidence.proportion,
+        heldBy: named?.heldBy,
+      });
+    }
+    worldPlan = await writeStoryWorld({
+      dir: worldDir,
+      pieces,
+      shots: ctx.locked!.shots.map((s) => ({
+        id: s.id,
+        lensMm: s.camera.lensMm,
+        size: s.size,
+        location: s.location,
+        heldPropId: s.props?.find((p) => p.heldBy)?.name,
+        // 世界暫停前後動作入 worldJson（bake 輸入檔；bake 讀取待 COS patch）
+        ...(s.envAnim?.length ? { envAnim: s.envAnim } : {}),
+      })),
+      blenderBin: cfg.mesher.blender,
+    });
+    await speak("layout", `一個世界 ${worldPlan.pieces.length} 件，寫入 world/story.blend。`);
+  }
+  const blockoutDir = path.join(jobDir(jobId), "blockout");
+  ctx.blockoutDir = blockoutDir;
+  ensureDir(blockoutDir);
+  const blockouts: string[] = [];
+  const hopBoards = shotsForScene(ctx.continuity!.boards, input.scene);
+  if (input.scene) {
+    await speak("layout", `--scene ${input.scene} hop：blockout ${hopBoards.length}/${ctx.continuity!.boards.length} 鏡。`);
+  }
+  for (const shot of hopBoards) {
+    const outMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
+    const frames = snapDurationToFrames(shot.durationSec);
+    const sceneStamp = path.join(blockoutDir, `${shot.id}.scene.json`);
+    const setKey = [
+      "world-frame",
+      Object.keys(castRigs).sort().join("|"),
+      String(shot.camera.lensMm),
+      shot.size,
+    ].join("|");
+    let sceneStamped = false;
+    if (fs.existsSync(sceneStamp)) {
+      try {
+        sceneStamped = (JSON.parse(fs.readFileSync(sceneStamp, "utf8")) as { setKey?: string }).setKey === setKey;
+      } catch {
+        sceneStamped = false;
+      }
+    }
+    const gotFrames = fs.existsSync(outMp4) ? Math.round((await mediaSeconds(outMp4)) * 24) : 0;
+    const kept = input.resume && sceneStamped && gotFrames > 0;
+    if (kept) {
+      trace.blender = "resume (kept)";
+      await speak("layout", `${shot.id} blockout 照舊 ${frames}f，唔重 render。`);
+    } else if (input.blockoutDir) {
+      const plugged = await blockoutFromPlug(input.blockoutDir, shot.id, h3WavByShot.get(shot.id)!);
+      fs.copyFileSync(plugged, outMp4);
+      trace.blender = "blockout plug";
+      // CAPGAP_0927：plug 係已知工作模式（degraded 唔阻行），但每鏡 emit
+      // 一筆 warn 萛 events——呢條片嘅灰模係 plug 唔係真 render。
+      emit(jobId, gapEvent(jobId, blockoutPlugGap(shot.id)));
+    } else {
+      const sel = motionSelections.get(shot.id);
+      if (sel?.gap?.remedy === "kf_driven") {
+        // 0927 fix ②（motion gap）：手部動作 CMU 六族冇覆蓋——唔 bake 近族
+        // clip 假 Video1。gap 落 events 留檔；下游 plan 冇 blockout 自然行
+        // A-form KF 驅動（hasVideo1 兩個 call site 同步唔食舊假片）。
+        emit(jobId, gapEvent(jobId, { ...sel.gap, shot: shot.id }));
+        trace.blender = "kf-driven (motion gap)";
+        await speak("layout", `${shot.id} 動作 CMU 冇覆蓋——唔 bake 假 Video1，行 KF 驅動（A-form）。`);
+        continue;
+      }
+      if (sel) {
+        // MULTISHOT_WIRE: the selected mocap clip IS the blockout — a grey
+        // bake of the real motion, the §5b C-form's Video 1
+        const rigId = shot.marks[0]?.characterId ?? "";
+        const glb = rigId ? castRigs[rigId] : undefined;
+        // 零 cast 鏡（物件特寫：樽內檸檬片／冷凝水）冇 rig 係正常——
+        // bakeSelectionFrames 對 glb 係 optional（--glb 有先傳），行
+        // glb-less bake（淨 world＋相機）。呢個閘淨係捉「有角色但要 rig」。
+        if (!input.dryRun && rigId && !glb) {
+          throw new Error(`${shot.id}: blockout 要呢套 cast 嘅 rig，而家冇 ${rigId}`);
+        }
+        const aim = worldPlan?.shots.find((s) => s.id === shot.id);
+        const worldJson = path.join(worldDir, "assemble.json");
+        const { framesDir, frames: baked } = await bakeSelectionFrames(sel, outMp4, {
+          ...(glb ? { glb } : {}),
+          ...(worldPlan && fs.existsSync(worldJson) ? { worldJson } : {}),
+          ...(aim?.lookAtId ? { lookTarget: aim.lookAtId } : {}),
+          camera: { lensMm: shot.camera.lensMm, size: shot.size },
+        });
+        await ffmpeg([
+          "-framerate", "60",
+          "-i", path.join(framesDir, "frame_%04d.png"),
+          // bake renders at 60fps; every other blockout consumer (anchors,
+          // resume snap, plug contract) speaks 24fps snapped frames — drop
+          // to 24 at the same wall duration
+          "-r", "24",
+          "-c:v", "libx264", "-pix_fmt", "yuv420p",
+          outMp4,
+        ]);
+        fs.rmSync(framesDir, { recursive: true, force: true });
+        trace.blender = `mocap-bake ${sel.bvh} ${baked}f`;
+        await speak("layout", `${shot.id} blockout＝motion-select bake ${sel.bvh}（win ${sel.bake.start}+${sel.bake.len} step${sel.bake.step} → ${baked}f@60fps）。`);
+        fs.writeFileSync(sceneStamp, JSON.stringify({ setKey, setInFrame: true }) + "\n");
+      } else if (input.dryRun) {
+        const done = await renderBlockout({
+          sheet: timed,
+          shot,
+          frames,
+          outMp4,
+        });
+        trace.blender = `blender-workbench ${done.frames}f`;
+      } else {
+        throw new Error(`blockout_needs_rig: ${shot.id} 冇 motion-select，方塊人偶唔入正片`);
+      }
+    }
+    const f0png = path.join(blockoutDir, `${shot.id}.f0.png`);
+    await extractFrame0(outMp4, f0png, stillFrameFor(shot, frames));
+    await assertFiguresVisible(f0png, shot);
+    await writeAnchors(outMp4, path.join(blockoutDir, `${shot.id}.anchors.json`));
+    blockouts.push(outMp4);
+    if (!kept) await speak("layout", `${shot.id} blockout ${frames}f（鎖死鏡長）`);
+  }
+  const worldPng = path.join(blockoutDir, "world.png");
+  const firstF0 = hopBoards[0] ? path.join(blockoutDir, `${hopBoards[0].id}.f0.png`) : "";
+  if (firstF0 && fs.existsSync(firstF0)) {
+    const worldStale = !fs.existsSync(worldPng) || fs.statSync(firstF0).mtimeMs > fs.statSync(worldPng).mtimeMs;
+    if (worldStale) fs.copyFileSync(firstF0, worldPng);
+  }
+  ctx.job = patch(ctx.job, {
+    providers: trace,
+    progress: 30,
+    outputs: {
+      ...ctx.job.outputs,
+      blenderScript: "blender/blocking.py",
+      blockingPreview: "blocking/SH01.png",
+      cutPlan: "cut_plan.json",
+      blockout: blockouts.map((f) => relInJob(jobId, f)),
+    },
+  });
+  await speak("layout", `cut_plan ${cutPlan.shots.length} 鏡 · gap ${gapSec}s · 走位稿已出。下一席接靜畫。`);
+}

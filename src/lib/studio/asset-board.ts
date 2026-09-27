@@ -50,7 +50,7 @@ const FLAT_WHITE_BG = "背景：純白flat底（#FFFFFF），零漸變、零陰�
 export const KEYFRAME_SPAWN = 16;
 
 export function layoutClause(count: number): string {
-  const grid = count === KEYFRAME_SPAWN ? "4列×4行" : count === 1 ? "1列×1行" : `2列×${Math.ceil(count / 2)}行`;
+  const grid = count === KEYFRAME_SPAWN ? "4列×4行" : count === 1 ? "1列×1行" : count <= 3 ? `1列×${count}行` : `2列×${Math.ceil(count / 2)}行`;
   return [
     `整體版式：嚴格採用${grid}宮格布局（單張圖嚴格包含${count}個畫面）；`,
     `${count}格尺寸嚴格一致、邊緣對齊、間距統一；每格用幼白色間隔線分隔。`,
@@ -94,39 +94,18 @@ export function momentsForShot(
       ? "景別中景，腰以上半身入畫，見到腰。"
       : shot.size ? `景別${shot.size}。` : "";
   const body = (shot.action || shot.stillPrompt || shot.heading).trim();
-  const named = `${body}${(shot.props ?? []).map((p) => p.name).join("")}`;
-  const soda = /汽水|檸檬/.test(named) ? "手上嘅樽係瘦高圓柱玻璃樽，樽入面係黃色有汽泡嘅檸檬汽水。" : "";
-  const sit = /坐/.test(body) ? "人坐低，臀部挨住凳，雙腳落地。" : "";
-  const squint = /瞇眼/.test(body) ? "眼睛瞇住，嘴角向上笑。" : "";
-  // closeup/insert 只見頭部同手上嘅物件——「檯面入鏡」同呢個景別自相矛盾（SH02
-  // 三連 FAIL 病根之一：U1.5 畫咗闊檯面 medium）。中景先至講檯。
-  const table = /木檯|枱/.test(`${body}${shot.location ?? ""}`) && shot.size !== "closeup" && shot.size !== "insert"
-    ? "身前係一張木檯，檯面入鏡。" : "";
-  // props 嘅 shape 係機讀規格，正面寫法入 prompt（W4B：forbid 唔直接寫，用
-  // 「有樽頸同樽蓋」正面規格逼退杯形演繹）、「握喺手中」杜絕「放喺旁邊」。
+  // 0927 Chau 令：道具、邊隻手、蓋開定關，只可以來自嗰鏡自己嘅資料——
+  // 關鍵字觸發嘅描述句（汽水/扭蓋右手/樽口掂唇/木檯/瞇眼）全部剷走，
+  // 道具外形照 props.shape（機讀規格，鏡資料）行。
   const SHAPE_ZH: Record<string, string> = { glass: "玻璃", long: "瘦高", cylindrical: "圓柱", small: "細", round: "圓形", metal: "金屬" };
-  // 手部規格（0926 Chau 裁「單右手」）：扭蓋＝右手扭左手扶；握/提/舉＝右手單手；
-  // 其餘（指向/拍/抹）＝攞喺右手。唔講「握喺手中」呢類雙手歧義句。
-  const twist = /扭/.test(body);
-  const singleHand = /握|提|舉|拿/.test(body);
-  const hold = twist ? "，右手扭蓋，左手扶實樽身" : singleHand ? "，用右手單手握住" : "，攞喺右手";
-  // 樽蓋狀態連戲：開蓋動作／飲／嘴邊／汽泡／放上檯之後＝冇蓋；未開（淨係握）＝有蓋。
-  // 「到嘴邊」但支樽有蓋係自相矛盾（SH06 三連 FAIL 畫返玻璃杯嘅觸發點）。
-  const capless = /扭|飲|嘴|汽泡|放上|提起|手指|手背|拍/.test(body);
   const heldProps = (shot.props ?? [])
     .map((p) => {
       const shape = ((p as { shape?: string[] }).shape ?? []).map((t) => SHAPE_ZH[t] ?? t);
       if (!shape.length) return "";
-      if (/蓋/.test(p.name)) return `手上嘅${p.name}係${shape.join("")}蓋，完整入鏡${hold}。`;
-      if (/樽|瓶/.test(p.name)) {
-        const capSpec = capless ? "有樽頸，樽口開咗冇蓋" : "有樽頸同樽蓋";
-        const mouth = /嘴|飲/.test(body) ? "，樽口掂住下唇" : "";
-        return `手上嘅${p.name}係瘦高圓柱形玻璃材質，${capSpec}，成件由底到頂完整入鏡${hold}${mouth}。`;
-      }
-      return `手上嘅${p.name}係${shape.join("")}，完整入鏡${hold}。`;
+      return `手上嘅${p.name}外形照道具參考圖。`;
     })
     .join("");
-  const mods = `${heldProps}${soda}${sit}${squint}${table}`;
+  const mods = `${heldProps}`;
   // mods 前補句號——beat 同 mods 黐埋會砌出「玻璃樽樽身身前係」呢類爛句
   const modsStr = mods ? `。${mods}` : "";
   const written = (shot.keyframePositions ?? "").split(/[,，]/).map((s) => s.trim()).filter(Boolean);
@@ -207,7 +186,6 @@ export function keyframeSheetPrompt(moments: { at: string; text: string }[]): st
     `參考圖係已經起好嘅世界。用呢個世界生出下面嘅分鏡，唔好把參考圖直接抄成鍵格。`,
     `這一次出齊${n}個時刻，出完再切格。`,
     `每格一個完整時刻：${cells}。`,
-    /樽|瓶/.test(cells) ? "畫面入面嘅樽係有蓋、樽頸收窄、瘦高圓柱玻璃樽身，由樽底到樽蓋成件入鏡。唔好畫成廣口罐、玻璃杯、有提手嘅壺。" : "",
     `每格做緊嘅動作就係寫低嘅嗰下，手勢照呢句，唔好抄參考圖入面嘅手勢。`,
     `格入面唔好寫 Scene、鏡號或者百分比。`,
     `風格：寫實電影感、畫面清晰銳利。`,
@@ -322,7 +300,10 @@ export function liveBoardLane(server: string): BoardLane {
           height: o.height,
           seed: o.seed,
           steps: 8,
-          thinkMode: false,
+          // Chau 0927 追「有沒有開思考模式」——舊 code 硬編 thinkMode:false，
+          // 收據實證 think_mode:false（道具板三次出杯）。t2i lane 有 thinking
+          // （u15-generate 註釋自證），跟預設開。快嗰啲秒數買唔返兩可形 reroll。
+          thinkMode: true,
         });
         await u15Generate({ server, payload, outFile: o.outFile, recordJson: o.recordJson });
         return;
@@ -437,7 +418,9 @@ export async function ensureKeyframeSheet(opts: {
 }): Promise<{ board: string; cells: string[] }> {
   const n = opts.moments.length;
   if (n < 1) throw new Error("鍵格板：沒有格");
-  const cols = n === KEYFRAME_SPAWN ? 4 : n === 1 ? 1 : 2;
+  // 2-3 格改 1 列直疊（直度板）：橫板＋多參考圖時 U1.5 偏偏畫 3-4 直行
+  // （board_layout refuse 連環實證）；直度畫布冇多直行 prior，切格數學同此同步。
+  const cols = n === KEYFRAME_SPAWN ? 4 : n === 1 ? 1 : n <= 3 ? 1 : 2;
   const rows = Math.ceil(n / cols);
   const cellPx = n === KEYFRAME_SPAWN ? 1024 : (opts.cellPx ?? DEFAULT_CELL_PX);
   fs.mkdirSync(opts.boardsDir, { recursive: true });
@@ -588,9 +571,8 @@ export async function produceBoard(opts: ProduceBoardOpts): Promise<BoardResult>
     await lane.cut(board, [{ file: cutFile, ...crop }]);
     const qcFile = cutFile.replace(/\.png$/, ".photo_qc.json");
     const verdict = await lane.qc(cutFile, qcFile, opts.require);
-    const reasons = verdict.checks.fail_reasons ?? [];
-    const backdropOnly = reasons.length > 0 && reasons.every((r) => /背景|plain_background/.test(r));
-    const pinned = verdict.status === "GREEN" || backdropOnly;
+    // 0927：背景死因照收（backdropOnly）已拆——QC 判咗就係判咗，唔過就重出。
+    const pinned = verdict.status === "GREEN";
     let file = "";
     if (pinned) {
       // 切格 → rembg → RGBA 入庫。背景色留喺 RGB cut，唔跟入透明板。

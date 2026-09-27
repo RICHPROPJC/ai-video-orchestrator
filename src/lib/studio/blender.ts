@@ -25,6 +25,7 @@ function sceneJson(sheet: CallSheet) {
       camera: s.camera,
       marks: s.marks,
       props: s.props ?? [],
+      envAnim: s.envAnim ?? [],
       interior: isInteriorShot(s),
     })),
     null,
@@ -138,6 +139,93 @@ def foot_mid(mark):
 def char_height(ch):
     return float(ch.get("heightM") or 1.0)
 
+ENV_CACHE = {}
+
+def ensure_env():
+    # 環境動畫件（世界暫停前後動作嘅幾何載體）：冪等建立，全片共用——
+    # 時鐘指針掛後牆（pivot empty 繞鐘面中心轉）、窗光條、盒疊。
+    # WORKBENCH FLAT render 睇唔到光源變化，所以全部係幾何件。
+    if ENV_CACHE:
+        return ENV_CACHE
+    # 時鐘：後牆圓面＋指針（empty pivot 喺鐘面中心，mesh 半長偏移）
+    face = grey("env_clock_face", 0.92)
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.22, depth=0.02,
+        location=(-2.2, -3.55, 2.05), rotation=(math.radians(90), 0, 0))
+    clock_face = bpy.context.active_object
+    clock_face.data.materials.append(face)
+    pivot = bpy.data.objects.new("env_clock_hand", None)
+    pivot.location = (-2.2, -3.53, 2.05)
+    bpy.context.collection.objects.link(pivot)
+    hand = grey("env_clock_hand", 0.05)
+    bpy.ops.mesh.primitive_cube_add(location=(-2.2, -3.53, 2.05 + 0.085))
+    hand_mesh = bpy.context.active_object
+    hand_mesh.scale = (0.014, 0.012, 0.085)
+    hand_mesh.data.materials.append(hand)
+    hand_mesh.parent = pivot
+    ENV_CACHE["clock_hand"] = pivot
+    # 窗光條：後牆高處薄條（pos_z 掃＝日光移動）
+    bar = grey("env_window_bar", 0.99)
+    bpy.ops.mesh.primitive_cube_add(location=(-0.6, -3.55, 2.4))
+    bar_obj = bpy.context.active_object
+    bar_obj.scale = (0.9, 0.02, 0.16)
+    bar_obj.data.materials.append(bar)
+    ENV_CACHE["window_bar"] = bar_obj
+    # 盒疊：檯角一疊（scale_z／pos_z 增長＝嘢越疊越高）
+    box = grey("env_stack_box", 0.30)
+    bpy.ops.mesh.primitive_cube_add(location=(1.6, -3.2, 0.14))
+    box_obj = bpy.context.active_object
+    box_obj.scale = (0.16, 0.16, 0.14)
+    box_obj.data.materials.append(box)
+    ENV_CACHE["stack_box"] = box_obj
+    return ENV_CACHE
+
+def fcurves_of(obj):
+    # Blender 4.x legacy（action.fcurves）＋5.x slotted actions（layers/strips/
+    # channelbags）兩條路都行——headless 5.1 實證 legacy attribute 已空。
+    ad = obj.animation_data
+    if not ad or not ad.action:
+        return []
+    a = ad.action
+    legacy = getattr(a, "fcurves", None)
+    if legacy is not None and len(legacy) > 0:
+        return list(legacy)
+    out = []
+    try:
+        for layer in a.layers:
+            for strip in layer.strips:
+                for bag in strip.channelbags:
+                    out.extend(bag.fcurves)
+    except Exception:
+        pass
+    return out
+
+def apply_env_anim(shot, frame0):
+    # keys 相對本鏡 f0；跨鏡同一 object 連續 keyframe（時鐘全片一路走）
+    for tr in (shot.get("envAnim") or []):
+        env = ensure_env()
+        obj = env.get(tr["object"])
+        if obj is None:
+            raise SystemExit("unknown envAnim object: " + str(tr.get("object")))
+        for pair in tr.get("keys") or []:
+            fr, val = pair[0], pair[1]
+            f = frame0 + int(fr)
+            ch = tr.get("channel")
+            if ch == "rotate_z":
+                obj.rotation_euler = (obj.rotation_euler.x, obj.rotation_euler.y, math.radians(val))
+                obj.keyframe_insert("rotation_euler", frame=f)
+            elif ch == "pos_z":
+                obj.location = (obj.location.x, obj.location.y, val)
+                obj.keyframe_insert("location", frame=f)
+            elif ch == "scale_z":
+                obj.scale = (obj.scale.x, obj.scale.y, val)
+                obj.keyframe_insert("scale", frame=f)
+            else:
+                raise SystemExit("unknown envAnim channel: " + str(ch))
+        if tr.get("interp") == "step":
+            for fc in fcurves_of(obj):
+                for kp in fc.keyframe_points:
+                    kp.interpolation = 'CONSTANT'
+
 def build_shot(shot, frame0, frames=None):
     scene = bpy.context.scene
     cam_data = bpy.data.cameras.new(shot["id"] + "_cam")
@@ -154,6 +242,7 @@ def build_shot(shot, frame0, frames=None):
     bpy.context.view_layer.update()
     fps = 24
     frames = int(frames if frames is not None else shot["duration"] * fps)
+    apply_env_anim(shot, frame0)
     right = cam.matrix_world.to_3x3() @ Vector((1, 0, 0))
     right = Vector((right.x, right.y, 0))
     right.normalize()
@@ -195,29 +284,8 @@ def build_shot(shot, frame0, frames=None):
             for leg in legs:
                 leg.scale = (1.0, 1.0, lz)
                 leg.keyframe_insert("scale", frame=frame0 + f_i)
-    plow = next((pr for pr in (shot.get("props") or []) if "犁" in pr["name"]), None)
-    if plow is not None:
-        holder = next((m for m in shot["marks"] if m["characterId"] == plow.get("heldBy")), shot["marks"][0])
-        hch = next((c for c in CHARS if c["id"] == holder["characterId"]), None)
-        hh = char_height(hch) if hch else 1.0
-        hu = (holder["handL"]["x"] + holder["handR"]["x"]) / 200.0
-        hv = (holder["handL"]["y"] + holder["handR"]["y"]) / 200.0
-        A = unproject(cam, scene, hu, hv, 0.85 * hh)
-        pts = [unproject(cam, scene, *foot_mid(m), 0.0) for m in shot["marks"][:2]]
-        S = (pts[0] + pts[1]) / 2.0
-        o = cam.matrix_world.translation
-        toward = Vector((o.x - S.x, o.y - S.y, 0))
-        toward.normalize()
-        S = S + toward * 0.4
-        B = Vector((S.x, S.y, 0.0))
-        iron = grey(shot["id"] + "_plow", 0.22)
-        dx, dy, dz = B.x - A.x, B.y - A.y, B.z - A.z
-        L = math.sqrt(dx * dx + dy * dy + dz * dz)
-        mid = ((A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2)
-        cube(mid, (0.06, L, 0.12), iron,
-             rot=(math.atan2(dz, math.hypot(dx, dy)), 0, math.atan2(dx, dy)))
-        cube((B.x + 0.03, B.y + 0.02, 0.06), (0.26, 0.34, 0.05), iron,
-             rot=(0, 0, math.radians(20)))
+    # （犁道具特設幾何已拆——0927 Chau 令：項目道具唔寫死喺 layout script，
+    #  道具幾何由 props 資料/SF3D mesh 行，呢度淨做走位人偶。）
     return frame0 + frames
 `;
 

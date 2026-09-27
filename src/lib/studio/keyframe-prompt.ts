@@ -181,7 +181,7 @@ export function sceneLine(sheet: CallSheet, shot: Shot): string {
   const ban = negs.length ? `；禁止${negs.join("、")}` : "";
   if (isIndoorLocation(loc)) {
     const light = shot.require?.angle === "low" ? "低位室內光" : shot.require?.angle === "eye" ? "均勻室內光" : "頂光";
-    return `${loc}：室內、冇窗、${light}${ban}。`;
+    return `${loc}：室內、${light}${ban}。`;
   }
   return `${loc}${ban}。`;
 }
@@ -302,11 +302,9 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
   if (prop && cls === "garment") {
     props = `【道具】${prop.name}係一件衣物：披上膊頭或者着住喺身嘅衣服，有領有袖，布料隨姿勢自然垂落，屬於角色造型一部分。`;
   } else if (prop && cls === "document") {
-    props = `【道具】${prop.name}係一張紙本文書：薄而平，可以喺手中展開、遞出或者攤開睇，上面有字有印；佢係文具唔係工具，畫面冇任何農具或者長柄器具。`;
+    props = `【道具】${prop.name}係一張紙本文書：薄而平，可以喺手中展開、遞出或者攤開睇，上面有字有印。`;
   } else if (prop && cls === "system") {
     props = `【道具】${prop.name}係一個懸浮喺半空嘅全息投影界面：半透明光造影像微微發光，畫面要見齊三層結構——數據圖表圖形、UI介面框線、細小文字標籤，全部懸浮喺角色手上方；佢係光造嘅投影，冇機身冇金屬邊框，唔係實體機器。`;
-  } else if (prop && /樽|瓶/.test(prop.name)) {
-    props = `【道具】${prop.name}：有蓋、樽頸收窄、瘦高圓柱玻璃樽身，由樽底到樽蓋成件入鏡，放喺角色手邊。`;
   } else if (prop) {
     props = `【道具】${prop.name}：${prop.shape.join("、")}。呢件物件嘅輪廓同材質照呢句，放喺角色手邊。`;
   }

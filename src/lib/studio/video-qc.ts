@@ -169,6 +169,89 @@ export function clipSizeCheck(
   return { ok: false, reason: sizeReason ? `size(clip):${sizeReason.slice(5)}` : `size(clip): require ${size}` };
 }
 
+// ─── C11 條片郁唔郁量度：靜態片唔可以照 GREEN（Chau 實證逐幕描述一模一樣）───
+
+/** require.action 本身係靜態意圖（定格特寫之類）——照 FAIL，但 reason 帶人手
+ *  覆核提示：唔好靜靜放生，寧報唔好隧道。 */
+const STATIC_INTENT_RE = /定格|靜態|靜止|不動|冇郁|static/i;
+
+/** photo-qc 嘅 jaccardGrams 係 private——local 版用 exported sceneGrams 行同一算法。 */
+function jaccardGramsLocal(a: string, b: string): number {
+  const A = new Set(sceneGrams(a));
+  const B = new Set(sceneGrams(b));
+  if (A.size === 0 || B.size === 0) return 0;
+  let inter = 0;
+  for (const g of A) if (B.has(g)) inter += 1;
+  return inter / (A.size + B.size - inter);
+}
+
+/** 64x64 gray raw bytes 俾像素指標；檔案讀唔到（測試假路徑／中途被刪）→ null，
+ *  該對量度唔到＝指標唔確立，唔當 static。 */
+async function frameGray64(file: string): Promise<Uint8Array | null> {
+  try {
+    const sharp = (await import("sharp")).default;
+    const buf = await sharp(file).resize(64, 64, { fit: "fill" }).grayscale().raw().toBuffer();
+    return new Uint8Array(buf);
+  } catch {
+    return null;
+  }
+}
+
+function meanAbsDiff(a: Uint8Array, b: Uint8Array): number {
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) sum += Math.abs(a[i]! - b[i]!);
+  return sum / a.length;
+}
+
+/** 條片郁唔郁（clip-level）。兩個獨立指標，任一確立＝FAIL：
+ *  文字＝五路幀 blind 描述兩兩 jaccard（sceneGrams）全部 ≥0.85 → 逐幀描述零變化；
+ *  像素＝extractMotionFrames 落盤嘅相鄰幀縮 64x64 gray 平均絕對差全部 <2.0 → 像素零變化。
+ *  兩者都唔確立（包括得一部份幀相似）＝pass。少過兩幀＝冇嘢量，undefined。 */
+export async function clipStaticCheck(
+  frames: Array<{ frame: number; file: string; blind: string }>,
+  require: QcRequire,
+): Promise<{ ok: boolean; reason?: string } | undefined> {
+  if (frames.length < 2) return undefined;
+  const sorted = [...frames].sort((a, b) => a.frame - b.frame);
+  const n = sorted.length;
+  const staticHint =
+    require.action && STATIC_INTENT_RE.test(require.action)
+      ? "；若本鏡故意靜態，require.action 寫明定格意圖並由人手覆核"
+      : "";
+
+  // 文字指標：任何一對 <0.85 即唔確立（部份幀相似＝有變化）
+  let textStatic = true;
+  for (let i = 0; i < sorted.length && textStatic; i++) {
+    for (let j = i + 1; j < sorted.length && textStatic; j++) {
+      if (jaccardGramsLocal(sorted[i]!.blind, sorted[j]!.blind) < 0.85) textStatic = false;
+    }
+  }
+  if (textStatic) {
+    return { ok: false, reason: `clip_static: 描述——逐幀描述零變化，條片冇郁（${n} 幀）${staticHint}` };
+  }
+
+  // 像素指標：相鄰幀平均絕對差全部 <2.0 先確立；讀唔到嘅對＝量度唔到
+  let pairs = 0;
+  let pixelStatic = true;
+  for (let i = 0; i + 1 < sorted.length; i++) {
+    const a = await frameGray64(sorted[i]!.file);
+    const b = await frameGray64(sorted[i + 1]!.file);
+    if (!a || !b || a.length !== b.length) {
+      pixelStatic = false;
+      break;
+    }
+    pairs += 1;
+    if (meanAbsDiff(a, b) >= 2.0) {
+      pixelStatic = false;
+      break;
+    }
+  }
+  if (pairs > 0 && pixelStatic) {
+    return { ok: false, reason: `clip_static: 像素——像素零變化，條片冇郁（${n} 幀）${staticHint}` };
+  }
+  return { ok: true };
+}
+
 /** Aggregate per-frame MARS verdicts — any FAIL fails the clip. Action,
  *  location and size judge once at clip level, not per frame. */
 export function judgeVideoFrames(
@@ -198,6 +281,7 @@ export function judgeVideoFrames(
     if (c && !c.ok) failReasons.push(c.reason!);
   }
   if (Object.keys(require).length === 0) failReasons.push("no require: cannot accept");
+  // 0927 Chau 令：唔准夾硬改 QC——樽=瓶詞彙推翻已拆，FAIL 死因照單全收。
   const status: "GREEN" | "FAIL" =
     judged.length > 0 && failReasons.length === 0 ? "GREEN" : "FAIL";
   return {
@@ -278,7 +362,40 @@ async function qcOneFrame(
 
 /** MARS on extracted motion frames vs the shot still require — writes motion/SHxx.video_qc.json.
  *  The glm second eye (when armed) sees ONE mid frame, sequentially after the frame loop. */
+// （樽/瓶詞彙推翻 liftBottleVocabClash 已拆——0927 Chau 令唔准夾硬改 QC。）
+
 export async function runVideoQc(opts: {
+  mp4: string;
+  outJson: string;
+  require: QcRequire;
+  shotId: string;
+  framesDir?: string;
+  parent?: { file: string; shotId: string; start: number; len: number };
+} & SecondEyeOpts): Promise<VideoQcRecord> {
+  // QC 收據持久化（0927）：extract/probe/HTTP throw 以往零收據——throw 前落
+  // ERROR 收據（status=ERROR 唔入 GREEN cache 條件，resume 照重跑）再 rethrow。
+  try {
+    return await runVideoQcLive(opts);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      fs.mkdirSync(path.dirname(opts.outJson), { recursive: true });
+      fs.writeFileSync(opts.outJson, JSON.stringify({
+        tool: "slatecrew.video_qc",
+        ts: new Date().toISOString(),
+        status: "ERROR",
+        error: message,
+        video: opts.mp4,
+        shotId: opts.shotId,
+        require: opts.require,
+        note: "QC 未出 verdict（extract/HTTP 層 throw）——ERROR 收據留事故現場；cache 唔會食，resume 重跑",
+      }, null, 2));
+    } catch { /* 收據都寫唔到——原樣 rethrow */ }
+    throw error;
+  }
+}
+
+async function runVideoQcLive(opts: {
   mp4: string;
   outJson: string;
   require: QcRequire;
@@ -320,7 +437,9 @@ export async function runVideoQc(opts: {
   const clipAction = clipActionCheck(frameResults, opts.require);
   const clipLocation = clipLocationCheck(frameResults, opts.require);
   const clipSize = clipSizeCheck(frameResults, opts.require);
-  for (const c of [clipAction, clipLocation, clipSize]) {
+  // C11 條片郁唔郁：frame loop 之後同一接線位（靜態片唔可以照 GREEN）
+  const clipStatic = await clipStaticCheck(frameResults, opts.require);
+  for (const c of [clipAction, clipLocation, clipSize, clipStatic]) {
     if (c && !c.ok) failReasons.push(c.reason!);
   }
   let second: (SecondEyeRecord & { frame: number }) | undefined;
@@ -348,6 +467,7 @@ export async function runVideoQc(opts: {
       ...(clipAction ? { action: clipAction.ok } : {}),
       ...(clipLocation ? { location: clipLocation.ok } : {}),
       ...(clipSize ? { size: clipSize.ok } : {}),
+      ...(clipStatic ? { clip_static: clipStatic.ok } : {}),
       status,
       fail_reasons: failReasons,
     },

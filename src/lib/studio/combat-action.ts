@@ -824,7 +824,9 @@ export function reconcile_combat_action_rows(
     source_world_only?: boolean;
   } = {},
 ): [PyRow[], string[]] {
-  const autoRepair = opts.auto_repair ?? true;
+  // 0927 Chau 令：唔准夾硬改內容過關——auto_repair 默認閂。判定含糊就報
+  // ACTION_RISK 畀上游（packet 作者）改，引擎唔靜靜替佢重寫。
+  const autoRepair = opts.auto_repair ?? false;
   const sourceWorldOnly = opts.source_world_only ?? false;
   const duration = Math.max(0.5, pyFloat(durationSeconds, 0.5));
   const baseline = Math.min(

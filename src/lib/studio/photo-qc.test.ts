@@ -9,23 +9,17 @@ import {
   EYE_PROMPT,
   EYE_SAMPLING,
   JUDGE_SAMPLING,
-  actionItemFailed,
   buildJudgePrompt,
-  buildPoseJudgePrompt,
   judge,
   judgePlainBackground,
   judgeSecondEye,
-  liftActionWithPoseJudge,
   lintEyeContent,
   lintEyePrompt,
-  liftLocalOnly,
   packageVerdict,
-  parseNexPoseReply,
   factTokens,
   pinQcAccepted,
   prepEyeLegs,
   resolveSecondEye,
-  runNexPoseJudge,
   runPhotoQc,
   runSecondEye,
   sameRequire,
@@ -216,23 +210,6 @@ test("A1: photo-qc.ts source has zero guided-interrogation wording", () => {
 });
 
 // ─── A2 主點：數碼寫實＝寫實 ───
-
-test("只引一格唔可以判成張唔合格；全圖引句維持原判", () => {
-  const local = {
-    pass: false,
-    items: [{ item: "道具：玻璃檸檬汽水樽", verdict: "唔達標", evidence: "【左下角】畫面右邊有一個玻璃杯" }],
-    fail_reasons: ["道具描述包含禁用詞「cup」（玻璃杯）"],
-  };
-  const v = packageVerdict({ tool: "玻璃檸檬汽水樽" }, liftLocalOnly(local));
-  assert.equal(v.status, "GREEN");
-  const whole = liftLocalOnly({
-    pass: false,
-    items: [{ item: "道具：玻璃檸檬汽水樽", verdict: "唔達標", evidence: "【全圖】畫面係一個玻璃杯" }],
-    fail_reasons: ["【全圖】玻璃杯"],
-  });
-  assert.equal(whole.items?.[0]?.verdict, "唔達標");
-  assert.equal(packageVerdict({}, whole).status, "FAIL");
-});
 
 test("A2 主點: 數碼寫實／AI生成／U1.5 描述＋可見項達標 → GREEN（pure verdict）", () => {
   const v = packageVerdict(E_REQUIRE, JUDGE_PASS_JSON);
@@ -1364,232 +1341,85 @@ const JUDGE_ACTION_FAIL_JSON: PackageJudge = {
 };
 
 const POSE_OK = (): string => `PLAUSIBLE：雙膝跪低雙手向上承住，對「${POSE_ACTION}」嚟講係合理可信定格姿勢`;
+const KF_EXPECTATION = "【底圖】Image-1 係這鏡一張佔位，只帶距離同位置。【人物】左起第一個角色＝Image-2 未切成張入面嘅主角（調查員）：面容、髮型同成套衫著照 Image-2。【場景】攝影棚純灰底：均勻頂光。【光影材質】布料、金屬各有質感；手、衣擺同地面有接觸遮擋。【動作】企直托住件嘢。【不變】以下保持不變：背景、燈光、衣着。";
+
 const POSE_NO = (): string => `IMPLAUSIBLE——require 係企直托光框，圖中人趴咗喺地，唔可信`;
 
-test("§7 law26 問式：buildPoseJudgePrompt 帶 require.action 定格句；parseNexPoseReply 分 PLAUSIBLE／IMPLAUSIBLE／no_verdict", () => {
-  const prompt = buildPoseJudgePrompt(POSE_ACTION);
-  assert.ok(prompt.includes("①一句描述人物姿勢"), "law26 式第一問");
-  assert.ok(prompt.includes(`「${POSE_ACTION}」`), "require.action 定格句入問");
-  assert.ok(prompt.includes("合理可信定格姿勢"), "定格判定問法");
-  assert.ok(prompt.includes("PLAUSIBLE或IMPLAUSIBLE"), "答案字眼釘死");
+test("C11: buildJudgePrompt 帶期望行＋2b 驗收步——截 900 字；冇 expectation 行為完全不變", () => {
+  const eyes = { whole: EYE_DESC, TL: EYE_DESC, TR: EYE_DESC, BL: EYE_DESC, BR: EYE_DESC };
+  const withExp = buildJudgePrompt({ ...E_REQUIRE, expectation: KF_EXPECTATION }, eyes);
+  assert.ok(withExp.includes("- 期望（生成呢張圖時嘅完整任務原文，截 900 字）："), "期望行在場");
+  assert.ok(withExp.includes(KF_EXPECTATION), "期望原文全文（<900 字）入判官");
+  assert.ok(withExp.includes("2b. 期望原文入面所有具體視覺承諾"), "程序 2b 在場");
+  assert.ok(withExp.includes("物件外形/姿勢/構圖/數量"), "2b 釘死承諾類型");
+  assert.ok(withExp.includes("兌現／未兌現／冇提及"), "驗收三態在場");
+  assert.ok(withExp.includes("item 名用「期望：<短語>」"), "items 格式釘死（judge item 照舊格式）");
 
-  const ok = parseNexPoseReply(POSE_OK());
-  assert.equal(ok.verdict, "PLAUSIBLE");
-  assert.ok(ok.reason.includes("雙膝跪低"), `reason 要有理由本体：${JSON.stringify(ok.reason)}`);
-  assert.ok(!/PLAUSIBLE/i.test(ok.reason), "token 自己唔留喺 reason");
+  // 截 900 字：第 901 字開始唔入 prompt
+  const long = "鋼筆".repeat(600); // 1200 字
+  const truncated = buildJudgePrompt({ expectation: long }, { whole: "", TL: "", TR: "", BL: "", BR: "" });
+  assert.ok(truncated.includes(long.slice(0, 900)), "頭 900 字在場");
+  assert.ok(!truncated.includes(long), "900 字以外唔入 prompt");
 
-  const no = parseNexPoseReply(POSE_NO());
-  assert.equal(no.verdict, "IMPLAUSIBLE");
-  assert.ok(no.reason.includes("趴咗喺地"));
-
-  // IMPLAUSIBLE 先查——佢含 PLAUSIBLE 子串
-  const both = parseNexPoseReply("唔係PLAUSIBLE，係IMPLAUSIBLE：姿勢對唔上");
-  assert.equal(both.verdict, "IMPLAUSIBLE");
-  assert.equal(parseNexPoseReply("今日天氣好好").verdict, "no_verdict");
-  assert.equal(parseNexPoseReply("").verdict, "no_verdict");
+  // 冇 expectation＝行為完全不變：冇期望行、冇 2b 步（舊 prompt 形狀原封不動）
+  const without = buildJudgePrompt(E_REQUIRE, eyes);
+  assert.ok(!without.includes("期望（生成呢張圖時嘅完整任務原文"), "冇 expectation 冇期望行");
+  assert.ok(!without.includes("2b."), "冇 expectation 冇 2b 步");
+  assert.equal(without, buildJudgePrompt({ ...E_REQUIRE }, eyes), "same input same prompt");
 });
 
-test("§7 liftActionWithPoseJudge：PLAUSIBLE 翻案動作項；地點等死因原封不動；IMPLAUSIBLE 維持原判", () => {
-  const dead = packageVerdict(ACTION_REQUIRE, JUDGE_ACTION_FAIL_JSON);
-  assert.equal(dead.status, "FAIL");
-  assert.equal(actionItemFailed(dead), true, "動作項判死偵測");
-  assert.equal(actionItemFailed(packageVerdict({ people_count: 1 }, JUDGE_PASS_JSON)), false, "動作 GREEN 唔觸發");
-
-  const pose = {
-    judge: "NEX" as const,
-    endpoint: "http://127.0.0.1:8017",
-    model: "nex-n2.5",
-    verdict: "PLAUSIBLE" as const,
-    reason: "雙膝跪低雙手向上承住，合理定格",
-    raw: POSE_OK(),
-  };
-  const lifted = liftActionWithPoseJudge(ACTION_REQUIRE, JUDGE_ACTION_FAIL_JSON, pose);
-  assert.equal(lifted.status, "GREEN", lifted.checks.fail_reasons.join(" | "));
-  const items = lifted.checks.items as PackageJudge["items"];
-  const actionItem = items!.find((i) => /動作/.test(i.item ?? ""))!;
-  assert.equal(actionItem.verdict, "達標", "動作項改判達標");
-  assert.ok(String(actionItem.evidence).includes("second_judge NEX PLAUSIBLE"), "翻案記號入 evidence");
-  assert.ok(
-    !lifted.checks.fail_reasons.some((r) => /動作/.test(r)),
-    "動作死因清晒",
-  );
-
-  // 兩項死：地點照死，動作翻案 — 疊加唔取代
-  const twoDead: PackageJudge = {
-    ...JUDGE_ACTION_FAIL_JSON,
-    items: [
-      ...JUDGE_ACTION_FAIL_JSON.items!.slice(0, 1),
-      { item: "地點：廢棄控制室", verdict: "唔達標", evidence: "【全圖】「街上」" },
-      ...JUDGE_ACTION_FAIL_JSON.items!.slice(2),
-    ],
-  };
-  const liftedTwo = liftActionWithPoseJudge(ACTION_REQUIRE, twoDead, pose);
-  assert.equal(liftedTwo.status, "FAIL", "地點閘仍然獨立");
-  assert.ok(
-    liftedTwo.checks.fail_reasons.some((r) => /地點/.test(r)),
-    liftedTwo.checks.fail_reasons.join(" | "),
-  );
-  assert.ok(
-    !liftedTwo.checks.fail_reasons.some((r) => /動作/.test(r)),
-    "淨係動作死因清走",
-  );
-
-  const kept = liftActionWithPoseJudge(ACTION_REQUIRE, JUDGE_ACTION_FAIL_JSON, { ...pose, verdict: "IMPLAUSIBLE" });
-  assert.equal(kept.status, "FAIL", "IMPLAUSIBLE 維持 FAIL");
-  assert.deepEqual(kept.checks.fail_reasons, dead.checks.fail_reasons, "原判原封不動");
-  const noVerdict = liftActionWithPoseJudge(ACTION_REQUIRE, JUDGE_ACTION_FAIL_JSON, { ...pose, verdict: "no_verdict" });
-  assert.equal(noVerdict.status, "FAIL", "覆核唔通都維持 FAIL");
-});
-
-test("§7 公版疊加（integration）：動作項 FAIL → NEX PLAUSIBLE → 改判達標，收據入 checks.second_judge；call-shape medium；眼路零沾", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pose-ok-"));
-  const png = await mkNoisePng(path.join(dir, "SH01.png"));
-  const { eye, judge } = await qcHarness({ judgeReply: () => JSON.stringify(JUDGE_ACTION_FAIL_JSON) });
-  const pose = await roleServer(["nex-fx"], () => POSE_OK(), () => POSE_OK());
-  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
-  delete process.env.SLATECREW_SECOND_ENDPOINT;
-  try {
-    const rec = await runPhotoQc(png, path.join(dir, "SH01.photo_qc.json"), ACTION_REQUIRE, {}, {
-      first: { url: eye.url, model: "nex-fx" },
-      judge: { url: judge.url, model: "qwen-fx" },
-      pose: { url: pose.url, model: "nex-fx" },
-    });
-    assert.equal(rec.status, "PASS_UNCONFIRMED", `翻案後無 second eye＝PASS_UNCONFIRMED（fail: ${rec.checks.fail_reasons.join(" | ")}）`);
-    assert.ok(!rec.checks.fail_reasons.some((r) => /動作/.test(r)), "動作死因清走");
-
-    const sj = rec.checks.second_judge as { judge: string; verdict: string; reason: string };
-    assert.equal(sj.judge, "NEX", "second_judge 收據＝NEX");
-    assert.equal(sj.verdict, "PLAUSIBLE");
-    assert.ok(sj.reason.length > 0, "收據有理由");
-
-    const items = rec.checks.items as PackageJudge["items"];
-    assert.equal(items!.find((i) => /動作/.test(i.item ?? ""))!.verdict, "達標");
-
-    // pose call-shape：獨立一 call，temp0.7/top_p0.95/max_tokens5000/effort medium
-    assert.equal(pose.chatBodies.length, 1, `NEX pose 恰好一 call，got ${pose.chatBodies.length}`);
-    const body = pose.chatBodies[0] as Record<string, unknown>;
-    assert.equal(body.model, "nex-fx");
-    assert.equal(body.temperature, 0.7);
-    assert.equal(body.top_p, 0.95);
-    assert.equal(body.max_tokens, 5000);
-    assert.deepEqual(body.chat_template_kwargs, { reasoning_effort: "medium" });
-    const content = (body.messages as { content: { type: string; text?: string }[] }[])[0]!.content;
-    assert.equal(Array.isArray(content), true, "帶圖 call");
-    const text = content.find((c) => c.type === "text")!.text!;
-    assert.ok(text.includes("合理可信定格姿勢"), "law26 問式");
-    assert.ok(text.includes(POSE_ACTION), "require.action 入問");
-    assert.notEqual(text, EYE_PROMPT, "唔經 EYE_PROMPT");
-    assert.ok(content.some((c) => c.type === "image_url"), "帶圖");
-
-    // 眼路恰好五 call（pose 冇借公版 chat／eye 出口）
-    assert.equal(eye.chatBodies.length, 5, `五路眼不變，got ${eye.chatBodies.length}`);
-  } finally {
-    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
-    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
-    eye.close(); judge.close(); pose.close();
-  }
-});
-
-test("§7 維持 FAIL（integration）：動作項 FAIL → NEX IMPLAUSIBLE → 原判維持，收據照記", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pose-no-"));
-  const png = await mkNoisePng(path.join(dir, "SH01.png"));
-  const { eye, judge } = await qcHarness({ judgeReply: () => JSON.stringify(JUDGE_ACTION_FAIL_JSON) });
-  const pose = await roleServer(["nex-fx"], () => POSE_NO(), () => POSE_NO());
-  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
-  delete process.env.SLATECREW_SECOND_ENDPOINT;
-  try {
-    const rec = await runPhotoQc(png, path.join(dir, "SH01.photo_qc.json"), ACTION_REQUIRE, {}, {
-      first: { url: eye.url, model: "nex-fx" },
-      judge: { url: judge.url, model: "qwen-fx" },
-      pose: { url: pose.url, model: "nex-fx" },
-    });
-    assert.equal(rec.status, "FAIL", "IMPLAUSIBLE 維持 FAIL");
-    assert.ok(
-      rec.checks.fail_reasons.some((r) => /動作/.test(r)),
-      rec.checks.fail_reasons.join(" | "),
-    );
-    const sj = rec.checks.second_judge as { judge: string; verdict: string };
-    assert.equal(sj.judge, "NEX");
-    assert.equal(sj.verdict, "IMPLAUSIBLE");
-    assert.equal(pose.chatBodies.length, 1);
-  } finally {
-    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
-    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
-    eye.close(); judge.close(); pose.close();
-  }
-});
-
-test("§7 慳成本（integration）：動作項達標 → NEX 零 call", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pose-skip-"));
-  const png = await mkNoisePng(path.join(dir, "SH01.png"));
-  const actionPass: PackageJudge = {
+test("C11: 判官期望項 item 名「期望：<短語>」；未兌現規格化做唔達標——唔准靜靜過閘", () => {
+  const require: QcRequire = { ...E_REQUIRE, expectation: KF_EXPECTATION };
+  const judgeOut: PackageJudge = {
     items: [
       { item: "人數", verdict: "達標", evidence: "【全圖】「一位年長男性」" },
-      { item: `動作：${POSE_ACTION}`, verdict: "達標", evidence: "【全圖】「掌心向上托住懸浮光框」" },
-      { item: "風格", verdict: "達標", evidence: "【全圖】「高度寫實感」" },
+      { item: "期望：胸前口袋插鋼筆", verdict: "未兌現", evidence: "【全圖】「胸前口袋係空嘅，冇筆」" },
+      { item: "期望：跪喺水泥地", verdict: "兌現", evidence: "【全圖】「跪喺水泥地上」" },
+      { item: "期望：頂光慘白", verdict: "冇提及", evidence: "描述冇提光線" },
     ],
     contradictions: [],
     style: { verdict: "寫實", evidence: "【全圖】「高度寫實感」" },
-    pass: true,
+    pass: false,
     fail_reasons: [],
   };
-  const { eye, judge } = await qcHarness({ judgeReply: () => JSON.stringify(actionPass) });
-  const pose = await roleServer(["nex-fx"], () => POSE_OK(), () => POSE_OK());
-  const prevE = process.env.SLATECREW_SECOND_ENDPOINT;
-  delete process.env.SLATECREW_SECOND_ENDPOINT;
-  try {
-    const rec = await runPhotoQc(png, path.join(dir, "SH01.photo_qc.json"), ACTION_REQUIRE, {}, {
-      first: { url: eye.url, model: "nex-fx" },
-      judge: { url: judge.url, model: "qwen-fx" },
-      pose: { url: pose.url, model: "nex-fx" },
-    });
-    assert.notEqual(rec.status, "FAIL");
-    assert.equal(pose.chatBodies.length, 0, `動作 GREEN＝零 NEX call，got ${pose.chatBodies.length}`);
-    assert.equal("second_judge" in rec.checks, false, "冇 call 就冇收據");
-  } finally {
-    if (prevE === undefined) delete process.env.SLATECREW_SECOND_ENDPOINT;
-    else process.env.SLATECREW_SECOND_ENDPOINT = prevE;
-    eye.close(); judge.close(); pose.close();
-  }
+  const v = packageVerdict(require, judgeOut);
+  assert.equal(v.status, "FAIL", "未兌現期望＝FAIL");
+  assert.ok(
+    v.checks.fail_reasons.some((r) => r.includes("期望：胸前口袋插鋼筆")),
+    v.checks.fail_reasons.join(" | "),
+  );
+  const items = v.checks.items as PackageJudge["items"];
+  assert.equal(items!.find((i) => i.item === "期望：胸前口袋插鋼筆")!.verdict, "唔達標", "未兌現→唔達標");
+  assert.equal(items!.find((i) => i.item === "期望：跪喺水泥地")!.verdict, "達標", "兌現→達標");
+  assert.equal(items!.find((i) => i.item === "期望：頂光慘白")!.verdict, "冇提及", "冇提及照舊");
+
+  // 冇 expectation：同一 judge output 完全唔規格化（規格化閘淨係 expectation 路先行）
+  const plain = packageVerdict(E_REQUIRE, judgeOut);
+  assert.ok(
+    plain.checks.fail_reasons.some((r) => r.includes("fail loud")),
+    plain.checks.fail_reasons.join(" | "),
+  );
+  const plainItems = plain.checks.items as PackageJudge["items"];
+  assert.equal(plainItems!.find((i) => i.item === "期望：胸前口袋插鋼筆")!.verdict, "未兌現", "原字面原封不動");
 });
 
-test("§7 hang→retry：第一次 hang（180s 形），300s 重試一次 → PLAUSIBLE", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-pose-hang-"));
-  const png = await mkNoisePng(path.join(dir, "SH01.png"));
-  let calls = 0;
-  const server = http.createServer((req, res) => {
-    let body = "";
-    req.on("data", (c) => (body += c));
-    req.on("end", () => {
-      if ((req.url ?? "").includes("/v1/models")) {
-        res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ data: [{ id: "nex-fx" }] }));
-        return;
-      }
-      calls += 1;
-      if (calls === 1) {
-        // hang：reply 排 10s 後，fetch 早喺 firstMs timeout 死；abort 就清 timer
-        const t = setTimeout(() => {
-          try { res.end(JSON.stringify({ choices: [{ message: { content: POSE_OK() } }] })); } catch { /* aborted */ }
-        }, 10_000);
-        req.on("close", () => clearTimeout(t));
-        return;
-      }
-      res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ choices: [{ message: { content: POSE_OK() } }] }));
-    });
-  });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  try {
-    const receipt = await runNexPoseJudge(url, "nex-fx", fs.readFileSync(png), POSE_ACTION, { firstMs: 150, retryMs: 1000 });
-    assert.equal(calls, 2, `hang 一次然後重試一次，got ${calls}`);
-    assert.equal(receipt.verdict, "PLAUSIBLE");
-    assert.equal(receipt.judge, "NEX");
-    assert.equal(receipt.model, "nex-fx");
-  } finally {
-    server.close();
-  }
+test("C11: 判官照標準 enum 答（2b 教咗 mapping）照計——唔達標期望項死因入 verdict", () => {
+  const require: QcRequire = { expectation: KF_EXPECTATION };
+  const judgeOut: PackageJudge = {
+    items: [
+      { item: "期望：肩披黑色呢大衣", verdict: "唔達標", evidence: "【全圖】「肩上冇大衣」" },
+    ],
+    contradictions: [],
+    style: { verdict: "寫實", evidence: "【全圖】「寫實」" },
+    pass: false,
+    fail_reasons: [],
+  };
+  const v = packageVerdict(require, judgeOut);
+  assert.equal(v.status, "FAIL");
+  assert.ok(
+    v.checks.fail_reasons.some((r) => r.startsWith("期望：肩披黑色呢大衣")),
+    v.checks.fail_reasons.join(" | "),
+  );
 });
 
 if (cases.length > 0) {
