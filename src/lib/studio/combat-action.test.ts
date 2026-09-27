@@ -101,52 +101,55 @@ function runCase(name: string): unknown {
   const P2 = media("P2", "BLIP · Overview: man in red jacket");
   switch (name) {
     case "reconcile_kick6":
-      return dict(reconcile_combat_action_rows(KICK6.map((r) => structuredClone(r)), 15.0));
+      // golden 係 Python engine autoRepair=on 嘅快照；96ed3ec 起生產默認閂咗
+      // auto_repair——呢度顯式開返，鎖嘅係「autoRepair 開嗰陣 TS port 對齊
+      // Python」嘅 port 保真度（default off 嘅行為另有 test 鎖）。
+      return dict(reconcile_combat_action_rows(KICK6.map((r) => structuredClone(r)), 15.0, { auto_repair: true }));
     case "reconcile_self_defence_fix":
       return dict(reconcile_combat_action_rows(
-        [shot(1, 0, 2.5, "S2 kicks toward S1. S2 parries and pivots away.")], 2.5));
+        [shot(1, 0, 2.5, "S2 kicks toward S1. S2 parries and pivots away.")], 2.5, { auto_repair: true }));
     case "reconcile_ground_reversal":
       return dict(reconcile_combat_action_rows(
         [shot(1, 0, 2.5, "S2 captures S1's single leg. S1 sprawls and frames."),
-         shot(2, 2.5, 5.0, "S1 establishes side control. S2 frames from below.")], 5.0));
+         shot(2, 2.5, 5.0, "S1 establishes side control. S2 frames from below.")], 5.0, { auto_repair: true }));
     case "reconcile_repeat_generated":
       return dict(reconcile_combat_action_rows(
         [shot(1, 0, 2.5, "S1 attacks S2. S2 blocks and counters."),
-         shot(2, 2.5, 5.0, "S1 attacks S2. S2 blocks and counters.")], 5.0));
+         shot(2, 2.5, 5.0, "S1 attacks S2. S2 blocks and counters.")], 5.0, { auto_repair: true }));
     case "reconcile_repeat_user_edited":
       return dict(reconcile_combat_action_rows(
         [shot(1, 0, 2.5, "S1 attacks S2. S2 blocks and counters."),
          shot(2, 2.5, 5.0, "S1 attacks S2. S2 blocks and counters.",
-          { combat_action_chain_user_edited: true })], 5.0));
+          { combat_action_chain_user_edited: true })], 5.0, { auto_repair: true }));
     case "reconcile_outcome_only":
       return dict(reconcile_combat_action_rows(
         [shot(1, 0, 2.0,
-          "S1 maintains close range. S2 lands on his back; S1 stands over him.")], 2.0));
+          "S1 maintains close range. S2 lands on his back; S1 stands over him.")], 2.0, { auto_repair: true }));
     case "reconcile_sword_generated":
       return dict(reconcile_combat_action_rows(
-        [shot(1, 0, 3.0, "S1 swings a sword at S2. S2 blocks the blade.")], 3.0));
+        [shot(1, 0, 3.0, "S1 swings a sword at S2. S2 blocks the blade.")], 3.0, { auto_repair: true }));
     case "reconcile_sword_user_edited":
       return dict(reconcile_combat_action_rows(
         [shot(1, 0, 3.0, "S1 swings a sword at S2. S2 blocks the blade.",
-          { combat_action_chain_user_edited: true })], 3.0));
+          { combat_action_chain_user_edited: true })], 3.0, { auto_repair: true }));
     case "reconcile_generic_pose":
       return dict(reconcile_combat_action_rows(
         [shot(1, 0, 2.5, "S1 looks directly at S2 and raises his right fist."),
          shot(2, 2.5, 5.0,
-          "S1 and S2 execute an immediate full-speed attack and defence exchange.")], 5.0));
+          "S1 and S2 execute an immediate full-speed attack and defence exchange.")], 5.0, { auto_repair: true }));
     case "reconcile_empty_action":
-      return dict(reconcile_combat_action_rows([shot(1, 0, 2.5, "")], 2.5));
+      return dict(reconcile_combat_action_rows([shot(1, 0, 2.5, "")], 2.5, { auto_repair: true }));
     case "reconcile_single_beat":
-      return dict(reconcile_combat_action_rows([shot(1, 0, 2.5, "S1 fires one straight palm.")], 2.5));
+      return dict(reconcile_combat_action_rows([shot(1, 0, 2.5, "S1 fires one straight palm.")], 2.5, { auto_repair: true }));
     case "reconcile_final_settle":
       return dict(reconcile_combat_action_rows(
         [shot(1, 0, 2.5, "S1 kicks toward S2. S2 checks and circles outside."),
-         shot(2, 2.5, 5.0, "S2 sweeps S1. S1 braces and completes the fall.")], 5.0));
+         shot(2, 2.5, 5.0, "S2 sweeps S1. S1 braces and completes the fall.")], 5.0, { auto_repair: true }));
     case "reconcile_aftermath_only_passes_through":
       return dict(reconcile_combat_action_rows(
         [shot(1, 0, 2.5, KICK),
          shot(2, 2.5, 5.0,
-          "Final settle: dust settles, no new attack, both hold a stable guarded stance.")], 5.0));
+          "Final settle: dust settles, no new attack, both hold a stable guarded stance.")], 5.0, { auto_repair: true }));
     case "markers_reanchor":
       return reconcile_final_combat_markers(
         [{ time_seconds: 29.0, preset: "Ending Hold", direction: "Old pre-extension ending." }],
@@ -181,14 +184,16 @@ function runCase(name: string): unknown {
         special_skill_key: "street-fighter-live-action-h3",
         existing_media: [P1, P2],
         authored_requirement: "one clean fight in the market",
+        auto_repair: true, // golden＝PY autoRepair=on 快照（同 runCase 原則）
       });
     case "apply_other_skill_unchanged":
       return apply_combat_action_continuity(
         { duration_seconds: 5.0, shots: [shot(1, 0, 5, "S1 looks at S2.")] },
-        { special_skill_key: "dark-rescue-h3" });
+        { special_skill_key: "dark-rescue-h3", auto_repair: true });
     case "apply_hk_comic_speech_tail":
       return apply_combat_action_continuity(tailPlan(), {
         special_skill_key: "hong-kong-comic-fighter",
+        auto_repair: true, // golden＝PY autoRepair=on 快照
       });
     case "apply_hk_comic_no_wet_market_inheritance":
       return apply_combat_action_continuity(hkComicPlan(), {
@@ -198,6 +203,7 @@ function runCase(name: string): unknown {
           media("P2", "BLIP · Overview: the same two fighters collide"),
         ],
         authored_requirement: "神武不死与龙界使用无界紫电拳和极霸之拳。",
+        auto_repair: true, // golden＝PY autoRepair=on 快照
       });
     case "baseline_duration":
       return { baseline: combat_baseline_duration(
@@ -308,4 +314,35 @@ test("two-shot fight sequence: state relay inheritance and ACTION_RISK trigger",
   );
   // user-owned choreography stays verbatim — the risk is reported, not rewritten
   assert.equal(defective[1]!.combat_action_chain, undefined);
+});
+
+// ── V1（PLAN-v2 0928）行為鎖 ───────────────────────────────────────────────
+
+test("V1: causal target 引用該 shot 原文，唔再代填市場道具", () => {
+  // gate 詞族命中（environment_interaction 有「閘門」）→ target 用返欄位原句，
+  // 唔係硬編碼 "the loading gate latch"；prompt 入面出現嘅係該鏡自己嘅環境資料。
+  const [rows] = reconcile_combat_action_rows(
+    [shot(1, 0, 2.5, "S1 attacks S2. S2 blocks and counters."),
+     shot(2, 2.5, 5.0, "S1 attacks S2. S2 blocks and counters.", {
+       environment_interaction: "兩人撞向茶水間嘅閘門，門閂震動",
+     })],
+    5.0,
+    { auto_repair: true },
+  );
+  const fixed = (rows as PyRow[])[1]!.combat_action_chain as string;
+  assert.ok(fixed.includes("茶水間嘅閘門"), `target 應引用原文，got: ${fixed}`);
+  assert.ok(!fixed.includes("the loading gate latch"), "唔准代填市場道具名");
+});
+
+test("V1: 生產默認 auto_repair 閉——重複動作出 warning 唔自動改寫（96ed3ec）", () => {
+  const [rows, warnings] = reconcile_combat_action_rows(KICK6.map((r) => structuredClone(r)), 15.0);
+  assert.ok(
+    warnings.some((w: string) => w.includes("repeats the preceding Shot")),
+    "default 應出 repeat warning",
+  );
+  assert.ok(
+    !warnings.some((w: string) => w.includes("auto_fixed")),
+    "default 唔准自動改寫（96ed3ec 清潔手術）",
+  );
+  void rows;
 });

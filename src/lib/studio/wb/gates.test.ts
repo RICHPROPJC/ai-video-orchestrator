@@ -37,20 +37,14 @@ test("gates: 好 playbook 過驗（raw 手寫行唔當 bullet）", () => {
   assert.ok(ok.playbook[0]!.includes("1 bullet"));
 });
 
-test("gates: 爛 bullet 即 throw——帶檔：行＋收據句", () => {
+test("gates: 爛 bullet 照報唔阻開工（V1 0928 降收據）——收據帶檔：行＋歷史句", () => {
   write(path.join(seatsBad, "all.primitive.md"), BAD);
-  assert.throws(
-    () => preflightGate({ seatsDir: seatsBad, projectsDir: projects, skipRigProbe: true }),
-    (e: Error) => {
-      const m = e.message;
-      return (
-        /preflight fail/.test(m) &&
-        /all\.primitive\.md:2/.test(m) &&
-        /all\.primitive\.md:3/.test(m) &&
-        /DTQH\/BEQ5\/OLHR/.test(m)
-      );
-    },
-  );
+  const ok = preflightGate({ seatsDir: seatsBad, projectsDir: projects, skipRigProbe: true });
+  const joined = ok.playbook.join("\n");
+  assert.ok(joined.includes("all.primitive.md:2"));
+  assert.ok(joined.includes("all.primitive.md:3"));
+  assert.ok(joined.includes("DTQH/BEQ5/OLHR"));
+  assert.ok(joined.includes("唔阻開工"));
   const broken = brokenBulletsIn(path.join(seatsBad, "all.primitive.md"));
   assert.deepEqual(broken.map((b) => b.line), [2, 3]);
 });
@@ -66,10 +60,8 @@ test("gates: drama playbook 檔都入驗（projects/<drama>/playbook/<scope>.md�
     );
     const files = playbookFiles({ seatsDir: s2, projectsDir: path.join(fresh, "projects"), drama: "guojia-lingdaoren" });
     assert.equal(files.length, 2);
-    assert.throws(
-      () => preflightGate({ seatsDir: s2, projectsDir: path.join(fresh, "projects"), drama: "guojia-lingdaoren", skipRigProbe: true }),
-      /writer\.md:2/,
-    );
+    const ok = preflightGate({ seatsDir: s2, projectsDir: path.join(fresh, "projects"), drama: "guojia-lingdaoren", skipRigProbe: true });
+    assert.ok(ok.playbook.join("\n").includes("writer.md:2"));
   } finally {
     fs.rmSync(fresh, { recursive: true, force: true });
   }
@@ -151,17 +143,17 @@ test("gates: bin 唔存在／量唔到卡——都係 fail-loud", () => {
   }
 });
 
-test("gates: 兩閘同 throw——一次睇晒所有死因", () => {
+test("gates: rig 閘死因一次睇晒——playbook 爛唔再算死因（V1 0928）", () => {
   assert.throws(
     () =>
       preflightGate({
-        seatsDir: seatsBad, // all.primitive.md 仲爛緊
+        seatsDir: seatsBad, // all.primitive.md 仲爛緊——淨係收據
         projectsDir: projects,
         skintokensBin: "/nope/skintokens-cli",
       }),
     (e: Error) => {
       const m = e.message;
-      return /preflight fail（\d+ 項/.test(m) && /爛 bullet/.test(m) && /bin 唔存在/.test(m);
+      return /preflight fail（\d+ 項/.test(m) && !/爛 bullet/.test(m) && /bin 唔存在/.test(m);
     },
   );
 });

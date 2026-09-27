@@ -7,18 +7,16 @@ import { SKINTOKENS_BIN } from "../cast-mesh";
 
 /** wb/gates.ts — 開場閘（whitebox gates 哲學：fail-loud，帶收據句）。
  *
- *  兩閘：
- *  (a) playbook 檔 schema 驗——一行以「- 」開頭而過唔到 BULLET_RE（playbook.ts
- *      parseBullet）就係爛 bullet：佢會被 parsePlaybookLines 當 raw 靜靜帶入
- *      prompt，seat 收到一段形狀爛嘅教訓。開工前大聲死，唔俾爛行上 prompt。
- *      實證：DTQH/BEQ5/OLHR 三單 fallback 連敗收場，死鏈在 playbook 學訓層。
+ *  兩部分：
+ *  (a) playbook 檔格式驗（V1 0928 降收據）——0927 §11 之後 playbook 已唔再拼
+ *      入創作 prompt，爛 bullet 唔再係開工死因；格式問題照報入收據，唔阻開工。
+ *      歷史：DTQH/BEQ5/OLHR 三單 fallback 連敗嗰陣佢係死因（爛行上 prompt）。
  *  (b) rig/backend probe——skintokens backend 係咪 GPU：bin 喺唔喺、同目錄有
  *      冇 libggml-cuda.so（GPU build）、free VRAM 過唔過 floor。
  *      實證：SC-0923-1KU5 rig A 喺 375 MiB free 嘅卡上面 cudaMalloc 72.5 MiB
  *      都分配唔到，OOM 死。開工前量卡，唔到 floor 即死。
  *
- *  兩閘都行齊先 throw（一次 preflight 睇晒所有問題）；任何一閘唔過都唔開
- *  工——fail-loud，唔靜靜降級。 */
+ *  rig 閘唔過＝throw 唔開工；playbook 格式係收據唔係閘。 */
 
 export const BROKEN_BULLET_EVIDENCE = "DTQH/BEQ5/OLHR fallback 爛 bullet 實證";
 export const GPU_OOM_EVIDENCE = "SC-0923-1KU5 rig A CUDA OOM 實證（375MiB free 分配 72.5MiB 唔到）";
@@ -107,13 +105,14 @@ export function preflightGate(cfg: PreflightConfig = {}): PreflightOk {
       if (parseBullet(t)) {
         okBullets += 1;
       } else {
-        failures.push(
-          `preflight playbook: 爛 bullet ${file}:${i + 1}「${t.slice(0, 80)}」— ${BROKEN_BULLET_EVIDENCE}`,
+        // V1 0928：爛 bullet 降收據（§11 後 playbook 唔入 prompt，唔再係死因）
+        playbookReceipts.push(
+          `playbook: 爛 bullet ${file}:${i + 1}「${t.slice(0, 80)}」——格式照報唔阻開工（歷史死因：${BROKEN_BULLET_EVIDENCE}）`,
         );
       }
     }
     bulletCount += okBullets;
-    playbookReceipts.push(`playbook: ${file} ${failures.length ? "見爛行" : "過驗"}（${okBullets} bullet）`);
+    playbookReceipts.push(`playbook: ${file} 過驗（${okBullets} bullet）`);
   }
   if (bulletCount === 0 && files.length) {
     playbookReceipts.push("playbook: 所有檔零 bullet（全 raw 行——合法但留意係咪剛清倉）");

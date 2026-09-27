@@ -157,7 +157,7 @@ test("token cap evicts lowest hits first, then the oldest line", () => {
   assert.ok(!ids.includes("b1") && !ids.includes("b30"), "the weak twins are gone");
 });
 
-test("proven increment: a bullet in the prompt during a PASS becomes proven, hits++", () => {
+test("§11/bc2fea3：markPass 淨報名——trial 唔自動升 proven，hits 唔加", () => {
   const { seats, proot } = tmpWorld();
   curatePlaybook("writer", [
     { op: "ADD", class: "schema.enum", field: "language", saw: "zh", rule: "language 淨係 zh-Hant|yue|en" },
@@ -166,17 +166,14 @@ test("proven increment: a bullet in the prompt during a PASS becomes proven, hit
     { op: "ADD", class: "machine.429", field: "writerModel", saw: "kimi-k3", rule: "kimi TPM 窄，stage 之間唞 5s" },
   ], { src: "SC-0912-G841", seatsDir: seats, projectsDir: proot });
 
+  // 0927 §11 修正令：trial 唔再自動升 proven（判斷唔升格）；markPass 淨報名
   const receipts = markPass(["writer", "all"], seats);
-  assert.ok(receipts.some((r) => r.includes("writer PASS promote w1")), receipts.join(" | "));
-  assert.ok(receipts.some((r) => r.includes("all PASS promote g1")), receipts.join(" | "));
+  assert.ok(receipts.some((r) => r.includes("PASS format-ok（trials 唔自動升級）")), receipts.join(" | "));
 
   const writer = loadPlaybook("writer", seats);
-  assert.equal(writer[0]!.status, "proven");
-  assert.equal(writer[0]!.hits, 2, "PASS increments hits");
-  assert.equal(loadPlaybook("all", seats)[0]!.status, "proven", "all-scope bullets were in the prompt too");
-
-  const again = markPass(["writer", "all"], seats);
-  assert.deepEqual(again, [], "already proven: no second promotion");
+  assert.equal(writer[0]!.status, "trial", "trial 保持 trial");
+  assert.equal(writer[0]!.hits, 1, "PASS 唔再加 hits");
+  assert.equal(loadPlaybook("all", seats)[0]!.status, "trial");
 });
 
 test("markPass skips retired scope names — a legacy caller neither crashes nor writes a stray file", () => {
@@ -186,9 +183,9 @@ test("markPass skips retired scope names — a legacy caller neither crashes nor
   ], { src: "SC-0913-L6WJ", seatsDir: seats, projectsDir: proot });
 
   const receipts = markPass(["writer", "global"], seats);
-  assert.ok(receipts.some((r) => /writer PASS promote w1/.test(r)), receipts.join(" | "));
+  assert.ok(receipts.some((r) => /writer PASS/.test(r)), receipts.join(" | "));
   assert.ok(!receipts.some((r) => /global/.test(r)), "the retired name contributed nothing");
-  assert.equal(loadPlaybook("writer", seats)[0]!.status, "proven");
+  assert.equal(loadPlaybook("writer", seats)[0]!.status, "trial", "§11：唔自動升 proven");
 });
 
 test("self-eviction: a trial bullet from an earlier produce that fails the same class again is removed", () => {

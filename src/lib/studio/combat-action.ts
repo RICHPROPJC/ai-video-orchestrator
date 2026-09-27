@@ -327,6 +327,15 @@ function actionWasUserEdited(shot: PyRow): boolean {
   );
 }
 
+/** 0928 V1（PLAN-v2）：詞族分類（kind）同 target 文字解耦——kind 供模板揀款，
+ *  target 文字引用該 shot 欄位原文，唔再翻譯做固定市場道具名。 */
+export function causalKindOf(text: string): "gate" | "crate" | "puddle" | null {
+  if (["gate", "latch", "闸", "閘", "门闩", "門閂"].some((t) => text.includes(t))) return "gate";
+  if (["crate", "produce", "菜箱", "货箱", "貨箱"].some((t) => text.includes(t))) return "crate";
+  if (["puddle", "wet floor", "水洼", "水窪", "积水", "積水"].some((t) => text.includes(t))) return "puddle";
+  return null;
+}
+
 function causalTargetHint(shot: PyRow, sourceWorldOnly = false): string {
   const text = [
     shot.environment_interaction,
@@ -348,14 +357,14 @@ function causalTargetHint(shot: PyRow, sourceWorldOnly = false): string {
     }
     return "the established source-image combat surface";
   }
-  if (["gate", "latch", "闸", "閘", "门闩", "門閂"].some((t) => text.includes(t))) {
-    return "the loading gate latch";
-  }
-  if (["crate", "produce", "菜箱", "货箱", "貨箱"].some((t) => text.includes(t))) {
-    return "the nearest wet produce crate";
-  }
-  if (["puddle", "wet floor", "水洼", "水窪", "积水", "積水"].some((t) => text.includes(t))) {
-    return "the shallow floor puddle";
+  // 0928 V1：命中詞族→target 用該 shot 原文（environment_interaction 等欄
+  // 原句引用）；唔中→中性 lane。環境資料由該鏡欄位提供，缺就係缺，唔代填
+  // 市場道具。
+  if (causalKindOf(text)) {
+    const source = [shot.environment_interaction, shot.environment_response, shot.location_transition]
+      .map((v) => String(v ?? "").trim())
+      .find((v) => v.length > 0);
+    if (source) return source;
   }
   return "the established combat lane";
 }
@@ -369,10 +378,16 @@ function synthesizeDistinctCausalAction(
   const defender = opponent(actor);
   const previousCarrier = route_action_carrier(previousAction)[0];
   const target = causalTargetHint(shot, sourceWorldOnly);
-  if (target === "the loading gate latch") {
+  const kind = causalKindOf(
+    [shot.environment_interaction, shot.environment_response, shot.location_transition]
+      .map((v) => String(v ?? ""))
+      .join(" ")
+      .toLowerCase(),
+  );
+  if (kind === "gate") {
     return (
-      `${actor} uses a controlled hip-turn to redirect ${defender} toward the loading gate; ` +
-      `${defender} braces against the latch and the shared momentum opens the route.`
+      `${actor} uses a controlled hip-turn to redirect ${defender} toward ${target}; ` +
+      `${defender} braces against it and the shared momentum opens the route.`
     );
   }
   if (previousCarrier === "kick") {
@@ -1237,6 +1252,8 @@ export function apply_combat_action_continuity(
     special_skill_key: unknown;
     existing_media?: PyRow[] | null;
     authored_requirement?: unknown;
+    /** 透傳 reconcile auto_repair（96ed3ec 起生產默認閂；test 對 golden 用 true） */
+    auto_repair?: boolean;
   },
 ): PyRow {
   if (!skillEnabled(opts.special_skill_key)) {
@@ -1268,6 +1285,7 @@ export function apply_combat_action_continuity(
     {
       action_baseline_seconds: baseline,
       fact_ledger: factLedger,
+      ...(opts.auto_repair !== undefined ? { auto_repair: opts.auto_repair } : {}),
       source_world_only:
         String(opts.special_skill_key ?? "").trim().toLowerCase() === HONG_KONG_COMIC_FIGHTER_SKILL,
     },

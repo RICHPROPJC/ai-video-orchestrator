@@ -31,7 +31,6 @@ import { piecesFromCallSheet, resolveScales, type WorldPiece } from "./world-sca
 import { chunkMomentSheets, ensurePropBoard, ensureSceneBoard, keyframeSheetPrompt, liveBoardLane, momentsForShot } from "./asset-board";
 import { diffPropPlates, nextPropBoardSeq, propAssetId, writePropPinManifest } from "./prop-plate-index";
 import { ensureDir, jobDir, jobFile, projectsDir, seatsDir } from "./paths";
-import { runReflector } from "./reflector";
 import { snapDurationToFrames, wavSeconds } from "./frame-grid";
 import { layDialogueBed } from "./dialogue-bed";
 import { plugShotWavs, plugVoiceEvents } from "./shot-wav-plug";
@@ -924,18 +923,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // rows written earlier in topological order already sit above it
     appendViolation(jobDir(jobId), hardErrorRow(error));
     emit(jobId, { agent: "system", level: "error", message });
-    // reflector: strictly after the job is marked failed, never inside a live
-    // stage — the 27B reads this grave and curatePlaybook (code) writes lessons
-    try {
-      const lessons = await runReflector({ jobId, crew: cfg.crew });
-      for (const line of lessons) emit(jobId, { agent: "system", level: "warn", message: line });
-    } catch (err) {
-      emit(jobId, {
-        agent: "system",
-        level: "warn",
-        message: `Reflector 未行到：${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
+    // V1（PLAN-v2 0928）：runReflector 自動調用已移除——判斷唔升格做規則（讀側
+    // 0927 §11 已斷，寫側呢度斬埋；seats/*.primitive.md 留做 job 收據）。
+    // 失敗真相全保：error message／violations 硬行／events 已寫齊。
   }
 }
 
