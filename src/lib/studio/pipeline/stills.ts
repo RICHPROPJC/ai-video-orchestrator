@@ -150,6 +150,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       // --only/--scene 同 live 路徑同款過濾：dry-run 驗嘅範圍要同真提交一致
       if (input.only && shot.id !== input.only) continue;
       if (input.scene && shot.scene !== input.scene && !(shot.beatId ?? "").startsWith(`${input.scene}.`)) continue;
+      try {
       const stillPng = path.join(ctx.stillDir!, `${shot.id}.png`);
       const prev = prevShotOf(ctx.timed!, shot);
       const blockoutMp4 = path.join(ctx.blockoutDir!, `${shot.id}.mp4`);
@@ -197,6 +198,19 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
         stepsOverride: input.steps,
       });
       receipts.push(relInJob(jobId, receiptFile));
+      } catch (err) {
+        // 0927 停法手術（照 motion loop c9b11b1 同款）：呢鏡材料缺＝blocked skip，
+        // 繼續其他鏡；基建錯照拸。dry-run 係驗收收據，一鏡缺件唔殺成個 dry-run。
+        const msg = err instanceof Error ? err.message : String(err);
+        const materialMissing = /photo_qc 未 GREEN|keyframe_positions_missing|identity_sheet_missing|C-form 冇|angle_portrait_missing|身份成張未齊/.test(msg);
+        if (!materialMissing) throw err;
+        emit(jobId, {
+          agent: "motion", level: "warn",
+          message: `${shot.id} blocked（${msg}）——dry-run 繼續其他鏡`,
+          data: { shot: shot.id, stage: "motion", blocked: msg },
+        });
+        continue;
+      }
     }
     ctx.job = patch(ctx.job, {
       status: "dry-run",
