@@ -186,9 +186,30 @@ export function expandBoards(opts: {
     },
     shots,
     ...(audioEvents.length ? { audioEvents } : {}),
-    // §12 優先2：boards 席採用收據收齊落 sheet（可追溯；issues 交 world 入修訂鏈）
-    ...(opts.boards?.some((b) => b.onImageAdoptions?.length) ? { onImageAdoptions: opts.boards.flatMap((b) => b.onImageAdoptions ?? []) } : {}),
-    ...(opts.boards?.some((b) => b.adoptionIssues?.length) ? { adoptionIssues: opts.boards.flatMap((b) => b.adoptionIssues ?? []) } : {}),
+    // §13.4：聲音契約——新編譯 sheet 明示 events 模式＋必要事件身份（loader
+    // 載入完整性對呢個 gate；零對白一樣寫，空集都係明示契約）。
+    soundContract: { mode: "events", expectedDialogueBeats: audioEvents.map((e) => e.beatId) },
+    // §12 優先2＋§13.3.2：boards 席採用收據收齊落 sheet——shotIds 係 beatId 指認
+    // （阿圖 packet 有 beats，最終 SH 編號呢度映射）：查 beat 涵蓋鏡（beatIds/
+    // audioBeats）；指認唔到→自動 adoptionIssue 回責任席，唔靜靜丟失。
+    ...((() => {
+      const shIdsOfBeat = (beat: string) => shots
+        .filter((sh) => (sh.beatIds ?? [sh.beatId]).includes(beat) || (sh.audioBeats ?? []).includes(beat))
+        .map((sh) => sh.id);
+      const rows = opts.boards.flatMap((b) => b.onImageAdoptions ?? []);
+      if (!rows.length) return {};
+      const mapped = rows.map((a) => {
+        const shotIds = [...new Set(a.shotIds.flatMap((id) => shIdsOfBeat(id)))];
+        return { row: { ...a, shotIds }, unmapped: shotIds.length === 0 ? a.shotIds : [] as string[] };
+      });
+      const extraIssues = mapped
+        .filter((m) => m.unmapped.length)
+        .map((m) => `onImageAdoption 指認嘅 beat（${m.unmapped.join("、")}）喺 callsheet 搵唔到對應鏡——回 boards 席重新指認`);
+      return {
+        onImageAdoptions: mapped.map((m) => m.row),
+        ...(extraIssues.length ? { adoptionIssues: [...(opts.boards.flatMap((b) => b.adoptionIssues ?? [])), ...extraIssues] } : opts.boards.some((b) => b.adoptionIssues?.length) ? { adoptionIssues: opts.boards.flatMap((b) => b.adoptionIssues ?? []) } : {}),
+      };
+    })()),
     voiceover: audioEvents.map((e) => e.text).join(" ") || shots.map((s) => s.dialogue).filter(Boolean).join(" "),
     scenes: outline.scenes.map((s) => ({ id: s.id, heading: s.heading, summary: s.summary, targetSec: s.targetSec })),
   };

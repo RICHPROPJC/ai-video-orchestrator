@@ -112,12 +112,15 @@ export async function plugVoiceEvents(opts: {
     // 純本地 config 真源以外嘅遠端內部改動唔假設已偵測（唔猜 endpoint 內部
     // 模型）；要強制失效改 config revision 即可。缺 provenance 唔當相同。
     const tts = loadConfig().tts;
+    // §13.1：effective clone 沿 runAukTts 實際參數解析（opts.promptWav ??
+    // cfg.tts.promptWav；synth wrapper 將 opts.cloneRef 作 promptWav 傳）——
+    // 冇 override 時 cfg.tts.promptWav 換內容同樣要失效，唔記 none。
     const curDeps = {
       text: ev.text,
       speaker: ev.speaker ?? "",
       via: src ? "plug" : "auk",
       srcSha: inputSha(src),
-      cloneSha: inputSha(opts.cloneRef),
+      cloneSha: inputSha(opts.cloneRef ?? tts.promptWav),
       ttsEndpoint: src ? undefined : tts.endpoint,
       ttsModel: src ? undefined : tts.model,
       ttsSeed: src ? undefined : tts.seed,
@@ -125,8 +128,10 @@ export async function plugVoiceEvents(opts: {
     const depsMatch = () => {
       try {
         const prev = JSON.parse(fs.readFileSync(textSidecar, "utf8")) as typeof curDeps;
+        // §13.1：全部適用輸入身份逐欄比——tts 三欄漏比＝config 改仍 cache hit
         return prev.text === curDeps.text && prev.speaker === curDeps.speaker
-          && prev.via === curDeps.via && prev.srcSha === curDeps.srcSha && prev.cloneSha === curDeps.cloneSha;
+          && prev.via === curDeps.via && prev.srcSha === curDeps.srcSha && prev.cloneSha === curDeps.cloneSha
+          && prev.ttsEndpoint === curDeps.ttsEndpoint && prev.ttsModel === curDeps.ttsModel && prev.ttsSeed === curDeps.ttsSeed;
       } catch {
         return false;
       }

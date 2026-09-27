@@ -47,16 +47,21 @@ async function authorCallSheet(
   //  返導演席 revise（creative 冪等同時跳過，runDirector 以 revise 輪行）。
   //  修訂後新 callsheet 落盤，world 段重算 gaps 清返——emit 之外嘅真回修。
   const placementGaps: { utterance: string; text: string; ts: string; attempts?: number }[] = readJob(jobId)?.placementGaps ?? [];
-  const openGaps = placementGaps.filter((g) => (g.attempts ?? 0) < GAP_BUDGET);
-  if (openGaps.length) {
-    // 額度內：遞增 attempts（經 patch——owner guard＋ctx 途徑一致；§9② 舊快照唔再覆蓋）
-    const job = readJob(jobId);
-    if (job) patch(job, { placementGaps: placementGaps.map((g) => ({ ...g, attempts: (g.attempts ?? 0) + 1 })) });
-  } else if (placementGaps.length) {
-    await io.speak("producer", `修訂額度耗盡（${placementGaps.length} 句 gap 已試 ${GAP_BUDGET} 輪）——唔再攔截 callsheet，gaps 留底收尾 blocked 判斷。`, "warn");
+  // §13.2：額度真源＝job 持久 soundRepairEpisode（author 攔截遞增；行內 loop／
+  // resume 共用；row attempts 淺 mirror）。唔用文字身份——改台詞唔重置。
+  const diskJob = readJob(jobId);
+  const epAttempts = diskJob?.soundRepairEpisode?.attempts ?? 0;
+  if (placementGaps.length && epAttempts < GAP_BUDGET) {
+    const nextAttempts = epAttempts + 1;
+    const episode = diskJob?.soundRepairEpisode
+      ? { ...diskJob.soundRepairEpisode, attempts: nextAttempts }
+      : { id: `sr-${Date.now().toString(36)}`, openedAt: new Date().toISOString(), source: placementGaps[0]!.text, attempts: nextAttempts };
+    if (diskJob) patch(diskJob, { placementGaps: placementGaps.map((g) => ({ ...g, attempts: nextAttempts })), soundRepairEpisode: episode });
+  } else if (placementGaps.length && epAttempts >= GAP_BUDGET) {
+    await io.speak("producer", `修訂額度耗盡（episode 已消耗 ${epAttempts}/${GAP_BUDGET} 輪，${placementGaps.length} 條 gap 未解）——唔再攔截 callsheet，gaps 留底收尾 blocked 判斷。`, "warn");
   }
   // §9④：唔再要求 input.resume——行內回修（pipeline world 後返嚟）一樣要攔
-  if (fs.existsSync(existing) && openGaps.length) {
+  if (fs.existsSync(existing) && placementGaps.length) {
     await io.speak(
       "producer",
       `回修：${placementGaps.length} 句聲畫對位缺口積留（${placementGaps.map((g) => g.text.slice(0, 24)).join("、").slice(0, 200)}）——唔照食 callsheet，帶差距返導演席修訂落點。`,
@@ -143,7 +148,22 @@ async function authorCallSheet(
           scriptMd: fs.existsSync(path.join(creativeDir, "script.md"))
             ? fs.readFileSync(path.join(creativeDir, "script.md"), "utf8")
             : "",
-          hint: `聲畫對位缺口（world 段 audioTimeline 對照發現，resume 回修）：${placementGaps.map((g) => g.text.slice(0, 60)).join("；").slice(0, 400)}——補返呢啲句子嘅 dialogueClock 落點`,
+          // §13.3.4：類型化回差——缺句同採用矛盾分開講，原文唔截（決策必要
+          // 內容）；附 boards 現行採用明細（安排＋理由）俾導演對住改。
+          hint: (() => {
+            const missing = placementGaps.filter((g) => !g.utterance.startsWith("adoption:"));
+            const adoptions = placementGaps.filter((g) => g.utterance.startsWith("adoption:"));
+            // 現行 callsheet 嘅採用明細（existing＝callsheet.json 路徑，同函作用域）
+            const sheetNow = fs.existsSync(existing)
+              ? JSON.parse(fs.readFileSync(existing, "utf8")) as { onImageAdoptions?: { placement: string; shotIds: string[]; plan: string; reason: string }[] }
+              : {};
+            const notes = (sheetNow.onImageAdoptions ?? []).map((a) => `${a.placement}→${a.shotIds.join("/")}：${a.plan}（理由：${a.reason}）`);
+            return [
+              missing.length ? `聲畫對位缺口（world audioTimeline 對照）：${missing.map((g) => g.text).join("；")}——補返呢啲句子嘅 dialogueClock 落點` : "",
+              adoptions.length ? `boards 席聲畫採用矛盾（placement/onImage 落地打交）：${adoptions.map((g) => g.text).join("；")}——重新協調 placement 同鏡面安排，唔可以靠加一句 placement 字串消掉語義矛盾` : "",
+              adoptions.length && notes.length ? `boards 現行採用明細：${notes.join("；")}` : "",
+            ].filter(Boolean).join("\n") || undefined;
+          })(),
         }
       : undefined;
     let plan = await runDirector(

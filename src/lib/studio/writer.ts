@@ -32,6 +32,20 @@ export function loadCallSheet(jsonPath: string): CallSheet {
     }
   }
   if (!sheet.shots!.length) throw new Error(`callsheet ${jsonPath} has no shots`);
+  // §13.4：聲音契約載入完整性——新式 sheet（soundContract 明示 events 模式）
+  // 驗 audioEvents 存在＋必要事件身份齊（每個 expectedDialogueBeats 有對應
+  // event）；缺→拒載（來源未知明示待解，唔靜靜降級 legacy）。冇 soundContract
+  // key＝合法 legacy plug 路照行（本來就係佢模式，唔係降級）。
+  if (sheet.soundContract?.mode === "events") {
+    if (!Array.isArray(sheet.audioEvents)) {
+      throw new Error(`callsheet ${jsonPath} soundContract=events 但 audioEvents 整組遺失——新式聲音契約破損，來源未知待解（唔自動降級 legacy）`);
+    }
+    const got = new Set(sheet.audioEvents.map((e) => e.beatId));
+    const missingBeats = sheet.soundContract.expectedDialogueBeats.filter((b) => !got.has(b));
+    if (missingBeats.length) {
+      throw new Error(`callsheet ${jsonPath} soundContract=events 但 audioEvents 缺必要事件：${missingBeats.join(",")}——新式聲音契約破損，來源未知待解`);
+    }
+  }
   for (const s of sheet.shots!) {
     const need = (
       ["id", "index", "heading", "size", "location", "action", "dialogue", "durationSec", "camera", "marks", "stillPrompt", "motionPrompt"] as const

@@ -153,10 +153,18 @@ export function boardsSceneSchema(ctx: {
    *  場景引用（聲橋）對呢個集驗。seat-boards callsite 傳；冇佢而又出現跨
    *  場景 audioBeats 就報驗唔到（fail-loud，唔靜靜放行）。 */
   scriptBeatIds?: string[];
+  /** §13.3.1：導演聲畫採用意圖（directorSkeleton.dialoguePlacements）——
+   *  有意圖嘅 callsheet，boards 必須交採用結果（onImageAdoptions 或
+   *  adoptionIssues 任一）；冇意圖嘅流程合法 N/A 唔強制填表。 */
+  dialoguePlacements?: unknown[];
 }) {
   const byBeat = new Map(ctx.beats.map((b) => [b.id, b]));
   const cast = new Set(ctx.characters.map((c) => c.id));
   return boardsSceneShape.superRefine((scene, report) => {
+    // §13.3.1：採用 coverage gate——optional 欄唔可以「靜靜省略當無 gap」
+    if ((ctx.dialoguePlacements?.length ?? 0) > 0 && !(scene.onImageAdoptions?.length) && !(scene.adoptionIssues?.length)) {
+      report.addIssue({ code: "custom", path: ["onImageAdoptions"], message: "callsheet 有 dialoguePlacements（聲畫採用意圖）但本場冇交 onImageAdoptions 亦冇 adoptionIssues——每條 placement 要有明示採用結果" });
+    }
     if (scene.sceneId !== ctx.sceneId) {
       report.addIssue({ code: "custom", path: ["sceneId"], message: `this envelope is scene ${ctx.sceneId}, not ${scene.sceneId}` });
     }

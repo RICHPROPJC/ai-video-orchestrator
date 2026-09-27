@@ -274,7 +274,7 @@ export async function runBoards(
         })),
         previousSceneHandoff: carried,
       }),
-      schema: boardsSceneSchema({ sceneId: scene.id, beats, characters, budgetSec, scriptBeatIds: script.scenes.flatMap((sc) => sc.beats.map((b) => b.id)) }),
+      schema: boardsSceneSchema({ sceneId: scene.id, beats, characters, budgetSec, scriptBeatIds: script.scenes.flatMap((sc) => sc.beats.map((b) => b.id)), dialoguePlacements: opts.directorSkeleton?.dialoguePlacements }),
       normalize: (raw, note) => padBoardDurations(raw, budgetSec, note),
       receiptDir: io.receiptDir,
       fetchImpl: io.fetchImpl,

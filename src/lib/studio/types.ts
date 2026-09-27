@@ -328,6 +328,11 @@ export type CallSheet = {
    *  有呢個 key＝聲音／畫面分離生效（voice hop 逐事件一 take、逐鏡切片；
    *  soundQC 對事件序）；冇（舊 plug callsheet）＝每鏡一句舊路，行為照舊。 */
   audioEvents?: AudioEvent[];
+  /** §13.4：聲音契約版本（新編譯 sheet 明示）——events 模式＋必要事件身份
+   *  （有對白 beat id 全集）。loadCallSheet 對呢個 gate：audioEvents 整組
+   *  遺失／缺必要事件→拒載（來源未知明示待解）。冇呢個 key＝合法 legacy
+   *  plug 路照行（唔降級——本來就係佢模式）。 */
+  soundContract?: { mode: "events"; expectedDialogueBeats: string[] };
   /** §12 優先2：boards 席聲畫採用收據（scene 級收集）——生成前計劃語義
    *  判斷；adoptionIssues 由 world 併入 placementGaps 行同一有界修訂鏈。 */
   onImageAdoptions?: { placement: string; shotIds: string[]; plan: string; reason: string }[];
@@ -423,7 +428,12 @@ export type JobRecord = {
   /** §7②（0928）：聲畫對位缺口——audioTimeline 對照 missing 嘅句子。
    *  resume 時 authorStage 讀到＝強制導演 revise（帶差距回責任席），
    *  唔照食舊 callsheet。修訂成功後 gaps 由新 callsheet 重算清返。 */
-  placementGaps?: { utterance: string; text: string; ts: string; attempts?: number }[];
+  placementGaps?: { utterance: string; text: string; ts: string; attempts?: number; shotIds?: string[] }[];
+  /** §13.2：聲畫修復 episode（job 持久）——額度真源。開＝首次 gap 出現；
+   *  閉＝gaps 全清零；再現 gap 開新 episode（真正新一輪修復）。attempts＝
+   *  episode 內已消耗修訂次數（author 攔截遞增；行內 loop/resume 共用）。
+   *  beatId/text/issue 描述係內容映射，唔係開新 episode 條件——改台詞唔重置。 */
+  soundRepairEpisode?: { id: string; openedAt: string; source: string; attempts: number } | null;
   retries: { stills: number; voice: number; motion: number };
   outputs: {
     stills: string[];

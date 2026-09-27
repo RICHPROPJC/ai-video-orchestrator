@@ -346,26 +346,25 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     }
     // 重算語義：gaps＝今次對照嘅 missing 全集（revise 後已解嘅自然消失）；
     // attempts 跨 resume 繼承（§8.2 修訂額度唔被重算重置）
-    // §12 優先1：額度跟修復事件走——繼承鍵＝utterance 原文（text），唔係
-    // beatId：修訂輪阿文重跑重編 beatId，同一句對白（同 text）承接舊額度，
-    // 唔歸零、單次重排唔當新 episode。同 text 重複句共享額度（保守側：多計
-    // 唔漏計）。額度真源＝job.placementGaps（磁碟；author 攔截／行內 loop／
-    // resume 共用，10.1 後 explicit patch 直達）。
-    const prevAttempts = new Map((ctx.job.placementGaps ?? []).map((g) => [g.text, g.attempts ?? 0]));
-    // §12 優先2：boards 席採用矛盾行同一有界修訂鏈——sheet.adoptionIssues
-    // 併入 placementGaps（attempts 繼承鍵＝text 同一套；額度同池；emit 播出
-    // 鏡 blocked 唔適用——issues 係計劃層矛盾，修訂輪 author/導演處理）。
+    // §13.2：額度真源改 job 持久 soundRepairEpisode（§12 text 鍵只救同文重編，
+    // 改台詞仍重置——superseded；row attempts＝episode 淺 mirror）。
+    // §12 優先2＋§13.3.3：adoption issues 併 placementGaps；§13.2 episode＝額度
+    // 真源（row attempts 淺 mirror；唔用文字身份決定額度）。
     const adoptionGapRows = (ctx.locked!.adoptionIssues ?? []).map((issue, i) => ({
       utterance: `adoption:${i}`,
       text: `聲畫採用矛盾：${issue}`,
       ts: new Date().toISOString(),
-      attempts: prevAttempts.get(`聲畫採用矛盾：${issue}`) ?? 0,
     }));
+    const gapsAll = [
+      ...missingRows.map((m) => ({ utterance: m.beatId, text: m.text, ts: new Date().toISOString() })),
+      ...adoptionGapRows,
+    ];
+    let episode = readJob(jobId)?.soundRepairEpisode ?? null;
+    if (!gapsAll.length) episode = null;
+    else if (!episode) episode = { id: `sr-${Date.now().toString(36)}`, openedAt: new Date().toISOString(), source: gapsAll[0]!.text, attempts: 0 };
     ctx.job = patch(ctx.job, {
-      placementGaps: [
-        ...missingRows.map((m) => ({ utterance: m.beatId, text: m.text, ts: new Date().toISOString(), attempts: prevAttempts.get(m.text) ?? 0 })),
-        ...adoptionGapRows,
-      ],
+      placementGaps: gapsAll.map((g) => ({ ...g, attempts: episode?.attempts ?? 0 })),
+      soundRepairEpisode: episode,
     });
     // §8.2：受影響生成阻住——gap 句嘅實際播出鏡 per-shot blocked（V3.1
     // blockedShots 自動入帳；motion loop 見 placement-gap skip 唔燒）
@@ -380,15 +379,23 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     // 集合：已解（唔喺本輪 gap 播出鏡）移除、他 stage 原因保留、未解全在
     // （唔再等同 stage pass event 清——修好即刻解鎖；revision 刪鏡亦自然清走）。
     const openGapShots = new Set(missingRows.flatMap((r) => r.coveredByShotIds ?? []));
+    const nowTs = new Date().toISOString();
+    // §13.3.3：採用矛盾冇結構化鏡指認——阻依賴該決定嘅範圍（boards→stills
+    // 成鏈）：全部鏡 blocked，修好（adoption rows 清）先解鎖。
+    const adoptionBlockRows = adoptionGapRows.length
+      ? ctx.continuity!.boards.map((b) => ({ shot: b.id, stage: "audio-placement", reason: `adoption-gap:計劃採用矛盾未解（${adoptionGapRows.length} 條，額度內修訂中）`, ts: nowTs }))
+      : [];
     const diskRows = readJob(jobId)?.blockedShots ?? [];
     const keptRows = diskRows.filter((b) => b.stage !== "audio-placement");
     ctx.job = patch(ctx.job, {
-      blockedShots: [...keptRows, ...[...openGapShots].map((shotId) => ({
-        shot: shotId,
-        stage: "audio-placement",
-        reason: `placement-gap:${missingRows.filter((r) => (r.coveredByShotIds ?? []).includes(shotId)).map((r) => r.beatId).join(",")}`,
-        ts: new Date().toISOString(),
-      }))],
+      blockedShots: [...keptRows,
+        ...[...openGapShots].map((shotId) => ({
+          shot: shotId,
+          stage: "audio-placement",
+          reason: `placement-gap:${missingRows.filter((r) => (r.coveredByShotIds ?? []).includes(shotId)).map((r) => r.beatId).join(",")}`,
+          ts: nowTs,
+        })),
+        ...adoptionBlockRows],
     });
     fs.writeFileSync(jobFile(jobId, "creative", "audio-timeline.json"), JSON.stringify({
       generatedAt: new Date().toISOString(),
@@ -414,10 +421,24 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     // 永久 blocked）；他 stage 未解原因保留。absence 屬必需資料遺失（導演
     // 聲畫路缺 events）嘅分流喺 creative §9③ runtime 判嗰度（events 有 text
     // ＝required 缺全 missing），呢度淨收合法無事件轉移。
+    // §13.3.3：issues 收集獨立於有冇音訊事件——無事件分支照收 adoption
+    // gaps＋blocked（唔清採用矛盾；placement 類照清）。
+    const adoptionGapRows = (ctx.locked!.adoptionIssues ?? []).map((issue, i) => ({
+      utterance: `adoption:${i}`,
+      text: `聲畫採用矛盾：${issue}`,
+      ts: new Date().toISOString(),
+    }));
+    let episode = readJob(jobId)?.soundRepairEpisode ?? null;
+    if (!adoptionGapRows.length) episode = null;
+    else if (!episode) episode = { id: `sr-${Date.now().toString(36)}`, openedAt: new Date().toISOString(), source: adoptionGapRows[0]!.text, attempts: 0 };
+    const adoptionBlockRows = adoptionGapRows.length
+      ? ctx.continuity!.boards.map((b) => ({ shot: b.id, stage: "audio-placement", reason: `adoption-gap:計劃採用矛盾未解（${adoptionGapRows.length} 條，額度內修訂中）`, ts: new Date().toISOString() }))
+      : [];
     const diskRows = readJob(jobId)?.blockedShots ?? [];
     ctx.job = patch(ctx.job, {
-      placementGaps: [],
-      blockedShots: diskRows.filter((b) => b.stage !== "audio-placement"),
+      placementGaps: adoptionGapRows.map((g) => ({ ...g, attempts: episode?.attempts ?? 0 })),
+      soundRepairEpisode: episode,
+      blockedShots: [...diskRows.filter((b) => b.stage !== "audio-placement"), ...adoptionBlockRows],
     });
     fs.writeFileSync(jobFile(jobId, "creative", "audio-timeline.json"), JSON.stringify({
       generatedAt: new Date().toISOString(),

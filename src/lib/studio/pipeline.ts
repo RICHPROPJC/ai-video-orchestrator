@@ -262,8 +262,10 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
   // blocked，收尾統一 verdict 兜底）。唔另造 runner——即場 stage 控制。
   for (let repairRound = 0; repairRound < GAP_BUDGET; repairRound++) {
     if (ctx.stopped) break;
-    const gapsNow = readJob(jobId)?.placementGaps ?? [];
-    if (!gapsNow.length || !gapsNow.some((g) => (g.attempts ?? 0) < GAP_BUDGET)) break;
+    // §13.2：額度真源＝episode（行內 loop 同 author/resume 共用）
+    const jobNow = readJob(jobId);
+    const gapsNow = jobNow?.placementGaps ?? [];
+    if (!gapsNow.length || (jobNow?.soundRepairEpisode?.attempts ?? 0) >= GAP_BUDGET) break;
     emit(jobId, {
       agent: "producer", level: "warn",
       message: `自主回修第 ${repairRound + 1} 輪：${gapsNow.length} 句聲畫 gap 額度內——返 author 修訂後重算 world`,
