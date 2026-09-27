@@ -403,9 +403,12 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       });
       plateDiff = diffPropPlates(assetsDir, propMark, [...props.keys()]);
       if (plateDiff.missingIds.length > 0) {
-        throw new Error(`道具板未補齊：${plateDiff.missingIds.join("、")}（今次入庫 ${madeProps.pinned.length}）`);
+        // 0927 停法手術：缺板唔殺 job——warn 照行，世界食到幾多得幾多，
+        // 下游 readiness/QC 對實際缺件各自反映。
+        await speak("layout", `道具板未補齊：${plateDiff.missingIds.join("、")}——照行（入庫 ${madeProps.pinned.length}），下游各自反映。`, "warn");
+      } else {
+        await speak("layout", `道具差集補 ${madeProps.pinned.length} 件，已有板唔重出。`);
       }
-      await speak("layout", `道具差集補 ${madeProps.pinned.length} 件，已有板唔重出。`);
     }
     if (plateDiff.resolved.length > 0) writePropPinManifest(propMark, plateDiff.manifest);
   }
@@ -590,7 +593,14 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         // bakeSelectionFrames 對 glb 係 optional（--glb 有先傳），行
         // glb-less bake（淨 world＋相機）。呢個閘淨係捉「有角色但要 rig」。
         if (!input.dryRun && rigId && !glb) {
-          throw new Error(`${shot.id}: blockout 要呢套 cast 嘅 rig，而家冇 ${rigId}`);
+          // 0927 停法手術：呢鏡 rig 缺＝blocked skip（per-item 唔殺成隊），
+          // 唔郁 GPU；下游 stills 對呢鏡會自行 blocked。
+          emit(jobId, {
+            agent: "layout", level: "warn",
+            message: `${shot.id} blockout rig 缺（${rigId}）——呢鏡 blocked，繼續其他鏡`,
+            data: { shot: shot.id, stage: "world", blocked: "rig-missing", rigId },
+          });
+          continue;
         }
         const aim = worldPlan?.shots.find((s) => s.id === shot.id);
         const worldJson = path.join(worldDir, "assemble.json");
@@ -623,7 +633,14 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         });
         trace.blender = `blender-workbench ${done.frames}f`;
       } else {
-        throw new Error(`blockout_needs_rig: ${shot.id} 冇 motion-select，方塊人偶唔入正片`);
+        // 0927 停法手術：冇 motion-select＝呢鏡 blocked skip（方塊人偶唔入正片
+        // 呢條不變式照守——只係唔再用殺 job 嘅方式守）。
+        emit(jobId, {
+          agent: "layout", level: "warn",
+          message: `blockout_needs_rig: ${shot.id} 冇 motion-select——呢鏡 blocked，繼續其他鏡`,
+          data: { shot: shot.id, stage: "world", blocked: "motion-select-missing" },
+        });
+        continue;
       }
     }
     const f0png = path.join(blockoutDir, `${shot.id}.f0.png`);
