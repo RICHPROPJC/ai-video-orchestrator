@@ -18,6 +18,12 @@ export type WriterPacket = {
   /** SC-CREATIVE-OS-0927：導演席 treatment（有觀看價值嘅全片方案）。有佢
    *  嗰陣 writer 唔係由裸 brief 發明，係喺 treatment 上寫對白／人物細節。 */
   treatment?: string;
+  /** 裁決 0928 A（SEAT-AUDIT-DECISION §3）：beats 席齊料——編劇劇本對白
+   *  ＋導演聲畫落點（全片時間軸；beats call 按本場窗口揀相關）。寫作責任
+   *  有可追溯分工：改呢啲已採用內容要明示修訂（charter 規則），唔准默默
+   *  覆蓋第一次寫作成果。 */
+  scriptDialogue?: { line: string }[];
+  directorPlacements?: { word: string; startSec?: number; endSec?: number; onImage?: string }[];
   targetSec: number;
   language?: "auto" | "zh-Hant" | "zh-Hans" | "yue" | "en";
   castRoster: string[];
@@ -181,8 +187,21 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
 
   const speakingNames = outline.characters.filter((c) => c.speaks).map((c) => c.name);
   const scenes: Script["scenes"] = [];
+  // 裁決 0928 A：本場窗口映射——場起點＝前列場 targetSec 累計（同
+  // deriveAudioEvents cut-order 累計同一演算法）；導演 placements 係全片
+  // 時間軸，按區間相交揀本場相關（保留跨場重疊，唔切半句）。
+  let filmT = 0;
+  const sceneWindows = outline.scenes.map((sc) => {
+    const w = { id: sc.id, start: filmT, end: filmT + sc.targetSec };
+    filmT = w.end;
+    return w;
+  });
   for (const [i, scene] of outline.scenes.entries()) {
     if (i > 0 && !io.fetchImpl) await new Promise((r) => setTimeout(r, 5000));
+    const win = sceneWindows[i]!;
+    const scenePlacements = (packet.directorPlacements ?? []).filter(
+      (pl) => (pl.endSec ?? 0) > win.start - 1e-9 && (pl.startSec ?? 0) < win.end + 1e-9,
+    );
     const pass = await chatJsonSeat({
       seat: "writer",
       unit: scene.id,
@@ -193,6 +212,19 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
       system: WRITER_BEATS_CHARTER,
       user: JSON.stringify({
         scene,
+        // 裁決 0928 A：beats 席齊料（之前淨 outline 殼）——原 brief、全片
+        // 導演 treatment、編劇已寫對白、本場導演聲畫落點（全片時間軸）。
+        // 已採用內容要延續；改對白／講者／時間＝明示修訂記喺 thinking。
+        brief_verbatim: packet.brief,
+        ...(packet.treatment ? { director_treatment: packet.treatment } : {}),
+        ...(packet.scriptDialogue?.length ? { script_dialogues: packet.scriptDialogue.map((d) => d.line) } : {}),
+        ...(scenePlacements.length ? {
+          director_scene_placements: scenePlacements.map((pl) => ({
+            word: pl.word, filmStartSec: pl.startSec, filmEndSec: pl.endSec,
+            ...(pl.onImage ? { onImage: pl.onImage } : {}),
+            sceneStartSec: Math.max(0, (pl.startSec ?? 0) - win.start),
+          })),
+        } : {}),
         title: outline.title,
         logline: outline.logline,
         mood: outline.mood,

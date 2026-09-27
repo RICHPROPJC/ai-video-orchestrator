@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { emit } from "../store";
 import { loadCallSheet } from "../writer";
 import { runWriter } from "../seat-writer";
-import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreativeManifest, updateCreativeManifest, unplacedDialogueOf, declaredDialogueOf, planDivergence } from "../creative";
+import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreativeManifest, updateCreativeManifest, unplacedDialogueOf, declaredDialogueOf, dialogueSignalsOf, planDivergence } from "../creative";
 import type { DirectorSkeleton } from "../seat-boards";
 import { runBoards } from "../seat-boards";
 import { jobDir, jobFile, seatsDir } from "../paths";
@@ -95,6 +95,9 @@ async function authorCallSheet(
   const creativeDir = path.join(jobDir(jobId), "creative");
   let treatment: string | undefined;
   let directorSkeleton: DirectorSkeleton | undefined;
+  // 裁決 0928 A：編劇對白＋導演聲畫落點抽出分支（runWriter beats packet 食）
+  let scriptDialogueLines: string[] | undefined;
+  let directorPlacements: { word: string; startSec?: number; endSec?: number; onImage?: string }[] | undefined;
   const skeletonOf = (plan: {
     vision?: unknown; rhythmMap?: { beatId: string; label?: string; job?: string; rhythm?: string; deletionLoss?: string }[];
     shots?: { shotId: string; startSec?: number; endSec?: number; purpose?: string; audienceEye?: string; cutReason?: string; dialogue?: string; frame?: string }[];
@@ -126,6 +129,8 @@ async function authorCallSheet(
     );
     treatment = plan.treatment;
     directorSkeleton = skeletonOf(plan);
+    // 裁決 0928 A：編劇劇本要傳得出分支（runWriter packet 食佢嘅對白）
+
     // BRIEF_TO_SCRIPT：故事流（flow 提劇本/故事/敘事）→ 編劇席正式 callsite
     // （非故事流——MV/教學/素材剪輯——唔行呢段，flow 淨係導演宣告，執行器
     // 未有對應流程，詳見 IMPLEMENTATION_MAP 誠實位）。
@@ -138,6 +143,7 @@ async function authorCallSheet(
           ], targetSec },
         { crew: cfg.crew, model: cfg.crew.directorModel ?? "", receiptDir, fallbackModel: cfg.crew.secondFallback },
       );
+      scriptDialogueLines = dialogueSignalsOf(script).map((d) => d.line);
       fs.writeFileSync(path.join(creativeDir, "script.md"), script.script_md);
       fs.writeFileSync(path.join(creativeDir, "script.json"), JSON.stringify(script, null, 2));
       // §6：script dependsOn plan（上游 sha），同 plan 同鏈
@@ -195,15 +201,21 @@ async function authorCallSheet(
           directorSkeleton = skeletonOf(revised);
         }
       }
+      directorPlacements = (plan.dialogueClock?.placements ?? []).map((pl) => ({
+        word: pl.word, startSec: pl.startSec, endSec: pl.endSec, ...(pl.onImage ? { onImage: pl.onImage } : {}),
+      }));
       treatment = `${script.script_md}
 
 【導演 treatment 原稿】
 ${plan.treatment}`;
     }
   } else {
-    const planOnDisk = JSON.parse(fs.readFileSync(path.join(creativeDir, "director-plan.json"), "utf8")) as Parameters<typeof skeletonOf>[0] & { treatment?: string };
+    const planOnDisk = JSON.parse(fs.readFileSync(path.join(creativeDir, "director-plan.json"), "utf8")) as Parameters<typeof skeletonOf>[0] & { treatment?: string; dialogueClock?: { placements?: { word: string; startSec?: number; endSec?: number; onImage?: string }[] } };
     treatment = planOnDisk.treatment;
     directorSkeleton = skeletonOf(planOnDisk);
+    directorPlacements = (planOnDisk.dialogueClock?.placements ?? []).map((pl) => ({
+      word: pl.word, startSec: pl.startSec, endSec: pl.endSec, ...(pl.onImage ? { onImage: pl.onImage } : {}),
+    }));
   }
   const index = (doc: { id: string; text: string; shotId?: string }) => {
     upsertDoc({ id: doc.id, slate: jobId, modality: "text", shotId: doc.shotId, text: doc.text });
@@ -215,6 +227,12 @@ ${plan.treatment}`;
     {
       brief: input.brief,
       ...(treatment ? { treatment } : {}),
+      // 裁決 0928 A：beats 席齊料——編劇對白＋導演聲畫落點隨 packet 落
+      // 場（runWriter 內部按本場窗口揀相關 placements）。
+      ...(scriptDialogueLines?.length
+        ? { scriptDialogue: scriptDialogueLines.map((line) => ({ line })) }
+        : {}),
+      ...(directorPlacements?.length ? { directorPlacements } : {}),
       targetSec,
       language: input.language,
       castRoster: readCastRoster(input.castRosterPath),
