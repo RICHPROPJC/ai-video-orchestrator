@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { emit, readJob } from "../store";
+import { emit, readJob, writeJob } from "../store";
 import { loadCallSheet } from "../writer";
 import { runWriter } from "../seat-writer";
 import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreativeManifest, updateCreativeManifest, unplacedDialogueOf, declaredDialogueOf, dialogueSignalsOf, planDivergence } from "../creative";
@@ -46,8 +46,19 @@ async function authorCallSheet(
   // §7②（0928）：回修路徑——placementGaps 有積留＝唔照食 callsheet，帶差距
   //  返導演席 revise（creative 冪等同時跳過，runDirector 以 revise 輪行）。
   //  修訂後新 callsheet 落盤，world 段重算 gaps 清返——emit 之外嘅真回修。
-  const placementGaps: { utterance: string; text: string; ts: string }[] = readJob(jobId)?.placementGaps ?? [];
-  if (input.resume && fs.existsSync(existing) && placementGaps.length) {
+  const placementGaps: { utterance: string; text: string; ts: string; attempts?: number }[] = readJob(jobId)?.placementGaps ?? [];
+  const GAP_BUDGET = 2; // §8.2：跨 resume 修訂額度（同 gap 身 attempts 計，唔因重啟重置）
+  const openGaps = placementGaps.filter((g) => (g.attempts ?? 0) < GAP_BUDGET);
+  if (openGaps.length) {
+    // 額度內：遞增 attempts（本次將行 revise 輪）
+    const job = readJob(jobId);
+    if (job) {
+      writeJobPatchAttempts(job.id, placementGaps.map((g) => ({ ...g, attempts: (g.attempts ?? 0) + 1 })));
+    }
+  } else if (placementGaps.length) {
+    await io.speak("producer", `修訂額度耗盡（${placementGaps.length} 句 gap 已試 ${GAP_BUDGET} 輪）——唔再攔截 callsheet，gaps 留底收尾 blocked 判斷。`, "warn");
+  }
+  if (input.resume && fs.existsSync(existing) && openGaps.length) {
     await io.speak(
       "producer",
       `回修：${placementGaps.length} 句聲畫對位缺口積留（${placementGaps.map((g) => g.text.slice(0, 24)).join("、").slice(0, 200)}）——唔照食 callsheet，帶差距返導演席修訂落點。`,
@@ -320,6 +331,13 @@ ${plan.treatment}`;
 
 /** 拆層段（author）：由 runPipeline 原序搬入，行為零變——絕唔重排 call 次序、
  *  絕唔刪／合併任何 emit/speak/patch；early-return 以 ctx.stopped 回報。 */
+
+/** §8.2：gap attempts 遞增（入口側寫；pipeline 期間 owner guard 走 patch） */
+function writeJobPatchAttempts(id: string, gaps: { utterance: string; text: string; ts: string; attempts?: number }[]): void {
+  const job = readJob(id);
+  if (job) writeJob({ ...job, placementGaps: gaps });
+}
+
 export async function authorStage(ctx: Ctx): Promise<void> {
   const { jobId, input, cfg } = ctx;
   const { speak, think } = ctx;

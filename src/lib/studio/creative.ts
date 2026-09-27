@@ -584,11 +584,13 @@ export type AudioTimelineRow = {
   underSec?: number;
   note?: string;
   /** 裁決 0928 D：聲畫對位收據——matched（含 onImage/偏離）或 missing */
-  placement?: "matched" | "missing";
+  placement?: "matched" | "missing" | "na" | "unresolved";
   onImage?: string;
   placementDriftSec?: number;
   /** §7①：實際播出鏡（audioBeats 對照）——剪接區間收據 */
   coveredByShotIds?: string[];
+  /** §8.1：onImage 對照收據——導演指定詞 vs 實際播出鏡文字（詞級 hit 紀錄） */
+  onImageCheck?: { word: string; seenInCoverShots: boolean }[];
 };
 
 export async function audioTimelineRows(
@@ -602,6 +604,8 @@ export async function audioTimelineRows(
   placements?: { word?: string; startSec?: number; endSec?: number; onImage?: string }[],
 ): Promise<AudioTimelineRow[]> {
   const rows: AudioTimelineRow[] = [];
+  // §8.4：消耗式配對——同句重複講時逐個 placement 淨認領一次（唔會全部撞第一落點）
+  const placementPool = (placements ?? []).map((pl) => ({ pl, used: false }));
   for (const ev of events) {
     const take = takes.find((t) => t.beatId === ev.beatId);
     const actual = take ? await wavSecOf(take.file).catch(() => null) : null;
@@ -619,23 +623,31 @@ export async function audioTimelineRows(
         ? { underSec: Number((windowSec - actual).toFixed(3)), note: "講得快過窗口——bed 照墊" }
         : {}),
       ...(take ? {} : { note: "take 缺（事件冇鏡覆蓋？plugVoiceEvents 應已 throw）" }),
-      ...(placements?.length
-        ? (() => {
+      ...(placements === undefined
+        ? { placement: "na" as const, note: "導演冇交 dialogueClock（流程唔要求落點＝N/A）" }
+        : (() => {
             const norm = (x: string) => x.replace(/[。．，,、！!？?…；;\s「」『』"']/g, "");
-            const hit = placements.find((pl) => {
-              const n = norm(String(pl.word ?? ""));
-              const e = norm(ev.text);
+            const e = norm(ev.text);
+            const at = placementPool.findIndex((slot) => {
+              if (slot.used) return false;
+              const n = norm(String(slot.pl.word ?? ""));
               return n.length > 0 && (e.includes(n) || n.includes(e));
             });
-            if (!hit) return { placement: "missing" as const, note: "導演冇呢句嘅落點（聲畫對位缺口——回導演席）" };
+            if (at < 0) return { placement: "missing" as const, note: "導演冇呢句嘅落點（聲畫對位缺口——回導演席）" };
+            placementPool[at]!.used = true;
+            const hit = placementPool[at]!.pl;
+            // §8.4：0→0 placeholder（未排時間）唔算 matched——標 unresolved
+            if ((hit.endSec ?? 0) <= (hit.startSec ?? 0) + 1e-9) {
+              return { placement: "unresolved" as const, note: "落點 0→0 placeholder（導演未排時間）——唔冒充已排" };
+            }
             const drift = (hit.startSec ?? 0) - ev.startSec;
             return {
               placement: "matched" as const,
               ...(hit.onImage ? { onImage: hit.onImage } : {}),
-              ...(Math.abs(drift) > 1 ? { placementDriftSec: Number(drift.toFixed(3)), note: `落點偏離導演安排 ${drift.toFixed(1)}s` } : {}),
+              ...(drift !== 0 ? { placementDriftSec: Number(drift.toFixed(3)) } : {}),
+              ...(Math.abs(drift) > 1 ? { note: `落點偏離導演安排 ${drift.toFixed(1)}s（誤差接受度留採用方案判斷）` } : {}),
             };
-          })()
-        : {}),
+          })()),
     });
   }
   return rows;

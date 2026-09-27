@@ -333,6 +333,10 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         : `跨shot接駁：${segments.length} 鏡全部單鏡render（冇鏈）。`,
     );
     for (const shot of motionShots) {
+      // §8.2：placement-gap blocked 鏡唔燒（world 段 gap 對照後已 emit blocked）
+      if ((ctx.job.blockedShots ?? []).some((b) => b.shot === shot.id && b.reason.startsWith("placement-gap"))) {
+        continue;
+      }
   try {
         if (!pinQcAccepted(ctx.stillDir!, shot.id)) {
           throw new Error(`${shot.id}: photo_qc 未 GREEN（sha 或 schema 唔吻合）— 唔准燒 H3`);
@@ -837,6 +841,20 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     ctx.job = patch(ctx.job, { soundQc: sound, providers: trace, progress: 82 });
     await speak("soundQc", `Sound QC ${sound.pass ? "PASS" : "FAIL"}  peak ${sound.peak.toFixed(2)}  silence ${sound.silenceRatio.toFixed(2)}`, sound.pass ? "pass" : "fail");
 
+    // §8.3：revision guard——cut_plan/audio-timeline 兩份收據同源比對（同 world
+    // 段生成時點鎖定）；唔夾＝半寫入/人手改過，具名邊份過期，唔准混做交付。
+    {
+      const cutPlanReceipt = JSON.parse(fs.readFileSync(jobFile(jobId, "cut_plan.json"), "utf8")) as { callsheetDigest?: string };
+      const tlFile = path.join(jobDir(jobId), "creative", "audio-timeline.json");
+      const tlReceipt = fs.existsSync(tlFile)
+        ? JSON.parse(fs.readFileSync(tlFile, "utf8")) as { callsheetDigest?: string }
+        : null;
+      if (tlReceipt && cutPlanReceipt.callsheetDigest !== tlReceipt.callsheetDigest) {
+        throw new Error(
+          `revision_mismatch: cut_plan.json（digest ${(cutPlanReceipt.callsheetDigest ?? "missing").slice(0, 12)}）與 audio-timeline.json（digest ${(tlReceipt.callsheetDigest ?? "missing").slice(0, 12)}）唔同源——邊份過期見 callsheetDigest，唔准混做最終交付`,
+        );
+      }
+    }
     // editor: machine gate, per-shot mux (own wav, drop H3 audio), concat only after gate
     // MULTISHOT_WIRE: a multi-shot segment muxes ONCE against its concatenated
     // wav — the segment is one continuous take
@@ -938,7 +956,9 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     };
     fs.writeFileSync(jobFile(jobId, "delivery", "qc.json"), JSON.stringify(report, null, 2));
     fs.writeFileSync(jobFile(jobId, "delivery", "callsheet.md"), markdownCallSheet(ctx.timed!, ctx.job.slate));
-    const pictureLocked = report.locked;
+    // §8.2：placementGaps 未清（額度耗盡或未修）＝唔准 locked——preview 可以
+    // 存在但 job/delivery 唔冒充已驗收（照 §7/§8「blocked 唔係 failed」）
+    const pictureLocked = report.locked && !(ctx.job.placementGaps ?? []).length;
     ctx.job = patch(ctx.job, {
       status: pictureLocked ? "locked" : "blocked",
       progress: 100,

@@ -13,6 +13,9 @@ export type PluggedShotWav = {
   source: "copied" | "auk" | "silent" | "event";
   /** dialogue text the AuK take reads ("" for plug and silent shots) */
   text: string;
+  /** §8.1：實際音訊切片收據——本鏡播出邊句嘅邊段（take offset/dur），
+   *  coverage 對照用呢份，唔另推一套算法 */
+  slices?: { beatId: string; takeOffsetSec: number; durSec: number; relMs: number }[];
 };
 
 export type PlugShotWavsOpts = {
@@ -96,7 +99,9 @@ export async function plugVoiceEvents(opts: {
     const textSidecar = path.join(opts.audioDir, "events", `${ev.beatId}.text.json`);
     const textMatches = () => {
       try {
-        return (JSON.parse(fs.readFileSync(textSidecar, "utf8")) as { text?: string }).text === ev.text;
+        // §8.4：綁文字＋講者——換 speaker 重用舊 take（錯聲）會被擋
+        const prev = JSON.parse(fs.readFileSync(textSidecar, "utf8")) as { text?: string; speaker?: string };
+        return prev.text === ev.text && (prev.speaker ?? "") === (ev.speaker ?? "");
       } catch {
         return false;
       }
@@ -107,7 +112,7 @@ export async function plugVoiceEvents(opts: {
         throw new Error(`--wav-dir 缺 ${cover[0]!.shotId}.wav（事件 ${ev.beatId} 首鏡 plug，${src}）`);
       }
       await ensureAudibleShotWav({ src, dst, text: ev.text, synthesize: synth });
-      fs.writeFileSync(textSidecar, JSON.stringify({ text: ev.text, ts: new Date().toISOString(), via: src ? "plug" : "auk" }, null, 2));
+      fs.writeFileSync(textSidecar, JSON.stringify({ text: ev.text, speaker: ev.speaker, ts: new Date().toISOString(), via: src ? "plug" : "auk" }, null, 2));
     }
     takes.push({ beatId: ev.beatId, file: dst });
   }
@@ -159,7 +164,10 @@ export async function plugVoiceEvents(opts: {
       if (result.code !== 0) throw new Error(result.stderr || `${dst} 事件切片混音失敗`);
       source = "event";
     }
-    const row: PluggedShotWav = { shotId: w.shotId, file: dst, source, text };
+    const row: PluggedShotWav = {
+      shotId: w.shotId, file: dst, source, text,
+      ...(slices.length ? { slices: slices.map((sl) => ({ beatId: sl.ev.beatId, takeOffsetSec: Number(sl.takeOffset.toFixed(3)), durSec: Number(sl.dur.toFixed(3)), relMs: sl.relMs })) } : {}),
+    };
     out.push(row);
     await opts.onShot?.(row);
   }

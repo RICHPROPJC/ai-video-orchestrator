@@ -314,11 +314,26 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     const rows = await audioTimelineRows(ctx.locked!.audioEvents, eventTakes.takes, wavSeconds, ctx.locked!.directorPlacements);
     // 裁決 0928 D：聲畫對位缺口回責任席線——missing placement 逐句 emit
     // （唔阻行：收據落 events；revise_unclosed 已喺上游 fail-loud 把關）
-    // §7①：剪接對照收據——每句 utterance 實際由邊啲鏡播出（audioBeats）
+    // §8.1：coverage 收據改用實際音訊切片（plugVoiceEvents slices）——
+    // 「邊鏡真係播咗呢句嘅邊段」而唔係 boards 標記推算；onImage 對照收據：
+    // 導演指定嘅畫面對象 vs 實際播出鏡嘅 action/cast 文字（詞級 hit 紀錄，
+    // 自由文字語義判斷留責任席，呢度只列對照事實）。
+    const sliceCover = new Map<string, string[]>();
+    for (const ps of ctx.plugged ?? []) {
+      for (const sl of ps.slices ?? []) {
+        sliceCover.set(sl.beatId, [...(sliceCover.get(sl.beatId) ?? []), ps.shotId]);
+      }
+    }
     for (const r of rows) {
-      r.coveredByShotIds = ctx.locked!.shots
-        .filter((sh) => (sh.audioBeats ?? []).includes(r.beatId) || (sh.beatIds ?? []).includes(r.beatId))
-        .map((sh) => sh.id);
+      r.coveredByShotIds = sliceCover.get(r.beatId) ?? [];
+      if (r.placement === "matched" && r.onImage) {
+        const coverShots = ctx.locked!.shots.filter((sh) => r.coveredByShotIds!.includes(sh.id));
+        const lensText = coverShots.map((sh) => `${sh.action} ${sh.marks.map((mk) => mk.characterId).join(" ")}`).join(" ");
+        r.onImageCheck = r.onImage
+          .split(/[\s，、,]+/)
+          .filter(Boolean)
+          .map((w) => ({ word: w, seenInCoverShots: lensText.includes(w) }));
+      }
     }
     // §7②：缺口寫 job（resume 攔截強制 revise——emit 之外嘅真回修路徑）
     const missingRows = rows.filter((r) => r.placement === "missing");
@@ -327,10 +342,21 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         message: `聲畫對位缺口：${r.text.slice(0, 60)} 冇導演落點（resume 時回導演席修訂）`,
         data: { stage: "audio-placement", blocked: null, utterance: r.beatId, text: r.text.slice(0, 120) } });
     }
-    // 重算語義：gaps＝今次對照嘅 missing 全集（revise 後已解嘅自然消失）
+    // 重算語義：gaps＝今次對照嘅 missing 全集（revise 後已解嘅自然消失）；
+    // attempts 跨 resume 繼承（§8.2 修訂額度唔被重算重置）
+    const prevAttempts = new Map((ctx.job.placementGaps ?? []).map((g) => [g.utterance, g.attempts ?? 0]));
     ctx.job = patch(ctx.job, {
-      placementGaps: missingRows.map((m) => ({ utterance: m.beatId, text: m.text, ts: new Date().toISOString() })),
+      placementGaps: missingRows.map((m) => ({ utterance: m.beatId, text: m.text, ts: new Date().toISOString(), attempts: prevAttempts.get(m.beatId) ?? 0 })),
     });
+    // §8.2：受影響生成阻住——gap 句嘅實際播出鏡 per-shot blocked（V3.1
+    // blockedShots 自動入帳；motion loop 見 placement-gap skip 唔燒）
+    for (const r of missingRows) {
+      for (const shotId of r.coveredByShotIds ?? []) {
+        emit(jobId, { agent: "producer", level: "warn",
+          message: `${shotId} blocked（placement-gap：${r.text.slice(0, 40)} 冇導演落點）`,
+          data: { shot: shotId, stage: "audio-placement", blocked: `placement-gap:${r.beatId}` } });
+      }
+    }
     fs.writeFileSync(jobFile(jobId, "creative", "audio-timeline.json"), JSON.stringify({
       generatedAt: new Date().toISOString(),
       // §7③：採用 revision 收據——呢份 timeline 由邊個 callsheet 生出嚟
