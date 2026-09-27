@@ -403,6 +403,10 @@ export type JobRecord = {
   soundQc?: SoundQc;
   pictureQcStills?: PictureQc;
   pictureQcVideo?: PictureQc;
+  /** V2a（PLAN-v2 0928）：resume 唔清死因——舊 error 搬呢度，唔准靜靚消失 */
+  lastError?: string;
+  /** V2a：呢份 job.json 最後一次寫入時嘅 owner epoch（guard 比對用） */
+  ownerEpoch?: number;
   retries: { stills: number; voice: number; motion: number };
   outputs: {
     stills: string[];

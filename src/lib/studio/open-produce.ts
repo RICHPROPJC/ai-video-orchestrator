@@ -114,6 +114,15 @@ export function resumeSlate(slate: string, patch: ResumePatch): OpenedSlate | { 
   if (blocker) {
     return { error: `一次一份：slate ${blocker.id} 仲行緊（running）。等佢完先開新工，或者 --resume ${blocker.id} 接返呢份。` };
   }
-  writeJob({ ...job, input, status: "queued", error: undefined, updatedAt: new Date().toISOString() });
+  // V2a（PLAN-v2 0928）：resume 唔清死因——舊 error 搬 lastError 留底，
+  // 真相唔准靜靜消失（job.error 清空令 status machine 乾淨，歷史入 lastError）。
+  writeJob({
+    ...job,
+    input,
+    status: "queued",
+    ...(job.error ? { lastError: job.error } : {}),
+    error: undefined,
+    updatedAt: new Date().toISOString(),
+  });
   return { id: job.id, input };
 }

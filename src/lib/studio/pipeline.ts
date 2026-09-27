@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { Resvg } from "@resvg/resvg-js";
 import { blenderBlockingScript } from "./blender";
 import { readWavMono, runCommand } from "./audio";
-import { emit, readJob, writeJob } from "./store";
+import { acquireJob, emit, ownerHeartbeatMs, ownerIsStale, readJob, releaseJob, takeoverJob, writeJob, type JobOwner } from "./store";
 import { renderBlockingSvg } from "./painter";
 import { localPictureQc, senseVoiceHttp, soundQcFromRemote, soundQcUnconfigured, wavPrecheck } from "./providers";
 import { shouldWaitEarnLock, waitEarnGpuLock } from "./earn-gpu-lock";import { loadConfig, type SlateConfig } from "./config";
@@ -89,8 +89,7 @@ import {
   shotsForScene,
   hopGeometrySheet,
   describeFloor,
-  type Ctx,
-} from "./pipeline/shared";
+  type Ctx, setActiveOwner } from "./pipeline/shared";
 export {
   anglePortraitsFor,
   uncutIdentityFiles,
@@ -188,6 +187,23 @@ export function muxArgs(mp4: string, h3Wav: string, out: string): string[] {
 export async function runPipeline(jobId: string, input: ProduceInput) {
   const initial = readJob(jobId);
   if (!initial) throw new Error("missing job");
+  // V2a（PLAN-v2 0928）：唯一執行者——開工前原子取權。撞活躍 owner＝
+  // fail-loud 報邊個行緊；靜過 30 分鐘（STALE）先准接管（epoch+1，舊 token
+  // 由呢刻起全部失效）。
+  const taken = acquireJob(jobId);
+  let owner: JobOwner;
+  if (taken.ok) {
+    owner = taken.owner;
+  } else if (!taken.holder || taken.holder.releasedAt || ownerIsStale(jobId)) {
+    owner = takeoverJob(jobId, taken.holder?.releasedAt ? "前一 owner 已 release" : "STALE 超過 30 分鐘無心跳");
+  } else {
+    const h = taken.holder;
+    const quietMin = ownerHeartbeatMs(jobId) === null ? 0 : Math.round((ownerHeartbeatMs(jobId) as number) / 60_000);
+    throw new Error(
+      `owner_conflict: ${jobId} 有現行執行者（epoch ${h.epoch}，pid ${h.pid ?? "?"}，${quietMin} 分鐘前心跳）——等佢完或者接管佢。`,
+    );
+  }
+  setActiveOwner(owner);
   const cfg = loadConfig();
   // no plug wavs ⇒ voice seat speaks the VO through AuK — the door must be armed up front
   if (!input.wavDir && input.until !== "boards" && !cfg.tts.endpoint.trim()) {
@@ -926,6 +942,10 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // V1（PLAN-v2 0928）：runReflector 自動調用已移除——判斷唔升格做規則（讀側
     // 0927 §11 已斷，寫側呢度斬埋；seats/*.primitive.md 留做 job 收據）。
     // 失敗真相全保：error message／violations 硬行／events 已寫齊。
+  } finally {
+    // V2a：執行權交返（正常完／fail／blocked 都 release；owner.json 留底）
+    setActiveOwner(undefined);
+    releaseJob(jobId);
   }
 }
 

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runCommand } from "../audio";
-import { writeJob } from "../store";
+import { writeJob, type JobOwner } from "../store";
 import { relInJob } from "../isolate";
 import { jobFile } from "../paths";
 import { momentsForShot } from "../asset-board";
@@ -58,9 +58,17 @@ export type Ctx = {
   segManifest?: { kind: string; shots: string[]; frames?: number; perShot?: number }[] | null;
 };
 
+// V2a（PLAN-v2 0928）：pipeline 期間所有狀態寫入帶 owner guard——舊 owner
+// 恢復後（epoch 被接管）再 patch 即 throw owner_lost，唔可以靜靜覆蓋新 owner
+// 嘅進度。activeOwner 由 runPipeline acquire 後 set（同 process 一次行一份；
+// 將來同 process 並行兩 pipeline 要改顯式傳遞）。
+let activeOwner: JobOwner | undefined;
+export function setActiveOwner(owner?: JobOwner) {
+  activeOwner = owner;
+}
 export function patch(job: JobRecord, partial: Partial<JobRecord>) {
   const next = { ...job, ...partial };
-  writeJob(next);
+  writeJob(next, activeOwner);
   return next;
 }
 
