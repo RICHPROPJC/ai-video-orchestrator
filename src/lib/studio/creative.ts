@@ -623,8 +623,8 @@ export async function audioTimelineRows(
         ? { underSec: Number((windowSec - actual).toFixed(3)), note: "講得快過窗口——bed 照墊" }
         : {}),
       ...(take ? {} : { note: "take 缺（事件冇鏡覆蓋？plugVoiceEvents 應已 throw）" }),
-      ...(placements === undefined
-        ? { placement: "na" as const, note: "導演冇交 dialogueClock（流程唔要求落點＝N/A）" }
+      ...(placements === undefined && !events.some((e2) => e2.text.trim())
+        ? { placement: "na" as const, note: "片冇對白且導演冇交 dialogueClock（流程唔要求落點＝N/A）" }
         : (() => {
             const norm = (x: string) => x.replace(/[。．，,、！!？?…；;\s「」『』"']/g, "");
             const e = norm(ev.text);

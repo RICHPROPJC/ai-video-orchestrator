@@ -319,7 +319,8 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     // 導演指定嘅畫面對象 vs 實際播出鏡嘅 action/cast 文字（詞級 hit 紀錄，
     // 自由文字語義判斷留責任席，呢度只列對照事實）。
     const sliceCover = new Map<string, string[]>();
-    for (const ps of ctx.plugged ?? []) {
+    // §9①：用當輪 eventTakes.perShot（ctx.plugged 呢刻仲未賦值——首跑空 coverage）
+    for (const ps of eventTakes.perShot) {
       for (const sl of ps.slices ?? []) {
         sliceCover.set(sl.beatId, [...(sliceCover.get(sl.beatId) ?? []), ps.shotId]);
       }
@@ -336,7 +337,8 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       }
     }
     // §7②：缺口寫 job（resume 攔截強制 revise——emit 之外嘅真回修路徑）
-    const missingRows = rows.filter((r) => r.placement === "missing");
+    // §9③：完整 gap 集合＝missing＋unresolved（0→0 唔准避開修訂同 final 閘）
+    const missingRows = rows.filter((r) => r.placement === "missing" || r.placement === "unresolved");
     for (const r of missingRows) {
       emit(jobId, { agent: "producer", level: "warn",
         message: `聲畫對位缺口：${r.text.slice(0, 60)} 冇導演落點（resume 時回導演席修訂）`,
@@ -365,6 +367,8 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       note: "實際音軌時長回填（共同時間線）；take 一次生成逐鏡切片，呢度係事件層時鐘",
       events: rows,
     }, null, 2));
+    // §9⑥：本輪凍結 expected revision（mux 三比用；行內回修重寫收據時更新）
+    ctx.callsheetDigest = sheetDigest(ctx.locked!);
     const overs = rows.filter((r) => r.overflowSec);
     if (overs.length) {
       await speak("voice", `音軌回填：${overs.length} 句 take 長過事件窗口（${overs.map((o) => `${o.beatId}+${o.overflowSec}s`).join("、")}）——切片會截尾，見 creative/audio-timeline.json。`, "warn");

@@ -89,7 +89,7 @@ import {
   shotsForScene,
   hopGeometrySheet,
   describeFloor,
-  type Ctx, setActiveOwner, depStampOf } from "./pipeline/shared";
+  type Ctx, setActiveOwner, depStampOf, GAP_BUDGET } from "./pipeline/shared";
 export {
   anglePortraitsFor,
   uncutIdentityFiles,
@@ -257,6 +257,22 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     await authorStage(ctx);
     if (ctx.stopped) return;
     await worldStage(ctx);
+  // §9④：有界自主回修——world 發現聲畫 gap 且額度內→行內返 author revise→
+  // world 重算，先放行受影響 still/motion；額度耗盡先照落（gap 鏡已 per-shot
+  // blocked，收尾統一 verdict 兜底）。唔另造 runner——即場 stage 控制。
+  for (let repairRound = 0; repairRound < GAP_BUDGET; repairRound++) {
+    if (ctx.stopped) break;
+    const gapsNow = readJob(jobId)?.placementGaps ?? [];
+    if (!gapsNow.length || !gapsNow.some((g) => (g.attempts ?? 0) < GAP_BUDGET)) break;
+    emit(jobId, {
+      agent: "producer", level: "warn",
+      message: `自主回修第 ${repairRound + 1} 輪：${gapsNow.length} 句聲畫 gap 額度內——返 author 修訂後重算 world`,
+      data: { stage: "sound-picture-repair", round: repairRound + 1 },
+    });
+    await authorStage(ctx);
+    if (ctx.stopped) break;
+    await worldStage(ctx);
+  }
     if (ctx.stopped) return;
     await stillsStage(ctx);
     if (ctx.stopped) return;
@@ -845,11 +861,17 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // 段生成時點鎖定）；唔夾＝半寫入/人手改過，具名邊份過期，唔准混做交付。
     {
       const cutPlanReceipt = JSON.parse(fs.readFileSync(jobFile(jobId, "cut_plan.json"), "utf8")) as { callsheetDigest?: string };
+      // §9⑥：三比＋缺檔/缺欄即 throw（聲音時間線路徑必須存在且有效；兩份同舊
+      // 版本互相等都過唔到——要對得上本輪凍結 ctx.callsheetDigest）
       const tlFile = path.join(jobDir(jobId), "creative", "audio-timeline.json");
-      const tlReceipt = fs.existsSync(tlFile)
-        ? JSON.parse(fs.readFileSync(tlFile, "utf8")) as { callsheetDigest?: string }
-        : null;
-      if (tlReceipt && cutPlanReceipt.callsheetDigest !== tlReceipt.callsheetDigest) {
+      if (!fs.existsSync(tlFile) || !cutPlanReceipt.callsheetDigest) {
+        throw new Error("revision_guard: audio-timeline.json 缺檔或 cut_plan 收據缺 callsheetDigest——聲音路徑收據必須存在且有效");
+      }
+      const tlReceipt = JSON.parse(fs.readFileSync(tlFile, "utf8")) as { callsheetDigest?: string };
+      if (!tlReceipt.callsheetDigest || !ctx.callsheetDigest) {
+        throw new Error("revision_guard: 收據缺 callsheetDigest（audio-timeline 或本輪凍結快照）——無效收據唔准過");
+      }
+      if (cutPlanReceipt.callsheetDigest !== tlReceipt.callsheetDigest || cutPlanReceipt.callsheetDigest !== ctx.callsheetDigest) {
         throw new Error(
           `revision_mismatch: cut_plan.json（digest ${(cutPlanReceipt.callsheetDigest ?? "missing").slice(0, 12)}）與 audio-timeline.json（digest ${(tlReceipt.callsheetDigest ?? "missing").slice(0, 12)}）唔同源——邊份過期見 callsheetDigest，唔准混做最終交付`,
         );
@@ -954,6 +976,13 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       gap_delivered_s: Object.fromEntries(ctx.gapDelivered),
       locked: Boolean(sound.pass && videoQcPass),
     };
+    // §9⑤：統一 completion verdict——所有必要條件先合成一個答案，report/job/
+    // 交付事件食同一個（placementGaps＋必要 blockedShots 都入；preview 可以
+    // 存在但對外驗收欄位一致，唔准 job blocked 而 delivery locked）
+    const completeVerdict = report.locked
+      && !(ctx.job.placementGaps ?? []).length
+      && !(ctx.job.blockedShots ?? []).length;
+    report.locked = completeVerdict;
     fs.writeFileSync(jobFile(jobId, "delivery", "qc.json"), JSON.stringify(report, null, 2));
     fs.writeFileSync(jobFile(jobId, "delivery", "callsheet.md"), markdownCallSheet(ctx.timed!, ctx.job.slate));
     // §8.2：placementGaps 未清（額度耗盡或未修）＝唔准 locked——preview 可以

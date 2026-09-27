@@ -91,15 +91,19 @@ test("V3: emit data.blocked 自動入 blockedShots；pass verdict 清返", () =>
     fs.mkdirSync(path.join(dataRoot(), "JB"), { recursive: true });
     writeJob(blank("JB"));
     emit("JB", { agent: "motion", level: "warn", message: "SH01 blocked", data: { shot: "SH01", stage: "motion", blocked: "identity_sheet_missing" } });
-    let job = readJob("JB");
+    let job = readJob("JB")!;
     assert.equal(job.blockedShots?.length, 1, "blocked 入帳");
     assert.equal(job.blockedShots![0]!.reason, "identity_sheet_missing");
     emit("JB", { agent: "motion", level: "warn", message: "SH02 blocked", data: { shot: "SH02", stage: "mux", blocked: "motion-missing:SH02" } });
-    job = readJob("JB");
+    job = readJob("JB")!;
     assert.equal(job.blockedShots?.length, 2, "第二鏡 upsert");
+    // §9②：同 stage pass 先清同 stage block——pictureQc(require) pass 唔清 motion block
     emit("JB", { agent: "pictureQc", level: "pass", message: "SH01 GREEN", data: { shot: "SH01", stage: "require", verdict: "pass" } });
-    job = readJob("JB");
-    assert.equal(job.blockedShots?.length, 1, "pass 清返嗰鏡");
+    job = readJob("JB")!;
+    assert.equal(job.blockedShots?.length, 2, "跨 stage pass 唔清另一 stage 嘅 block");
+    emit("JB", { agent: "motion", level: "pass", message: "SH01 ok", data: { shot: "SH01", stage: "motion", verdict: "pass" } });
+    job = readJob("JB")!;
+    assert.equal(job.blockedShots?.length, 1, "同 stage pass 清返嗰鏡");
     assert.equal(job.blockedShots![0]!.shot, "SH02", "淨返未解嗰鏡");
   }));
 

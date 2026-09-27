@@ -200,7 +200,11 @@ export function emit(id: string, event: Omit<JobEvent, "ts"> & { ts?: string }) 
         const rest = (job.blockedShots ?? []).filter((b) => !(b.shot === row.shot));
         job.blockedShots = [...rest, row];
       } else if (d.verdict === "pass") {
-        job.blockedShots = (job.blockedShots ?? []).filter((b) => b.shot !== d.shot);
+        // §9②：同 stage pass 先清同 stage block——placement-gap（audio-placement）
+        // 唔會被 stills pass 意外清走；跨 stage 解鎖由 gap 自身重算清。
+        job.blockedShots = (job.blockedShots ?? []).filter(
+          (b) => !(b.shot === d.shot && typeof d.stage === "string" && b.stage === d.stage),
+        );
       }
     }
     writeJob(job);

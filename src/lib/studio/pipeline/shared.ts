@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { runCommand } from "../audio";
-import { writeJob, type JobOwner } from "../store";
+import { readJob, writeJob, type JobOwner } from "../store";
 import { relInJob } from "../isolate";
 import { jobFile } from "../paths";
 import { momentsForShot } from "../asset-board";
@@ -57,6 +57,9 @@ export type Ctx = {
   receipts: string[];
   motionShots?: Shot[];
   segManifest?: { kind: string; shots: string[]; frames?: number; perShot?: number }[] | null;
+  /** §9⑥：本輪凍結 expected revision——world 落 cut_plan/audio-timeline 兩份
+   *  收據後 set；mux 三比（cutPlan＝timeline＝本輪快照）缺一 throw。 */
+  callsheetDigest?: string;
 };
 
 /** V2c §8：材料指紋——parts 穩定序列化後 sha256 前 12 hex。keep 閘用嚟
@@ -78,12 +81,20 @@ export function stableJson(v: unknown): string {
 // 恢復後（epoch 被接管）再 patch 即 throw owner_lost，唔可以靜靜覆蓋新 owner
 // 嘅進度。activeOwner 由 runPipeline acquire 後 set（同 process 一次行一份；
 // 將來同 process 並行兩 pipeline 要改顯式傳遞）。
+/** §9④：聲畫 gap 修訂額度（跨 resume；author 攔截遞增，行內回修同樣食） */
+export const GAP_BUDGET = 2;
+
 let activeOwner: JobOwner | undefined;
 export function setActiveOwner(owner?: JobOwner) {
   activeOwner = owner;
 }
 export function patch(job: JobRecord, partial: Partial<JobRecord>) {
+  // §9②：blockedShots/placementGaps 以磁碟為真源——emit（store）同 attempts
+  // 遞增係唯一 writer；ctx 舊快照唔可以蓋走佢哋（motion 讀 ctx.job 先至見）。
+  const disk = readJob(job.id);
   const next = { ...job, ...partial };
+  next.blockedShots = disk?.blockedShots ?? next.blockedShots;
+  next.placementGaps = disk?.placementGaps ?? next.placementGaps;
   writeJob(next, activeOwner);
   return next;
 }
