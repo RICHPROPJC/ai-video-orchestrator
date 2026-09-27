@@ -86,12 +86,17 @@ export function negativePoison(negatives: string[]): string | null {
  * heading's牌, never the scene slot. 泛用機構詞，唔係故事名。 */
 const INSTITUTION_RE = /府|宮|殿|軍|校|部|局|署|國|總統|政府/;
 export function isRoomNoun(location: string): boolean {
-  // §5b（0928 §5 盤點）：長度閘同步 boards-contract require.location max(60)
-  // （0927「場所名長短由內容定」）——呢度淨留語義分離：非空＋唔係機構全名
-  // （INSTITUTION_RE，T32b C5 法源）。舊 2-8 硬閘同 boards-contract 唔同步
-  // （9字場所名兩邊兩個答案），分離收口。
+  // §19：單字黑名單撤硬拒——「宮殿走廊」「校園天台」「政府大樓入口」係合法
+  // 拍攝場所（唔係機構全名語義判斷）；淨留短標籤契約（非空 1–60，鏡頭所見
+  // 場所）。機構傾向留診斷（institutionLike），故事照拍宮殿/學校/政府場景。
   const loc = location.trim();
-  return loc.length >= 1 && loc.length <= 60 && !INSTITUTION_RE.test(loc);
+  return loc.length >= 1 && loc.length <= 60;
+}
+
+/** §19 診斷（唔係閘）：地點字面含機構詞——提示責任席諗清楚呢欄係咪鏡頭
+ *  所見場所定 heading 牌；唔拒收。 */
+export function institutionLike(location: string): boolean {
+  return INSTITUTION_RE.test(location.trim());
 }
 
 /** Chau 0919 search-first PE law: a frame that shows text/data (infographic,

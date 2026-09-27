@@ -124,13 +124,16 @@ export const DirectorPlanSchema = z.object({
       everyDecisionServes: z.string().optional(),
     }),
   ]),
-  treatment: z.string().min(120),
+  // §19：撤字數當質素 verdict——非空保留；完整性由責任席按本次意圖/可演內容判
+  treatment: z.string().min(1),
   dialogueClock: z.object({
     placements: z.array(dialoguePlacement).optional(),
     note: z.string().optional(),
   }).optional(),
-  rhythmMap: z.array(directorBeat).min(1).max(24),
-  shots: z.array(directorShotNative).min(1).max(32),
+  // §19：撤固定創作上限（24拍/32鏡）——長計劃由 caller 按實際資源分段/續寫並
+  // 校驗來源拼接，呢層唔截斷唔默默少交。
+  rhythmMap: z.array(directorBeat).min(1),
+  shots: z.array(directorShotNative).min(1),
   soundDesignNote: z.string().optional(),
   /** 節奏總綫（快慢圖）——導演原文欄位 rhythmNote，等價映射保留 */
   rhythmNote: z.string().max(800).optional(),
@@ -172,9 +175,12 @@ export const DirectorPlanSchema = z.object({
     }
   }
   if (target) {
+    // §19：時長一致性檢查保留；容差＝採用任務可配（env，預設 0.1 資源帶）——
+    // 唔慢放/硬墊空白/刪內容令數值 PASS。
+    const TOL = Math.min(0.5, Math.max(0, Number(process.env.SLATECREW_DURATION_TOLERANCE ?? 0.1)));
     const end = Math.max(...plan.shots.map((s) => s.endSec));
-    if (Math.abs(end - target) > target * 0.1 + 1e-6) {
-      report.addIssue({ code: "custom", path: ["shots"], message: `片尾 ${end.toFixed(1)}s 離目標 ${target}s 超過 ±10%` });
+    if (Math.abs(end - target) > target * TOL + 1e-6) {
+      report.addIssue({ code: "custom", path: ["shots"], message: `片尾 ${end.toFixed(1)}s 離目標 ${target}s 超過 ±${Math.round(TOL * 100)}%（容差可配）` });
     }
   }
 });
@@ -385,7 +391,7 @@ export function compileDirectorPlan(raw: unknown): { plan: DirectorPlan; receipt
     : [];
   const vision = a.vision;
   const treatment = typeof a.treatment === "string" ? a.treatment : typeof a.treatment_md === "string" ? (receipt.push("treatment ← treatment_md"), a.treatment_md) : "";
-  if (!treatment || treatment.length < 120) misses.push("treatment 缺或者太薄——回導演補");
+  // §19：撤字數質素 verdict——非空/缺席先 miss，完整性歸責任席
   if (!vision) misses.push("vision 缺席——回導演補");
 
   const parsed = DirectorPlanSchema.safeParse({
@@ -784,7 +790,9 @@ export const PlaywrightScriptSchema = z.object({
   characterGoal: z.string().min(4).max(300).optional(),
   /** 劇本正文：monolith（模型直接交）或由 segments 組裝（全原文） */
   script_md: z.string().min(1),
-  segments: z.array(playwrightSegment).min(3).max(20),
+  // §19：撤 3–20 上下固定數——有完整內容 1 段都得；缺內容（零段/全空）由
+  // compiler miss fail（唔以佔位正文當成功）。
+  segments: z.array(playwrightSegment),
   dialogue_verbatim_kept: z.array(z.string()),
   newElements: z.array(z.object({ what: z.string().max(80), why: z.string().max(160) })).default([]),
   /** 導演內容欄（等價映射保留原名） */
@@ -814,7 +822,7 @@ export function compilePlaywrightScript(raw: unknown): { script: PlaywrightScrip
   if (typeof charState === "string" && !a.characterState && !a.character_state) receipt.push("characterState ← characterStateAndGoal（原文）");
   const segsRaw = pick("segments", "beats", "acts") as unknown;
   if (typeof charState !== "string") misses.push("人物當下狀態（characterState）缺席——回編劇補");
-  if (!Array.isArray(segsRaw) || segsRaw.length < 3) misses.push("segments（逐段表演/聲音/作用）少過 3——回編劇補");
+  if (!Array.isArray(segsRaw) || segsRaw.length < 1) misses.push("segments（逐段表演/聲音/作用）完全冇——回編劇補");
   const segments = (Array.isArray(segsRaw) ? segsRaw : []).map((sRaw) => {
     const s = (sRaw && typeof sRaw === "object" ? sRaw : {}) as Record<string, unknown>;
     return {
@@ -831,7 +839,7 @@ export function compilePlaywrightScript(raw: unknown): { script: PlaywrightScrip
   // 分佈式劇本等價：模型將劇本寫喺 segments／arc／soundDesign 入面——由原文
   // 組裝 script_md（淨加結構標題，零內容改寫），收據註明。真係兩樣都冇先報 miss。
   let scriptMdFinal = typeof scriptMd === "string" ? scriptMd : "";
-  if (!scriptMdFinal && segments.length >= 3) {
+  if (!scriptMdFinal && segments.length >= 1) {
     const titleStr = typeof pick("title", "meta") === "string" ? String(pick("title", "meta")) : "";
     const arcStr = typeof pick("arc", "storyArc") === "string" ? String(pick("arc", "storyArc")) : "";
     const sdStr = typeof pick("soundDesignMasterNotes", "soundDesign") === "string" ? String(pick("soundDesignMasterNotes", "soundDesign")) : "";
@@ -845,7 +853,7 @@ export function compilePlaywrightScript(raw: unknown): { script: PlaywrightScrip
     ].filter(Boolean).join("\n\n");
     receipt.push("script_md ← 由 segments/arc/soundDesignMasterNotes 組裝（全部原文，淨加結構標題）");
   }
-  if (scriptMdFinal.length < 120) misses.push("劇本正文（monolith 或 segments 組裝）缺或太薄——回編劇補");
+  // §19：撤字數質素 verdict——非空已由組裝/zod；完整性歸責任席
   const script = PlaywrightScriptSchema.parse({
     ...(typeof pick("title", "meta") === "string" ? { title: String(pick("title", "meta")) } : {}),
     ...(typeof a.thinking === "string" ? { thinking: a.thinking } : {}),

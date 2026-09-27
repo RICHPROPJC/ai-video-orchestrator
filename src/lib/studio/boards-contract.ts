@@ -8,7 +8,6 @@ export const TEXT_SHOT_SEC_MIN = 1;
 /** Shot length bounds come from the H3 grid setting, not a second copy of 5.2/15. */
 export const SHOT_SEC_MIN = shotSecMin();
 export const SHOT_SEC_MAX = shotSecMax();
-const SHOT_ACTION_MAX = 200; // 0927：字數唔係閘
 const CAST_PER_SHOT_MAX = 3; // 基建：Blender slot L/C/R 三位
 
 /** Each scene is held to its own share of the slate's clock; the shares are
@@ -80,7 +79,8 @@ const boardShotShape = z.object({
   angle: z.enum(["eye", "high", "low"]),
   side: z.enum(["frontal", "leftQuarter", "rightQuarter"]),
   durationSec: z.number().min(TEXT_SHOT_SEC_MIN).max(SHOT_SEC_MAX),
-  action: z.string().min(1).max(SHOT_ACTION_MAX),
+  // §19：撤 200 字硬拒（非空保留；總輸出資源由 aggregate token 層承接）
+  action: z.string().min(1),
   dialogue: z.string().nullish().transform((v) => v ?? ""),
   speaker: omittable(z.string().min(1).max(12)),
   // SC-CREATIVE-OS-0927 §2C：產品／環境鏡合法（空 cast）。下游 blockout
@@ -118,7 +118,7 @@ const boardShotShape = z.object({
       factsRequired: omittable(z.boolean()),
     })
       .refine((req) => req.location === undefined || isRoomNoun(req.location), {
-        message: "location 要係 2–8 字場所名詞（地下室、宿舍、走廊），唔係機構全名",
+        message: "location 要係鏡頭所見場所（1–60 短標籤）；宮殿/學校/政府場景合法——機構牌名歸 heading，空間關係交 action/scene",
         path: ["location"],
       })
       .refine((req) => !negativePoison(req.negatives ?? []), {
@@ -137,15 +137,16 @@ const boardsSceneShape = z.object({
    *  矛盾/未能安排列 adoptionIssues（行同一有界修訂鏈）。講者唔使上鏡、一句
    *  跨鏡、一鏡多句合法；詞命中（onImageCheck）只係診斷唔代替呢度判斷。 */
   onImageAdoptions: z.array(z.object({
-    placement: z.string().min(1).max(80),
+    // §19：撤欄位長 cap——完整來源原句唔可截斷或因長拒收（資源由 aggregate token 層承接）
+    placement: z.string().min(1),
     /** §15.3：occurrence 身份——dialoguePlacements 嘅索引（顯示 word 可以
      *  撞；同句兩個 placement 各有 idx）。packet 會帶 idx。 */
     placementIdx: z.number().int().min(0),
     shotIds: z.array(z.string()).min(1),
-    plan: z.string().min(1).max(300),
-    reason: z.string().min(1).max(300),
+    plan: z.string().min(1),
+    reason: z.string().min(1),
   })).optional(),
-  adoptionIssues: z.array(z.string().min(1).max(200)).optional(),
+  adoptionIssues: z.array(z.string().min(1)).optional(),
 });
 
 export type BoardShot = z.infer<typeof boardShotShape>;

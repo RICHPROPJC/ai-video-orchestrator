@@ -38,6 +38,8 @@ export const EPISODE_MAX_SEC = 360;
 /** Short slates are not forced into one scene. Scene count comes from the story. */
 export const SHORT_RANGES: ScriptRanges = { scenes: [1, 200], totalBeats: [1, 2000] };
 /** Kept so older ad-band callers still import. rangesFor no longer selects it from duration. */
+// §19：AD_RANGES／AD_MAX_SEC＝兼容 export（舊 caller 引用）——現行 rangesFor
+// 對 ≤30s 揀 SHORT_RANGES（三個 ranges 數值相同），產線唔強迫廣告一場。
 export const AD_RANGES: ScriptRanges = { scenes: [1, 1], totalBeats: [3, 6] };
 export const AD_MAX_SEC = 30;
 
@@ -131,7 +133,10 @@ const outlineShape = z.object({
   mood: z.string().min(1).max(80),
   language: z.enum(["zh-Hant", "yue", "en"]),
   world: worldSchema,
-  characters: z.array(characterSchema).min(1).max(12),
+  // §19：撤 12 角色創作帽——角色 ID 而家係自由字串（舊單 A–Z 容量明示已唔適用）；
+  // 角色引用／資產能力照下游（boards cast slot、portraits、cast-mesh）各自驗，
+  // 超容量由嗰邊具名 gap，唔刪角色冒充成功。
+  characters: z.array(characterSchema).min(1),
   scenes: z.array(sceneSchema).min(1),
   targetSec: z.number().positive(),
 });
@@ -191,8 +196,8 @@ const beatShape = z.object({
   // 由創作層同能力層把關，唔迫 writer 換動作過格式。診斷走 actionVerbGaps。
   action: z
     .string()
-    .min(1)
-    .max(ACTION_MAX_CHARS),
+    // §19：撤 200 字硬拒（非空保留；總輸出資源由 crew-llm token 層控制）
+    .min(1),
   dialogue: omittable(z.string().max(DIALOGUE_MAX_CHARS)),
   speaker: omittable(z.string().min(1).max(12)),
   emotion: omittable(z.string().min(1).max(20)),

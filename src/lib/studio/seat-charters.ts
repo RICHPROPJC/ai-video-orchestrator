@@ -1,4 +1,4 @@
-import { DIALOGUE_MAX_CHARS, ACTION_MAX_CHARS, SECONDS_PER_CHAR, DIALOGUE_LEAD_IN } from "./script-contract";
+import { SECONDS_PER_CHAR, DIALOGUE_LEAD_IN } from "./script-contract";
 import { SHOT_SEC_MAX, SCENE_BUDGET_TOLERANCE } from "./boards-contract";
 
 /** A charter describes the desk, never the film: the envelope carries the world.
