@@ -407,6 +407,9 @@ export type JobRecord = {
   lastError?: string;
   /** V2a：呢份 job.json 最後一次寫入時嘅 owner epoch（guard 比對用） */
   ownerEpoch?: number;
+  /** V3（PLAN-v2 0928）§9.1：per-shot blocked 彙總——emit data.blocked 自動
+   *  upsert；同 shot 有 pass verdict 自動清。UI／resume 讀同一份狀態。 */
+  blockedShots?: { shot: string; stage?: string; reason: string; ts: string }[];
   retries: { stills: number; voice: number; motion: number };
   outputs: {
     stills: string[];

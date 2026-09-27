@@ -190,6 +190,19 @@ export function emit(id: string, event: Omit<JobEvent, "ts"> & { ts?: string }) 
   const job = readJob(id);
   if (job?.slate) fs.appendFileSync(epEventsFile(job.slate), line);
   if (job) {
+    // V3（PLAN-v2 0928）§9.1：blocked 彙總——data.blocked upsert、同 shot
+    // pass verdict 清返（per-shot blocked 唔再只係一閃即過嘅 event，job.json
+    // 有可恢復狀態俾 UI／resume 查）。
+    const d = (event.data ?? null) as { blocked?: unknown; shot?: unknown; verdict?: unknown; stage?: unknown } | null;
+    if (d && typeof d.shot === "string") {
+      if (typeof d.blocked === "string") {
+        const row = { shot: d.shot, stage: typeof d.stage === "string" ? d.stage : undefined, reason: d.blocked, ts: full.ts };
+        const rest = (job.blockedShots ?? []).filter((b) => !(b.shot === row.shot));
+        job.blockedShots = [...rest, row];
+      } else if (d.verdict === "pass") {
+        job.blockedShots = (job.blockedShots ?? []).filter((b) => b.shot !== d.shot);
+      }
+    }
     writeJob(job);
   }
   touchOwner(id); // V2a heartbeat：有 event 流＝owner 仲生猛

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as nodeTest from "node:test";
-import { acquireJob, ownerIsStale, readOwner, releaseJob, takeoverJob, writeJob, OwnerLostError } from "./store";
+import { acquireJob, emit, ownerIsStale, readJob, readOwner, releaseJob, takeoverJob, writeJob, OwnerLostError } from "./store";
 import { dataRoot } from "./paths";
 import type { JobRecord } from "./types";
 
@@ -84,6 +84,23 @@ test("release 後可再取；ownerIsStale 對冇鎖 job 返 true", () =>
     releaseJob("J3");
     const again = acquireJob("J3", 333);
     assert.ok(again.ok, "release 後再取應成功");
+  }));
+
+test("V3: emit data.blocked 自動入 blockedShots；pass verdict 清返", () =>
+  scratch(() => {
+    fs.mkdirSync(path.join(dataRoot(), "JB"), { recursive: true });
+    writeJob(blank("JB"));
+    emit("JB", { agent: "motion", level: "warn", message: "SH01 blocked", data: { shot: "SH01", stage: "motion", blocked: "identity_sheet_missing" } });
+    let job = readJob("JB");
+    assert.equal(job.blockedShots?.length, 1, "blocked 入帳");
+    assert.equal(job.blockedShots![0]!.reason, "identity_sheet_missing");
+    emit("JB", { agent: "motion", level: "warn", message: "SH02 blocked", data: { shot: "SH02", stage: "mux", blocked: "motion-missing:SH02" } });
+    job = readJob("JB");
+    assert.equal(job.blockedShots?.length, 2, "第二鏡 upsert");
+    emit("JB", { agent: "pictureQc", level: "pass", message: "SH01 GREEN", data: { shot: "SH01", stage: "require", verdict: "pass" } });
+    job = readJob("JB");
+    assert.equal(job.blockedShots?.length, 1, "pass 清返嗰鏡");
+    assert.equal(job.blockedShots![0]!.shot, "SH02", "淨返未解嗰鏡");
   }));
 
 if (bareBun) {
