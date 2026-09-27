@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { Resvg } from "@resvg/resvg-js";
 import { blenderBlockingScript } from "../blender";
@@ -38,7 +39,7 @@ import {
 } from "../motion-select";
 import type { CallSheet, Shot } from "../types";
 import { relInJob } from "../isolate";
-import { ffmpeg, mediaSeconds, patch, shotsForScene, type Ctx } from "./shared";
+import { ffmpeg, mediaSeconds, patch, shotsForScene, type Ctx, stableJson } from "./shared";
 
 async function raster(svg: string, outFile: string) {
   ensureDir(path.dirname(outFile));
@@ -547,11 +548,28 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     const outMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
     const frames = snapDurationToFrames(shot.durationSec);
     const sceneStamp = path.join(blockoutDir, `${shot.id}.scene.json`);
+    // V2c（PLAN-v2 0928）§8：fingerprint 入 setKey——shot 內容（action／cast
+    // 企位姿態／props 持有／durationSec 時間／camera）＋motion 選用變咗，
+    // blockout 即過期重 render。舊 sceneStamp 冇呢段＝唔夾＝一次過重 render
+    // （新 revision，來源清楚）。
+    const shotFingerprint = createHash("sha256")
+      .update(stableJson({
+        action: shot.action,
+        marks: shot.marks,
+        props: shot.props ?? null,
+        durationSec: shot.durationSec,
+        camera: shot.camera,
+        size: shot.size,
+        motion: motionSelections.get(shot.id) ?? null,
+      }))
+      .digest("hex")
+      .slice(0, 12);
     const setKey = [
       "world-frame",
       Object.keys(castRigs).sort().join("|"),
       String(shot.camera.lensMm),
       shot.size,
+      shotFingerprint,
     ].join("|");
     let sceneStamped = false;
     if (fs.existsSync(sceneStamp)) {

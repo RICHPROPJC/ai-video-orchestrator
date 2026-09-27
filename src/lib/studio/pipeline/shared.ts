@@ -58,6 +58,15 @@ export type Ctx = {
   segManifest?: { kind: string; shots: string[]; frames?: number; perShot?: number }[] | null;
 };
 
+/** V2c（PLAN-v2 0928）§8：穩定序列化——object key 排序後先 stringify，
+ *  同內容唔理欄位次序都出同一段字（fingerprint 用）。 */
+export function stableJson(v: unknown): string {
+  if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(",")}]`;
+  const o = v as Record<string, unknown>;
+  return `{${Object.keys(o).sort().map((k) => `${JSON.stringify(k)}:${stableJson(o[k])}`).join(",")}}`;
+}
+
 // V2a（PLAN-v2 0928）：pipeline 期間所有狀態寫入帶 owner guard——舊 owner
 // 恢復後（epoch 被接管）再 patch 即 throw owner_lost，唔可以靜靜覆蓋新 owner
 // 嘅進度。activeOwner 由 runPipeline acquire 後 set（同 process 一次行一份；
