@@ -346,9 +346,14 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     }
     // 重算語義：gaps＝今次對照嘅 missing 全集（revise 後已解嘅自然消失）；
     // attempts 跨 resume 繼承（§8.2 修訂額度唔被重算重置）
-    const prevAttempts = new Map((ctx.job.placementGaps ?? []).map((g) => [g.utterance, g.attempts ?? 0]));
+    // §12 優先1：額度跟修復事件走——繼承鍵＝utterance 原文（text），唔係
+    // beatId：修訂輪阿文重跑重編 beatId，同一句對白（同 text）承接舊額度，
+    // 唔歸零、單次重排唔當新 episode。同 text 重複句共享額度（保守側：多計
+    // 唔漏計）。額度真源＝job.placementGaps（磁碟；author 攔截／行內 loop／
+    // resume 共用，10.1 後 explicit patch 直達）。
+    const prevAttempts = new Map((ctx.job.placementGaps ?? []).map((g) => [g.text, g.attempts ?? 0]));
     ctx.job = patch(ctx.job, {
-      placementGaps: missingRows.map((m) => ({ utterance: m.beatId, text: m.text, ts: new Date().toISOString(), attempts: prevAttempts.get(m.beatId) ?? 0 })),
+      placementGaps: missingRows.map((m) => ({ utterance: m.beatId, text: m.text, ts: new Date().toISOString(), attempts: prevAttempts.get(m.text) ?? 0 })),
     });
     // §8.2：受影響生成阻住——gap 句嘅實際播出鏡 per-shot blocked（V3.1
     // blockedShots 自動入帳；motion loop 見 placement-gap skip 唔燒）

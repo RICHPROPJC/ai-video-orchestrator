@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { loadConfig } from "./config";
 import fs from "node:fs";
 import path from "node:path";
 import { runCommand, writeWav } from "./audio";
@@ -106,12 +107,20 @@ export async function plugVoiceEvents(opts: {
       ? createHash("sha256").update(fs.readFileSync(f)).digest("hex")
       : "none");
     const src = opts.wavDir ? path.join(opts.wavDir, `${cover[0]!.shotId}.wav`) : undefined;
+    // §12 優先3：AuK 生成配置身份——由既有 config（loadConfig 同 runAukTts 同
+    // 一真源）可取得嘅 endpoint/model/seed 入指紋；config 變→mismatch 重建。
+    // 純本地 config 真源以外嘅遠端內部改動唔假設已偵測（唔猜 endpoint 內部
+    // 模型）；要強制失效改 config revision 即可。缺 provenance 唔當相同。
+    const tts = loadConfig().tts;
     const curDeps = {
       text: ev.text,
       speaker: ev.speaker ?? "",
       via: src ? "plug" : "auk",
       srcSha: inputSha(src),
       cloneSha: inputSha(opts.cloneRef),
+      ttsEndpoint: src ? undefined : tts.endpoint,
+      ttsModel: src ? undefined : tts.model,
+      ttsSeed: src ? undefined : tts.seed,
     };
     const depsMatch = () => {
       try {
