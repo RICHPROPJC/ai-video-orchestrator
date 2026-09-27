@@ -318,296 +318,311 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         : `跨shot接駁：${segments.length} 鏡全部單鏡render（冇鏈）。`,
     );
     for (const shot of motionShots) {
-      if (!pinQcAccepted(ctx.stillDir!, shot.id)) {
-        throw new Error(`${shot.id}: photo_qc 未 GREEN（sha 或 schema 唔吻合）— 唔准燒 H3`);
-      }
-      if (followerOf.has(shot.id)) {
-        // chained/simple follower: its motion rides the segment's one render
-        emit(jobId, {
-          agent: "motion",
-          level: "info",
-          message: `${shot.id} 行跨shot段（跟 ${followerOf.get(shot.id)} 一齊 render）— 唔單獨燒。`,
-          data: { shot: shot.id, stage: "motion", segment: followerOf.get(shot.id) },
-        });
-        continue;
-      }
-      const segList = segShotsOf.get(shot.id) ?? [shot.id];
-      const segId = segList.join("-");
-      const segIsMultishot = segments.find(
-        (s) => (s.kind === "cform" ? s.anchor : s.shots[0]) === shot.id && s.kind === "multishot",
-      );
-      const variant = h3GraphVariant(input);
-      const stillPng = path.join(ctx.stillDir!, `${shot.id}.png`);
-      const prev = prevShotOf(ctx.timed!, shot);
-      const blockoutMp4 = path.join(ctx.blockoutDir!, `${shot.id}.mp4`);
-      // §5b routing field: the Video 1 asset on disk decides the form
-      // 0927 fix ②：motion gap（kf_driven）嘅鏡唔食 blockout——舊跑留低嘅
-      // 假 bake 都唔用，hasVideo1=false 行 A-form KF 驅動。
-      const hasVideo1 = fs.existsSync(blockoutMp4) && ctx.motionSelections.get(shot.id)?.gap?.remedy !== "kf_driven";
-      // KF×Video1 共存回填（Sol 0926 E）：pack 揀 ref_image_0 要知道 KF 在唔在盤
-      const { positions, cutFiles } = kfRideFor(jobId, ctx.timed!, shot, ctx.stillDir!);
-      const coexistKf = Boolean(positions) && cutFiles.length >= 1;
-      // MULTISHOT_WIRE: this shot's segment — solo keeps the single-shot path;
-      // a multishot segment renders the whole run inside H3MultishotSampler
-      const segShots = segList; // [first, ...rest] of the segment
-      const chained = segShots.slice(1);
-      const isMsSegment = Boolean(segIsMultishot);
-      const framesPerShot = chained.length
-        ? snapFramesPerShot(Math.max(...chained.map((id) =>
-            ctx.cutPlan!.shots.find((c) => c.id === id)?.duration_s ?? ctx.timed!.shots.find((s) => s.id === id)?.durationSec ?? 0,
-          )))
-        : 0;
-      const msLine = (id: string) => {
-        const s = ctx.timed!.shots.find((x) => x.id === id)!;
-        const cast = [...new Set(s.marks.map((m) => m.characterId))]
-          .map((cid) => ctx.timed!.characters.find((c) => c.id === cid)?.name ?? cid)
-          .join("、");
-        return `${s.heading}. ${cast}：${s.action} Same person and wardrobe as <Picture 1>. No new people.`;
-      };
-      const msScript = (isMsSegment ? segShots : chained).map(msLine).join("\n---\n");
-      const msPortraitFile = (() => {
-        const first = ctx.timed!.shots.find((x) => x.id === segShots[0])!;
-        try {
-          return uncutIdentityFiles(first, ctx.portraits!.sheets, [
-            path.join(jobDir(jobId), "ctx.portraits!"),
-            input.portraitsDir ?? "",
-          ])[0];
-        } catch {
-          return undefined;
+  try {
+        if (!pinQcAccepted(ctx.stillDir!, shot.id)) {
+          throw new Error(`${shot.id}: photo_qc 未 GREEN（sha 或 schema 唔吻合）— 唔准燒 H3`);
         }
-      })();
-      const pack = isMsSegment
-        ? null
-        : h3MotionPack(ctx.timed!, shot, variant, stillPng, ctx.portraits!.files, prev, {
-            hasVideo1,
-            portraitDir: path.join(jobDir(jobId), "ctx.portraits!"),
-            plugDir: input.portraitsDir,
-            sheets: ctx.portraits!.sheets,
-            ...(coexistKf ? { cformStillRef: cutFiles[0] } : {}),
+        if (followerOf.has(shot.id)) {
+          // chained/simple follower: its motion rides the segment's one render
+          emit(jobId, {
+            agent: "motion",
+            level: "info",
+            message: `${shot.id} 行跨shot段（跟 ${followerOf.get(shot.id)} 一齊 render）— 唔單獨燒。`,
+            data: { shot: shot.id, stage: "motion", segment: followerOf.get(shot.id) },
           });
-      const prose = isMsSegment ? msScript : pack!.prose;
-      if (variant === "a" && !isMsSegment) {
-        validateProse(`${SCRIPT_HEADER}\n${prose}`, {
-          requireQuote: Boolean(shot.dialogue.trim()),
-          wardrobe: wardrobeClauses(ctx.timed!),
-        });
-      }
-      if ((chained.length || isMsSegment) && !msPortraitFile) {
-        throw new Error(`${segId}: multishot段要一張未切成張（<Picture 1>）`);
-      }
-      const doneMp4 = path.join(motionDir, `${segId}.mp4`);
-      const doneReceipt = path.join(motionDir, `${segId}.h3_submit.json`);
-      const segFrames = (id: string) =>
-        isMsSegment
-          ? snapFramesPerShot(ctx.cutPlan!.shots.find((c) => c.id === id)?.duration_s ?? 0)
-          : Math.round((ctx.cutPlan!.shots.find((c) => c.id === id)?.duration_s ?? -1) * 24);
-      // the multishot node DELIVERS on H3's 17k+5 grid (a 119 request lands
-      // as 124) — actuals: r2v anchor snap + one grid-snapped count per
-      // chained shot (run5 live: 124 + 124 = 248, ffprobe-verified)
-      const segBudget = isMsSegment
-        ? segmentFrameBudget(segShots.map((id) => ctx.cutPlan!.shots.find((c) => c.id === id)?.duration_s ?? 0))
-        : null;
-      const wantFrames = isMsSegment
-        ? segBudget!.total
-        : snapDurationToFrames(shot.durationSec)
-          + (chained.length ? msGridFrames(framesPerShot) * chained.length : 0);
-      const frameSnap = fs.existsSync(doneMp4)
-        && Math.round((await mediaSeconds(doneMp4)) * 24) === wantFrames;
-      // per-shot QC pins: a multi-shot segment slices per shot so each shot
-      // judges against its OWN require (the anchor's require over the whole
-      // take punished the chained shots' frames — run5 live lesson)
-      const qcIds = segShots; // slice pins are per shot id, solo = the shot itself
-      const allPinned = qcIds.every((id) => pinVideoQcAccepted(motionDir, id));
-      // resume keeps an mp4 only when frame clock matches AND blind MARS video_qc is GREEN
-      const kept =
-        input.resume
-        && !qcIds.some((id) => forcesRedo(motionIds, id, input.shot))
-        && fs.existsSync(doneMp4)
-        && fs.existsSync(doneReceipt)
-        && frameSnap
-        && allPinned;
-      if (kept) {
-        shotVideos.push(doneMp4);
-        receipts.push(relInJob(jobId, doneReceipt));
-        await speak("motion", `${segId} 照舊，唔重燒 H3（video_qc GREEN）。`);
-        continue;
-      }
-      // clock-correct render with missing/stale pins → QC-only resume: re-judge
-      // the take, never re-burn the same seed for a QC reason
-      const qcOnly =
-        input.resume && fs.existsSync(doneMp4) && fs.existsSync(doneReceipt) && frameSnap && !allPinned;
-      if (qcOnly) {
-        await speak("motion", `${segId} mp4 時鐘啱但 pin 未齊 — 只重判QC，唔重燒。`, "warn");
-      } else if (input.resume && fs.existsSync(doneMp4)) {
-        await speak("motion", `${segId} mp4 時鐘唔啱 — 重燒。`, "warn");
-      }
-      const motionStarted = Date.now();
-      if (!qcOnly) {
-        const singleShot = !isMsSegment && chained.length === 0;
-        const rideKf = singleShot && coexistKf;
-        if (singleShot && !hasVideo1 && !positions) {
-          throw new Error(`keyframe_positions_missing: ${shot.id}`);
+          continue;
         }
-        if (singleShot && !hasVideo1 && cutFiles.length < 1) {
-          throw new Error(`keyframe_positions_missing: ${shot.id} 鍵格檔未切`);
-        }
-        if (singleShot) {
-          assertIdentitySheets(shot, ctx.portraits!, path.join(jobDir(jobId), "ctx.portraits!"), input.portraitsDir);
-        }
-        // Sol 0926 E：KF 兩幅備成 544×960 同一構圖策略（inject node 對 2304
-        // 方圖首 stretch 尾 crop 會打架）；derived receipt 隨圖落盤。淨 start
-        // 冇 end 嘅共存行返 H3Keyframes 舊路，唔備圖。
-        let kfStartWired: string = cutFiles[0]!;
-        let kfEndWired: string | undefined = cutFiles[1];
-        if (rideKf && hasVideo1 && !isMsSegment && kfEndWired) {
-          kfStartWired = await prepR2v544(kfStartWired);
-          kfEndWired = await prepR2v544(kfEndWired);
-        }
-        if (!isMsSegment) {
-          writeH3Plan(jobId, ctx.timed!, shot, {
-            wav: ctx.h3WavByShot.get(shot.id)!,
-            blockout: hasVideo1 ? blockoutMp4 : undefined,
-            still: rideKf && hasVideo1 && kfEndWired ? kfStartWired : stillPng,
-            kfStart: rideKf ? kfStartWired : (hasVideo1 ? undefined : stillPng),
-            kfEnd: rideKf ? kfEndWired : (hasVideo1 ? undefined : pack!.kfEnd),
-            refImageFiles: pack!.refImageFiles,
-            anglePortraits: pack!.anglePortraits,
-          });
-        }
-        const { receiptFile } = await submitH3Shot({
-          prose,
-          wavFile: ctx.h3WavByShot.get(shot.id)!,
-          durationSec: shot.durationSec,
-          blockoutMp4: hasVideo1 && !isMsSegment ? blockoutMp4 : undefined,
-          keyframePositions: rideKf ? positions : undefined,
-          kfStart: rideKf ? kfStartWired : (hasVideo1 || isMsSegment ? undefined : stillPng),
-          kfEnd: rideKf ? kfEndWired : (hasVideo1 ? undefined : pack?.kfEnd),
-          kfExtraFiles: rideKf ? cutFiles.slice(2) : undefined,
-          refImageFiles: pack?.refImageFiles,
-          uiPhotoFiles: pack?.uiPhotoFiles,
-          ...(chained.length && !isMsSegment
-            ? {
-                chain: {
-                  script: msScript,
-                  shots: chained,
-                  framesPerShot,
-                  referenceImageFile: msPortraitFile!,
-                },
-              }
-            : {}),
-          ...(isMsSegment
-            ? {
-                multishot: {
-                  script: msScript,
-                  shots: segShots,
-                  framesPerShot: segBudget!.perShot,
-                  referenceImageFile: msPortraitFile!,
-                },
-              }
-            : {}),
-          outMp4: doneMp4,
-          receiptJson: doneReceipt,
-          dryRun: false,
-          shot: segId,
-          requireQuote: Boolean(shot.dialogue.trim()),
-          wardrobe: wardrobeClauses(ctx.timed!),
-          aspect: ctx.timed!.aspect,
-          graphVariant: variant,
-          stepsOverride: input.steps,
-        });
-        receipts.push(relInJob(jobId, receiptFile));
-      }
-      const mp4 = doneMp4;
-      shotVideos.push(mp4);
-      upsertDoc({
-        id: `video:${segId}`,
-        slate: jobId,
-        modality: "video",
-        shotId: segId,
-        text: prose,
-        absPath: mp4,
-      });
-      await think("pictureQc");
-      // per-shot QC over the take: a multi-shot segment slices per shot so
-      // each shot's require judges its OWN frames (the anchor's require over
-      // the whole take punished the chained shots — run5 live lesson); a solo
-      // take judges whole
-      const anchorLen = isMsSegment
-        ? snapFramesPerShot(ctx.cutPlan!.shots.find((c) => c.id === shot.id)?.duration_s ?? 0)
-        : snapDurationToFrames(shot.durationSec);
-      const sliceBounds: { id: string; start: number; len: number }[] = [];
-      let cursor = 0;
-      for (const id of segShots) {
-        const len = isMsSegment ? segBudget!.perShot : id === shot.id ? anchorLen : msGridFrames(framesPerShot);
-        sliceBounds.push({ id, start: cursor, len });
-        cursor += len;
-      }
-      const prevShot = ctx.stillPlans!.map((p) => p.shot).find((s, i, arr) => arr[i + 1]?.id === shot.id);
-      for (const b of sliceBounds) {
-        const reqPath = path.join(ctx.stillDir!, `${b.id}.require.json`);
-        // CFORM7: the slice's require keeps the keyframe keys but its action is
-        // the clip's temporal script, not the freeze line (motionClipRequire)
-        const shotRequire: QcRequire = motionClipRequire(
-          JSON.parse(fs.readFileSync(reqPath, "utf8")) as QcRequire,
-          ctx.timed!.shots.find((s) => s.id === b.id),
+        const segList = segShotsOf.get(shot.id) ?? [shot.id];
+        const segId = segList.join("-");
+        const segIsMultishot = segments.find(
+          (s) => (s.kind === "cform" ? s.anchor : s.shots[0]) === shot.id && s.kind === "multishot",
         );
-        const sliceJson = path.join(motionDir, `${b.id}.video_qc.json`);
-        let sliceMp4 = mp4;
-        if (segShots.length > 1) {
-          sliceMp4 = path.join(motionDir, `${b.id}.qc.mp4`);
-          await ffmpeg([
-            "-i", mp4,
-            "-vf", `trim=start_frame=${b.start}:end_frame=${b.start + b.len},setpts=PTS-STARTPTS`,
-            "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            sliceMp4,
-          ]);
-        }
-        let videoQc = await runVideoQc({
-          mp4: sliceMp4,
-          outJson: sliceJson,
-          require: shotRequire,
-          shotId: b.id,
-          ...(segShots.length > 1
-            ? { parent: { file: mp4, shotId: b.id, start: b.start, len: b.len } }
-            : {}),
-        });
-        if (b.id === shot.id) {
-          videoQc = await attachMemoryDistances(videoQc, {
-            ep: ctx.job.slate,
-            shot: b.id,
-            outJson: sliceJson,
-            character: shot.marks[0]?.characterId,
-            prevStill: prevShot ? path.join(ctx.stillDir!, `${prevShot.id}.png`) : undefined,
-            blockoutF0: path.join(ctx.blockoutDir!, `${shot.id}.f0.png`),
-            midFrame: videoQc.frames[Math.floor(videoQc.frames.length / 2)]?.file,
+        const variant = h3GraphVariant(input);
+        const stillPng = path.join(ctx.stillDir!, `${shot.id}.png`);
+        const prev = prevShotOf(ctx.timed!, shot);
+        const blockoutMp4 = path.join(ctx.blockoutDir!, `${shot.id}.mp4`);
+        // §5b routing field: the Video 1 asset on disk decides the form
+        // 0927 fix ②：motion gap（kf_driven）嘅鏡唔食 blockout——舊跑留低嘅
+        // 假 bake 都唔用，hasVideo1=false 行 A-form KF 驅動。
+        const hasVideo1 = fs.existsSync(blockoutMp4) && ctx.motionSelections.get(shot.id)?.gap?.remedy !== "kf_driven";
+        // KF×Video1 共存回填（Sol 0926 E）：pack 揀 ref_image_0 要知道 KF 在唔在盤
+        const { positions, cutFiles } = kfRideFor(jobId, ctx.timed!, shot, ctx.stillDir!);
+        const coexistKf = Boolean(positions) && cutFiles.length >= 1;
+        // MULTISHOT_WIRE: this shot's segment — solo keeps the single-shot path;
+        // a multishot segment renders the whole run inside H3MultishotSampler
+        const segShots = segList; // [first, ...rest] of the segment
+        const chained = segShots.slice(1);
+        const isMsSegment = Boolean(segIsMultishot);
+        const framesPerShot = chained.length
+          ? snapFramesPerShot(Math.max(...chained.map((id) =>
+              ctx.cutPlan!.shots.find((c) => c.id === id)?.duration_s ?? ctx.timed!.shots.find((s) => s.id === id)?.durationSec ?? 0,
+            )))
+          : 0;
+        const msLine = (id: string) => {
+          const s = ctx.timed!.shots.find((x) => x.id === id)!;
+          const cast = [...new Set(s.marks.map((m) => m.characterId))]
+            .map((cid) => ctx.timed!.characters.find((c) => c.id === cid)?.name ?? cid)
+            .join("、");
+          return `${s.heading}. ${cast}：${s.action} Same person and wardrobe as <Picture 1>. No new people.`;
+        };
+        const msScript = (isMsSegment ? segShots : chained).map(msLine).join("\n---\n");
+        const msPortraitFile = (() => {
+          const first = ctx.timed!.shots.find((x) => x.id === segShots[0])!;
+          try {
+            return uncutIdentityFiles(first, ctx.portraits!.sheets, [
+              path.join(jobDir(jobId), "ctx.portraits!"),
+              input.portraitsDir ?? "",
+            ])[0];
+          } catch {
+            return undefined;
+          }
+        })();
+        const pack = isMsSegment
+          ? null
+          : h3MotionPack(ctx.timed!, shot, variant, stillPng, ctx.portraits!.files, prev, {
+              hasVideo1,
+              portraitDir: path.join(jobDir(jobId), "ctx.portraits!"),
+              plugDir: input.portraitsDir,
+              sheets: ctx.portraits!.sheets,
+              ...(coexistKf ? { cformStillRef: cutFiles[0] } : {}),
+            });
+        const prose = isMsSegment ? msScript : pack!.prose;
+        if (variant === "a" && !isMsSegment) {
+          validateProse(`${SCRIPT_HEADER}\n${prose}`, {
+            requireQuote: Boolean(shot.dialogue.trim()),
+            wardrobe: wardrobeClauses(ctx.timed!),
           });
         }
-        if (videoQc.status !== "GREEN") {
-          const reasons = videoQc.checks.fail_reasons.join("; ") || "not GREEN";
-          const redoRel = `seats/${b.id}.motion-redo.json`;
-          fs.mkdirSync(path.join(jobDir(jobId), "seats"), { recursive: true });
-          fs.writeFileSync(jobFile(jobId, redoRel), JSON.stringify({
-            owner: "motion",
-            shot: b.id,
-            reasons: videoQc.checks.fail_reasons,
-          }, null, 2));
-          await speak("motion", `${b.id} motion 眼 FAIL（${reasons}）— clip 留低，未交付。`, "fail");
-        } else {
-          await speak("motion", `${b.id} motion 眼 GREEN`, "pass");
+        if ((chained.length || isMsSegment) && !msPortraitFile) {
+          throw new Error(`${segId}: multishot段要一張未切成張（<Picture 1>）`);
         }
-        emit(jobId, {
-          agent: "motion",
-          level: "info",
-          message: `${b.id} motion 完成${segShots.length > 1 ? `（跨shot段 ${segId} 切片 ${b.start}+${b.len}f）` : ""}`,
-          data: {
-            shot: b.id, stage: "motion", eye: "motion", verdict: videoQc.status === "GREEN" ? "pass" : "fail",
-            proof: `motion/${segId}.mp4`, ms: Date.now() - motionStarted,
-          },
-          step_id: "motion",
-          parent_steps: ["require"],
-          seat: "motion",
+        const doneMp4 = path.join(motionDir, `${segId}.mp4`);
+        const doneReceipt = path.join(motionDir, `${segId}.h3_submit.json`);
+        const segFrames = (id: string) =>
+          isMsSegment
+            ? snapFramesPerShot(ctx.cutPlan!.shots.find((c) => c.id === id)?.duration_s ?? 0)
+            : Math.round((ctx.cutPlan!.shots.find((c) => c.id === id)?.duration_s ?? -1) * 24);
+        // the multishot node DELIVERS on H3's 17k+5 grid (a 119 request lands
+        // as 124) — actuals: r2v anchor snap + one grid-snapped count per
+        // chained shot (run5 live: 124 + 124 = 248, ffprobe-verified)
+        const segBudget = isMsSegment
+          ? segmentFrameBudget(segShots.map((id) => ctx.cutPlan!.shots.find((c) => c.id === id)?.duration_s ?? 0))
+          : null;
+        const wantFrames = isMsSegment
+          ? segBudget!.total
+          : snapDurationToFrames(shot.durationSec)
+            + (chained.length ? msGridFrames(framesPerShot) * chained.length : 0);
+        const frameSnap = fs.existsSync(doneMp4)
+          && Math.round((await mediaSeconds(doneMp4)) * 24) === wantFrames;
+        // per-shot QC pins: a multi-shot segment slices per shot so each shot
+        // judges against its OWN require (the anchor's require over the whole
+        // take punished the chained shots' frames — run5 live lesson)
+        const qcIds = segShots; // slice pins are per shot id, solo = the shot itself
+        const allPinned = qcIds.every((id) => pinVideoQcAccepted(motionDir, id));
+        // resume keeps an mp4 only when frame clock matches AND blind MARS video_qc is GREEN
+        const kept =
+          input.resume
+          && !qcIds.some((id) => forcesRedo(motionIds, id, input.shot))
+          && fs.existsSync(doneMp4)
+          && fs.existsSync(doneReceipt)
+          && frameSnap
+          && allPinned;
+        if (kept) {
+          shotVideos.push(doneMp4);
+          receipts.push(relInJob(jobId, doneReceipt));
+          await speak("motion", `${segId} 照舊，唔重燒 H3（video_qc GREEN）。`);
+          continue;
+        }
+        // clock-correct render with missing/stale pins → QC-only resume: re-judge
+        // the take, never re-burn the same seed for a QC reason
+        const qcOnly =
+          input.resume && fs.existsSync(doneMp4) && fs.existsSync(doneReceipt) && frameSnap && !allPinned;
+        if (qcOnly) {
+          await speak("motion", `${segId} mp4 時鐘啱但 pin 未齊 — 只重判QC，唔重燒。`, "warn");
+        } else if (input.resume && fs.existsSync(doneMp4)) {
+          await speak("motion", `${segId} mp4 時鐘唔啱 — 重燒。`, "warn");
+        }
+        const motionStarted = Date.now();
+        if (!qcOnly) {
+          const singleShot = !isMsSegment && chained.length === 0;
+          const rideKf = singleShot && coexistKf;
+          if (singleShot && !hasVideo1 && !positions) {
+            throw new Error(`keyframe_positions_missing: ${shot.id}`);
+          }
+          if (singleShot && !hasVideo1 && cutFiles.length < 1) {
+            throw new Error(`keyframe_positions_missing: ${shot.id} 鍵格檔未切`);
+          }
+          if (singleShot) {
+            assertIdentitySheets(shot, ctx.portraits!, path.join(jobDir(jobId), "ctx.portraits!"), input.portraitsDir);
+          }
+          // Sol 0926 E：KF 兩幅備成 544×960 同一構圖策略（inject node 對 2304
+          // 方圖首 stretch 尾 crop 會打架）；derived receipt 隨圖落盤。淨 start
+          // 冇 end 嘅共存行返 H3Keyframes 舊路，唔備圖。
+          let kfStartWired: string = cutFiles[0]!;
+          let kfEndWired: string | undefined = cutFiles[1];
+          if (rideKf && hasVideo1 && !isMsSegment && kfEndWired) {
+            kfStartWired = await prepR2v544(kfStartWired);
+            kfEndWired = await prepR2v544(kfEndWired);
+          }
+          if (!isMsSegment) {
+            writeH3Plan(jobId, ctx.timed!, shot, {
+              wav: ctx.h3WavByShot.get(shot.id)!,
+              blockout: hasVideo1 ? blockoutMp4 : undefined,
+              still: rideKf && hasVideo1 && kfEndWired ? kfStartWired : stillPng,
+              kfStart: rideKf ? kfStartWired : (hasVideo1 ? undefined : stillPng),
+              kfEnd: rideKf ? kfEndWired : (hasVideo1 ? undefined : pack!.kfEnd),
+              refImageFiles: pack!.refImageFiles,
+              anglePortraits: pack!.anglePortraits,
+            });
+          }
+          const { receiptFile } = await submitH3Shot({
+            prose,
+            wavFile: ctx.h3WavByShot.get(shot.id)!,
+            durationSec: shot.durationSec,
+            blockoutMp4: hasVideo1 && !isMsSegment ? blockoutMp4 : undefined,
+            keyframePositions: rideKf ? positions : undefined,
+            kfStart: rideKf ? kfStartWired : (hasVideo1 || isMsSegment ? undefined : stillPng),
+            kfEnd: rideKf ? kfEndWired : (hasVideo1 ? undefined : pack?.kfEnd),
+            kfExtraFiles: rideKf ? cutFiles.slice(2) : undefined,
+            refImageFiles: pack?.refImageFiles,
+            uiPhotoFiles: pack?.uiPhotoFiles,
+            ...(chained.length && !isMsSegment
+              ? {
+                  chain: {
+                    script: msScript,
+                    shots: chained,
+                    framesPerShot,
+                    referenceImageFile: msPortraitFile!,
+                  },
+                }
+              : {}),
+            ...(isMsSegment
+              ? {
+                  multishot: {
+                    script: msScript,
+                    shots: segShots,
+                    framesPerShot: segBudget!.perShot,
+                    referenceImageFile: msPortraitFile!,
+                  },
+                }
+              : {}),
+            outMp4: doneMp4,
+            receiptJson: doneReceipt,
+            dryRun: false,
+            shot: segId,
+            requireQuote: Boolean(shot.dialogue.trim()),
+            wardrobe: wardrobeClauses(ctx.timed!),
+            aspect: ctx.timed!.aspect,
+            graphVariant: variant,
+            stepsOverride: input.steps,
+          });
+          receipts.push(relInJob(jobId, receiptFile));
+        }
+        const mp4 = doneMp4;
+        shotVideos.push(mp4);
+        upsertDoc({
+          id: `video:${segId}`,
+          slate: jobId,
+          modality: "video",
+          shotId: segId,
+          text: prose,
+          absPath: mp4,
         });
-      }
+        await think("pictureQc");
+        // per-shot QC over the take: a multi-shot segment slices per shot so
+        // each shot's require judges its OWN frames (the anchor's require over
+        // the whole take punished the chained shots — run5 live lesson); a solo
+        // take judges whole
+        const anchorLen = isMsSegment
+          ? snapFramesPerShot(ctx.cutPlan!.shots.find((c) => c.id === shot.id)?.duration_s ?? 0)
+          : snapDurationToFrames(shot.durationSec);
+        const sliceBounds: { id: string; start: number; len: number }[] = [];
+        let cursor = 0;
+        for (const id of segShots) {
+          const len = isMsSegment ? segBudget!.perShot : id === shot.id ? anchorLen : msGridFrames(framesPerShot);
+          sliceBounds.push({ id, start: cursor, len });
+          cursor += len;
+        }
+        const prevShot = ctx.stillPlans!.map((p) => p.shot).find((s, i, arr) => arr[i + 1]?.id === shot.id);
+        for (const b of sliceBounds) {
+          const reqPath = path.join(ctx.stillDir!, `${b.id}.require.json`);
+          // CFORM7: the slice's require keeps the keyframe keys but its action is
+          // the clip's temporal script, not the freeze line (motionClipRequire)
+          const shotRequire: QcRequire = motionClipRequire(
+            JSON.parse(fs.readFileSync(reqPath, "utf8")) as QcRequire,
+            ctx.timed!.shots.find((s) => s.id === b.id),
+          );
+          const sliceJson = path.join(motionDir, `${b.id}.video_qc.json`);
+          let sliceMp4 = mp4;
+          if (segShots.length > 1) {
+            sliceMp4 = path.join(motionDir, `${b.id}.qc.mp4`);
+            await ffmpeg([
+              "-i", mp4,
+              "-vf", `trim=start_frame=${b.start}:end_frame=${b.start + b.len},setpts=PTS-STARTPTS`,
+              "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+              sliceMp4,
+            ]);
+          }
+          let videoQc = await runVideoQc({
+            mp4: sliceMp4,
+            outJson: sliceJson,
+            require: shotRequire,
+            shotId: b.id,
+            ...(segShots.length > 1
+              ? { parent: { file: mp4, shotId: b.id, start: b.start, len: b.len } }
+              : {}),
+          });
+          if (b.id === shot.id) {
+            videoQc = await attachMemoryDistances(videoQc, {
+              ep: ctx.job.slate,
+              shot: b.id,
+              outJson: sliceJson,
+              character: shot.marks[0]?.characterId,
+              prevStill: prevShot ? path.join(ctx.stillDir!, `${prevShot.id}.png`) : undefined,
+              blockoutF0: path.join(ctx.blockoutDir!, `${shot.id}.f0.png`),
+              midFrame: videoQc.frames[Math.floor(videoQc.frames.length / 2)]?.file,
+            });
+          }
+          if (videoQc.status !== "GREEN") {
+            const reasons = videoQc.checks.fail_reasons.join("; ") || "not GREEN";
+            const redoRel = `seats/${b.id}.motion-redo.json`;
+            fs.mkdirSync(path.join(jobDir(jobId), "seats"), { recursive: true });
+            fs.writeFileSync(jobFile(jobId, redoRel), JSON.stringify({
+              owner: "motion",
+              shot: b.id,
+              reasons: videoQc.checks.fail_reasons,
+            }, null, 2));
+            await speak("motion", `${b.id} motion 眼 FAIL（${reasons}）— clip 留低，未交付。`, "fail");
+          } else {
+            await speak("motion", `${b.id} motion 眼 GREEN`, "pass");
+          }
+          emit(jobId, {
+            agent: "motion",
+            level: "info",
+            message: `${b.id} motion 完成${segShots.length > 1 ? `（跨shot段 ${segId} 切片 ${b.start}+${b.len}f）` : ""}`,
+            data: {
+              shot: b.id, stage: "motion", eye: "motion", verdict: videoQc.status === "GREEN" ? "pass" : "fail",
+              proof: `motion/${segId}.mp4`, ms: Date.now() - motionStarted,
+            },
+            step_id: "motion",
+            parent_steps: ["require"],
+            seat: "motion",
+          });
+        }
+  } catch (err) {
+    // 0927 停法手術（照 ViMax REPL 唔死）：呢鏡材料／閘缺＝blocked skip，繼續其他鏡。
+    // 淨認呢啲已知材料缺 signature；基建錯（HTTP/ffmpeg/schema crash）照舊向上拋，
+    // 唔可以靜靜食埋。
+    const msg = err instanceof Error ? err.message : String(err);
+    const materialMissing = /photo_qc 未 GREEN|keyframe_positions_missing|identity_sheet_missing|C-form 冇|angle_portrait_missing|身份成張未齊/.test(msg);
+    if (!materialMissing) throw err;
+    emit(jobId, {
+      agent: "motion", level: "warn",
+      message: `${shot.id} blocked（${msg}）——繼續其他鏡`,
+      data: { shot: shot.id, stage: "motion", blocked: msg },
+    });
+    continue;
+  }
     }
     ctx.job = patch(ctx.job, {
       providers: trace,
