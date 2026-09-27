@@ -826,16 +826,17 @@ export async function runPlaywright(
   io: { crew: CrewConfig; model: string; receiptDir: string; fallbackModel?: string },
 ): Promise<PlaywrightScript & { compileReceipt: string[] }> {
   const loose = z.object({}).passthrough();
+  const user = JSON.stringify({
+    brief_verbatim: packet.brief,
+    director_treatment: packet.treatment,
+    asset_facts: packet.assets,
+    targetSec: packet.targetSec,
+  });
   const pass = await chatJsonSeat<Record<string, unknown>>({
     seat: "creative",
     unit: "playwright-script",
     system: PLAYWRIGHT_CHARTER,
-    user: JSON.stringify({
-      brief_verbatim: packet.brief,
-      director_treatment: packet.treatment,
-      asset_facts: packet.assets,
-      targetSec: packet.targetSec,
-    }),
+    user,
     schema: loose,
     crew: io.crew,
     model: io.model,
@@ -843,9 +844,38 @@ export async function runPlaywright(
     receiptDir: io.receiptDir,
   });
   fs.writeFileSync(path.join(io.receiptDir, "creative.playwright.raw.json"), JSON.stringify(pass.value, null, 2));
-  const { script, receipt, misses } = compilePlaywrightScript(pass.value);
+  let compiled = compilePlaywrightScript(pass.value);
+  // V2b（PLAN-v2 0928）§7.2：gap-retry 補位迴路（照 runDirector 6e39c66 範式）
+  // ——canonical 閘 miss＝帶住「缺咗乜」返去同一個方案補一次，唔准編（code
+  // 唔填空）；兩次都缺先 fail loud。最近 8 單 SC-0927 有 2 單死呢個閘
+  // （characterState 缺席）——throw 完 job 即死冇迴路就係嗰個死法。
+  if (compiled.misses.length) {
+    const retryUser = JSON.stringify({
+      ...JSON.parse(user),
+      "之前交咗嘅方案": pass.value,
+      "機器閘 miss 清單": compiled.misses,
+      "補位要求": "照返你之前交咗嘅同一個劇本，只補齊 miss 清單指明嘅欄位（characterState／script_md 正文／segments 逐段表演）。唔好由零重作，唔好改已經啱嘅嘢。",
+    });
+    const retryPass = await chatJsonSeat<Record<string, unknown>>({
+      seat: "creative",
+      unit: "playwright-script.gap-retry",
+      system: PLAYWRIGHT_CHARTER,
+      user: retryUser,
+      schema: loose,
+      crew: io.crew,
+      model: io.model,
+      ...(io.fallbackModel ? { fallbackModel: io.fallbackModel } : {}),
+      receiptDir: io.receiptDir,
+    });
+    fs.writeFileSync(path.join(io.receiptDir, "creative.playwright.gap-retry.raw.json"), JSON.stringify(retryPass.value, null, 2));
+    const again = compilePlaywrightScript(retryPass.value);
+    compiled = { script: again.script, receipt: [...compiled.receipt, ...again.receipt, `playwright gap-retry after ${compiled.misses.length} misses`], misses: again.misses };
+  }
+  const { script, receipt, misses } = compiled;
   fs.writeFileSync(path.join(io.receiptDir, "creative.playwright.compile.json"), JSON.stringify({ receipt, misses }, null, 2));
-  if (misses.length) throw new Error(`playwright_missing_semantics: ${misses.join("；")}`);
+  if (misses.length) {
+    throw new Error(`playwright_missing_semantics: ${misses.join("；")}——補位迴路行咗一次都缺（收據 creative.playwright.compile.json＋gap-retry raw）`);
+  }
   return { ...script, compileReceipt: receipt };
 }
 

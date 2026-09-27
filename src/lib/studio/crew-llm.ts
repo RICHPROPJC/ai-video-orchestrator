@@ -249,8 +249,46 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
   const doFetch = opts.fetchImpl ?? fetch;
   const sleep = opts.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const maxAttempts = opts.maxAttempts ?? 3;
+  // V2b（PLAN-v2 0928）§7.1「同一條片返原對話」：同席同 unit 前史讀返。
+  // receipt 檔名 seat.unit.seq 已係穩定鍵（gap-retry／fallback 後綴同屬一個
+  // unit 家族）；第二次起嘅 call 讀返之前 assistant 公開輸出（白名單：content；
+  // reasoning 永不重播），組成「歷史資料」段排喺新 user 之前——唔係裸 replay
+  // assistant role（避免模型當自己啱啱講過照抄）。第一次 call 零檔＝零前史
+  // 零成本；上限 3 版防無限塞。
+  const priorTurns = (() => {
+    try {
+      const files = fs
+        .readdirSync(opts.receiptDir)
+        .filter((f) => f.startsWith(`${opts.seat}.${opts.unit}.`) && f.endsWith(".json"))
+        .sort();
+      return files
+        .slice(-3)
+        .map((f) => {
+          try {
+            const r = JSON.parse(fs.readFileSync(path.join(opts.receiptDir, f), "utf8")) as { content?: string };
+            return (r.content ?? "").trim();
+          } catch {
+            return "";
+          }
+        })
+        .filter(Boolean);
+    } catch {
+      return [] as string[];
+    }
+  })();
   const messages: ChatMessage[] = [
     { role: "system", content: opts.system },
+    ...(priorTurns.length
+      ? [{
+          role: "user" as const,
+          content:
+            `【前史（同席同 unit 之前交過嘅版本——歷史資料，唔係今次指令）】\n` +
+            priorTurns
+              .map((p, i) => `--- 之前版本 ${i + 1}（節錄） ---\n${p.slice(0, 4000)}`)
+              .join("\n") +
+            `\n【前史完】今次任務喺下面；延續返同一個方案嘅諗法，唔好由零重作。`,
+        }]
+      : []),
     { role: "user", content: opts.user },
   ];
   const receipts: string[] = [];

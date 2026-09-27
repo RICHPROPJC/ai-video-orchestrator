@@ -614,3 +614,30 @@ if (bareBun) {
     if (failed > 0) process.exit(1);
   })();
 }
+
+// ── V2b（PLAN-v2 0928）：同 unit 前史讀返行為鎖 ──────────────────────────────
+
+test("V2b: 第一次 call 零前史——user 淨係原任務", async () => {
+  const dir = tmpDir();
+  const { impl, sent } = fakeFetch(['{"title":"片","beats":["a","b"]}']);
+  await call({ replies: [], dir, fetchImpl: impl });
+  const messages = (sent[0] as { messages: { role: string; content: string }[] }).messages;
+  assert.equal(messages.length, 2, "system+user 兩條，冇前史段");
+  assert.ok(!messages.some((m) => m.content.includes("【前史")));
+});
+
+test("V2b: 第二次同 unit call 帶前史段——之前 assistant 輸出入歷史資料，reasoning 唔重播", async () => {
+  const dir = tmpDir();
+  // 第一次：正路出收據
+  const f1 = fakeFetch(['{"title":"片","beats":["a","b"]}']);
+  await call({ replies: [], dir, fetchImpl: f1.impl });
+  // 第二次同 unit（例如 gap-retry 後嘅新 call）：receiptDir 已有 writer.outline.1.json
+  const f2 = fakeFetch(['{"title":"片二","beats":["c","d"]}']);
+  await call({ replies: [], dir, fetchImpl: f2.impl });
+  const messages = (f2.sent[0] as { messages: { role: string; content: string }[] }).messages;
+  const prior = messages.find((m) => m.content.includes("【前史"));
+  assert.ok(prior, "應有前史段");
+  assert.ok(prior.content.includes("片"), "之前 assistant 公開輸出（title）入前史");
+  assert.ok(!prior.content.includes("諗咗"), "reasoning 唔准重播");
+  assert.ok(messages[messages.length - 1]!.content.includes("brief"), "新 user 任務排最尾");
+});

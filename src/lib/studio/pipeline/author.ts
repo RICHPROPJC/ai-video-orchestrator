@@ -150,7 +150,20 @@ async function authorCallSheet(
               receiptDir,
               fallbackModel: cfg.crew.secondFallback,
             },
-            { scriptMd: script.script_md, previousPlan: plan },
+            {
+              scriptMd: script.script_md,
+              previousPlan: plan,
+              // V2b（PLAN-v2 0928）§7.2：revise.hint——實際缺口清單帶返同一
+              // 責任席（之前簽名有 hint 但 caller 冇傳，修訂輪盲修）
+              hint: [
+                ...(unplaced.length ? [`冇落點台詞 ${unplaced.length} 句：${unplaced.map((u) => u.line).join("／").slice(0, 400)}`] : []),
+                ...(declared.length ? [`聲明欄台詞要有落點：${declared.join("／").slice(0, 200)}`] : []),
+                ...(div.timeGaps.length ? [`時間冇對應鏡 ${div.timeGaps.length} 段：${div.timeGaps.join("；").slice(0, 400)}`] : []),
+                ...(div.actionNews.length ? [`新動作差集 ${div.actionNews.length} 項：${div.actionNews.join("；").slice(0, 300)}`] : []),
+                ...(div.contactNews.length ? [`新產品接觸 ${div.contactNews.length} 項：${div.contactNews.join("；").slice(0, 300)}`] : []),
+                ...(script.newElements.length ? [`編劇明報新增元素 ${script.newElements.length} 項要有鏡`] : []),
+              ].join("；"),
+            },
           );
           const rewritten = writeCreativeArtifacts(jobId, creativeDir, input.brief, revised, { targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) });
           updateCreativeManifest(creativeDir, input.brief, { file: "script.md", dependsOn: rewritten.planSha });
