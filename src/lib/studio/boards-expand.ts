@@ -102,11 +102,15 @@ export function expandBoards(opts: {
   }
 
   const shots: Shot[] = [];
+  // §15.2：(sceneId,localKey)→建立嘅唯一最終 SH——採用記錄直接指認建立嗰鏡，
+  // 唔經 beat 反查（兩鏡同 beat 唔會撈；兩場同 a1 唔互覆）。
+  const localKeyShot = new Map<string, string>();
   for (const board of ordered) {
     const scene = sceneById.get(board.sceneId)!;
     for (const shot of board.shots) {
       const index = shots.length + 1;
       const camera = cameraFor(shot.size, shot.angle, shot.side);
+      if (shot.localKey) localKeyShot.set(`${board.sceneId}::${shot.localKey}`, shotId(index));
       shots.push({
         id: shotId(index),
         index,
@@ -191,29 +195,23 @@ export function expandBoards(opts: {
     // §13.4：聲音契約——新編譯 sheet 明示 events 模式＋必要事件身份（loader
     // 載入完整性對呢個 gate；零對白一樣寫，空集都係明示契約）。
     soundContract: { mode: "events", expectedDialogueBeats: audioEvents.map((e) => e.beatId) },
-    // §12 優先2＋§13.3.2＋§14.2/14.4c/d：採用收據收齊——issues 無條件先行
-    // 收集（零成功 adoptions 唔吞失敗）；shotIds 支援兩種指認：localKey（board
-    // 場內自編鏡鍵——精確一鏡，映射最終 SH）優先，beatId（組覆蓋）fallback；
-    // 每個引用各自驗證（[有效,無效] 唔可以總映射非空就靜靜掉無效）。
+    // §12 優先2＋§13.3.2＋§14.2/14.4cd＋§15.2/15.3：採用收據收齊——issues 無條件
+    // 先行；shotIds 引用種類可辨：`#localKey`（精確一鏈——(來源場,localKey) 直
+    // 查建立嘅嗰個 SH）／淨值 beatId（明示組覆蓋）；每個引用各自驗證；每條
+    // adoption 保留來源 sceneId＋placementIdx（occurrence 身份）。
     ...((() => {
-      const localKeyToBeat = new Map<string, string>();
-      for (const b of opts.boards) for (const sh of b.shots) if (sh.localKey) localKeyToBeat.set(sh.localKey, sh.beatId);
-      const shOfLocalKey = new Map<string, string[]>();
-      for (const b of opts.boards) for (const sh of b.shots) if (sh.localKey) {
-        // localKey 對本 board shot 嘅 beatId→最終 SH（經涵蓋該 beat 嘅鏡）
-        shOfLocalKey.set(sh.localKey, shots
-          .filter((f) => (f.beatIds ?? [f.beatId]).includes(sh.beatId) || (f.audioBeats ?? []).includes(sh.beatId))
-          .map((f) => f.id));
-      }
       const shIdsOfBeat = (beat: string) => shots
         .filter((sh) => (sh.beatIds ?? [sh.beatId]).includes(beat) || (sh.audioBeats ?? []).includes(beat))
         .map((sh) => sh.id);
       const boardIssues = opts.boards.flatMap((b) => b.adoptionIssues ?? []);
-      const rows = opts.boards.flatMap((b) => b.onImageAdoptions ?? []);
+      const rows = opts.boards.flatMap((b) => (b.onImageAdoptions ?? []).map((a) => ({ ...a, sceneId: b.sceneId })));
       const mapped = rows.map((a) => {
         const per = a.shotIds.map((id) => {
-          const sh = localKeyToBeat.has(id) ? shOfLocalKey.get(id)! : shIdsOfBeat(id);
-          return { id, sh };
+          if (id.startsWith("#")) {
+            const sh = localKeyShot.get(`${a.sceneId}::${id.slice(1)}`);
+            return { id, sh: sh ? [sh] : [] };
+          }
+          return { id, sh: shIdsOfBeat(id) };
         });
         const unmapped = per.filter((x) => x.sh.length === 0).map((x) => x.id);
         return { row: { ...a, shotIds: [...new Set(per.flatMap((x) => x.sh))] }, unmapped };

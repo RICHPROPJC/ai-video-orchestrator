@@ -138,6 +138,9 @@ const boardsSceneShape = z.object({
    *  跨鏡、一鏡多句合法；詞命中（onImageCheck）只係診斷唔代替呢度判斷。 */
   onImageAdoptions: z.array(z.object({
     placement: z.string().min(1).max(80),
+    /** §15.3：occurrence 身份——dialoguePlacements 嘅索引（顯示 word 可以
+     *  撞；同句兩個 placement 各有 idx）。packet 會帶 idx。 */
+    placementIdx: z.number().int().min(0),
     shotIds: z.array(z.string()).min(1),
     plan: z.string().min(1).max(300),
     reason: z.string().min(1).max(300),
@@ -160,20 +163,26 @@ export function boardsSceneSchema(ctx: {
   /** §13.3.1：導演聲畫採用意圖（directorSkeleton.dialoguePlacements）——
    *  有意圖嘅 callsheet，boards 必須交採用結果（onImageAdoptions 或
    *  adoptionIssues 任一）；冇意圖嘅流程合法 N/A 唔強制填表。 */
-  dialoguePlacements?: { word: string }[];
+  dialoguePlacements?: { word: string; idx: number; startSec?: number; endSec?: number }[];
 }) {
   const byBeat = new Map(ctx.beats.map((b) => [b.id, b]));
   const cast = new Set(ctx.characters.map((c) => c.id));
   return boardsSceneShape.superRefine((scene, report) => {
-    // §13.3.1＋§14.4a：採用 coverage 逐條——每條本場相關 placement 要有明示
-    // 採用結果（onImageAdoptions.placement 對得上）或具名未解（adoptionIssues
-    // 字串提返個 word）；淨交一條唔夠，未知 word 唔收貨。
+    // §13.3.1＋§14.4a＋§15.3：採用 coverage 逐 occurrence——身份＝placementIdx
+    // （word 淨顯示）；每條本場相關 occurrence 要有對應 placementIdx 嘅採用，
+    // 或 issue 具名 `word#idx`；已交集合以外嘅未知 idx 引用拒收。
     if ((ctx.dialoguePlacements?.length ?? 0) > 0) {
-      const adopted = new Set((scene.onImageAdoptions ?? []).map((a) => a.placement));
+      const needIdx = new Set(ctx.dialoguePlacements!.map((p) => p.idx));
+      const adoptedIdx = new Set((scene.onImageAdoptions ?? []).map((a) => a.placementIdx));
       const issueText = (scene.adoptionIssues ?? []).join("\n");
       for (const need of ctx.dialoguePlacements!) {
-        if (!adopted.has(need.word) && !issueText.includes(need.word)) {
-          report.addIssue({ code: "custom", path: ["onImageAdoptions"], message: `placement「${need.word}」冇採用結果——onImageAdoptions 要有一條 placement 對得上，或 adoptionIssues 具名講明未解` });
+        if (!adoptedIdx.has(need.idx) && !issueText.includes(`${need.word}#${need.idx}`)) {
+          report.addIssue({ code: "custom", path: ["onImageAdoptions"], message: `placement「${need.word}#${need.idx}」冇採用結果——onImageAdoptions 要有一條 placementIdx=${need.idx}，或 adoptionIssues 具名講明「${need.word}#${need.idx}」未解` });
+        }
+      }
+      for (const a of scene.onImageAdoptions ?? []) {
+        if (!needIdx.has(a.placementIdx)) {
+          report.addIssue({ code: "custom", path: ["onImageAdoptions"], message: `placementIdx=${a.placementIdx} 唔喺本場相關 placement 集（packet 清單以外）——未知引用拒收` });
         }
       }
     }

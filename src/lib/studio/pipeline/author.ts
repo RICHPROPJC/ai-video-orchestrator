@@ -64,6 +64,18 @@ async function authorCallSheet(
   // 耗盡唔攔截唔進修訂（inline loop guard 保護唔到先行嘅 authorStage/resume），
   // gaps/blocked 留底收尾 verdict。
   const canRevise = placementGaps.length > 0 && epAttempts < GAP_BUDGET;
+  // §15.1b：額度攔實際模型入口——耗盡＋gaps 存在，唔可以令 creativeFresh
+  // 路重開創作繞過額度：有既有 callsheet（有效舊採用）照食＋gaps 留底收尾
+  // blocked；冇（缺舊產物）＝具名 throw，唔盲生成。合法新外部採用要明示
+  // 來源改變（新 episode 由 world 重算開，唔喺呢度）。
+  if (placementGaps.length > 0 && epAttempts >= GAP_BUDGET) {
+    if (fs.existsSync(existing)) {
+      const sheet = loadCallSheet(existing);
+      await io.speak("producer", `修訂額度耗盡＋${placementGaps.length} 條 gap——照食既有 callsheet（${sheet.shots.length} 鏡），gaps 留底收尾 blocked 判斷，唔重開創作。`, "warn");
+      return sheet;
+    }
+    throw new Error(`sound_repair_budget_exhausted: 修訂額度耗盡（episode ${GAP_BUDGET} 輪）＋${placementGaps.length} 條聲畫 gap 未解，且冇既有 callsheet 可採用——缺有效採用具名 blocked，唔盲生成`);
+  }
   if (fs.existsSync(existing) && canRevise) {
     await io.speak(
       "producer",

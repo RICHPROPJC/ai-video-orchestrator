@@ -96,10 +96,12 @@ export function patch(job: JobRecord, partial: Partial<JobRecord>) {
   const next = { ...job, ...partial };
   if (!("blockedShots" in partial)) next.blockedShots = disk?.blockedShots ?? next.blockedShots;
   if (!("placementGaps" in partial)) next.placementGaps = disk?.placementGaps ?? next.placementGaps;
-  // §14.1a：episode 同一規則承接——未提交＝磁碟最新（author 攔截 attempts+1
-  // 唔被 authorStage 舊 ctx.job 覆寫）；明確提交 null＝閂（in 運算子計
-  // own-property，null 唔當缺值復活舊 episode）。
-  if (!("soundRepairEpisode" in partial)) next.soundRepairEpisode = disk?.soundRepairEpisode ?? next.soundRepairEpisode;
+  // §14.1a＋§15.1a：episode 承接三分——磁碟有記錄（含 null＝已閉）原樣承接，
+  // 唔可以 nullish 回退復活 stale ctx 嘅舊 episode；磁碟冇欄（undefined）＝
+  // 冇狀態可承接，照 next。明確 partial 優先權保留。
+  if (!("soundRepairEpisode" in partial) && disk && disk.soundRepairEpisode !== undefined) {
+    next.soundRepairEpisode = disk.soundRepairEpisode;
+  }
   writeJob(next, activeOwner);
   return next;
 }

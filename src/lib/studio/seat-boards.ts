@@ -263,7 +263,13 @@ export async function runBoards(
             beats: opts.directorSkeleton.beats ?? [],
             shots: (opts.directorSkeleton.shots ?? []).filter((sh) =>
               sh.startSec !== undefined && sh.endSec !== undefined),
-            dialoguePlacements: opts.directorSkeleton.dialoguePlacements ?? [],
+            dialoguePlacements: (opts.directorSkeleton.dialoguePlacements ?? []).map((p, idx) => ({ word: p.word, idx, startSec: p.startSec, endSec: p.endSec }))
+              .filter((p) => {
+                // §15.3：packet 同 validator 同一相關集（時間窗版，見 schema ctx）
+                const sceneStartLocal = script.outline.scenes.slice(0, i).reduce((a, sc) => a + sc.targetSec, 0);
+                const sceneEndLocal = sceneStartLocal + scene.targetSec;
+                return (p.endSec ?? 0) >= sceneStartLocal - 1 && (p.startSec ?? 0) <= sceneEndLocal + 1;
+              }),
           } } : {}),
         characters: script.outline.characters.map((c) => ({
           id: c.id,
@@ -274,7 +280,17 @@ export async function runBoards(
         })),
         previousSceneHandoff: carried,
       }),
-      schema: boardsSceneSchema({ sceneId: scene.id, beats, characters, budgetSec, scriptBeatIds: script.scenes.flatMap((sc) => sc.beats.map((b) => b.id)), dialoguePlacements: opts.directorSkeleton?.dialoguePlacements?.filter((p) => beats.some((b) => (b.dialogue ?? "").includes(p.word))) }),
+      schema: boardsSceneSchema({ sceneId: scene.id, beats, characters, budgetSec, scriptBeatIds: script.scenes.flatMap((sc) => sc.beats.map((b) => b.id)), dialoguePlacements: (() => {
+        // §15.3：本場相關＝時間窗重疊（placement 區間 vs 場時間範圍，±1s
+        // 容跨場聲橋接收場——唔可以淨計台詞來源場漏接收畫面責任）＋帶 idx
+        // （occurrence 身份）。packet 同 validator 同集。
+        const all = opts.directorSkeleton?.dialoguePlacements ?? [];
+        const sceneStart = script.outline.scenes.slice(0, i).reduce((a, sc) => a + sc.targetSec, 0);
+        const sceneEnd = sceneStart + scene.targetSec;
+        return all
+          .map((p, idx) => ({ word: p.word, idx, startSec: p.startSec, endSec: p.endSec }))
+          .filter((p) => (p.endSec ?? 0) >= sceneStart - 1 && (p.startSec ?? 0) <= sceneEnd + 1);
+      })() }),
       normalize: (raw, note) => padBoardDurations(raw, budgetSec, note),
       receiptDir: io.receiptDir,
       fetchImpl: io.fetchImpl,
