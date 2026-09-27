@@ -310,7 +310,7 @@ export function compileDirectorPlan(raw: unknown): { plan: DirectorPlan; receipt
       beatId: (String(s.beatId ?? "").trim() || (sv !== undefined && ev !== undefined ? deriveBeatId(sv, ev) : "")),
       ...(sv !== undefined ? { startSec: sv } : { startSec: 0 }),
       ...(ev !== undefined ? { endSec: ev } : { endSec: 0 }),
-      purpose: String(s.purpose ?? s.subject ?? s.action ?? ""),
+      purpose: String(s.purpose ?? s.subject ?? s.action ?? s.why ?? s.goal ?? s.description ?? s.note ?? ""),
       ...(typeof (s.audienceEye ?? s.eyeLine ?? s.audience_eye) === "string" ? { audienceEye: String(s.audienceEye ?? s.eyeLine ?? s.audience_eye) } : {}),
       ...(typeof (s.frame ?? s.camera) === "string" ? { frame: String(s.frame ?? s.camera) } : {}),
       ...(typeof s.action === "string" ? { action: s.action } : {}),
@@ -665,10 +665,35 @@ export async function runDirector(
     receiptDir: io.receiptDir,
   });
   fs.writeFileSync(path.join(io.receiptDir, revise ? "creative.director-plan-revise.raw.json" : "creative.director-plan.raw.json"), JSON.stringify(pass.value, null, 2));
-  const { plan, receipt, misses } = compileDirectorPlan(pass.value);
+  let compiled = compileDirectorPlan(pass.value);
+  // 判斷歸判斷＋迴路（照官方 ViMax camera-tree 範式）：canonical 閘 miss＝帶住
+  // 「缺咗乜」返去同一個方案補一次，唔准編（code 唔填空），兩次都缺先 fail loud。
+  if (compiled.misses.length) {
+    const retryUser = JSON.stringify({
+      ...JSON.parse(user),
+      "之前交咗嘅方案": pass.value,
+      "機器閘 miss 清單": compiled.misses,
+      "補位要求": "照返你之前交嘅同一個方案，只補齊 miss 清單指明嘅欄位（欄位名照 DirectorPlan 契約：shots[] 要有 purpose 每鏡一句、startSec/endSec 數字、beats/rhythmMap、treatment、vision）。唔好由零重作，唔好改已經啱嘅嘢。",
+    });
+    const retryPass = await chatJsonSeat<Record<string, unknown>>({
+      seat: "creative",
+      unit: revise ? "director-plan-revise.gap-retry" : "director-plan.gap-retry",
+      system,
+      user: retryUser,
+      schema: loose,
+      crew: io.crew,
+      model: io.model,
+      ...(io.fallbackModel ? { fallbackModel: io.fallbackModel } : {}),
+      receiptDir: io.receiptDir,
+    });
+    fs.writeFileSync(path.join(io.receiptDir, revise ? "creative.director-plan-revise.gap-retry.raw.json" : "creative.director-plan.gap-retry.raw.json"), JSON.stringify(retryPass.value, null, 2));
+    const again = compileDirectorPlan(retryPass.value);
+    compiled = { plan: again.plan, receipt: [...compiled.receipt, ...again.receipt, `director gap-retry after ${compiled.misses.length} misses`], misses: again.misses };
+  }
+  const { plan, receipt, misses } = compiled;
   fs.writeFileSync(path.join(io.receiptDir, revise ? "creative.director-plan-revise.compile.json" : "creative.director-plan.compile.json"), JSON.stringify({ receipt, misses }, null, 2));
   if (misses.length) {
-    throw new Error(`director_plan_missing_semantics: ${misses.join("；")}——回導演補，唔准編（收據 creative.director-plan${revise ? "-revise" : ""}.compile.json）`);
+    throw new Error(`director_plan_missing_semantics: ${misses.join("；")}——補位迴路行咗一次都缺（收據 creative.director-plan${revise ? "-revise" : ""}.compile.json＋gap-retry raw）`);
   }
   return { ...plan, compileReceipt: receipt };
 }
