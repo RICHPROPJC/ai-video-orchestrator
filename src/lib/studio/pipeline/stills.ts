@@ -524,7 +524,14 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     const stillStarted = Date.now();
     const cells = shotCells.get(shot.id);
     if (!cells?.length || !cells.every((f) => fs.existsSync(f))) {
-      throw new Error(`${shot.id}: 鍵格板未切出。一次出板再切。`);
+      // 0927 停法手術：per-item 唔殺成隊（照 ViMax REPL 唔死）——呢鏡 blocked，
+      // 繼續其他鏡；缺件落 events，唔令成個 job 死。
+      emit(jobId, {
+        agent: "stills", level: "warn",
+        message: `${shot.id} 鍵格板未切出——呢鏡 blocked，繼續其他鏡`,
+        data: { shot: shot.id, stage: "stills", blocked: "keyframe-cells-missing" },
+      });
+      continue;
     }
     if (path.resolve(cells[0]!) !== path.resolve(out)) fs.copyFileSync(cells[0]!, out);
     shot.keyframeFiles = cells;
@@ -569,7 +576,13 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     if (!geometryShot.pass) {
       const detail = geometryShot.issues.map((i) => i.detail).join("; ");
       appendViolation(jobDir(jobId), hardPhotoQcRow("photo-qc-geometry", geometryShot.issues.map((i) => i.detail)));
-      throw new Error(`picture QC plan-geometry pre-check failed: ${detail}`);
+      // 0927 停法手術：結構預檢唔過＝呢鏡 blocked，繼續其他鏡，唔殺 job。
+      emit(jobId, {
+        agent: "pictureQc", level: "warn",
+        message: `${shot.id} plan-geometry 預檢唔過——呢鏡 blocked（${detail}）`,
+        data: { shot: shot.id, stage: "stills", blocked: "plan-geometry", detail },
+      });
+      continue;
     }
     const qcStarted = Date.now();
     const qcJson = path.join(ctx.stillDir!, `${shot.id}.photo_qc.json`);
@@ -586,7 +599,15 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     if (result.status === "FAIL" && isLocationFail(result.checks.fail_reasons) && !textMiss(result.checks.fail_reasons)) {
       // T32 rev2: location FAIL 退返阿圖重寫場景 slot 一次（自動，唔係人手改 prompt）
       const inputs0 = editInputs.get(shot.id);
-      if (!inputs0) throw new Error(`picture QC ${shot.id}: no /edit inputs for the 阿圖 retry`);
+      if (!inputs0) {
+        // 0927 停法手術：冇 /edit 記錄（舊 job resume 等）＝場景 rewrite 冇材料，
+        // 跳過 rewrite 直接行下面通用 retry，唔殺 job。
+        emit(jobId, {
+          agent: "pictureQc", level: "warn",
+          message: `${shot.id} scene-retry 冇 /edit inputs——跳過場景 rewrite，行通用 retry`,
+          data: { shot: shot.id, stage: "retry", blocked: null },
+        });
+      }
       const backToBoards = seal({
         slate: jobId,
         from: "pictureQc",
@@ -684,12 +705,24 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
         const planIdx = hopStillPlans.findIndex((p) => p.shot.id === shot.id);
         const prevPlan = planIdx > 0 ? hopStillPlans[planIdx - 1] : undefined;
         const firstAppearance = Boolean(plan?.first);
+        if (firstAppearance) {
+          const missing = refIds.filter((id) => {
+            const p = ctx.portraits!.files[id];
+            return !p || !fs.existsSync(p);
+          });
+          if (missing.length) {
+            // 0927 停法手術：retry 缺肖像＝呢鏡 blocked（首次出場要有肖像），
+            // 繼續其他鏡，唔殺 job。
+            emit(jobId, {
+              agent: "stills", level: "warn",
+              message: `${shot.id} retry 冇肖像（${missing.join("、")}）——呢鏡 blocked，繼續其他鏡`,
+              data: { shot: shot.id, stage: "retry", blocked: "portrait-missing", missing },
+            });
+            continue;
+          }
+        }
         const refFiles = firstAppearance
-          ? refIds.map((id) => {
-              const p = ctx.portraits!.files[id];
-              if (!p || !fs.existsSync(p)) throw new Error(`${shot.id}: retry 冇肖像（${id}）`);
-              return p;
-            })
+          ? refIds.map((id) => ctx.portraits!.files[id]!)
           : prevPlan
             ? [path.join(ctx.stillDir!, `${prevPlan.shot.id}.png`)]
             : [];
@@ -702,7 +735,15 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
         };
         editInputs.set(shot.id, inputs);
       }
-      if (!inputs.prompt) throw new Error(`picture QC ${shot.id}: no /edit prompt to retry with`);
+      if (!inputs.prompt) {
+        // 0927 停法手術：retry 冇 prompt 記錄＝呢鏡 blocked，繼續其他鏡。
+        emit(jobId, {
+          agent: "pictureQc", level: "warn",
+          message: `${shot.id} retry 冇 /edit prompt——呢鏡 blocked，繼續其他鏡`,
+          data: { shot: shot.id, stage: "retry", blocked: "prompt-missing" },
+        });
+        continue;
+      }
       // T44 §2/§4: the retry re-derives refs through the GREEN gate — the
       // shot's own failed still is structurally never among the candidates,
       // and any ref that lost its GREEN since the first attempt drops out
