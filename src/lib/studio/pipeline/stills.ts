@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { emit } from "../store";
 import { localPictureQc } from "../providers";
@@ -22,7 +23,7 @@ import { wardrobeClauses } from "../h3-prose";
 import { upsertDoc } from "../vault";
 import { relInJob } from "../isolate";
 import { open, packetLine, seal } from "../dispatch";
-import { h3GraphVariant, h3MotionPack, kfRideFor, patch, prevShotOf, shotsForScene, uncutIdentityFiles, writeH3Plan, type Ctx } from "./shared";
+import { depStampOf, h3GraphVariant, h3MotionPack, kfRideFor, patch, prevShotOf, shotsForScene, uncutIdentityFiles, writeH3Plan, type Ctx } from "./shared";
 import type { Shot } from "../types";
 
 /** T44 §1 (Fable 08:58): `first` means a face the viewer has not seen — the
@@ -278,6 +279,34 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       speak: () => speak("stills", "earn GPU lock，等", "warn"),
     });
   }
+  // V2c（PLAN-v2 0928）§8：still 材料指紋——呢鏡 GREEN png 綁住生成佢嘅材料
+  // （shot 內容／first／identity refs 檔案 bytes／prompt 頭）。材料變＝指紋變
+  // ＝resume 唔 keep 呢張 GREEN（重出），防止「改咗 shot／換咗肖像但舊 GREEN
+  // 照食」。prompt 淨取頭 256 字：PE facts 段唔入指紋（事實更新唔當材料變）。
+  const stillDepStamp = (shotId: string, first: boolean, prompt: string): string | null => {
+    const shot = ctx.timed!.shots.find((x) => x.id === shotId);
+    if (!shot) return null;
+    const refs = editInputs.get(shotId)?.refs ?? [];
+    const refHashes = refs
+      .map((f) => { try { return createHash("sha256").update(fs.readFileSync(f)).digest("hex").slice(0, 12); } catch { return "missing"; } })
+      .sort();
+    return depStampOf({ shot: { action: shot.action, marks: shot.marks, props: shot.props ?? null, durationSec: shot.durationSec, camera: shot.camera, size: shot.size }, first, refHashes, promptHead: prompt.slice(0, 256) });
+  };
+  const stillStampFile = (shotId: string) => path.join(ctx.stillDir!, `${shotId}.dep.json`);
+  const stillStampOk = (shotId: string, first: boolean, prompt: string): boolean => {
+    try {
+      const prev = JSON.parse(fs.readFileSync(stillStampFile(shotId), "utf8")) as { dep?: string };
+      const now = stillDepStamp(shotId, first, prompt);
+      return Boolean(now) && prev.dep === now;
+    } catch {
+      return false; // 冇 stamp＝provenance-unknown：唔 keep，重出一次寫 stamp
+    }
+  };
+  const writeStillStamp = (shotId: string, first: boolean, prompt: string): void => {
+    const dep = stillDepStamp(shotId, first, prompt);
+    if (dep) fs.writeFileSync(stillStampFile(shotId), JSON.stringify({ dep, ts: new Date().toISOString() }, null, 2));
+  };
+
   // T44 §4: the one ref_rejected event shape for every gate below
   const refRejected = (shotId: string, file: string) =>
     emit(jobId, {
@@ -477,10 +506,10 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       },
     });
     // a hash-matched GREEN keyframe is finished work; resume chains from it
-    if (input.resume && pinQcAccepted(ctx.stillDir!, shot.id) && !forcesRedo(hopIds, shot.id, input.shot)) {
+    if (input.resume && pinQcAccepted(ctx.stillDir!, shot.id) && !forcesRedo(hopIds, shot.id, input.shot) && stillStampOk(shot.id, first, prompt)) {
       prevKeyframe = out;
       stills.push(out);
-      await speak("stills", `${shot.id} keyframe 照舊（QC 已 GREEN），唔重出。`);
+      await speak("stills", `${shot.id} keyframe 照舊（QC 已 GREEN＋材料指紋夾），唔重出。`);
       continue;
     }
     // resume：已有 png 但未 QC — 照用，唔重 /edit（唔再 scp node0）。
@@ -870,6 +899,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       await speak("pictureQc", `${shot.id} PASS_WITH_WARN（${warns.join("; ")}）`, "warn");
     } else {
       await speak("pictureQc", `${shot.id} GREEN（人數 ${liveRequire.people_count}）`, "pass");
+      writeStillStamp(shot.id, first, editInputs.get(shot.id)?.prompt ?? prompt);
       emit(jobId, {
         agent: "pictureQc",
         level: "pass",

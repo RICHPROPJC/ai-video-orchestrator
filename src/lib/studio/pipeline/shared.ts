@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { runCommand } from "../audio";
@@ -57,6 +58,12 @@ export type Ctx = {
   motionShots?: Shot[];
   segManifest?: { kind: string; shots: string[]; frames?: number; perShot?: number }[] | null;
 };
+
+/** V2c §8：材料指紋——parts 穩定序列化後 sha256 前 12 hex。keep 閘用嚟
+ * 驗「碟上產物係用呢啲材料生出嚟」：材料變＝指紋變＝唔 keep。 */
+export function depStampOf(parts: Record<string, unknown>): string {
+  return createHash("sha256").update(stableJson(parts)).digest("hex").slice(0, 12);
+}
 
 /** V2c（PLAN-v2 0928）§8：穩定序列化——object key 排序後先 stringify，
  *  同內容唔理欄位次序都出同一段字（fingerprint 用）。 */

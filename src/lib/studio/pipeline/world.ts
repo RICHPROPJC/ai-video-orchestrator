@@ -39,7 +39,7 @@ import {
 } from "../motion-select";
 import type { CallSheet, Shot } from "../types";
 import { relInJob } from "../isolate";
-import { ffmpeg, mediaSeconds, patch, shotsForScene, type Ctx, stableJson } from "./shared";
+import { depStampOf, ffmpeg, mediaSeconds, patch, shotsForScene, type Ctx, stableJson } from "./shared";
 
 async function raster(svg: string, outFile: string) {
   ensureDir(path.dirname(outFile));
@@ -138,8 +138,20 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   // --until blockout stops before U1.5/QC — skip the eye (pictureQc may be DOWN)
   const stillDir = path.join(jobDir(jobId), "stills");
   ctx.stillDir = stillDir;
+  // V2c（PLAN-v2 0928）§8：portraits 材料指紋——角色定義（wardrobe/palette/
+  // 身形）變＝肖像過期。skip 除咗全 GREEN，仲要 stamp 夾；冇 stamp＝
+  // provenance-unknown 重行 ensure（ensure 自身有 exists-skip，成本係核對）。
+  const portraitsStampFile = path.join(jobDir(jobId), "portraits", ".dep.json");
+  const portraitsStampParts = () => depStampOf({ characters: ctx.locked!.characters.map((c) => ({ id: c.id, wardrobe: c.wardrobe, palette: c.palette, heightM: c.heightM })) });
+  const portraitsStampOk = () => {
+    try {
+      return (JSON.parse(fs.readFileSync(portraitsStampFile, "utf8")) as { dep?: string }).dep === portraitsStampParts();
+    } catch {
+      return false;
+    }
+  };
   const skipPortraits =
-    input.resume && ctx.continuity!.boards.every((shot) => pinQcAccepted(stillDir, shot.id));
+    input.resume && ctx.continuity!.boards.every((shot) => pinQcAccepted(stillDir, shot.id)) && portraitsStampOk();
   let portraits: Awaited<ReturnType<typeof ensurePortraits>>;
   let hopCast: string[] | undefined;
   if (skipPortraits) {
@@ -185,6 +197,9 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       "stills",
       `肖像齊：plug ${portraits.plugged.length}、新做 ${portraits.made.length}${hopCast ? `（hop ${hopCast.join(",")}）` : ""}；角度板釘 ${Object.values(portraits.anglePins ?? {}).reduce((n, m) => n + Object.keys(m).length, 0)} 張 RGBA 角度肖像（{角度}檔入 portraits/）。`,
     );
+    // V2c §8：ensure 完成＝肖像同現角色定義對齊，寫材料指紋
+    fs.mkdirSync(path.join(jobDir(jobId), "portraits"), { recursive: true });
+    fs.writeFileSync(portraitsStampFile, JSON.stringify({ dep: portraitsStampParts(), ts: new Date().toISOString() }, null, 2));
   }
   ctx.portraits = portraits;
 

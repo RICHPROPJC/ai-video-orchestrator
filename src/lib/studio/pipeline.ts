@@ -89,7 +89,7 @@ import {
   shotsForScene,
   hopGeometrySheet,
   describeFloor,
-  type Ctx, setActiveOwner } from "./pipeline/shared";
+  type Ctx, setActiveOwner, depStampOf } from "./pipeline/shared";
 export {
   anglePortraitsFor,
   uncutIdentityFiles,
@@ -434,6 +434,32 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         // take punished the chained shots' frames — run5 live lesson)
         const qcIds = segShots; // slice pins are per shot id, solo = the shot itself
         const allPinned = qcIds.every((id) => pinVideoQcAccepted(motionDir, id));
+        // V2c（PLAN-v2 0928）§8：motion 材料指紋——receipt 內容（提交參數整體）
+        // ＋幀數＋上游 wav/blockout/still 嘅 stat signature。層層咬合：上游
+        // fingerprint 閘（blockout setKey／still dep）過期會重做→mtime 變→
+        // 呢度 signature 跟住變→mp4 唔 keep 重燒。receipt 變（prose/refs 參數
+        // 變）同樣觸發。冇 stamp＝provenance-unknown 唔 keep。
+        const statSig = (f?: string): string => {
+          try { const st = fs.statSync(f!); return st.size + ":" + Math.round(st.mtimeMs); } catch { return "none"; }
+        };
+        const hashHead = (f?: string): string => {
+          try { return createHash("sha256").update(fs.readFileSync(f!)).digest("hex").slice(0, 12); } catch { return "none"; }
+        };
+        const motionStampFile = path.join(motionDir, segId + ".dep.json");
+        const motionStampParts = () => depStampOf({
+          receiptHash: hashHead(doneReceipt),
+          frames: wantFrames,
+          wavSig: statSig(ctx.h3WavByShot.get(shot.id)),
+          blockoutSig: statSig(hasVideo1 && !isMsSegment ? blockoutMp4 : undefined),
+          stillSig: statSig(stillPng),
+        });
+        const motionStampOk = () => {
+          try {
+            return (JSON.parse(fs.readFileSync(motionStampFile, "utf8")) as { dep?: string }).dep === motionStampParts();
+          } catch {
+            return false;
+          }
+        };
         // resume keeps an mp4 only when frame clock matches AND blind MARS video_qc is GREEN
         const kept =
           input.resume
@@ -441,7 +467,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           && fs.existsSync(doneMp4)
           && fs.existsSync(doneReceipt)
           && frameSnap
-          && allPinned;
+          && allPinned
+          && motionStampOk();
         if (kept) {
           shotVideos.push(doneMp4);
           receipts.push(relInJob(jobId, doneReceipt));
@@ -533,6 +560,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           });
           receipts.push(relInJob(jobId, receiptFile));
         }
+        // V2c §8：submit 完成後寫材料指紋（receipt 已落盤，hash 先準）
+        fs.writeFileSync(motionStampFile, JSON.stringify({ dep: motionStampParts(), ts: new Date().toISOString() }, null, 2));
         const mp4 = doneMp4;
         shotVideos.push(mp4);
         upsertDoc({
