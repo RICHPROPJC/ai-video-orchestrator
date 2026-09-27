@@ -2,14 +2,13 @@ import type { AudioEvent, CallSheet, Character, Shot } from "./types";
 import { BLOCKOUT_HEIGHT, BLOCKOUT_WIDTH } from "./blockout";
 import { cameraFor } from "./camera-presets";
 import { markFor, placeHands } from "./blocking-grid";
-import { dialogueSeconds, type Script, type Beat } from "./script-contract";
+import { dialogueSeconds, type Script, type Beat, parseDurationTolerance } from "./script-contract";
 import type { BoardShot, BoardsScene } from "./boards-contract";
 
 const STILL_MODEL = "SenseNova U1.5-8B-MoT";
 const MOTION_MODEL = "MiniMax H3 R2V";
-// §19：時長一致性容差＝採用任務可配（env SLATECREW_DURATION_TOLERANCE，
-// 預設 0.1＝資源帶；固定交付依其驗收精度配置）。檢查保留——唔慢放/硬墊/刪內容令數值 PASS。
-const DURATION_TOLERANCE = Math.min(0.5, Math.max(0, Number(process.env.SLATECREW_DURATION_TOLERANCE ?? 0.1)));
+// §20③：共同 parser（同 creative validator 一個真源；非法配置具名 throw）
+const DURATION_TOLERANCE = parseDurationTolerance();
 const FRAME = { width: BLOCKOUT_WIDTH, height: BLOCKOUT_HEIGHT };
 
 /** DIALOGUE_RULE_PROVENANCE_0927：一句對白嘅「播出鏡」——explicit audioBeats

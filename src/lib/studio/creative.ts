@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { chatJsonSeat, type CrewConfig } from "./crew-llm";
-import { VISIBLE_ACTION_VERBS } from "./script-contract";
+import { VISIBLE_ACTION_VERBS, parseDurationTolerance } from "./script-contract";
 
 /** SC-CREATIVE-OS-0927 §3 創作主路徑第一段：短 brief → 創作意圖 → 整片
  *  treatment → 導演節奏／事件表。呢層係通用能力（任何 brief），唔係 BP5S
@@ -175,9 +175,8 @@ export const DirectorPlanSchema = z.object({
     }
   }
   if (target) {
-    // §19：時長一致性檢查保留；容差＝採用任務可配（env，預設 0.1 資源帶）——
-    // 唔慢放/硬墊空白/刪內容令數值 PASS。
-    const TOL = Math.min(0.5, Math.max(0, Number(process.env.SLATECREW_DURATION_TOLERANCE ?? 0.1)));
+    // §20③：共同 parser（finite＋範圍＋非法具名 throw；NaN fail-open 收口）
+    const TOL = parseDurationTolerance();
     const end = Math.max(...plan.shots.map((s) => s.endSec));
     if (Math.abs(end - target) > target * TOL + 1e-6) {
       report.addIssue({ code: "custom", path: ["shots"], message: `片尾 ${end.toFixed(1)}s 離目標 ${target}s 超過 ±${Math.round(TOL * 100)}%（容差可配）` });

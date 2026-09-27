@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { shotSecMin } from "./frame-grid";
 
+// §20②：ID 契約容量明示＝26（單大寫 A–Z）。§19「自由字串」係錯報——本 regex
+// 仍然生效。超容量（>26 角色）由下游具名 gap（boards cast slot/portraits/
+// cast-mesh 各自驗），唔刪角色冒充成功；ID 契約升級（多位字串）係另項，本輪唔郁。
 export const CHARACTER_ID_RE = /^[A-Z]$/;
 export const SCENE_ID_RE = /^SC\d{2}$/;
 export const BEAT_ID_RE = /^SC\d{2}\.B\d{2}$/;
@@ -40,6 +43,23 @@ export const SHORT_RANGES: ScriptRanges = { scenes: [1, 200], totalBeats: [1, 20
 /** Kept so older ad-band callers still import. rangesFor no longer selects it from duration. */
 // §19：AD_RANGES／AD_MAX_SEC＝兼容 export（舊 caller 引用）——現行 rangesFor
 // 對 ≤30s 揀 SHORT_RANGES（三個 ranges 數值相同），產線唔強迫廣告一場。
+/** §20③：時長容差共同解析——finite 檢＋範圍 [0,0.5]，非法配置具名 throw
+ *  （Number("abc")=NaN 會令比較 fail-open，唔可以靜靜過）。env
+ *  SLATECREW_DURATION_TOLERANCE＝process 級預設，唔係任務容差：任務採用值
+ *  要明示來源（驗收 spec／採用方案）先算數；0.5 clamp 係防離譜，唔係全局
+ *  交貨法。creative/boards-expand 兩 validator 同用本函。 */
+export function parseDurationTolerance(): number {
+  const raw = process.env.SLATECREW_DURATION_TOLERANCE ?? "0.1";
+  const v = Number(raw);
+  if (!Number.isFinite(v)) {
+    throw new Error(`duration_tolerance_invalid: SLATECREW_DURATION_TOLERANCE="${raw}" 唔係有限數——非法配置具名拒，唔靜靜 fallback`);
+  }
+  if (v < 0 || v > 0.5) {
+    throw new Error(`duration_tolerance_invalid: SLATECREW_DURATION_TOLERANCE=${v} 出範圍 [0,0.5]——要調整配置，唔係 clamp 續行`);
+  }
+  return v;
+}
+
 export const AD_RANGES: ScriptRanges = { scenes: [1, 1], totalBeats: [3, 6] };
 export const AD_MAX_SEC = 30;
 
@@ -198,7 +218,8 @@ const beatShape = z.object({
     .string()
     // §19：撤 200 字硬拒（非空保留；總輸出資源由 crew-llm token 層控制）
     .min(1),
-  dialogue: omittable(z.string().max(DIALOGUE_MAX_CHARS)),
+  // §20①：漏撤補——dialogue 同撤 200 硬拒（非空保留）
+  dialogue: omittable(z.string().min(1)),
   speaker: omittable(z.string().min(1).max(12)),
   emotion: omittable(z.string().min(1).max(20)),
 });
