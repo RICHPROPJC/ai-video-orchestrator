@@ -88,12 +88,26 @@ export async function plugVoiceEvents(opts: {
     const cover = windows.filter((w) => w.start < ev.endSec - 1e-9 && w.end > ev.startSec + 1e-9);
     if (cover.length === 0) throw new Error(`audio event ${ev.beatId} covers no shot（窗口 ${ev.startSec}–${ev.endSec}s）`);
     const dst = path.join(opts.audioDir, "events", `${ev.beatId}.wav`);
-    if (!(fs.existsSync(dst) && wavIsAudible(dst))) {
+    // V2c（PLAN-v2 0928）§8：take 綁 utterance 文字——sidecar 記生成時原文；
+    // 文字改咗（revise 後）就重新生成，唔會食舊 take 出舌聲。舊 take 冇
+    // sidecar＝provenance-unknown：一律當文字對唔上重新過 ensure（plug 路
+    // 重新 copy 同一個 src——plug 係外部錄音，內容真源喺人手嗰邊，呢度淨
+    // 可以對 TTS 路嚴格；TTS 路文字改＝重新合成）。
+    const textSidecar = path.join(opts.audioDir, "events", `${ev.beatId}.text.json`);
+    const textMatches = () => {
+      try {
+        return (JSON.parse(fs.readFileSync(textSidecar, "utf8")) as { text?: string }).text === ev.text;
+      } catch {
+        return false;
+      }
+    };
+    if (!(fs.existsSync(dst) && wavIsAudible(dst) && textMatches())) {
       const src = opts.wavDir ? path.join(opts.wavDir, `${cover[0]!.shotId}.wav`) : undefined;
       if (src && !fs.existsSync(src)) {
         throw new Error(`--wav-dir 缺 ${cover[0]!.shotId}.wav（事件 ${ev.beatId} 首鏡 plug，${src}）`);
       }
       await ensureAudibleShotWav({ src, dst, text: ev.text, synthesize: synth });
+      fs.writeFileSync(textSidecar, JSON.stringify({ text: ev.text, ts: new Date().toISOString(), via: src ? "plug" : "auk" }, null, 2));
     }
     takes.push({ beatId: ev.beatId, file: dst });
   }

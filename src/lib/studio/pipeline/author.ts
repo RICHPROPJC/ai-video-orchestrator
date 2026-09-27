@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { emit } from "../store";
 import { loadCallSheet } from "../writer";
 import { runWriter } from "../seat-writer";
@@ -54,9 +55,31 @@ async function authorCallSheet(
         "warn",
       );
     } else {
-      const sheet = loadCallSheet(existing);
-      await io.speak("producer", `resume：照返 callsheet.json（${sheet.shots.length} 鏡），唔重開檯。`);
-      return sheet;
+      // V2c（PLAN-v2 0928）§8：manifest entry sha 逐件對返磁碟——手改過
+      // director-plan.json／script.md／creative-intent.json（sha 唔夾）＝callsheet
+      // 係由唔同內容生出嚟嘅，唔准照食。唔係重燒：跌落重行創作鏈由現有
+      // 內容重建（對齊狀態）。
+      const creativeRoot = path.join(jobDir(jobId), "creative");
+      const drifted = (man?.entries ?? []).filter((e) => {
+        const f = path.join(creativeRoot, e.file);
+        try {
+          const now = createHash("sha256").update(fs.readFileSync(f)).digest("hex");
+          return now !== e.sha256;
+        } catch {
+          return true; // entry 話有但檔唔見＝drift
+        }
+      });
+      if (drifted.length) {
+        await io.speak(
+          "producer",
+          `resume 拒絕：creative 手上有檔同 manifest sha 唔夾（${drifted.map((d) => d.file).join("、")}）——內容被改過，callsheet 唔准照食，重行創作鏈對齊。`,
+          "warn",
+        );
+      } else {
+        const sheet = loadCallSheet(existing);
+        await io.speak("producer", `resume：照返 callsheet.json（${sheet.shots.length} 鏡），唔重開檯。`);
+        return sheet;
+      }
     }
   }
   if (input.callSheetPath) {

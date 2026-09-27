@@ -132,3 +132,37 @@ if (bareBun) {
     if (failed > 0) process.exit(1);
   })();
 }
+
+// ── V2c（PLAN-v2 0928）§8：take 綁 utterance 文字行為鎖 ──────────────────────
+
+test("V2c: take 重用綁文字——同文唔重讀，改文重新 synth", async () => {
+  const dir = tmp();
+  const audioDir = path.join(dir, "audio");
+  const { plugVoiceEvents } = await import("./shot-wav-plug");
+  const calls: string[] = [];
+  const synthesize = async (o: { text?: string }) => {
+    calls.push(o.text ?? "");
+    loudWav(path.join(audioDir, "events", "SC01.B01.wav.tmp"));
+    // ensureAudibleShotWav 會由 synth 結果兜——直接寫 audible 檔去 dst 嘅責任
+    // 喺 ensure；呢度模擬一個可讀 take：寫落 ensure 期望嘅 dst 之前唔得，改為
+    // 令 ensure 內部 re-check 通過（寫 880Hz）。
+  };
+  const boards = [{ id: "SH01", durationSec: 3 } as unknown as Shot];
+  const ev = (text: string) => [{ beatId: "SC01.B01", text, speaker: "阿文", startSec: 0, endSec: 3 }];
+  // 第一次：take 生成（mock 寫 audible wav 落 dst）
+  const synthImpl = async (o: RunAukTtsOpts) => {
+    calls.push(o.text ?? "");
+    // ensureAudibleShotWav 收 synth 結果後自己驗 audible——模擬佢成功路：直接寫檔
+    fs.mkdirSync(path.join(audioDir, "events"), { recursive: true });
+    loudWav(path.join(audioDir, "events", "SC01.B01.wav"));
+  };
+  await plugVoiceEvents({ boards, events: ev("你好"), audioDir, synthesize: synthImpl as unknown as (o: RunAukTtsOpts) => Promise<unknown> });
+  assert.equal(calls.length, 1, "第一次生成");
+  // 第二次同文：唔准重新 synth（take＋sidecar 都在）
+  await plugVoiceEvents({ boards, events: ev("你好"), audioDir, synthesize: synthImpl as unknown as (o: RunAukTtsOpts) => Promise<unknown> });
+  assert.equal(calls.length, 1, "同文重用 take");
+  // 改文：重新 synth（新 take 唔會舌聲）
+  await plugVoiceEvents({ boards, events: ev("你好呀"), audioDir, synthesize: synthImpl as unknown as (o: RunAukTtsOpts) => Promise<unknown> });
+  assert.equal(calls.length, 2, "改文重新生成");
+  void synthesize;
+});
