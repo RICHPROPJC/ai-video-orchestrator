@@ -614,7 +614,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // 淨認呢啲已知材料缺 signature；基建錯（HTTP/ffmpeg/schema crash）照舊向上拋，
     // 唔可以靜靜食埋。
     const msg = err instanceof Error ? err.message : String(err);
-    const materialMissing = /photo_qc 未 GREEN|keyframe_positions_missing|identity_sheet_missing|C-form 冇|angle_portrait_missing|身份成張未齊/.test(msg);
+    const materialMissing = /photo_qc 未 GREEN|keyframe_positions_missing|identity_sheet_missing|C-form 冇|angle_portrait_missing|身份成張未齊|multishot段要一張未切成張/.test(msg);
     if (!materialMissing) throw err;
     emit(jobId, {
       agent: "motion", level: "warn",
@@ -656,10 +656,20 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       }
       for (const t of targets) {
         const mp4 = shotVideos.find((v) => path.basename(v, ".mp4") === t.id);
-        if (!mp4) throw new Error(`hop ${input.scene ?? input.only}: motion 缺 ${t.id}`);
+        // 0927 停法手術：motion 段 blocked（per-shot skip 落嚟冇 mp4）→呢段 mux
+        // blocked skip 繼續其他段；wav 缺同罪。收據落 events，唔殺 hop。
+        const wavs = t.shots.map((sid) => ctx.h3WavByShot.get(sid));
+        if (!mp4 || wavs.some((w) => !w)) {
+          emit(jobId, {
+            agent: "motion", level: "warn",
+            message: `hop ${input.scene ?? input.only}: ${!mp4 ? `motion 缺 ${t.id}` : `${t.id} wav 缺`}——呢段 blocked，繼續其他段`,
+            data: { stage: "mux", blocked: !mp4 ? `motion-missing:${t.id}` : `wav-missing:${t.id}` },
+          });
+          continue;
+        }
         const wav = t.shots.length === 1
-          ? ctx.h3WavByShot.get(t.shots[0]!)!
-          : await concatWavHop(t.shots.map((sid) => ctx.h3WavByShot.get(sid)!), path.join(motionDir, `${t.id}.wav`));
+          ? wavs[0]!
+          : await concatWavHop(wavs as string[], path.join(motionDir, `${t.id}.wav`));
         const out = path.join(motionDir, `${t.id}.muxed.mp4`);
         await ffmpeg(muxArgs(mp4, wav, out));
         muxed.push(out);
@@ -822,10 +832,20 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     for (const t of muxTargets) {
       const mp4 = shotVideos.find((v) => path.basename(v, ".mp4") === t.id)
         ?? path.join(motionDir, `${t.id}.mp4`);
-      if (!fs.existsSync(mp4)) throw new Error(`cut ${t.id} missing from motion`);
+      // 0927 停法手術：motion 段 blocked（per-shot skip 落嚟冇 mp4）→呢段 mux
+      // blocked skip 繼續其他段；wav 缺同罪。成片少嗰段係事實，events 有列明。
+      const wavs = t.shots.map((id) => ctx.h3WavByShot.get(id));
+      if (!fs.existsSync(mp4) || wavs.some((w) => !w)) {
+        emit(jobId, {
+          agent: "motion", level: "warn",
+          message: `${!fs.existsSync(mp4) ? `cut ${t.id} missing from motion` : `${t.id} wav 缺`}——呢段 blocked，繼續其他段`,
+          data: { stage: "mux", blocked: !fs.existsSync(mp4) ? `motion-missing:${t.id}` : `wav-missing:${t.id}` },
+        });
+        continue;
+      }
       const wav = t.shots.length === 1
-        ? ctx.h3WavByShot.get(t.shots[0]!)!
-        : await concatWav(t.shots.map((id) => ctx.h3WavByShot.get(id)!), path.join(motionDir, `${t.id}.wav`));
+        ? wavs[0]!
+        : await concatWav(wavs as string[], path.join(motionDir, `${t.id}.wav`));
       const marked = segManifest?.find((s) => s.shots.join("-") === t.id);
       const clockWav = marked?.frames
         ? path.join(motionDir, `${t.id}.clock.wav`)

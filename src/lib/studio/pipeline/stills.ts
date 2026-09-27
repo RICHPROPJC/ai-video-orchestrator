@@ -202,7 +202,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
         // 0927 停法手術（照 motion loop c9b11b1 同款）：呢鏡材料缺＝blocked skip，
         // 繼續其他鏡；基建錯照拸。dry-run 係驗收收據，一鏡缺件唔殺成個 dry-run。
         const msg = err instanceof Error ? err.message : String(err);
-        const materialMissing = /photo_qc 未 GREEN|keyframe_positions_missing|identity_sheet_missing|C-form 冇|angle_portrait_missing|身份成張未齊/.test(msg);
+        const materialMissing = /photo_qc 未 GREEN|keyframe_positions_missing|identity_sheet_missing|C-form 冇|angle_portrait_missing|身份成張未齊|multishot段要一張未切成張/.test(msg);
         if (!materialMissing) throw err;
         emit(jobId, {
           agent: "motion", level: "warn",
