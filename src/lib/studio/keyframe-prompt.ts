@@ -86,8 +86,12 @@ export function negativePoison(negatives: string[]): string | null {
  * heading's牌, never the scene slot. 泛用機構詞，唔係故事名。 */
 const INSTITUTION_RE = /府|宮|殿|軍|校|部|局|署|國|總統|政府/;
 export function isRoomNoun(location: string): boolean {
+  // §5b（0928 §5 盤點）：長度閘同步 boards-contract require.location max(60)
+  // （0927「場所名長短由內容定」）——呢度淨留語義分離：非空＋唔係機構全名
+  // （INSTITUTION_RE，T32b C5 法源）。舊 2-8 硬閘同 boards-contract 唔同步
+  // （9字場所名兩邊兩個答案），分離收口。
   const loc = location.trim();
-  return loc.length >= 2 && loc.length <= 8 && !INSTITUTION_RE.test(loc);
+  return loc.length >= 1 && loc.length <= 60 && !INSTITUTION_RE.test(loc);
 }
 
 /** Chau 0919 search-first PE law: a frame that shows text/data (infographic,
@@ -222,11 +226,11 @@ export function sceneRetryUser(shot: Shot, failReasons: string[]): string {
  *  behind the T29 poison gate. Shared by the pipeline call and the tests. */
 export const sceneRetrySchema = z.object({
   thinking: z.string().min(1).max(400),
-  location: z.string().min(2).max(8),
+  location: z.string().min(1).max(60),
   angle: omittable(z.enum(["eye", "high", "low"])),
   negatives: omittable(z.array(z.string().min(1).max(12)).min(1).max(6)),
 }).refine((r) => isRoomNoun(r.location), {
-  message: "location 要係 2–8 字場所名詞（地下室、宿舍、走廊），唔係機構全名",
+  message: "location 要係場所名詞（鏡頭所見房間，長短由內容定≤60字），唔係機構全名",
   path: ["location"],
 }).refine((r) => !negativePoison(r.negatives ?? []), {
   message: "negatives 唔可以有霓虹/neon/night — 負面詞毒畫面（T29 法）",
