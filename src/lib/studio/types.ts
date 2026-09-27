@@ -333,6 +333,9 @@ export type CallSheet = {
   /** One era, ten building types, one 4K board. Absent → the factory does not invent eras. */
   buildings?: { era: string; types: string[]; publicName?: string }[];
   storyboard?: { shotId: string; at: string; file: string; board?: string }[];
+  /** 裁決 0928 D：導演 dialogueClock 落點隨 callsheet 落 world 段——
+   *  audioTimeline 對照（聲畫對位收據）。舊 callsheet 冇呢欄＝對照跳過。 */
+  directorPlacements?: { word?: string; startSec?: number; endSec?: number; onImage?: string }[];
   provenance?: Provenance;
 };
 

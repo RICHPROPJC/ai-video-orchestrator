@@ -310,7 +310,16 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   // overflow 警告，唔靜靜食）。落 creative/audio-timeline.json 俾 producer/
   // 下游讀實際時鐘，唔改窗口（窗口＝callsheet，要改係修訂輪嘅事）。
   if (eventTakes && ctx.locked!.audioEvents) {
-    const rows = await audioTimelineRows(ctx.locked!.audioEvents, eventTakes.takes, wavSeconds);
+    const rows = await audioTimelineRows(ctx.locked!.audioEvents, eventTakes.takes, wavSeconds, ctx.locked!.directorPlacements);
+    // 裁決 0928 D：聲畫對位缺口回責任席線——missing placement 逐句 emit
+    // （唔阻行：收據落 events；revise_unclosed 已喺上游 fail-loud 把關）
+    for (const r of rows) {
+      if (r.placement === "missing") {
+        emit(jobId, { agent: "producer", level: "warn",
+          message: `聲畫對位缺口：${r.text.slice(0, 60)} 冇導演落點（回導演席修訂）`,
+          data: { stage: "audio-placement", blocked: null, utterance: r.beatId, text: r.text.slice(0, 120) } });
+      }
+    }
     fs.writeFileSync(jobFile(jobId, "creative", "audio-timeline.json"), JSON.stringify({
       generatedAt: new Date().toISOString(),
       note: "實際音軌時長回填（共同時間線）；take 一次生成逐鏡切片，呢度係事件層時鐘",

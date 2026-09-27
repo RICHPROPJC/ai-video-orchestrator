@@ -583,12 +583,21 @@ export type AudioTimelineRow = {
   warning?: string;
   underSec?: number;
   note?: string;
+  /** 裁決 0928 D：聲畫對位收據——matched（含 onImage/偏離）或 missing */
+  placement?: "matched" | "missing";
+  onImage?: string;
+  placementDriftSec?: number;
 };
 
 export async function audioTimelineRows(
   events: { beatId: string; speaker?: string; text: string; startSec: number; endSec: number }[],
   takes: { beatId: string; file: string }[],
   wavSecOf: (file: string) => Promise<number>,
+  /** 裁決 0928 D（SEAT-AUDIT-DECISION §3）：導演 dialogueClock placements
+   *  （全片時間軸）——聲畫對位收據：每句 utterance 對照有冇 placement、時間
+   *  偏離幾多；0→0 placeholder 唔冒充已排。缺/偏離＝note 落 row（consumer
+   *  決定點處理）。 */
+  placements?: { word?: string; startSec?: number; endSec?: number; onImage?: string }[],
 ): Promise<AudioTimelineRow[]> {
   const rows: AudioTimelineRow[] = [];
   for (const ev of events) {
@@ -608,6 +617,23 @@ export async function audioTimelineRows(
         ? { underSec: Number((windowSec - actual).toFixed(3)), note: "講得快過窗口——bed 照墊" }
         : {}),
       ...(take ? {} : { note: "take 缺（事件冇鏡覆蓋？plugVoiceEvents 應已 throw）" }),
+      ...(placements?.length
+        ? (() => {
+            const norm = (x: string) => x.replace(/[。．，,、！!？?…；;\s「」『』"']/g, "");
+            const hit = placements.find((pl) => {
+              const n = norm(String(pl.word ?? ""));
+              const e = norm(ev.text);
+              return n.length > 0 && (e.includes(n) || n.includes(e));
+            });
+            if (!hit) return { placement: "missing" as const, note: "導演冇呢句嘅落點（聲畫對位缺口——回導演席）" };
+            const drift = (hit.startSec ?? 0) - ev.startSec;
+            return {
+              placement: "matched" as const,
+              ...(hit.onImage ? { onImage: hit.onImage } : {}),
+              ...(Math.abs(drift) > 1 ? { placementDriftSec: Number(drift.toFixed(3)), note: `落點偏離導演安排 ${drift.toFixed(1)}s` } : {}),
+            };
+          })()
+        : {}),
     });
   }
   return rows;

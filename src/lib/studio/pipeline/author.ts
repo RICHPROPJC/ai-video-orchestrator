@@ -288,7 +288,8 @@ ${plan.treatment}`;
       drama: input.drama,
     },
   );
-  return boards.sheet;
+  // 裁決 0928 D：導演聲畫落點隨 callsheet 落 world 段（audioTimeline 對照）
+  return { ...boards.sheet, ...(directorPlacements?.length ? { directorPlacements } : {}) };
 }
 
 /** 拆層段（author）：由 runPipeline 原序搬入，行為零變——絕唔重排 call 次序、
