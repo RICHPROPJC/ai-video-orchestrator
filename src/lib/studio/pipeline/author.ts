@@ -75,8 +75,27 @@ async function authorCallSheet(
       // 採用來源變咗要具名處理（新 episode 由 world 重算開）——唔以舊鏡表
       // 續行，亦唔可以 drift 分支重行創作變相重開無額度同一問題。
       const manEx = readCreativeManifest(path.join(jobDir(jobId), "creative"));
-      if (manEx && manEx.briefSha !== briefSha(input.brief)) {
+      if (!manEx) {
+        // §17.1：冇 manifest＝採用版本未知——唔可以 speak「已驗有效」，具名拒。
+        throw new Error(`sound_repair_budget_exhausted_no_manifest: 修訂額度耗盡＋冇 creative manifest（採用版本未知）——唔可以當已驗有效照食；要人手確認 creative/ 狀態或明示採用版本`);
+      }
+      if (manEx.briefSha !== briefSha(input.brief)) {
         throw new Error(`sound_repair_budget_exhausted_and_stale: 修訂額度耗盡（episode ${GAP_BUDGET} 輪）＋callsheet 採用來源已變（manifest briefSha ${manEx.briefSha.slice(0, 12)} vs 今次 ${briefSha(input.brief).slice(0, 12)}）——過期鏡表唔可以 blocked preview 續用、亦唔可以悄悄重開；要明示採用版本更新或人手處理`);
+      }
+      // §17.1：復用 resume 分支同款 entries sha 逐檔對磁碟——brief 不變而
+      // script/plan 漂移都唔可以 speak「已驗有效」（manEx null 已上面具名拒）。
+      const creativeRootEx = path.join(jobDir(jobId), "creative");
+      const driftedEx = (manEx.entries ?? []).filter((e) => {
+        const f = path.join(creativeRootEx, e.file);
+        try {
+          const now = createHash("sha256").update(fs.readFileSync(f)).digest("hex");
+          return now !== e.sha256;
+        } catch {
+          return true;
+        }
+      });
+      if (driftedEx.length) {
+        throw new Error(`sound_repair_budget_exhausted_and_drifted: 修訂額度耗盡＋creative 檔同 manifest sha 唔夾（${driftedEx.map((d) => d.file).join("、")}）——採用內容被改過，callsheet 唔可以當已驗有效照食；要人手對齊或明示採用版本更新`);
       }
       const sheet = loadCallSheet(existing);
       await io.speak("producer", `修訂額度耗盡＋${placementGaps.length} 條 gap——照食既有 callsheet（${sheet.shots.length} 鏡，採用版本已驗有效），gaps 留底收尾 blocked 判斷，唔重開創作。`, "warn");

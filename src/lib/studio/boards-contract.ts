@@ -176,12 +176,6 @@ export function boardsSceneSchema(ctx: {
       // 用精確 token（word#idx 後面唔可以再係數字——#1 唔可以俾 #10 誤認）。
       const needOf = new Map(ctx.dialoguePlacements!.map((p) => [p.idx, p.word]));
       const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const issueNamed = new Set<string>();
-      for (const issue of scene.adoptionIssues ?? []) {
-        for (const m of issue.matchAll(/([^\s#]+)#(\d+)(?!\d)/g)) {
-          issueNamed.add(`${m[1]}#${m[2]}`);
-        }
-      }
       for (const a of scene.onImageAdoptions ?? []) {
         const want = needOf.get(a.placementIdx);
         if (want === undefined) {
@@ -192,8 +186,12 @@ export function boardsSceneSchema(ctx: {
       }
       const adoptedPair = new Set((scene.onImageAdoptions ?? []).filter((a) => needOf.get(a.placementIdx) === a.placement).map((a) => `${a.placement}#${a.placementIdx}`));
       for (const need of ctx.dialoguePlacements!) {
-        const key = `${need.word}#${need.idx}`;
-        if (!adoptedPair.has(key) && !issueNamed.has(key)) {
+        // §17.2：issue 指認＝來源 word escaped 嘅確切 token（word#idx 後面唔係
+        // 數字）——含空格全句 word 用 regex 全句 match（「I feel cold#2」淨擷
+        // 「cold#2」嘅 substring 近視收咗）。
+        const token = new RegExp(`${esc(need.word)}#${need.idx}(?!\\d)`);
+        const named = (scene.adoptionIssues ?? []).some((i) => token.test(i));
+        if (!adoptedPair.has(`${need.word}#${need.idx}`) && !named) {
           report.addIssue({ code: "custom", path: ["onImageAdoptions"], message: `placement「${need.word}#${need.idx}」冇採用結果——onImageAdoptions 要有一條 placementIdx=${need.idx}＋placement 逐字「${need.word}」，或 adoptionIssues 具名 token「${need.word}#${need.idx}」未解` });
         }
       }
