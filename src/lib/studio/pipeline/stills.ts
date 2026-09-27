@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { emit } from "../store";
+import { emit, readJob } from "../store";
 import { localPictureQc } from "../providers";
 import { shouldWaitEarnLock, waitEarnGpuLock } from "../earn-gpu-lock";
 import { ensureDir, jobDir, jobFile, projectsDir } from "../paths";
@@ -89,7 +89,11 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
   const firstFlags = stillFirstFlags(ctx.continuity!.boards);
   // --scene hop composes only its own shots: an out-of-scene prompt_too_thin
   // throw must not fail the hop (WR1Q SC01 died on SH06)
-  const planBoards = input.scene ? shotsForScene(ctx.continuity!.boards, input.scene) : ctx.continuity!.boards;
+  let planBoards = input.scene ? shotsForScene(ctx.continuity!.boards, input.scene) : ctx.continuity!.boards;
+  // §10.2：placement-gap blocked 鏡（修訂額度耗盡仍缺）唔燒 stills——同 motion
+  // loop 同款 skip；blocked 真源＝磁碟（world 重算全替換 audio-placement rows）。
+  const gapBlockedShots = new Set((readJob(jobId)?.blockedShots ?? []).filter((b) => b.stage === "audio-placement").map((b) => b.shot));
+  if (gapBlockedShots.size) planBoards = planBoards.filter((b) => !gapBlockedShots.has(b.id));
   const baseCast = ctx.job.drama ? loadBaseCast(projectsDir(), ctx.job.drama) : undefined;
   // Two PE routes, before /edit. Web search on: wigolo → nex, qwen38 backup,
   // facts land in the packet. Web search off: 6.8 rewrites the shot, no wigolo.

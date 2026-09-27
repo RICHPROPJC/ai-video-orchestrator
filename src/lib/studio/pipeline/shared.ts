@@ -89,12 +89,13 @@ export function setActiveOwner(owner?: JobOwner) {
   activeOwner = owner;
 }
 export function patch(job: JobRecord, partial: Partial<JobRecord>) {
-  // §9②：blockedShots/placementGaps 以磁碟為真源——emit（store）同 attempts
-  // 遞增係唯一 writer；ctx 舊快照唔可以蓋走佢哋（motion 讀 ctx.job 先至見）。
+  // §10.1：本輪明確提交嘅欄優先——own-property presence 分辨「未提交」與
+  // 「明確 []」（attempts+1／新 gaps／清空唔再被磁碟舊值吞）；未提交該欄先
+  // 由磁碟承接（emit/world 重算寫嘅狀態唔被舊 ctx 快照蓋走）。
   const disk = readJob(job.id);
   const next = { ...job, ...partial };
-  next.blockedShots = disk?.blockedShots ?? next.blockedShots;
-  next.placementGaps = disk?.placementGaps ?? next.placementGaps;
+  if (!("blockedShots" in partial)) next.blockedShots = disk?.blockedShots ?? next.blockedShots;
+  if (!("placementGaps" in partial)) next.placementGaps = disk?.placementGaps ?? next.placementGaps;
   writeJob(next, activeOwner);
   return next;
 }

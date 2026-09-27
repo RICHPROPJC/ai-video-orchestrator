@@ -196,8 +196,10 @@ export function emit(id: string, event: Omit<JobEvent, "ts"> & { ts?: string }) 
     const d = (event.data ?? null) as { blocked?: unknown; shot?: unknown; verdict?: unknown; stage?: unknown } | null;
     if (d && typeof d.shot === "string") {
       if (typeof d.blocked === "string") {
-        const row = { shot: d.shot, stage: typeof d.stage === "string" ? d.stage : undefined, reason: d.blocked, ts: full.ts };
-        const rest = (job.blockedShots ?? []).filter((b) => !(b.shot === row.shot));
+        const stage = typeof d.stage === "string" ? d.stage : undefined;
+        const row = { shot: d.shot, stage, reason: d.blocked, ts: full.ts };
+        // §10.2：upsert 身份＝shot+stage——同鏡另一 stage 嘅未解原因唔被抹。
+        const rest = (job.blockedShots ?? []).filter((b) => !(b.shot === row.shot && b.stage === stage));
         job.blockedShots = [...rest, row];
       } else if (d.verdict === "pass") {
         // §9②：同 stage pass 先清同 stage block——placement-gap（audio-placement）

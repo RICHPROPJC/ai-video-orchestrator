@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { Resvg } from "@resvg/resvg-js";
 import { blenderBlockingScript } from "../blender";
-import { emit } from "../store";
+import { emit, readJob } from "../store";
 import { renderBlockingSvg } from "../painter";
 import { ensureDir, jobDir, jobFile } from "../paths";
 import { snapDurationToFrames, wavSeconds } from "../frame-grid";
@@ -359,6 +359,20 @@ export async function worldStage(ctx: Ctx): Promise<void> {
           data: { shot: shotId, stage: "audio-placement", blocked: `placement-gap:${r.beatId}` } });
       }
     }
+    // §10.2：audio-placement block 完整生命週期——每輪重算全替換本 stage 原因
+    // 集合：已解（唔喺本輪 gap 播出鏡）移除、他 stage 原因保留、未解全在
+    // （唔再等同 stage pass event 清——修好即刻解鎖；revision 刪鏡亦自然清走）。
+    const openGapShots = new Set(missingRows.flatMap((r) => r.coveredByShotIds ?? []));
+    const diskRows = readJob(jobId)?.blockedShots ?? [];
+    const keptRows = diskRows.filter((b) => b.stage !== "audio-placement");
+    ctx.job = patch(ctx.job, {
+      blockedShots: [...keptRows, ...[...openGapShots].map((shotId) => ({
+        shot: shotId,
+        stage: "audio-placement",
+        reason: `placement-gap:${missingRows.filter((r) => (r.coveredByShotIds ?? []).includes(shotId)).map((r) => r.beatId).join(",")}`,
+        ts: new Date().toISOString(),
+      }))],
+    });
     fs.writeFileSync(jobFile(jobId, "creative", "audio-timeline.json"), JSON.stringify({
       generatedAt: new Date().toISOString(),
       // §7③：採用 revision 收據——呢份 timeline 由邊個 callsheet 生出嚟
@@ -630,7 +644,11 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   if (input.scene) {
     await speak("layout", `--scene ${input.scene} hop：blockout ${hopBoards.length}/${ctx.continuity!.boards.length} 鏡。`);
   }
+  // §10.2：placement-gap blocked 鏡（額度耗盡仍缺）唔重 render blockout——
+  // 修好後 revision 重算全替換 rows 自然解鎖。磁碟真源（本段喺重算之後）。
+  const gapBlockedShots = new Set((readJob(jobId)?.blockedShots ?? []).filter((b) => b.stage === "audio-placement").map((b) => b.shot));
   for (const shot of hopBoards) {
+    if (gapBlockedShots.has(shot.id)) continue;
     const outMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
     const frames = snapDurationToFrames(shot.durationSec);
     const sceneStamp = path.join(blockoutDir, `${shot.id}.scene.json`);
