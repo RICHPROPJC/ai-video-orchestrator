@@ -172,17 +172,29 @@ export function boardsSceneSchema(ctx: {
     // （word 淨顯示）；每條本場相關 occurrence 要有對應 placementIdx 嘅採用，
     // 或 issue 具名 `word#idx`；已交集合以外嘅未知 idx 引用拒收。
     if ((ctx.dialoguePlacements?.length ?? 0) > 0) {
-      const needIdx = new Set(ctx.dialoguePlacements!.map((p) => p.idx));
-      const adoptedIdx = new Set((scene.onImageAdoptions ?? []).map((a) => a.placementIdx));
-      const issueText = (scene.adoptionIssues ?? []).join("\n");
-      for (const need of ctx.dialoguePlacements!) {
-        if (!adoptedIdx.has(need.idx) && !issueText.includes(`${need.word}#${need.idx}`)) {
-          report.addIssue({ code: "custom", path: ["onImageAdoptions"], message: `placement「${need.word}#${need.idx}」冇採用結果——onImageAdoptions 要有一條 placementIdx=${need.idx}，或 adoptionIssues 具名講明「${need.word}#${need.idx}」未解` });
+      // §16.2：成對身份 (placementIdx, word)——單欄啱唔當採用成功；issue 指認
+      // 用精確 token（word#idx 後面唔可以再係數字——#1 唔可以俾 #10 誤認）。
+      const needOf = new Map(ctx.dialoguePlacements!.map((p) => [p.idx, p.word]));
+      const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const issueNamed = new Set<string>();
+      for (const issue of scene.adoptionIssues ?? []) {
+        for (const m of issue.matchAll(/([^\s#]+)#(\d+)(?!\d)/g)) {
+          issueNamed.add(`${m[1]}#${m[2]}`);
         }
       }
       for (const a of scene.onImageAdoptions ?? []) {
-        if (!needIdx.has(a.placementIdx)) {
+        const want = needOf.get(a.placementIdx);
+        if (want === undefined) {
           report.addIssue({ code: "custom", path: ["onImageAdoptions"], message: `placementIdx=${a.placementIdx} 唔喺本場相關 placement 集（packet 清單以外）——未知引用拒收` });
+        } else if (want !== a.placement) {
+          report.addIssue({ code: "custom", path: ["onImageAdoptions"], message: `placementIdx=${a.placementIdx} 對應 placement 係「${want}」，但條目寫「${a.placement}」——成對身份（idx＋word）唔夾，拒收` });
+        }
+      }
+      const adoptedPair = new Set((scene.onImageAdoptions ?? []).filter((a) => needOf.get(a.placementIdx) === a.placement).map((a) => `${a.placement}#${a.placementIdx}`));
+      for (const need of ctx.dialoguePlacements!) {
+        const key = `${need.word}#${need.idx}`;
+        if (!adoptedPair.has(key) && !issueNamed.has(key)) {
+          report.addIssue({ code: "custom", path: ["onImageAdoptions"], message: `placement「${need.word}#${need.idx}」冇採用結果——onImageAdoptions 要有一條 placementIdx=${need.idx}＋placement 逐字「${need.word}」，或 adoptionIssues 具名 token「${need.word}#${need.idx}」未解` });
         }
       }
     }

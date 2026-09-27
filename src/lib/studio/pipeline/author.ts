@@ -70,8 +70,16 @@ async function authorCallSheet(
   // 來源改變（新 episode 由 world 重算開，唔喺呢度）。
   if (placementGaps.length > 0 && epAttempts >= GAP_BUDGET) {
     if (fs.existsSync(existing)) {
+      // §16.1：沿用既有來源版本 guard——manifest 話 briefSha 唔夾＝呢份
+      // callsheet 係過期採用版本：有效舊版本先可以 blocked preview 續用；
+      // 採用來源變咗要具名處理（新 episode 由 world 重算開）——唔以舊鏡表
+      // 續行，亦唔可以 drift 分支重行創作變相重開無額度同一問題。
+      const manEx = readCreativeManifest(path.join(jobDir(jobId), "creative"));
+      if (manEx && manEx.briefSha !== briefSha(input.brief)) {
+        throw new Error(`sound_repair_budget_exhausted_and_stale: 修訂額度耗盡（episode ${GAP_BUDGET} 輪）＋callsheet 採用來源已變（manifest briefSha ${manEx.briefSha.slice(0, 12)} vs 今次 ${briefSha(input.brief).slice(0, 12)}）——過期鏡表唔可以 blocked preview 續用、亦唔可以悄悄重開；要明示採用版本更新或人手處理`);
+      }
       const sheet = loadCallSheet(existing);
-      await io.speak("producer", `修訂額度耗盡＋${placementGaps.length} 條 gap——照食既有 callsheet（${sheet.shots.length} 鏡），gaps 留底收尾 blocked 判斷，唔重開創作。`, "warn");
+      await io.speak("producer", `修訂額度耗盡＋${placementGaps.length} 條 gap——照食既有 callsheet（${sheet.shots.length} 鏡，採用版本已驗有效），gaps 留底收尾 blocked 判斷，唔重開創作。`, "warn");
       return sheet;
     }
     throw new Error(`sound_repair_budget_exhausted: 修訂額度耗盡（episode ${GAP_BUDGET} 輪）＋${placementGaps.length} 條聲畫 gap 未解，且冇既有 callsheet 可採用——缺有效採用具名 blocked，唔盲生成`);
