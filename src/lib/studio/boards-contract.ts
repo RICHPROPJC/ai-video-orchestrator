@@ -8,18 +8,21 @@ export const TEXT_SHOT_SEC_MIN = 1;
 /** Shot length bounds come from the H3 grid setting, not a second copy of 5.2/15. */
 export const SHOT_SEC_MIN = shotSecMin();
 export const SHOT_SEC_MAX = shotSecMax();
-const SHOT_ACTION_MAX = 60;
-const CAST_PER_SHOT_MAX = 3;
+const SHOT_ACTION_MAX = 200; // 0927：字數唔係閘
+const CAST_PER_SHOT_MAX = 3; // 基建：Blender slot L/C/R 三位
 
 /** Each scene is held to its own share of the slate's clock; the shares are
  *  normalised before they get here, so holding every scene holds the film. */
-export const SCENE_BUDGET_TOLERANCE = 0.09;
+export const SCENE_BUDGET_TOLERANCE = 9; // 0927：budget band 唔再束縛（時鐘係真源），值放到唔約束
 
 /** The b5/b6 narrow-slot vocabularies, exported so the boards desk's pre-send
  *  self-check (padBoardDurations) repairs against the same enums zod gates. */
 export const SLOT_VALUES = ["L", "C", "R"] as const;
 export const DEPTH_VALUES = ["near", "mid", "far"] as const;
-export const STANCE_VALUES = ["stand", "lean", "crouch"] as const;
+export const STANCE_VALUES = ["stand", "lean", "crouch", "sit"] as const;
+// SC-CREATIVE-OS-0927 §2C：sit＝臀部有支撐嘅坐（舊版用 crouch 頂住令坐姿失真）。
+// 能力誠實：blockout／pose 語言層對 sit 嘅骨架支持喺 P2 對齊——未支援嘅
+// renderer 要明報 capability gap，唔准靜靜降級返 crouch。
 
 const castSchema = z.object({
   characterId: z.string().regex(CHARACTER_ID_RE),
@@ -39,11 +42,11 @@ const propSchema = z.object({
   forbid: z.array(z.string().min(1).max(12)).max(8),
   publicName: omittable(z.string().min(1).max(24)),
   sizeM: omittable(z.number().positive().max(30)),
-  sizeSource: omittable(z.string().min(1).max(80)),
+  sizeSource: omittable(z.string().min(1)),
   proportion: omittable(z.object({
     of: z.string().regex(CHARACTER_ID_RE),
     at: z.enum(["knee", "waist", "chest", "shoulder"]),
-    source: z.string().min(1).max(80),
+    source: z.string().min(1),
   })),
 }).refine((p) => p.sizeM == null || Boolean(p.sizeSource?.trim()), {
   message: "sizeM 要連 sizeSource 一齊寫，唔准估",
@@ -58,13 +61,17 @@ const propSchema = z.object({
 /** Card D 0919: an on-screen fact row. Packet-authored — 阿圖 may pre-author,
  *  the search-first PE step writes wigolo evidence here; code only assembles. */
 const factSchema = z.object({
-  claim: z.string().min(1).max(200),
-  source: z.string().min(1).max(200),
+  claim: z.string().min(1),
+  source: z.string().min(1),
   fetched_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "fetched_at 要 YYYY-MM-DD"),
 });
 
 const boardShotShape = z.object({
   beatId: z.string().regex(BEAT_ID_RE),
+  /** SC-CREATIVE-OS-0927 P1：一鏡可覆蓋多個 beat（多對多）。beatId 保留做
+   *  primary（舊消費者照讀）；覆蓋閘同對白歸屬改食 beatIds ?? [beatId]。
+   *  呢個係「一動詞一鏡」碎切結構嘅 schema 鬆綁，唔係新模板。 */
+  beatIds: omittable(z.array(z.string().regex(BEAT_ID_RE)).min(1).max(6)),
   size: z.enum(["wide", "full", "medium", "closeup", "insert"]),
   angle: z.enum(["eye", "high", "low"]),
   side: z.enum(["frontal", "leftQuarter", "rightQuarter"]),
@@ -72,8 +79,26 @@ const boardShotShape = z.object({
   action: z.string().min(1).max(SHOT_ACTION_MAX),
   dialogue: z.string().nullish().transform((v) => v ?? ""),
   speaker: omittable(z.string().min(1).max(12)),
-  cast: z.array(castSchema).min(1).max(CAST_PER_SHOT_MAX),
+  // SC-CREATIVE-OS-0927 §2C：產品／環境鏡合法（空 cast）。下游 blockout
+  // figure gate 對空 marks 轉驗主體剪影（blockout.ts 同步），唔准偷塞人。
+  cast: z.array(castSchema).min(0).max(CAST_PER_SHOT_MAX),
   props: omittable(z.array(propSchema).max(3)),
+  /** DIALOGUE_RULE_PROVENANCE_0927：本鏡「播出」嘅對白 beat id（可跨場景
+   *  聲橋）。聲音關聯，唔係畫面包含：speaker 唔使喺 cast；一句可由多鏡分段
+   *  播（先拍講者再拍聽者）；一鏡可多句或零句。跨場景引用對全 script beat 集
+   *  驗（ctx.scriptBeatIds）；覆蓋總閘（每句對白至少一鏡播、事件窗口夠講）
+   *  喺 boards-expand assertSheetGates——嗰度先睇得到全場。 */
+  audioBeats: omittable(z.array(z.string().regex(BEAT_ID_RE)).min(1).max(6)),
+  /** 環境動畫通道（世界暫停前後動作）：時鐘指針／窗光影條／盒疊——幾何
+   *  keyframe，blockout 灰模照 render（FLAT 下光源變化唔可見，所以淨收
+   *  幾何通道）。keys 相對本鏡開頭 frame。有需要先寫。 */
+  envAnim: omittable(z.array(z.object({
+    object: z.enum(["clock_hand", "window_bar", "stack_box"]),
+    channel: z.enum(["rotate_z", "pos_z", "scale_z"]),
+    keys: z.array(z.tuple([z.number().min(0), z.number()])).min(2).max(48),
+    interp: omittable(z.enum(["step", "linear"])),
+    note: omittable(z.string().max(80)),
+  })).max(4)),
   /** T32 rev2: per-shot scene slot the boards seat authors — location (and
    *  optionally its own light angle) the stills prompt must follow. Chau 17:48:
    *  negatives 阿圖按道具/場景類別填；毒詞（霓虹/neon/night）連 negative 都落閘。
@@ -82,7 +107,7 @@ const boardShotShape = z.object({
    *  （文字圖冇 facts 唔准出）；location 讀填——facts-only require 係合法形。 */
   require: omittable(
     z.object({
-      location: omittable(z.string().min(2).max(8)),
+      location: omittable(z.string().min(1).max(60)), // 0927：場所名長短由內容定
       angle: omittable(z.enum(["eye", "high", "low"])),
       negatives: omittable(z.array(z.string().min(1).max(12)).min(1).max(6)),
       facts: omittable(z.array(factSchema).min(1).max(8)),
@@ -102,7 +127,7 @@ const boardShotShape = z.object({
 const boardsSceneShape = z.object({
   sceneId: z.string().regex(SCENE_ID_RE),
   thinking: z.string().min(1).max(400),
-  shots: z.array(boardShotShape).min(1).max(30),
+  shots: z.array(boardShotShape).min(1),
 });
 
 export type BoardShot = z.infer<typeof boardShotShape>;
@@ -113,15 +138,17 @@ export function boardsSceneSchema(ctx: {
   beats: Beat[];
   characters: { id: string; name: string }[];
   budgetSec: number;
+  /** DIALOGUE_RULE_PROVENANCE_0927：全 script 嘅 beat id 集——audioBeats 跨
+   *  場景引用（聲橋）對呢個集驗。seat-boards callsite 傳；冇佢而又出現跨
+   *  場景 audioBeats 就報驗唔到（fail-loud，唔靜靜放行）。 */
+  scriptBeatIds?: string[];
 }) {
   const byBeat = new Map(ctx.beats.map((b) => [b.id, b]));
   const cast = new Set(ctx.characters.map((c) => c.id));
-  const idByName = new Map(ctx.characters.map((c) => [c.name, c.id]));
   return boardsSceneShape.superRefine((scene, report) => {
     if (scene.sceneId !== ctx.sceneId) {
       report.addIssue({ code: "custom", path: ["sceneId"], message: `this envelope is scene ${ctx.sceneId}, not ${scene.sceneId}` });
     }
-    const dialogueShotsPerBeat = new Map<string, number>();
     for (const [i, shot] of scene.shots.entries()) {
       const at = (...path: (string | number)[]) => ["shots", i, ...path];
       const beat = byBeat.get(shot.beatId);
@@ -129,22 +156,26 @@ export function boardsSceneSchema(ctx: {
         report.addIssue({ code: "custom", path: at("beatId"), message: `beat ${shot.beatId} is not in scene ${ctx.sceneId}` });
         continue;
       }
-      const beatLine = beat.dialogue?.trim() ?? "";
-      const shotLine = shot.dialogue.trim();
-      if (shotLine && shotLine !== beatLine) {
-        report.addIssue({ code: "custom", path: at("dialogue"), message: `dialogue must be the beat's line verbatim: ${JSON.stringify(beatLine)}` });
+      // P1 多對多：beatIds 每個成員都要喺本場（beatId primary 已驗上面）
+      for (const [bi, extra] of (shot.beatIds ?? []).entries()) {
+        if (!byBeat.has(extra)) {
+          report.addIssue({ code: "custom", path: at("beatIds", bi), message: `beat ${extra} is not in scene ${ctx.sceneId}` });
+        }
       }
-      if (shotLine && shot.speaker !== beat.speaker) {
-        report.addIssue({ code: "custom", path: at("speaker"), message: `speaker must be the beat's speaker ${JSON.stringify(beat.speaker)}` });
-      }
-      if (shotLine) dialogueShotsPerBeat.set(shot.beatId, (dialogueShotsPerBeat.get(shot.beatId) ?? 0) + 1);
-      const needed = dialogueSeconds(shotLine);
-      if (shotLine && shot.durationSec + 1e-9 < needed) {
-        report.addIssue({
-          code: "custom",
-          path: at("durationSec"),
-          message: `${shotLine.length} chars need ≥ ${needed.toFixed(1)}s of screen time, not ${shot.durationSec}s`,
-        });
+      // DIALOGUE_RULE_PROVENANCE_0927：audioBeats＝聲音關聯，可指其他場嘅
+      // beat（跨場景聲橋）。本場嘅直接驗；跨場嘅對 scriptBeatIds 驗。呢度
+      // 唔驗「一句一鏡」——對白覆蓋總閘（每句至少一鏡播、事件窗口夠講）喺
+      // boards-expand assertSheetGates 全 sheet 度先驗得到。同場對白歸屬
+      // （邊鏡播邊句）由組裝層衍生，seat 唔使再逐字抄對白入鏡。
+      for (const [ai, ref] of (shot.audioBeats ?? []).entries()) {
+        if (byBeat.has(ref)) continue;
+        if (ctx.scriptBeatIds) {
+          if (!ctx.scriptBeatIds.includes(ref)) {
+            report.addIssue({ code: "custom", path: at("audioBeats", ai), message: `audio beat ${ref} is not a beat of this script` });
+          }
+        } else {
+          report.addIssue({ code: "custom", path: at("audioBeats", ai), message: `audio beat ${ref} is outside scene ${ctx.sceneId} and no scriptBeatIds to verify it against` });
+        }
       }
       const seats = new Set<string>();
       for (const [j, member] of shot.cast.entries()) {
@@ -160,10 +191,6 @@ export function boardsSceneSchema(ctx: {
       const ids = new Set(shot.cast.map((c) => c.characterId));
       if (ids.size !== shot.cast.length) {
         report.addIssue({ code: "custom", path: at("cast"), message: "the same character is cast twice in one shot" });
-      }
-      const speakerId = shot.speaker ? idByName.get(shot.speaker) : undefined;
-      if (shotLine && speakerId && !ids.has(speakerId)) {
-        report.addIssue({ code: "custom", path: at("cast"), message: `${shot.speaker} speaks here, so ${speakerId} must be on screen` });
       }
       for (const [j, prop] of (shot.props ?? []).entries()) {
         if (prop.heldBy && !ids.has(prop.heldBy)) {
@@ -182,14 +209,12 @@ export function boardsSceneSchema(ctx: {
       });
     }
     for (const beat of ctx.beats) {
-      if (!scene.shots.some((s) => s.beatId === beat.id)) {
+      if (!scene.shots.some((s) => s.beatId === beat.id || (s.beatIds ?? []).includes(beat.id))) {
         report.addIssue({ code: "custom", path: ["shots"], message: `beat ${beat.id} has no shot covering it` });
       }
-      const line = beat.dialogue?.trim() ?? "";
-      const count = dialogueShotsPerBeat.get(beat.id) ?? 0;
-      if (line && count !== 1) {
-        report.addIssue({ code: "custom", path: ["shots"], message: `beat ${beat.id}'s line must be spoken in exactly one shot, found ${count}` });
-      }
+      // DIALOGUE_RULE_PROVENANCE_0927 拆閘：對白 beat 只要求「有鏡畫到佢」
+      // （上面嗰條）＋「有鏡播佢」（assertSheetGates 全 sheet 度驗，呢度睇
+      // 唇到其他場嘅 audioBeats）。「一句恰好一鏡」繼承閘由 root 裁決撤除。
     }
   });
 }

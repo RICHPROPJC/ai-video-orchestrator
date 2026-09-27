@@ -142,8 +142,10 @@ export function factsBlock(facts: ShotFact[]): string {
 export function cjkCount(text: string): number {
   return (text.match(/[一-鿿]/g) ?? []).length;
 }
-export const EDIT_MIN_CJK = 150;
-export const EDIT_MAX_CJK = 300;
+/** 0927 Chau 令：150–300 band 已拆——prompt 長短由內容定，唔准迫模型湊詞。
+ *  上下限放到只防明顯垃圾（空 prompt／噴萬字）。 */
+export const EDIT_MIN_CJK = 1;
+export const EDIT_MAX_CJK = 3000;
 
 /** T32b 裁3: 阿圖 answers in BOARDS_CHARTER shape ({sceneId,thinking,shots}),
  * not in this lane's shape — map the first require-bearing shot onto the

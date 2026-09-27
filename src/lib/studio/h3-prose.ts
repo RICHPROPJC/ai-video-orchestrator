@@ -7,6 +7,12 @@ export const SCRIPT_HEADER = "# produced_by: slatecrew_h3_submit";
 // competes with the motion copy
 export const VIDEO_SENTENCE = `Have the {{N}} people act following the movements of the grey placeholders in <Video 1> — they carry motion only; replace their look entirely.`;
 
+/** Sol 0926 E：KF×Video1 共存時嘅時間錨句——開幅＝首圖、結幅＝尾圖（同
+ *  BINDINGS_CFORM 同向；亦補返 kfCoexist 清走 gait/stance 演繹後嘅字數）。 */
+export const KEYFRAME_ANCHOR_SENTENCE =
+  "The opening and closing keyframe images are this same shot's own start and end moments: " +
+  "begin exactly as the first image shows, and arrive exactly at the last.";
+
 export const PIN_SENTENCE = `Faces, clothes, the {{PROP}} and the field continue exactly from the start keyframe image and <Video 1>. Same {{PROP}}, not a morph. Do not add people.`;
 
 /** §5b C-form pin (E2E SC-0921-9V4Y SH01.c8 script, tg 17976): with zero
@@ -41,8 +47,8 @@ const QUOTED = /["「]([^"」]+)["」]/g;
 //  - action-short: visible verb in require.action, no dialogue, ≤1 character → ≤70 詞
 //  - identity-long: dialogue / ≥2 characters / heavy scene → 150–300 詞 prose, zero labels
 export const ACTION_SHORT_MAX = 70;
-export const IDENTITY_LONG_MIN = 150;
-export const IDENTITY_LONG_MAX = 300;
+export const IDENTITY_LONG_MIN = 1; // 0927：詞數 band 已拆——內容定長度，唔迫湊詞
+export const IDENTITY_LONG_MAX = 3000; // 0927：詞數 band 已拆
 
 export type ProseMode = "action-short" | "identity-long";
 
@@ -280,6 +286,28 @@ export function validateProse(script: string, opts: ValidateProseOpts = {}): voi
   budgetCheck(body, opts.mode);
 }
 
+/** DIALOGUE_RULE_PROVENANCE_0927（C 統籌 0927 指正）：講者真在該鏡 visible
+ *  cast（marks 有佢）先寫 speaks＋口形；聽者鏡／跨場景聲橋＝聲音延續句——
+ *  quote 同「Audio 1」語境照留（validateProse 兩樣都要），但畫面人唔開口。 */
+function dialogueSentences(opts: {
+  speakerName?: string;
+  speakerMark?: unknown;
+  side: string;
+  dialogue: string;
+  others: string[];
+}): string {
+  const { speakerName, speakerMark, side, dialogue, others } = opts;
+  if (speakerMark && speakerName) {
+    const listeners = others.length ? ` ${others.join("、")} ${others.length === 1 ? "listens" : "listen"}.` : "";
+    return `${speakerName} (${side}) speaks the line in Audio 1: "${dialogue}".${listeners}`;
+  }
+  const who = speakerName ? `(${speakerName}) ` : "";
+  if (others.length) {
+    return `Audio 1 voice continues off-screen ${who}with the line "${dialogue}". ${others.join("、")} ${others.length === 1 ? "listens and reacts" : "listen and react"}, no lip movement on screen.`;
+  }
+  return `Audio 1 voice continues off-screen ${who}with the line "${dialogue}". No one on screen speaks.`;
+}
+
 function speakerSide(shot: Shot, speakerMarkX: number): "left" | "right" {
   const xs = shot.marks.map((m) => m.start.x).filter((x) => x !== speakerMarkX);
   const other = xs.length ? Math.min(...xs) : speakerMarkX;
@@ -326,13 +354,11 @@ export function buildProsePositive(sheet: CallSheet, shot: Shot, opts: BuildPros
   const dialogue = shot.dialogue.trim();
   if (dialogue) {
     const speakerName = shot.speaker ?? chars[0]?.name;
-    if (!speakerName) throw new Error(`${shot.id}: dialogue but no speaker and no cast`);
-    const speakerChar = chars.find((c) => c.name === speakerName);
+    const speakerChar = speakerName ? chars.find((c) => c.name === speakerName) : undefined;
     const speakerMark = speakerChar ? shot.marks.find((m) => m.characterId === speakerChar.id) : undefined;
     const side = speakerMark ? speakerSide(shot, speakerMark.start.x) : "left";
     const others = chars.filter((c) => c.name !== speakerName).map((c) => c.name);
-    const listeners = others.length ? ` ${others.join("、")} ${others.length === 1 ? "listens" : "listen"}.` : "";
-    lines.push(`${speakerName} (${side}) speaks the line in Audio 1: "${dialogue}".${listeners}`);
+    lines.push(dialogueSentences({ speakerName, speakerMark, side, dialogue, others }));
   }
   return lines.join("\n\n");
 }
@@ -417,6 +443,7 @@ function buildProseLong(
       const who = chars.find((c) => c.id === m.characterId);
       if (!who) return "";
       const frameSide = m.start.x <= 50 ? "frame-left" : "frame-right";
+      if (opts.kfCoexist) return `${who.name} ${frameSide}`;
       const gait = GAIT_PHRASE[m.gait];
       const stance = m.stance && m.stance !== "stand" ? `, ${m.stance}ing` : "";
       return `${who.name} ${gait}${stance} ${frameSide}`;
@@ -433,7 +460,8 @@ function buildProseLong(
       `with ${cameraHeight}, framed ${sheet.aspect}.`,
     // who + motion contract
     `${cast}. ${shot.action} ${blocking}. ` +
-      VIDEO_SENTENCE.replace("{{N}}", String(chars.length)),
+      VIDEO_SENTENCE.replace("{{N}}", String(chars.length)) +
+      (opts.kfCoexist ? ` ${KEYFRAME_ANCHOR_SENTENCE}` : ""),
     // pin — §5b: C-form names <Picture 1> (zero keyframes wired); A-form
     // (default) names the start keyframe image
     (opts.form === "c" ? PIN_SENTENCE_CFORM : PIN_SENTENCE).replaceAll("{{PROP}}", prop),
@@ -454,10 +482,8 @@ function buildProseLong(
   const dialogue = shot.dialogue.trim();
   let dialoguePara = "";
   if (dialogue) {
-    if (!speakerName) throw new Error(`${shot.id}: dialogue but no speaker and no cast`);
     const others = chars.filter((c) => c.name !== speakerName).map((c) => c.name);
-    const listeners = others.length ? ` ${others.join("、")} ${others.length === 1 ? "listens" : "listen"}.` : "";
-    dialoguePara = `${speakerName} (${side}) speaks the line in Audio 1: "${dialogue}".${listeners}`;
+    dialoguePara = dialogueSentences({ speakerName, speakerMark, side, dialogue, others });
   }
   if (shot.combat) {
     // COMBAT_PORT_0921: the causal flag layer — Physical Contact constraint
@@ -509,6 +535,10 @@ export type BuildProseOpts = {
    *  keyframes, so the pin names the angle portrait, never a "start keyframe
    *  image" the model never sees. The motion pack passes the form explicitly. */
   form?: "a" | "c";
+  /** Sol 0926 裁決 E：KF×Video1 共存時，blocking 唔加 gait/stance 演繹詞
+   *  （crouching/reaching 同 KF 靜態錨衝突）——位置交畀 KF 同 Video1，文字
+   *  淨講邊位。 */
+  kfCoexist?: boolean;
 };
 
 /** H3＝A prose, mode decided by the packet (T42):
