@@ -213,7 +213,7 @@ export async function submitH3Shot(opts: {
   const freePositions = opts.keyframePositions?.trim() ?? "";
   if (!freePositions && cform && (opts.kfStart || opts.kfEnd || opts.kfExtraFiles?.length)) {
     throw new Error(
-      `keyframes_video1_coexist: 冇寫 positions 就同時有走位片 (${opts.blockoutMp4}) 同鍵格檔 ` +
+      `keyframes_need_positions: 冇寫 positions 就同時有走位片 (${opts.blockoutMp4}) 同鍵格檔 ` +
         `(${opts.kfStart ?? ""}${opts.kfEnd ? " + kfEnd" : ""})`,
     );
   }

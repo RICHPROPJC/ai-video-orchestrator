@@ -9,6 +9,9 @@ export type CrewConfig = {
   endpoint: string;
   writerModel: string;
   boardsModel: string;
+  /** SC-CREATIVE-OS-0927：導演席專用腦——創作整合模型同廉價整理席分開明示。
+   *  唔借 writerModel（flash 級係收拾嘢嘅手，唔係拍板嘅腦）。 */
+  directorModel?: string;
   blenderModel: string;
   /** Flash Lite miss → this GLM, not Hermes. */
   blenderFallback: string;
@@ -233,7 +236,12 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
     throw new Error("crew.endpoint unset — set crew.endpoint in slatecrew.config.json or CREW_LLM_URL");
   }
   if (opts.crew.deny.includes(opts.model)) {
-    throw new Error(`seat ${opts.seat} refused model ${opts.model}: listed in crew.deny`);
+    // Chau 0927 明示豁免（「set glm5.3 from zhipu」）：導演席（creative）係創作
+    // 拍板腦，准用 full glm-5.3（:4000 純名＝Zhipu 上游）。其他席照禁——
+    // 呢個係導演席 carve-out，唔係剷咗 deny 法。
+    if (opts.seat !== "creative") {
+      throw new Error(`seat ${opts.seat} refused model ${opts.model}: listed in crew.deny`);
+    }
   }
   const dispatcher = opts.fetchImpl
     ? undefined
@@ -393,7 +401,8 @@ export async function chatJsonWithFallback<T>(
   opts: ChatJsonOpts<T> & { fallbackModel: string },
 ): Promise<ChatJsonFallbackResult<T>> {
   for (const m of [opts.model, opts.fallbackModel]) {
-    if (opts.crew.deny.includes(m)) {
+    if (opts.crew.deny.includes(m) && opts.seat !== "creative") {
+      // Chau 0927 豁免同上（fallback 路徑同款）：導演席准 full glm-5.3
       throw new Error(`seat ${opts.seat} refused model ${m}: listed in crew.deny`);
     }
   }

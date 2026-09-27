@@ -103,8 +103,8 @@ test("WIST verify/ab/dry receipts: A=C-form (§5b), B/BKF/C alternates — SH01/
         assert.ok(hasVideo);
         assert.ok(refImgKeys.length >= 1, "identity portrait must ride ref_image_0");
         assert.equal(hasKf, false);
-        assert.match(String(graph.split.inputs.bindings), /<Picture 1> is the sole appearance and identity reference/);
-        assert.match(String(graph.split.inputs.bindings), /<Video 1> is motion only/);
+        assert.match(String(graph.split.inputs.bindings), /<Picture 1> is this shot.s own reference photograph/);
+        assert.match(String(graph.split.inputs.bindings), /<Video 1> is that same person rehearsing the move/);
         assert.match(receipt.prompt, /<Picture 1>/);
       }
       if (variant === "b") {
@@ -152,6 +152,6 @@ test("§5b prohibition on WIST: A-path submit with blockout + kf refuses to emit
         shot: "SH01",
         requireQuote: Boolean(shot.dialogue.trim()),
       }),
-    /keyframes_video1_coexist/,
+    /keyframes_need_positions/,
   );
 });

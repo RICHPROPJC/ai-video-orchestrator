@@ -20,7 +20,8 @@ export function loadCallSheet(jsonPath: string): CallSheet {
     throw new Error(`callsheet ${jsonPath} missing fields: ${missing.join(", ")}`);
   }
   if (!sheet.characters!.length) throw new Error(`callsheet ${jsonPath} has no characters`);
-  const STANCES = ["stand", "lean", "crouch"] as const;
+  // §2C：sit（臀部有支撐嘅坐）入合法形——同 boards-contract STANCE_VALUES 同步
+  const STANCES = ["stand", "lean", "crouch", "sit"] as const;
   for (const c of sheet.characters!) {
     const need = (["id", "name", "role", "wardrobe", "palette", "voice"] as const).filter(
       (k) => c[k] === undefined || c[k] === null,

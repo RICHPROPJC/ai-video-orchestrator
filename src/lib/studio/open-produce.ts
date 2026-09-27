@@ -75,10 +75,12 @@ export type ResumePatch = {
   blockoutDir?: string;
   gapSec?: number;
   noMotionSelect?: boolean;
+  allowNoStoryboard?: boolean;
   dryRun?: boolean;
   until?: ProduceInput["until"];
   scene?: string;
   shot?: string;
+  only?: string;
   graphVariant?: ProduceInput["graphVariant"];
   steps?: number;
   voiceClonePath?: string;
@@ -96,10 +98,12 @@ export function resumeSlate(slate: string, patch: ResumePatch): OpenedSlate | { 
     blockoutDir: patch.blockoutDir ?? job.input.blockoutDir,
     gapSec: patch.gapSec ?? job.input.gapSec,
     noMotionSelect: patch.noMotionSelect || job.input.noMotionSelect,
+    allowNoStoryboard: patch.allowNoStoryboard || job.input.allowNoStoryboard,
     dryRun: patch.dryRun,
     until: patch.until,
     scene: patch.scene,
     shot: patch.shot,
+    only: patch.only,
     graphVariant: patch.graphVariant ?? job.input.graphVariant,
     steps: patch.steps ?? job.input.steps,
     ...(patch.voiceClonePath ? { voiceClonePath: patch.voiceClonePath } : {}),

@@ -22,6 +22,8 @@ import { snapDurationToFrames } from "./frame-grid";
  */
 
 export const MOTION_LIB_ROOT = "/mnt/ssd/tripo_assets/motion_library";
+// JUDGMENT0927：判斷常數集中歸位（judgment/ folder），motion-select 淨係消費
+import { FAM_TARGET } from "./judgment/motion";
 export const CMU_INDEX_REL = "cmu-mocap/cmu-mocap-index-text.txt";
 export const COMBAT_RANK_REL = "out/combat_sweep_ranking.txt";
 
@@ -135,8 +137,53 @@ export function bvhClipFrames(bvhRelToData: string, root = MOTION_LIB_ROOT): num
   }
 }
 
-/** full index: every BVH on disk (2548 at trial time), index lines where they
- *  exist (2435 covered; the 113 without a CMU description say so honestly) */
+export type HipStats = { meanY: number; stdY: number; oscPerSec: number };
+
+/** 髖部 Y 通道統計（採樣 MOTION 段）——decider tie-break 嘅每族分辨指標。
+ *  CMU root＝hip，每幀首三 token＝Xposition Yposition Zposition（cm）。
+ *  淨喺 tie-break rivals（≤幾條）讀，有 cache；讀唔到 → null，指標退 ∞。 */
+export function bvhHipStats(bvhRelToData: string, root = MOTION_LIB_ROOT): HipStats | null {
+  if (hipCache.has(bvhRelToData)) return hipCache.get(bvhRelToData) ?? null;
+  let out: HipStats | null = null;
+  try {
+    const file = path.join(root, "cmu-mocap", bvhRelToData);
+    const text = fs.readFileSync(file, "latin1");
+    const motionAt = text.indexOf("MOTION");
+    if (motionAt < 0) throw new Error("no MOTION block");
+    const lines = text.slice(motionAt).split(/\r?\n/);
+    const ys: number[] = [];
+    const STEP = 6; // 0.05s @ 120fps（CMU0927 實測：run 族 35/40 短過 2.4s，
+    // 舊 0.1s×≥24 樣本下限會掃走成族——收細步距＋下限 0.6s 先量得勻六族）
+    const CAP = 960; // 48s 採樣上限
+    let seen = 0;
+    for (const line of lines.slice(2)) {
+      const tok = line.trim().split(/\s+/);
+      if (tok.length < 3) continue;
+      const y = Number(tok[1]);
+      if (!Number.isFinite(y)) continue;
+      seen += 1;
+      if (seen % STEP === 0) ys.push(y);
+      if (ys.length >= CAP) break;
+    }
+    if (ys.length >= 12) { // ≥0.6s；短 clip osc 由採樣時長歸一
+      const mean = ys.reduce((a, b) => a + b, 0) / ys.length;
+      const std = Math.sqrt(ys.reduce((a, b) => a + (b - mean) ** 2, 0) / ys.length);
+      let cross = 0;
+      for (let i = 1; i < ys.length; i += 1) {
+        if ((ys[i - 1]! - mean) * (ys[i]! - mean) < 0) cross += 1;
+      }
+      out = { meanY: mean, stdY: std, oscPerSec: cross / 2 / ((ys.length * STEP) / 120) };
+    }
+  } catch {
+    out = null;
+  }
+  hipCache.set(bvhRelToData, out);
+  return out;
+}
+
+const hipCache = new Map<string, HipStats | null>();
+
+
 export function buildCmuIndex(root = MOTION_LIB_ROOT): CmuIndex {
   const dataDir = path.join(root, "cmu-mocap", "data");
   const idxFile = path.join(root, CMU_INDEX_REL);
@@ -192,6 +239,7 @@ export const FAMILY_CAPS: Record<string, number> = {
   stand_idle: 12,
 };
 
+
 /** shortlist total target — single-token codes C01..C120 */
 export const SHORTLIST_CAP = 120;
 
@@ -219,6 +267,21 @@ const ACTION_VERB_TO_FAMILY: ReadonlyArray<readonly [string, string]> = [
 export function familiesForAction(action: string): string[] {
   const low = action.toLowerCase();
   return [...new Set(ACTION_VERB_TO_FAMILY.filter(([verb]) => low.includes(verb.toLowerCase())).map(([, fam]) => fam))];
+}
+
+/** 手部核心動詞——CMU 六族（martial/walk/run/bend_pick/sit/stand_idle）冇覆蓋
+ *  嘅廣告手部動作。命中＝動作核心喺手唔喺腳，mocap 庫根本冇呢樣嘢：照 bake
+ *  一條近族 clip 就係「假 Video1」（片唔郁／手唔郁根因）。報 motion gap 行
+ *  KF 驅動，唔好用 mocap 扮。舉/提/拎唔入表——bend_pick 有全身提取動作。 */
+export const HAND_ACTION_VERBS = [
+  "擰", "扭", "開蓋", "飲", "喝", "斟", "抹", "拭", "擦", "搖", "噴", "撳",
+  "twist", "unscrew", "drink", "sip", "pour", "wipe", "dab", "spray", "squeeze", "press",
+] as const;
+
+/** hand verbs the action names that the six CMU families cannot supply */
+export function handActionGap(action: string): string[] {
+  const low = action.toLowerCase();
+  return HAND_ACTION_VERBS.filter((v) => low.includes(v.toLowerCase()));
 }
 
 /** 坐低係由企到坐。gait／stance 寫住另一樣就係矛盾，唔好靜靜雞揀一邊。 */
@@ -633,6 +696,17 @@ export type MotionSelection = {
   needs_human?: boolean;
   tie_break?: string | null;
   flags: string[];
+  /** CMU 覆蓋唔到嘅動作（手部動詞）——pipeline 讀到 gap.remedy==="kf_driven"
+   *  就行鍵格驅動路，唔好假 Video1 motion。 */
+  gap?: MotionGap;
+};
+
+export type MotionGap = {
+  domain: "motion";
+  what: string;
+  why: string;
+  impact: "blocked" | "degraded";
+  remedy: "kf_driven";
 };
 
 /** conf ≥0.7 auto; below → tie-break over pick+runners (arm-axis mean low →
@@ -653,6 +727,20 @@ export function decideSelection(
 
   const need = verbsForGate(shot.action);
   let chosen = pickId;
+  // CMU 覆蓋唔到手部動作（擰蓋/飲/抹…）：報 gap 行 KF 驅動，唔好假 Video1。
+  // 有 family 動詞（行前兩步擰蓋）＝degraded（腳啱手假）；冇 family＝blocked。
+  const handVerbs = handActionGap(shot.action);
+  let gap: MotionGap | undefined;
+  if (handVerbs.length) {
+    gap = {
+      domain: "motion",
+      what: `${shot.id}: 手部動作（${handVerbs.join("/")}）CMU 六族冇覆蓋`,
+      why: "mocap 庫冇廣告手部動作；照 bake 近族 clip＝假 Video1 motion（片唔郁根因）",
+      impact: need.needAny.length > 0 ? "degraded" : "blocked",
+      remedy: "kf_driven",
+    };
+    flags.push(`motion-gap: ${handVerbs.join("/")} → KF 驅動，唔好假 Video1`);
+  }
   // 閘只喺動作認到人物 family 先開。水珠、樽、靜物冇 family，唔閘。
   if (need.needAny.length === 0) {
     flags.push("verb-gate off: action names no character motion");
@@ -699,11 +787,12 @@ export function decideSelection(
     const scoreOf = (c: ShortlistEntry): [number, number, number, number] => {
       const arm = ranking.get(c.id);
       const fr = clipFramesFor(c.bvh);
+      const hip = bvhHipStats(c.bvh);
       return [
         arm ? arm.meanDeg : Number.POSITIVE_INFINITY, // arm evidence first, lower better
+        hip ? FAM_TARGET[c.family]?.(hip) ?? Number.POSITIVE_INFINITY : Number.POSITIVE_INFINITY, // 每族髖指標
         -(c.id ? Number((c.id.split("_")[0] ?? "0")) : 0), // high CMU subject next
         fr !== null ? Math.abs(fr / 120 - shot.durationSec) : Number.POSITIVE_INFINITY, // then duration near
-        0,
       ];
     };
     rivals.sort((a, b) => {
@@ -718,12 +807,12 @@ export function decideSelection(
     const tied = rivals.filter((r) => JSON.stringify(scoreOf(r)) === JSON.stringify(scoreOf(winner)));
     if (tied.length > 1) {
       needsHuman = true;
-      tieBreak = `unresolved after arm-axis/subject/duration (${tied.map((t) => t.id).join(",")})`;
+      tieBreak = `unresolved after arm-axis/family-hip/subject/duration (${tied.map((t) => t.id).join(",")})`;
       chosen = winner.id;
       auto = false;
     } else {
       chosen = winner.id;
-      tieBreak = `${winner.id} wins arm-axis/subject/duration over ${rivals.filter((r) => r.id !== winner.id).map((r) => r.id).join(",")}`;
+      tieBreak = `${winner.id} wins arm-axis/family-hip/subject/duration over ${rivals.filter((r) => r.id !== winner.id).map((r) => r.id).join(",")}`;
       flags.push("low-conf tie-break");
     }
   }
@@ -741,6 +830,7 @@ export function decideSelection(
     reason: row.reason,
     ...(needsHuman ? { needs_human: true } : {}),
     ...(tieBreak ? { tie_break: tieBreak } : {}),
+    ...(gap ? { gap } : {}),
     flags,
   };
 }

@@ -75,7 +75,11 @@ test("C-form plan: blockout routes to form c — zero keyframes, angle portrait 
   assert.equal(plan.slots.photo[0]!.file, "portraits/A_45.png");
   assert.match(plan.slots.photo[0]!.role, /45° portrait/);
   assert.equal(plan.slots.audio[0]!.file, "audio/SH01.h3.wav");
-  assert.ok(plan.missKeyframe.never.some((s) => /coexist/i.test(s)));
+  // 對齊 H3_DECISION_SOL_0926（Sol 裁 E）：never-list 鎖新規——refs＋KF 行
+  // H3KeyframeInject 入同一 conditioning entry（唔好用 ConditioningCombine
+  // 並列）；舊「§5b coexist ban」字眼隨模型級禁令撤回而改寫。
+  const neverMerge = plan.missKeyframe.never.find((s) => /H3KeyframeInject/.test(s));
+  assert.ok(neverMerge && /同一 conditioning entry/.test(neverMerge) && /ConditioningCombine/.test(neverMerge));
 });
 
 /** §5b A-form plan: no Video 1 asset — still-to-video keyframes two ends. */
@@ -127,7 +131,7 @@ test("clinic: hold/hop C-form, still A-form", () => {
   assert.equal(hop.slots.video[0]!.file, "blockout/SH02.mp4");
 });
 
-test("§5b prohibition: C-form plan + keyframe wiring refuses (coexist ban at the plan layer)", () => {
+test("C-form + KF wiring without positions refuses (marks, not coexistence — Sol 0926 E)", () => {
   const plan = planH3Shot({
     shot: shot({ id: "SH01", location: "茶餐廳門口" }),
     wav: "audio/SH01.h3.wav",
@@ -143,7 +147,7 @@ test("§5b prohibition: C-form plan + keyframe wiring refuses (coexist ban at th
         blockout: "blockout/SH01.mp4",
         refImageFiles: ["portraits/A.png"],
       }),
-    /keyframes_video1_coexist/,
+    /keyframes_need_positions/,
   );
   assert.throws(
     () =>
@@ -153,7 +157,7 @@ test("§5b prohibition: C-form plan + keyframe wiring refuses (coexist ban at th
         blockout: "blockout/SH01.mp4",
         refImageFiles: ["portraits/A.png"],
       }),
-    /keyframes_video1_coexist/,
+    /keyframes_need_positions/,
   );
 });
 

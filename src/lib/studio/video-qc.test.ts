@@ -6,6 +6,7 @@ import path from "node:path";
 import * as nodeTest from "node:test";
 import { pickMotionFrameIndices } from "./motion-frames";
 import {
+  clipStaticCheck,
   judgeVideoFrames,
   motionReadyAllowed,
   pinVideoQcAccepted,
@@ -384,6 +385,74 @@ test("CFORM7C: size clip gate still dies when every frame measures another scale
   assert.ok(
     judged.checks.fail_reasons.some((r) => r.startsWith("size(clip):")),
     judged.checks.fail_reasons.join(" | "),
+  );
+});
+
+// ─── C11 條片郁唔郁：clipStaticCheck（文字兩兩 jaccard／像素 64x64 MAD，任一確立＝FAIL）───
+
+/** 平灰色 PNG（像素指標用）：level 控制全圖灰階。 */
+async function mkGrayPng(file: string, level: number) {
+  const sharp = (await import("sharp")).default;
+  await sharp({ create: { width: 96, height: 54, channels: 3, background: { r: level, g: level, b: level } } })
+    .png()
+    .toFile(file);
+  return file;
+}
+
+test("C11: clipStaticCheck 五路描述全同 → FAIL（逐幀描述零變化）", async () => {
+  const blind = "男人企喺兩排金屬檔案櫃之間嘅窄走廊，雙手握拳收腰，望向前方。";
+  const frames = [0, 48, 96, 123, 150].map((frame) => ({
+    frame,
+    t_s: frame / 24,
+    file: `f${frame}.png`, // 唔存在：像素路量度唔到——文字路獨立確立
+    blind,
+  }));
+  const v = await clipStaticCheck(frames, { people_count: 1, grey_blocks: false });
+  assert.equal(v?.ok, false);
+  assert.ok(v?.reason?.startsWith("clip_static: 描述——"), v?.reason ?? "");
+  assert.ok(v?.reason?.includes("條片冇郁（5 幀）"), v?.reason ?? "");
+});
+
+test("C11: clipStaticCheck 像素全同 → FAIL（描述有變都照殺）", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-c11-px-"));
+  const blinds = ["男人企定收拳。", "男人轉身側踢，腳刀掃過濕漉地面。", "男人跪低，雙手合十祈禱。"];
+  const frames = [];
+  for (let i = 0; i < 3; i++) {
+    const frame = i * 48;
+    const file = await mkGrayPng(path.join(dir, `f${String(frame).padStart(4, "0")}.png`), 120);
+    frames.push({ frame, t_s: frame / 24, file, blind: blinds[i]! });
+  }
+  const v = await clipStaticCheck(frames, { people_count: 1 });
+  assert.equal(v?.ok, false, v?.reason ?? "");
+  assert.ok(v?.reason?.startsWith("clip_static: 像素——"), v?.reason ?? "");
+  assert.ok(v?.reason?.includes("條片冇郁（3 幀）"), v?.reason ?? "");
+});
+
+test("C11: clipStaticCheck 有變化 → pass（得一部份幀相似都算有變）", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-c11-var-"));
+  const levels = [120, 60, 200]; // 相鄰 MAD 60/140 ≥ 2.0：像素路唔確立
+  const frames = [];
+  for (let i = 0; i < 3; i++) {
+    const frame = i * 48;
+    const file = await mkGrayPng(path.join(dir, `f${String(frame).padStart(4, "0")}.png`), levels[i]!);
+    // f0/f1 描述一模一樣、f2 完全唔同：文字路一對 <0.85 即唔確立
+    frames.push({ frame, t_s: frame / 24, file, blind: i === 0 ? "男人企定收拳。" : (i === 1 ? "男人企定收拳。" : "走廊盡頭鐵門半開，光從門縫瀉入。") });
+  }
+  const v = await clipStaticCheck(frames, { people_count: 1 });
+  assert.equal(v?.ok, true, v?.reason ?? "");
+  // 少過兩幀＝冇嘢量
+  assert.equal(await clipStaticCheck([frames[0]!], { people_count: 1 }), undefined);
+});
+
+test("C11: 靜態意圖鏡（require.action 定格）照 FAIL，reason 帶人手覆核提示", async () => {
+  const blind = "特寫：男人面部靜止不動，眼神凝視鏡頭。";
+  const frames = [0, 48, 96].map((frame) => ({ frame, t_s: frame / 24, file: `f${frame}.png`, blind }));
+  const v = await clipStaticCheck(frames, { people_count: 1, action: "定格特寫：面部不動" });
+  assert.equal(v?.ok, false, "故意靜態都照 FAIL——唔好靜靜放生");
+  assert.ok(v?.reason?.startsWith("clip_static: 描述——"), v?.reason ?? "");
+  assert.ok(
+    v?.reason?.includes("若本鏡故意靜態，require.action 寫明定格意圖並由人手覆核"),
+    v?.reason ?? "",
   );
 });
 

@@ -18,6 +18,8 @@ import {
   verbGate,
   bakeFor,
   bvhClipFrames,
+  bvhHipStats,
+  handActionGap,
   decideSelection,
   postureConflict,
   writeSelections,
@@ -317,6 +319,59 @@ test("抹走唔係行路；坐低同 turn／stand 矛盾", () => {
   assert.match(clash ?? "", /坐低同 gait turn/);
 });
 
+/** 0927 fix ②級：CMU 六族冇手部動作——擰蓋/飲/抹報 motion gap 行 KF 驅動，
+ *  唔好 bake 近族 clip 假 Video1（片唔郁根因）。 */
+test("handActionGap: 廣告手部動詞命中；純現象／行路唔中", () => {
+  assert.deepEqual(handActionGap("阿檸用掌心抹走樽身水珠，擰開樽蓋。").sort(), ["抹", "擰"].sort());
+  assert.deepEqual(handActionGap("擰開樽蓋飲一口檸檬汽水"), ["擰", "飲"].sort(), "開蓋唔係擰開樽蓋嘅子字串（開樽蓋隔咗個樽）");
+  assert.deepEqual(handActionGap("cold water drips, he wipes and pours"), ["wipe", "pour"].sort());
+  assert.deepEqual(handActionGap("冷凝水沿玻璃樽身滑落，水珠滴落木檯"), [], "純現象冇人手");
+  assert.deepEqual(handActionGap("行前兩步停低"), [], "行路有族覆蓋");
+});
+
+test("decideSelection: 手部動作報 motion gap——純手＝blocked，行＋手＝degraded", () => {
+  const sl: Shortlist = {
+    strategy: "t",
+    caps: {},
+    nCandidates: 2,
+    candidates: [
+      { family: "stand_idle", id: "77_02", bvh: "data/077/77_02.bvh", category: null, desc: "standing", arm: "", code: "C01" },
+      { family: "walk", id: "07_01", bvh: "data/007/07_01.bvh", category: null, desc: "walk forward and stop", arm: "", code: "C02" },
+    ],
+  };
+  const row = { shot: "SH01", pick: "C01", runner: ["C01"], reason: "still", conf: 0.9, pickId: "77_02", pickDesc: "standing", pickFamily: "stand_idle", pickBvh: "data/077/77_02.bvh" };
+  const walkRow = { shot: "SH02", pick: "C02", runner: ["C02"], reason: "gait", conf: 0.9, pickId: "07_01", pickDesc: "walk forward and stop", pickFamily: "walk", pickBvh: "data/007/07_01.bvh" };
+  const pure = decideSelection(
+    row, sl, new Map(),
+    { id: "SH01", heading: "CU", action: "阿檸擰開樽蓋，飲一口檸檬汽水。", durationSec: 2.4 },
+    null,
+  );
+  assert.equal(pure.gap?.domain, "motion");
+  assert.equal(pure.gap?.impact, "blocked");
+  assert.equal(pure.gap?.remedy, "kf_driven");
+  assert.ok(pure.flags.some((f) => f.startsWith("motion-gap:")));
+  const mixed = decideSelection(
+    walkRow, sl, new Map(),
+    { id: "SH02", heading: "M", action: "行前兩步停低，擰開樽蓋。", durationSec: 2.4 },
+    null,
+  );
+  assert.equal(mixed.gap?.impact, "degraded", "行路族覆蓋腳部，手部動作照報 degraded");
+  const drip = decideSelection(
+    row, sl, new Map(),
+    { id: "SH03", heading: "CU", action: "冷凝水沿玻璃樽身滑落", durationSec: 2.4 },
+    null,
+  );
+  assert.equal(drip.gap, undefined, "純現象冇人手動作，唔報 gap");
+});
+
+test("bvhHipStats: 111_19 有有限數；缺檔 null 唔 throw", { skip: !fs.existsSync(path.join(LIB, "cmu-mocap/data/111/111_19.bvh")) && "motion library not mounted" }, () => {
+  const hip = bvhHipStats("data/111/111_19.bvh");
+  assert.ok(hip, "trial clip 有 MOTION 段");
+  assert.ok(Number.isFinite(hip.meanY) && hip.meanY > 0 && hip.meanY < 300, `髖高係 rig 縮放單位（111_19 實測 ~15，企直恆定）：${hip.meanY}`);
+  assert.ok(hip.stdY >= 0 && Number.isFinite(hip.oscPerSec));
+  assert.equal(bvhHipStats("data/999/99_99.bvh"), null, "missing clip reads null, never throws");
+});
+
 test("bake window: 4.82s → start 1, len 578 source frames, step 2 (trial bake receipt)", () => {
   assert.deepEqual(bakeFor(4.82), { start: 1, len: 578, step: 2, auto_anchor: true });
   assert.deepEqual(bakeFor(4.0), { start: 1, len: 480, step: 2, auto_anchor: true });
@@ -353,8 +408,9 @@ test("decideSelection: conf ≥0.7 auto; verb-miss walks runner-ups; three misse
   assert.ok(!sh01.flags.some((f) => f.startsWith("clip_short")), "1025f/120=8.5s covers the 4.82s shot");
 
   // SH02: conf 0.15 → tie-break. 07_01/02/03 have no arm evidence and share
-  // subject 7, so clip length decides: 07_03 (416f) is nearest 4.82s — and the
-  // choice is recorded, auto stays false
+  // subject 7 — fix ②（0927）每族髖指標：CMU0927 實測 walk 族步頻中位數
+  // 0.85，07_03 osc 0.72 最貼（07_01 得 1.35 係族內離群）；同一贏家，
+  // 依據由「clip length 隨意」變「貼族內典型」
   const sh02 = decideSelection(rows.find((r) => r.shot === "SH02")!, sl, rank, shots[1]!, bvhClipFrames("data/007/07_01.bvh"));
   assert.equal(sh02.auto, false);
   assert.ok(sh02.tie_break, "the tie-break path leaves a record (F4)");

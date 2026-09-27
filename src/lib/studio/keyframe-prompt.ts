@@ -318,7 +318,7 @@ export function keyframeEditPrompt(sheet: CallSheet, shot: Shot, opts: { first: 
     `【人物】${people}`,
     `【場景】${sceneLine(sheet, shot)}`,
     props,
-    "【光影材質】布料、紙、金屬各有質感；手、衣擺、道具同地面有接觸遮擋。",
+    "【光影材質】光寫齊三樣——方向（邊度嚟）、軟硬（柔／硬）、色溫（暖／冷），畫面見到光源就同光方向一致；材質寫反光特性（金屬反光、啞光布、玻璃透光）；接觸寫實體接觸點（手指揸喺邊、重量由咩承擔——手同物件之間有空隙＝假）。",
     keep,
   ].filter((s) => s.length > 0).join("\n\n");
   // ceiling is cookbook-only (94f8b74: the 300 ceiling stays brief); the floor

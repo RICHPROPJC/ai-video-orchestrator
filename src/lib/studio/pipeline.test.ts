@@ -87,6 +87,9 @@ function resumeSheet(): CallSheet {
       },
     ],
     voiceover: "",
+    // CAPGAP_0927：零可見分鏡板而家係 blocked 閘——resume fixture 補一格板，
+    // 代表「已出板」現實（逃生門 --allow-no-storyboard 先准零板照行）
+    storyboard: [{ shotId: "SH01", at: "0%", file: "stills/boards/SH01.png" }],
   };
 }
 

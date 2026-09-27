@@ -1,14 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
-import { writeWav } from "./audio";
-import { ensureAudibleShotWav, runAukTts, type RunAukTtsOpts } from "./auk-tts";
-import type { Shot } from "./types";
+import { runCommand, writeWav } from "./audio";
+import { ensureAudibleShotWav, runAukTts, wavIsAudible, type RunAukTtsOpts } from "./auk-tts";
+import type { AudioEvent, Shot } from "./types";
 
 export type PluggedShotWav = {
   shotId: string;
   file: string;
-  /** "copied" = given plug wav; "auk" = dialogue take; "silent" = picture beat, no line */
-  source: "copied" | "auk" | "silent";
+  /** "copied" = given plug wav; "auk" = dialogue take; "silent" = picture beat, no
+   *  line; "event" = 聲音事件切片（PROVENANCE_0927：一句一 take，本鏡淨係播
+   *  自己窗口嗰段——take 本身可能源自 plug 或 AuK，事件 take 落 audio/events/） */
+  source: "copied" | "auk" | "silent" | "event";
   /** dialogue text the AuK take reads ("" for plug and silent shots) */
   text: string;
 };
@@ -52,4 +54,100 @@ export async function plugShotWavs(opts: PlugShotWavsOpts): Promise<PluggedShotW
     await opts.onShot?.(row);
   }
   return out;
+}
+
+/** DIALOGUE_RULE_PROVENANCE_0927 — 聲音事件路徑。對白係事件（一句一條連續
+ *  take），畫面係鏡：take 只生成一次（plug 鍵喺事件首鏡 id，或 AuK 逐句讀），
+ *  每鏡淨係切自己窗口嗰段落盤——切鏡唔重新生成、唔重播、唔將講者改成被拍
+ *  嘅聽者。一鏡多句＝多段 slice 疊埋；冇事件經過＝靜音 take（bed 照鋪）。
+ *  事件窗口由 boards-expand 衍生（assertSheetGates 已驗連續＋夠講）。 */
+export async function plugVoiceEvents(opts: {
+  boards: Shot[];
+  events: AudioEvent[];
+  audioDir: string;
+  /** --wav-dir plug：鍵＝事件「首個播出鏡」嘅 SH id（一句一條 take，唔係逐鏡） */
+  wavDir?: string;
+  cloneRef?: string;
+  synthesize?: (opts: RunAukTtsOpts) => Promise<unknown>;
+  onShot?: (r: PluggedShotWav) => void | Promise<void>;
+}): Promise<{ perShot: PluggedShotWav[]; takes: { beatId: string; file: string }[] }> {
+  const { wavSeconds } = await import("./frame-grid");
+  fs.mkdirSync(path.join(opts.audioDir, "events"), { recursive: true });
+  // 共同時間線（cut order 累計）——同 boards-expand deriveAudioEvents 同一算法
+  let t = 0;
+  const windows = opts.boards.map((shot) => {
+    const w = { shotId: shot.id, start: t, end: t + shot.durationSec };
+    t = w.end;
+    return w;
+  });
+  const byId = new Map(opts.boards.map((s) => [s.id, s]));
+  // 每事件一條 take（一次生成，全部覆蓋鏡共用）
+  const synth = ((o: RunAukTtsOpts) => (opts.synthesize ?? runAukTts)(opts.cloneRef ? { ...o, promptWav: opts.cloneRef } : o)) as typeof runAukTts;
+  const takes: { beatId: string; file: string }[] = [];
+  for (const ev of opts.events) {
+    const cover = windows.filter((w) => w.start < ev.endSec - 1e-9 && w.end > ev.startSec + 1e-9);
+    if (cover.length === 0) throw new Error(`audio event ${ev.beatId} covers no shot（窗口 ${ev.startSec}–${ev.endSec}s）`);
+    const dst = path.join(opts.audioDir, "events", `${ev.beatId}.wav`);
+    if (!(fs.existsSync(dst) && wavIsAudible(dst))) {
+      const src = opts.wavDir ? path.join(opts.wavDir, `${cover[0]!.shotId}.wav`) : undefined;
+      if (src && !fs.existsSync(src)) {
+        throw new Error(`--wav-dir 缺 ${cover[0]!.shotId}.wav（事件 ${ev.beatId} 首鏡 plug，${src}）`);
+      }
+      await ensureAudibleShotWav({ src, dst, text: ev.text, synthesize: synth });
+    }
+    takes.push({ beatId: ev.beatId, file: dst });
+  }
+  const takeLen = new Map(takes.map((tk) => [tk.beatId, 0]));
+  for (const tk of takes) takeLen.set(tk.beatId, await wavSeconds(tk.file));
+  // 每鏡：切自己窗口內嘅事件段落（slice），冇就靜音
+  const out: PluggedShotWav[] = [];
+  for (const w of windows) {
+    const shot = byId.get(w.shotId)!;
+    const dst = path.join(opts.audioDir, `${w.shotId}.wav`);
+    const slices = opts.events
+      .map((ev) => {
+        const s0 = Math.max(ev.startSec, w.start);
+        const s1 = Math.min(ev.endSec, w.end);
+        const takeOffset = Math.max(0, s0 - ev.startSec);
+        const dur = Math.min(s1 - s0, (takeLen.get(ev.beatId) ?? 0) - takeOffset);
+        return dur > 1e-3 && s1 > s0 + 1e-9 ? { ev, relMs: Math.round((s0 - w.start) * 1000), takeOffset, dur } : null;
+      })
+      .filter((s): s is { ev: AudioEvent; relMs: number; takeOffset: number; dur: number } => Boolean(s));
+    const text = opts.events
+      .filter((ev) => ev.startSec < w.end - 1e-9 && ev.endSec > w.start + 1e-9)
+      .map((ev) => ev.text)
+      .join(" ");
+    let source: PluggedShotWav["source"];
+    if (slices.length === 0) {
+      const seconds = Math.max(1 / 24, shot.durationSec);
+      writeWav(dst, new Float32Array(Math.round(seconds * 22050)), 22050);
+      source = "silent";
+    } else if (slices.length === 1 && slices[0]!.takeOffset < 1e-3
+        && slices[0]!.dur >= (takeLen.get(slices[0]!.ev.beatId) ?? 0) - 1e-3) {
+      // 真正「成條 take 由鏡頭開頭播晒」（單鏡一句舊形／事件首鏡且 take 唞夠）
+      // 先直接落 take，bed 負責墊長——同舊路 byte-相容。relMs===0 唔夠：跨鏡
+      // 連續句嘅後續鏡 s0=wStart 一樣 relMs===0，但 takeOffset>0——舊條件會
+      // 成條 take 由句首再拷一次＝切鏡重播（C 統籌 0927 指正）。
+      fs.copyFileSync(takes.find((tk) => tk.beatId === slices[0]!.ev.beatId)!.file, dst);
+      source = "event";
+    } else {
+      const fileOf = (beatId: string) => takes.find((tk) => tk.beatId === beatId)!.file;
+      const args: string[] = [];
+      const filters: string[] = [];
+      slices.forEach((sl, k) => {
+        args.push("-ss", sl.takeOffset.toFixed(3), "-t", sl.dur.toFixed(3), "-i", fileOf(sl.ev.beatId));
+        filters.push(`[${k}:a]aresample=22050,aformat=channel_layouts=mono,adelay=${sl.relMs}:all=1[a${k}]`);
+      });
+      const mix = slices.map((_, k) => `[a${k}]`).join("");
+      const result = await runCommand("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error",
+        ...args, "-filter_complex", `${filters.join(";")};${mix}amix=inputs=${slices.length}:normalize=0`,
+        "-c:a", "pcm_s16le", dst]);
+      if (result.code !== 0) throw new Error(result.stderr || `${dst} 事件切片混音失敗`);
+      source = "event";
+    }
+    const row: PluggedShotWav = { shotId: w.shotId, file: dst, source, text };
+    out.push(row);
+    await opts.onShot?.(row);
+  }
+  return { perShot: out, takes };
 }

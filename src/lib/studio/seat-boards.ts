@@ -5,10 +5,10 @@ import { renderBoards, type BoardsVisualOptions } from "./boards-visual";
 import { loadConfig } from "./config";
 import { chatJsonSeat, type RepairNote } from "./crew-llm";
 import { BOARDS_CHARTER } from "./seat-charters";
-import { assemblePlaybook, markPass } from "./playbook";
+import { markPass } from "./playbook";
 import { boardsSceneSchema, TEXT_SHOT_SEC_MIN, SCENE_BUDGET_TOLERANCE, SLOT_VALUES, DEPTH_VALUES, STANCE_VALUES, type BoardsScene } from "./boards-contract";
 import { assertSheetGates, expandBoards } from "./boards-expand";
-import { dialogueSeconds, type Script } from "./script-contract";
+import { type Script } from "./script-contract";
 import type { CallSheet } from "./types";
 import type { SeatIo } from "./seat-writer";
 
@@ -139,11 +139,12 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
         return prop;
       });
     }
-    const dialogueClock = dialogueSeconds(dialogue);
-    const floor = Math.max(dialogueClock, TEXT_SHOT_SEC_MIN);
+    // DIALOGUE_RULE_PROVENANCE_0927：對白時鐘唔再抬單鏡——一句可跨鏡播，
+    // 夠唔夠講係「播佢嗰排鏡」夾埋嘅事（assertSheetGates 窗口閘）。呢度淨
+    // 落 H3 最短合法生成長度一個 floor。
+    const floor = TEXT_SHOT_SEC_MIN;
     if (durationSec < floor) {
-      const why = dialogue && dialogueClock >= TEXT_SHOT_SEC_MIN ? "dialogue clock" : `floor ${TEXT_SHOT_SEC_MIN}`;
-      repair(`repair: shots[${i}].durationSec saw ${durationSec} became ${floor.toFixed(1)} (${why})`);
+      repair(`repair: shots[${i}].durationSec saw ${durationSec} became ${floor.toFixed(1)} (floor ${TEXT_SHOT_SEC_MIN})`);
     }
     return { ...shot, cast, props, durationSec: Math.max(durationSec, floor) };
   });
@@ -163,8 +164,7 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
         let extra = sumBefore - hi + 0.05;
         for (let k = shots.length - 1; k >= 0 && extra > 0; k -= 1) {
           const shot = shots[k]!;
-          const dialogue = typeof shot.dialogue === "string" ? shot.dialogue.trim() : "";
-          const floor = Math.max(TEXT_SHOT_SEC_MIN, dialogueSeconds(dialogue));
+          const floor = TEXT_SHOT_SEC_MIN; // PROVENANCE_0927：時鐘唔鎖單鏡，鏡長可切到 H3 最短
           const room = (shot.durationSec as number) - floor;
           if (room <= 0) continue;
           const cut = Math.min(room, extra);
@@ -205,7 +205,17 @@ export function sheetDigest(sheet: CallSheet): string {
 
 /** 阿圖 boards one scene per turn so the handoff is real continuity, then the
  *  desk — not the model — assigns SH ids and turns the grammar into geometry. */
-type BoardsOptions = { script: Script; targetSec: number; aspect?: CallSheet["aspect"]; writer: { model: string; receipts: string[] }; draftOnly?: boolean };
+/** SC-CREATIVE-OS-0927：導演方案時間軸（rhythmMap 節奏句＋shots 時間/目的/
+ *  對白落點＋手物狀態）——boards 開鏡跟導演節奏，唔再只收 writer 動詞。
+ *  skeleton 係參考契約（鏡數/秒數由 boards 按本場實際 beats 落），唔係硬表。 */
+export type DirectorSkeleton = {
+  vision?: string;
+  beats?: { beatId: string; label?: string; job?: string; rhythm?: string; deletionLoss?: string }[];
+  shots?: { shotId: string; startSec?: number; endSec?: number; purpose?: string; audienceEye?: string; cutReason?: string; dialogue?: string; frame?: string }[];
+  dialoguePlacements?: { word: string; startSec?: number; endSec?: number; onImage?: string }[];
+};
+
+type BoardsOptions = { script: Script; targetSec: number; aspect?: CallSheet["aspect"]; writer: { model: string; receipts: string[] }; draftOnly?: boolean; directorSkeleton?: DirectorSkeleton };
 type BoardsIo = SeatIo & { boardLane?: BoardLane; boardsDir?: string };
 export function runBoards(opts: { render: BoardsVisualOptions }): ReturnType<typeof renderBoards>;
 export function runBoards(opts: BoardsOptions, io: BoardsIo): Promise<BoardsResult>;
@@ -218,8 +228,8 @@ export async function runBoards(
   const { script } = opts;
   const characters = script.outline.characters.map((c) => ({ id: c.id, name: c.name }));
   const receipts: string[] = [];
-  // system = charter (law) + global playbook + own playbook; charter never shrinks
-  const book = assemblePlaybook("boards", io.playbookDir, io.drama);
+  // 知識已內嵌 BOARDS_CHARTER（照官方 ViMax：agent prompt 一段）。
+  receipts.push("playbook: 停止拼入 system（0927）");
   const boards: BoardsScene[] = [];
   let carried: Handoff = {};
   // Locked scene seconds are the clock. The form number is not applied again.
@@ -241,11 +251,20 @@ export async function runBoards(
       }),
       model: io.model,
       crew: io.crew,
-      system: BOARDS_CHARTER + book.text,
+      system: BOARDS_CHARTER,
       user: JSON.stringify({
         scene: { ...scene, targetSec: Number(budgetSec.toFixed(1)) },
         budgetSec: Number(budgetSec.toFixed(1)),
         beats,
+        // 導演節奏契約：呢場對應嘅導演拍（按時間重疊揀）＋鏡目的＋逐字對白落點。
+        // 開鏡跟呢個節奏（幾多鏡、每鏡做咩、點剪）；鏡數唔係硬表，係節奏參考。
+        ...(opts.directorSkeleton ? { directorSkeleton: {
+            vision: opts.directorSkeleton.vision,
+            beats: opts.directorSkeleton.beats ?? [],
+            shots: (opts.directorSkeleton.shots ?? []).filter((sh) =>
+              sh.startSec !== undefined && sh.endSec !== undefined),
+            dialoguePlacements: opts.directorSkeleton.dialoguePlacements ?? [],
+          } } : {}),
         characters: script.outline.characters.map((c) => ({
           id: c.id,
           name: c.name,
@@ -255,7 +274,7 @@ export async function runBoards(
         })),
         previousSceneHandoff: carried,
       }),
-      schema: boardsSceneSchema({ sceneId: scene.id, beats, characters, budgetSec }),
+      schema: boardsSceneSchema({ sceneId: scene.id, beats, characters, budgetSec, scriptBeatIds: script.scenes.flatMap((sc) => sc.beats.map((b) => b.id)) }),
       normalize: (raw, note) => padBoardDurations(raw, budgetSec, note),
       receiptDir: io.receiptDir,
       fetchImpl: io.fetchImpl,
@@ -280,8 +299,5 @@ export async function runBoards(
       sha256: sheetDigest(expanded),
     },
   };
-  // #region agent log
-  fetch('http://127.0.0.1:7245/ingest/ed012a9f-01ce-40d6-a4fe-5aa6a237c57d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'244f6d'},body:JSON.stringify({sessionId:'244f6d',hypothesisId:'B',location:'seat-boards.ts:return',message:'boards seat returns text sheet without U1.5',data:{shots:sheet.shots.length,storyboard:sheet.storyboard?.length ?? 0},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   return { sheet, model: io.model, receipts };
 }

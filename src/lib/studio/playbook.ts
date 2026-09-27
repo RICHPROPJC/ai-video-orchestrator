@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { entityTokens as nounLintTokens } from "./noun-lint";
 import {
@@ -199,13 +200,28 @@ export function applyOps(
       const bullets = bulletsOf(out);
       const twin = bullets.find((b) => b.class === op.class && b.field === op.field);
       if (twin) {
+        // WP0 尾數同款：MERGE 改寫內容＝舊證據失效，proven 降 trial（hits 照
+        // 計出現次數，但 badge 唔可以跟舊文本漂白過新內容）。
+        const rewrote = twin.rule !== op.rule || twin.saw !== op.saw;
         out = out.map((l) =>
           l.kind === "bullet" && l.bullet.id === twin.id
-            ? { kind: "bullet", bullet: { ...l.bullet, saw: op.saw, rule: op.rule, hits: l.bullet.hits + 1 } }
+            ? {
+                kind: "bullet",
+                bullet: {
+                  ...l.bullet,
+                  saw: op.saw,
+                  rule: op.rule,
+                  hits: l.bullet.hits + 1,
+                  ...(rewrote && twin.status === "proven" ? { status: "trial" as const } : {}),
+                },
+              }
             : l,
         );
         touchedIds.push(twin.id);
-        receipts.push(`playbook: ${addrTag(addr)} MERGE ${twin.id} ${op.class} field=${op.field} saw=${op.saw} hits=${twin.hits + 1} (${ctx.src})`);
+        receipts.push(
+          `playbook: ${addrTag(addr)} MERGE ${twin.id} ${op.class} field=${op.field} saw=${op.saw} hits=${twin.hits + 1} (${ctx.src})` +
+          (rewrote && twin.status === "proven" ? " — 內容改寫，proven→trial" : ""),
+        );
       } else {
         const id = nextId(addr.scope, bullets);
         out = [...out, { kind: "bullet", bullet: { id, class: op.class, field: op.field, saw: op.saw, rule: op.rule, hits: 1, status: "trial", src: ctx.src } }];
@@ -229,9 +245,17 @@ export function applyOps(
         } else saw = op.saw;
       }
       const rule = op.rule?.trim() || b.rule;
-      out[idx] = { kind: "bullet", bullet: { ...b, saw, rule } };
+      // WP0 尾數（PI_REVIEW_HANDOFF_0927）：規則內容被改寫＝舊證據失效——
+      // proven 降返 trial（hits 留做歷史），要升返 proven 必須帶新業務證據
+      // 行 promoteBullet。淨觸碰而內容冇變唔降級。
+      const rewrote = rule !== b.rule || saw !== b.saw;
+      const status = rewrote && b.status === "proven" ? "trial" : b.status;
+      out[idx] = { kind: "bullet", bullet: { ...b, saw, rule, status } };
       touchedIds.push(b.id);
-      receipts.push(`playbook: ${addrTag(addr)} UPDATE ${b.id} field=${b.field} (${ctx.src})`);
+      receipts.push(
+        `playbook: ${addrTag(addr)} UPDATE ${b.id} field=${b.field} (${ctx.src})` +
+        (rewrote && b.status === "proven" ? " — 內容改寫，proven→trial（舊證據失效）" : ""),
+      );
       continue;
     }
     if (op.op === "REMOVE") {
@@ -293,21 +317,59 @@ export function markPass(scopes: string[], dir?: string, drama?: string): string
       ...(named ? [{ lifetime: "drama" as const, scope, drama: named, dir: proot }] : []),
     ];
     for (const addr of addrs) {
-      const lines = loadPlaybookLines(addr);
-      let changed = false;
-      const out: PlaybookLine[] = lines.map((l): PlaybookLine => {
-        if (l.kind !== "bullet" || l.bullet.status !== "trial") return l;
-        changed = true;
-        return { kind: "bullet", bullet: { ...l.bullet, status: "proven", hits: l.bullet.hits + 1 } };
-      });
-      if (changed) {
-        writePlaybook(addr, out);
-        const promoted = bulletsOf(out).filter((b) => b.status === "proven").map((b) => b.id);
-        receipts.push(`playbook: ${addrTag(addr)} PASS promote ${promoted.join(",")}`);
+      // SC-CREATIVE-OS-0927 P0：格式 PASS 只證明本次輸出可解析，唔證明任何一條
+      // trial 改善咗影片——唔再自動升 proven（舊版一鋪 promote 係冤案複利源，
+      // w13 就係咁變咗 hits=17 嘅跨劇目禁語）。只報名，唔寫盤。
+      const trials = bulletsOf(loadPlaybookLines(addr)).filter((b) => b.status === "trial").map((b) => b.id);
+      if (trials.length) {
+        receipts.push(`playbook: ${addrTag(addr)} PASS format-ok（trials 唔自動升級）${trials.join(",")}`);
       }
     }
   }
   return receipts;
+}
+
+/** SC-CREATIVE-OS-0927 P0：trial→proven 嘅唯一路徑——帶業務證據（邊個指標
+ *  ＋邊張收據）。磁碟格式不變（trial/proven 冪等），升級理由以 raw 註解行
+ *  隨 bullet 落盤（parsePlaybookLines 會 verbatim 保留），歷史可溯。 */
+export function promoteBullet(
+  id: string,
+  evidence: { metric: string; receipt: string },
+  dir?: string,
+  drama?: string,
+): string {
+  if (!id.trim()) throw new Error("promoteBullet: id 空");
+  if (!evidence?.metric?.trim() || !evidence?.receipt?.trim()) {
+    throw new Error(`promoteBullet ${id}: evidence.metric＋receipt 都要指名（邊個業務指標＋邊張收據），冇證據唔升級`);
+  }
+  if (!dir) throw new Error(`promoteBullet ${id}: 冇 seats dir`);
+  const proot = projectsRootFromSeatsDir(dir);
+  const named = drama?.trim();
+  const scopes: PlaybookScope[] = [...PLAYBOOK_SCOPES];
+  for (const scope of scopes) {
+    const addrs: PlaybookAddress[] = [
+      { lifetime: "primitive", scope, dir },
+      ...(named ? [{ lifetime: "drama" as const, scope, drama: named, dir: proot }] : []),
+    ];
+    for (const addr of addrs) {
+      const lines = loadPlaybookLines(addr);
+      const at = lines.findIndex((l) => l.kind === "bullet" && l.bullet.id === id);
+      if (at < 0) continue;
+      const target = lines[at] as { kind: "bullet"; bullet: PlaybookBullet };
+      if (target.bullet.status === "proven") {
+        return `playbook: ${addrTag(addr)} ${id} 已係 proven（冇再動）`;
+      }
+      const out: PlaybookLine[] = [...lines];
+      out[at] = { kind: "bullet", bullet: { ...target.bullet, status: "proven", hits: target.bullet.hits + 1 } };
+      out.splice(at + 1, 0, {
+        kind: "raw",
+        text: `  # promoted ${id} by ${evidence.metric} (${evidence.receipt}) ${new Date().toISOString().slice(0, 10)} SC-CREATIVE-OS-0927`,
+      });
+      writePlaybook(addr, out);
+      return `playbook: ${addrTag(addr)} ${id} proven by ${evidence.metric} (${evidence.receipt})`;
+    }
+  }
+  throw new Error(`promoteBullet ${id}: 搵唔到呢條 bullet（writer/boards/all × primitive${named ? "＋drama" : ""} 都冇）`);
 }
 
 /** Self-eviction: a trial bullet from an earlier produce that sat in the
@@ -500,8 +562,8 @@ export function assemblePlaybook(
   seat: "writer" | "boards",
   dir?: string,
   drama?: string,
-): { text: string; bullets: PlaybookBullet[] } {
-  if (!dir) return { text: "", bullets: [] };
+): { text: string; bullets: PlaybookBullet[]; rulesHash: string } {
+  if (!dir) return { text: "", bullets: [], rulesHash: "" };
   const proot = projectsRootFromSeatsDir(dir);
   const named = drama?.trim();
   const sections: { label: string; addr: PlaybookAddress }[] = [
@@ -514,14 +576,34 @@ export function assemblePlaybook(
     .map((s) => ({ ...s, bullets: bulletsOf(loadPlaybookLines(s.addr)) }))
     .filter((s) => s.bullets.length);
   const bullets = loaded.flatMap((s) => s.bullets);
-  if (!bullets.length) return { text: "", bullets: [] };
+  if (!bullets.length) return { text: "", bullets: [], rulesHash: "" };
+  // SC-CREATIVE-OS-0927 P0：proven（有業務證據）先係「照做」級；trial 只係
+  // 待驗參考，唔准當否決條件——舊版「逐條照做，唔准再犯」統攝 trial+proven，
+  // 係格式 PASS 冤案變法律嘅傳送帶。proven 同 trial 分段，命令語句只落 proven。
+  const proven = bullets.filter((b) => b.status === "proven");
+  const trial = bullets.filter((b) => b.status === "trial");
+  const renderSection = (of: (b: PlaybookBullet) => boolean) =>
+    loaded
+      .map((s) => ({ label: s.label, bs: s.bullets.filter(of) }))
+      .filter((s) => s.bs.length)
+      .flatMap((s) => [s.label, ...s.bs.map(renderBullet)]);
   const text = [
     "",
-    "## Playbook（以前衰過先學返嚟；交之前逐條照做，唔准再犯）",
-    ...loaded.flatMap((s) => [s.label, ...s.bullets.map(renderBullet)]),
+    ...(proven.length
+      ? ["## Playbook（已驗證教訓——照做）", ...renderSection((b) => b.status === "proven")]
+      : []),
+    ...(trial.length
+      ? [
+          "### 待驗參考（trial：未有業務證據，只供參考——唔係規矩，唔准用嚟否決或改寫創作）",
+          ...renderSection((b) => b.status === "trial"),
+        ]
+      : []),
     "### 學過嘅教訓到此，跟住落嚟係你嘅 charter 規矩。",
   ].join("\n");
-  return { text, bullets };
+  // rulesHash 對實際送出內容（順序＋來源段＋全部會餵入嘅 bullet，proven 同
+  // trial 都計）取完整 sha256——審計要對得返「今次真係餵咗乜」。
+  const rulesHash = createHash("sha256").update(text).digest("hex");
+  return { text, bullets, rulesHash };
 }
 
 /** Retired file headers, dropped verbatim on migration; anything else a human

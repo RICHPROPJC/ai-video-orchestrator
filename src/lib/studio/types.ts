@@ -47,11 +47,16 @@ export type ProduceInput = {
   /** MULTISHOT_WIRE: skip the motion-select step (no decider call, no mocap
    *  bake — the workbench grey blockouts stand). */
   noMotionSelect?: boolean;
+  /** CAPGAP_0927: 可見分鏡板 0 格預設係 capability gap（job blocked）。人手
+   *  確認照行先開呢道門（CLI --allow-no-storyboard）；預設 false。 */
+  allowNoStoryboard?: boolean;
   dryRun?: boolean;
   /** stop early: boards = seats have written the callsheet (no wavs yet),
    *  blockout = grey blockout + f0 done (no U1.5 / QC / H3),
    *  stills = after photo QC GREEN, motion = after H3 downloads (before mux) */
   until?: "boards" | "blockout" | "stills" | "motion";
+  /** 最薄選鏡入口：只行呢一鏡嘅正式 stills→H3→mux 閉環（--only SH03） */
+  only?: string;
   /** C-scene-hop: burn H3 for ONE scene only (must match SCxx). Motion-lane
    *  filter — stills/QC/layout stay full-slate. Omitted = all shots. */
   scene?: string;
@@ -120,7 +125,7 @@ export type Character = {
   publicName?: string;
 };
 
-export type Stance = "stand" | "lean" | "crouch";
+export type Stance = "stand" | "lean" | "crouch" | "sit"; // SC-CREATIVE-OS-0927：sit＝有支撐嘅坐（唔再屈 crouch）
 
 /** §0b angle-ref law (Chau 0920): which angle version a shot's Image ref slots
  *  carry — "45" = the three-quarter ref (a frontal ref on a sideways shot
@@ -231,6 +236,18 @@ export type Shot = {
   /** which scene and beat the seats cut this shot from */
   scene?: string;
   beatId?: string;
+  /** SC-CREATIVE-OS-0927 P1：一鏡多 beat 覆蓋（多對多）；舊消費者照讀 beatId。 */
+  beatIds?: string[];
+  /** DIALOGUE_RULE_PROVENANCE_0927：邊句對白嘅「聲音」經過呢鏡（beat id，
+   *  可以係其他場嘅 beat——跨場景聲橋）。聲音關聯唔係畫面包含：speaker 唔使
+   *  喺本鏡 cast（畫外聲／反應鏡合法）。組裝層（boards-expand）據此衍生
+   *  audioEvents；舊 sheet 冇呢個 key 照行每鏡一句舊路。 */
+  audioBeats?: string[];
+  /** 世界暫停／時間感類故事嘅可見前後動作（環境動畫通道）：時鐘指針、窗前
+   *  光影條、盒疊等**幾何**環境件 keyframe——blockout 係 WORKBENCH FLAT
+   *  （光源 energy 唔可見），所以載體必須係幾何，灰模 QC 先睇得到前後動作。
+   *  keys 相對本鏡 f0；跨鏡同一 object 連續 keyframe（時鐘全片一路走）。 */
+  envAnim?: EnvAnimTrack[];
   /** card ③b: UI/infographic shot marker — the only gate that opens the H3
    *  photo channel (law: 文字圖／手機畫面等 UI 反而可以俾 H3 ref). Story shots
    *  leave this unset and stay ref-free, marker or not. */
@@ -261,6 +278,34 @@ export type Provenance = {
   sha256: string;
 };
 
+/** DIALOGUE_RULE_PROVENANCE_0927：對白＝聲音事件——自身身份（beatId）、
+ *  speaker、文本、共同時間線區間（cut order 累計秒）。畫面鏡頭自有 scene／
+ *  visible cast／時間；兩者以時間區間關聯：同一句可跨多鏡／跨場景（先拍講者
+ *  再拍聽者、聲橋），一鏡亦可多句或零句。原始 utterance 只按 take 生成一次，
+ *  切鏡切片播放，唔重新生成、唔重播、唔將講者改成被拍嘅聽者。
+ *  startSec/endSec 由 boards-expand 組裝時寫入；實際音軌時長回填係下遊
+ *  dialogue-bed 嘅事（字數估時只係初步估算，唔係硬閘）。 */
+export type EnvAnimObject = "clock_hand" | "window_bar" | "stack_box";
+export type EnvAnimChannel = "rotate_z" | "pos_z" | "scale_z";
+export type EnvAnimTrack = {
+  object: EnvAnimObject;
+  channel: EnvAnimChannel;
+  /** [frame（相對本鏡開頭）, value]：rotate_z 度數（順時針）；pos_z 米；
+   *  scale_z 倍率。最少兩點。 */
+  keys: [number, number][];
+  /** step＝逐格跳（秒針彈跳感）；linear＝連續掃。默認 linear。 */
+  interp?: "step" | "linear";
+  note?: string;
+};
+
+export type AudioEvent = {
+  beatId: string;
+  speaker: string;
+  text: string;
+  startSec: number;
+  endSec: number;
+};
+
 export type CallSheet = {
   title: string;
   logline: string;
@@ -279,6 +324,10 @@ export type CallSheet = {
     motionModel: string;
   };
   shots: Shot[];
+  /** DIALOGUE_RULE_PROVENANCE_0927：對白聲音事件時間線（boards-expand 衍生）。
+   *  有呢個 key＝聲音／畫面分離生效（voice hop 逐事件一 take、逐鏡切片；
+   *  soundQC 對事件序）；冇（舊 plug callsheet）＝每鏡一句舊路，行為照舊。 */
+  audioEvents?: AudioEvent[];
   voiceover: string;
   scenes?: { id: string; heading: string; summary: string; targetSec: number }[];
   /** One era, ten building types, one 4K board. Absent → the factory does not invent eras. */

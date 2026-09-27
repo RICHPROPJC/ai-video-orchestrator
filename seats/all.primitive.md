@@ -4,11 +4,11 @@
 - [g5] machine.auth field=job_error saw=password rule=Ensure SSH password env vars are set before running scp routes. hits=1 status=trial src=SC-0915-LD0F
 - [g10] machine.check field=angle_board saw=PASS_UNCONFIRMED rule=If angle board cells show PASS_UNCONFIRMED, ensure explicit confirmation to GREEN before proceeding. hits=1 status=trial src=SC-0922-WGTT
 - [g11] machine.dep field=job_error saw=12050 rule=TBB_INTERFACE_VERSION 12050 is too low for numba/rembg; update TBB to version 2021 update 6 or later. hits=1 status=trial src=SC-0923-LM1L
-- [g12] machine.parse field=job_error saw=empty rule=若 job 報 empty json，強制輸出純 raw JSON，禁 markdown 代碼塊或前言，避免 parser 截斷。確保頂層係 object 而非 array。 hits=3 status=trial src=SC-0923-LM1L
+- [g12] machine.parse field=job_error saw=empty rule=若 job 報 empty json，強制輸出純 raw JSON，禁 markdown 代碼塊或前言，確保頂層係 object 而非 array。 hits=3 status=trial src=SC-0923-LM1L
 - [g13] schema.len field=thinking saw=empty rule=若報 empty json，先檢查 thinking 是否超長（>400 chars），超長會導致解析失敗，必須精簡。 hits=1 status=trial src=SC-0923-DTQH
 - [g14] machine.eye field=portrait.background saw=圓形圖案 rule=Explicitly ban background patterns in portrait prompts to avoid eye test failures on non-solid backgrounds. hits=1 status=trial src=SC-0923-1KU5
 - [g15] machine.frame field=angle_board saw=0.87 rule=Ensure foreground subjects reduce bright coverage below 0.8 to avoid empty_frame rejection. hits=1 status=trial src=SC-0923-1KU5
-- [g16] machine.input field=job_error saw=images rule=If job fails with missing images, verify input paths are not empty before execution. hits=1 status=trial src=SC-0923-1KU5
+- [g16] machine.input field=job_error saw=vae rule=若 H3KeyframeInject 報 Required input is missing (vae)，必須檢查 ComfyUI 圖中 vae 節點是否正確連接，確保 VAE 模型已加載並綁定。 hits=2 status=trial src=SC-0923-1KU5
 - [g17] machine.memory field=job_error saw=CUDA rule=If job fails with 'CUDA out of memory', reduce batch size or clear GPU cache to fit within 31.73 GiB limit. hits=1 status=trial src=SC-0923-1KU5
 - [g18] machine.fs field=job_error saw=already rule=Clear or verify the sf3d output directory path before job execution to avoid 'already exists (no reuse)' failures. hits=1 status=trial src=SC-0923-1KU5
 - [g19] schema.enum field=job_error saw=standing rule=If pick status is 'standing' but expected list is empty, verify state mapping logic to match enum keys. hits=1 status=trial src=SC-0923-1KU5
@@ -21,3 +21,13 @@
 - [g26] machine.thin field=packet.weave saw=148 rule=若 job 報 prompt_too_thin 且 weave 詞數為 148，必須 enrich 內容至最少 150 詞，嚴禁無意義 padding。 hits=1 status=trial src=SC-0924-BP5S
 - [g27] schema.action field=beats.action saw=樽身冷凝水滴落桌面 rule=Action 必須包含明確動詞，嚴禁純現象描述。 hits=1 status=trial src=SC-0924-BP5S
 - [g28] schema.missing field=job_error.scale_missing saw=兩米盒 rule=Scale_missing 時嚴禁假設尺寸如兩米盒，必須確認來源。 hits=1 status=trial src=SC-0924-BP5S
+- [g34] machine.parse field=quotedMd saw=擬聲/描述引號誤報 rule=文本引號提取要用組裝格式真源分欄位（「聲：/觀眾：」欄內引號＝聲音設計文本）；殘留形容詞誤觸寧可留（代價一輪冪等回修）都唔砌字面黑名單膏藥。 hits=1 status=trial src=SC-CREATIVE-OS-0927
+- [g35] machine.claim field=ACCEPT條款 saw=驗收準則被當已驗事實 rule=派工卡嘅 ACCEPT 條款喺執行前一律 NOT YET VERIFIED——宣稱「已驗證」前必須有本輪 probe/tsc/收據原文支撐；模型同 planner 都會犯呢個（實證兩次被 hook 捉）。 hits=1 status=trial src=SC-CREATIVE-OS-0927
+- [g36] machine.retry field=schema_fail saw=同錯重試 rule=輸出被機器閘擋（如時間軸落點出窗）→帶差異重試：閘錯誤原文做 hint 回注入再叫模型修，唔係原樣再抽一次卡。 hits=1 status=trial src=SC-CREATIVE-OS-0927
+- [g37] arithmetic.clock field=shots.endSec saw=startSec rule=確保每支 shot 嘅 endSec 嚴格大於 startSec，若 validator 報 endSec 要 > startSec，必須逐個檢查所有 shot 嘅時間軸順序，禁止 endSec 小於或等於 startSec。 hits=1 status=trial src=SC-0927-WSY6
+- [g38] schema.enum field=shots.beatId saw=B01 rule=shots 入面每個 beatId 必須嚴格符合 /^B\d{1,3}$/ 格式（例如 B01, B02），絕對唔可以留空、用字或其他格式，否則會觸發 rhythmMap 覆蓋率錯誤。 hits=1 status=trial src=SC-0927-WSY6
+- [g39] machine.struct field=job_error saw=SC01.B03 rule=若 job 報 'has no shot in the callsheet'，必須檢查所有 beat 是否都有對應嘅 shot 記錄；確保 callsheet 中每個 beatId 都至少有唔少於一支 shot 指向佢，避免結構性缺失。 hits=1 status=trial src=SC-0927-WSY6
+- [g40] machine.resource field=job_error saw=gpu_handoff_required rule=見 job 報 gpu_handoff_required 且提及 SkinTokens，必須先確認資源窗口，禁止直接重試。 hits=1 status=trial src=SC-0927-WSY6
+- [g41] machine.gate field=world_scale_missing saw=sizes.json缺席 rule=世界米數閘嘅合法載體係 job 目錄 world/sizes.json（每件 named piece 一條 sizeM+source，art_direction 口徑）；callsheet props 亦可帶 sizeM/sizeSource。人偶 heightM 永遠唔當米。新 job 冇人寫呢個檔＝world 段必炸——長期 writer（art seat）未接，未接前開 job 要手補。預檢 warn 已修至同 fatal 閘同口徑（merge sizes.json 先 resolve，否則永遠誤報令 seats 學會忽略）。 hits=1 status=trial src=SC-0927-WSY6
+- [g42] machine.qc field=PROP_BOARD_REQUIRE saw=杯過GREEN rule=簽證明已有≠已經對（Chau 0927）：道具板 QC 淨簽「冇人冇灰模」時，兩可形（杯樽都 tall/cylindrical/glass）會 GREEN 放行，下游 keyframe 強閘先爆——每級 QC 嘅 require 要同嗰級嘅生成內容對齊（道具級要帶 tool/shape/forbid），上游簽嘅範圍要蓋住下游會問嘅嘢；生成 prompt 側一律正面規格（W4B 0921 Chau 釘：負面 token 照入燃料）。 hits=1 status=trial src=SC-0927-WSY6
+- [g45] schema.missing field=characterState saw=characterState rule=若 job 報 characterState 缺席，必須確保編劇層輸出包含人物當下狀態欄位，禁止遺漏該 schema 必填項。 hits=1 status=trial src=SC-0927-DCTM

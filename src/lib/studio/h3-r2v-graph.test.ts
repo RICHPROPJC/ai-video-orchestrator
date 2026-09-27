@@ -38,6 +38,9 @@ const aform = {
   kfEndName: "__KF_END__",
 };
 
+// 對齊 H3_DECISION_SOL_0926（Sol 裁 E）：golden 隨裁決更新——VHS 走位片全幀入
+// （frame_load_cap 56／select_every_nth 1；舊 cap32/nth10 把 56 幀抽到淨 1 幀）
+// ＋BINDINGS_CFORM 換正面素材角色文本（Picture 1＝本鏡 GREEN 劇照、全程一個人）。
 test("C-form deep-equals the production golden (§5b, CFORM_0921)", () => {
   const golden = JSON.parse(
     fs.readFileSync(path.resolve(process.cwd(), "workflows/h3-r2v.api.json"), "utf8"),
@@ -48,6 +51,8 @@ test("C-form deep-equals the production golden (§5b, CFORM_0921)", () => {
 
 /** ECOM1A: callsheet aspect 9:16 — the 544×960 portrait canvas rides EVERY node
  *  (r2v + VHS_LoadVideo motion ref), golden-locked like the 16:9 recipe. */
+// 對齊 H3_DECISION_SOL_0926（Sol 裁 E）：9:16 golden 同步同一組裁決值
+// （frame_load_cap 56／select_every_nth 1＋新 BINDINGS_CFORM 文本）。
 test("9:16 C-form deep-equals the portrait golden (ECOM1A probe: verify/motion/H3.object_info.node1.CFORM-ECOM.json)", () => {
   const golden = JSON.parse(
     fs.readFileSync(path.resolve(process.cwd(), "workflows/h3-r2v-916.api.json"), "utf8"),
@@ -89,25 +94,59 @@ test("C-form golden: Video 1 wired, zero keyframe nodes, portrait at ref_image_0
   for (const key of ["keyframes", "kf_start_in", "kf_end_in", "kf_strength", "cond_combine"]) {
     assert.equal(key in g, false, `${key} must not exist on the C-form`);
   }
-  // no H3Keyframes anywhere, never the retired H3KeyframeInject
+  // no H3Keyframes anywhere on the zero-keyframe C-form; H3KeyframeInject 只行
+  // KF＋Video1 共存形（Sol 0926 E 嘅 loaded 合流節點），純 C 形零鍵格唔會出現
   for (const node of Object.values(g)) {
     assert.notEqual(node.class_type, "H3Keyframes");
     assert.notEqual(node.class_type, "H3KeyframeInject");
   }
   assert.deepEqual(g.guider_a.inputs.conditioning, ["cond_cs", 0]);
   assert.deepEqual(g.split.inputs.bindings, BINDINGS_CFORM);
-  assert.match(BINDINGS_CFORM, /<Picture 1> is the sole appearance and identity reference/);
-  assert.match(BINDINGS_CFORM, /<Video 1> is motion only/);
+  // 對齊 H3_DECISION_SOL_0926（Sol 裁 E）：C-form 鎖改鎖新 BINDINGS_CFORM——
+  // Picture 1＝本鏡 GREEN 劇照（唯一外觀真源）、Video 1＝同一人排練參考
+  // （外觀永不參考）、全程一個人；舊「sole appearance／motion only」句撤回。
+  assert.match(BINDINGS_CFORM, /<Picture 1> is this shot's own reference photograph/);
+  assert.match(BINDINGS_CFORM, /<Video 1> is that same person rehearsing the move/);
+  assert.match(BINDINGS_CFORM, /One person on screen from the first frame to the last/);
+});
+
+/** Sol 0926 裁 E 正面路徑：positions＋Video1＋首尾 0%/100% → KF 走 loaded
+ *  H3KeyframeInject 落 r2v 同一 conditioning entry——refs/KF 唔行
+ *  ConditioningCombine 並列。共存合法；欠 positions 先 throw（下個 test 鎖）。 */
+test("coexist (Sol 0926 E): positions + Video 1 + 0%/100% rides H3KeyframeInject in one conditioning entry", () => {
+  const g = buildH3Graph({
+    ...cform,
+    keyframePositions: "0%, 100%",
+    kfStartName: "__KF_START__",
+    kfEndName: "__KF_END__",
+  });
+  // Video 1 仍在 ref_video_0（motion only），portrait 仍在 ref_image_0
+  assert.deepEqual(g.r2v.inputs["ref_videos.ref_video_0"], ["blender_vid", 0]);
+  assert.deepEqual(g.r2v.inputs["ref_images.ref_image_0"], ["ref_img_0", 0]);
+  // 首尾兩針行 loaded H3KeyframeInject，conditioning 直接指向 r2v output
+  assert.equal(g.kf_inject.class_type, "H3KeyframeInject");
+  assert.deepEqual(g.kf_inject.inputs.conditioning, ["r2v", 0]);
+  assert.deepEqual(g.kf_inject.inputs.start_image, ["kf_start_in", 0]);
+  assert.deepEqual(g.kf_inject.inputs.end_image, ["kf_end_in", 0]);
+  // 同一 entry 鏈：r2v → kf_inject → cond_evict → cond_cs → guider
+  assert.deepEqual(g.cond_evict.inputs.conditioning, ["kf_inject", 0]);
+  assert.deepEqual(g.guider_a.inputs.conditioning, ["cond_cs", 0]);
+  // 共存形零 ConditioningCombine 並列、零舊 H3Keyframes 節點
+  assert.equal("cond_combine" in g, false);
+  for (const node of Object.values(g)) {
+    assert.notEqual(node.class_type, "ConditioningCombine");
+    assert.notEqual(node.class_type, "H3Keyframes");
+  }
 });
 
 test("§5b prohibition: Video 1 + keyframes in one build refuses to emit (prompt_too_thin family)", () => {
   assert.throws(
     () => buildH3Graph({ ...cform, kfStartName: "__KF_START__" }),
-    /keyframes_video1_coexist/,
+    /keyframes_need_positions/,
   );
   assert.throws(
     () => buildH3Graph({ ...cform, kfEndName: "__KF_END__" }),
-    /keyframes_video1_coexist/,
+    /keyframes_need_positions/,
   );
 });
 

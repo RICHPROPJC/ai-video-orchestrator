@@ -46,10 +46,13 @@ const COND_AUDIO = 1.0;
 const VOICE_MAX_SECONDS = 16.0; // covers the 17k+5 max (~15.1s)
 const BLOCKOUT_VHS = {
   force_rate: 24.0,
-  frame_load_cap: 32,
+  frame_load_cap: 56,
   skip_first_frames: 0,
-  select_every_nth: 10,
+  select_every_nth: 1,
 };
+// Sol 0926 裁決 E：舊值（cap32/nth10）令 56 幀參考片抽到 6 幀、native R2V
+// 再裁到 5、Qwen 每 12 幀取 1 —— 文字編碼器最後只見 1 幀，Video1 動作資訊
+// 歸零。全幀入（nth1/cap56）先可以叫做餵咗條片。
 
 /** copied from shotdag h3_submit.BINDINGS — the grey-model <Video 1> contract.
  *  A-form (no Video 1, keyframes two ends) only: it names the start/end
@@ -60,14 +63,18 @@ export const BINDINGS =
   "The grey placeholders of <Video 1> are motion-only: follow positions and timing, " +
   "ignore their appearance. Do not add people.";
 
-/** C-form contract (§5b, E2E SC-0921-9V4Y SH01.c8, tg 17976 — verbatim minus
- *  the scene sentence, which rides the prose): <Picture 1> (the angle portrait
- *  in ref_image_0) is the identity reference; <Video 1> is motion only. */
+/** C-form contract (§5b, E2E SC-0921-9V4Y SH01.c8, tg 17976；Sol 0926 裁決 E
+ *  改寫)：正面對應素材角色——<Picture 1>＝本鏡 GREEN 劇照（同一人同一場同一
+ *  道具，一切視覺外觀以佢為準）；keyframe 圖＝本鏡首尾時間錨；<Video 1>＝同
+ *  一個人嘅排練參考（跟位＋時機，外觀係灰替身絕不參考）。全程一個人。 */
 export const BINDINGS_CFORM =
-  "<Picture 1> is the sole appearance and identity reference. " +
-  "<Video 1> is motion only: follow its positions, choreography and timing, " +
-  "ignore its appearance, clothing, background and lighting entirely — " +
-  "it is never a look reference. Do not add people.";
+  "<Picture 1> is this shot's own reference photograph: the same single person, " +
+  "wardrobe, place and props exactly as pictured — every visual look follows it. " +
+  "The keyframe images are this same shot's start and end moments. " +
+  "<Video 1> is that same person rehearsing the move: follow its positions, " +
+  "choreography and timing only — its grey stand-in look, background and " +
+  "lighting are never a look reference. One person on screen from the first " +
+  "frame to the last.";
 
 export type H3GraphModels = {
   textEncoder: string;
@@ -146,18 +153,20 @@ export type BuildH3GraphOpts = {
   kfEndName?: string;
   /** Extra keyframe upload names after start/end. The positions string is the shot's own. */
   kfExtraNames?: string[];
-  /** Percent anchors. Video 1 coexistence remains disputed: ALIGN-LOCK records
-   * both the typed allowance and §5b warning; this change does not adjudicate it. */
+  /** Percent anchors. Sol 0926 裁決 E：KF＋Video 1 共存合法——寫咗 positions，
+   *  首尾 0%/100% 行 H3KeyframeInject 同一 conditioning entry（keyform/
+   *  injectable 分支）；冇 positions 而同時有走位片＋鍵格檔先 throw。 */
   keyframePositions?: string;
-  /** §5b routing field: a Video 1 asset present → C-form (zero H3Keyframes,
-   *  ref_images.ref_image_0 = angle portrait); absent → A-form (H3Keyframes
-   *  0%/100%). Passing keyframe names together with a Video 1 throws. */
+  /** §5b routing field: a Video 1 asset present → C-form; absent → A-form
+   * (H3Keyframes 0%/100%). Keyframe names + Video 1 together throw only
+   * without positions (keyframes_need_positions). */
   blockoutName?: string;
   wavName: string;
   models: H3GraphModels;
   /** default A — the production path; §5b splits it by the Video 1 asset:
-   *  with Video 1 the graph is C-form (zero keyframes, ref_image_0 = angle
-   *  portrait, Video 1 motion-only); without it A-form still-to-video
+   *  with Video 1 the graph is C-form (Video 1 motion-only; zero keyframes
+   *  only when no positions — written positions coexist KF via
+   *  H3KeyframeInject, Sol 0926 E); without it A-form still-to-video
    *  (H3Keyframes 0%/100%). B/BKF are DOCUMENTED FALLBACK (card C ②, 0919):
    *  the character-image ref path is officially legitimate (samples
    *  #17/#22/#23/#31/#34), but on the A path identity is already burned into
@@ -195,10 +204,12 @@ export type BuildH3GraphOpts = {
 /** v6-parity R2V graph in two §5b forms, routed by the Video 1 asset:
  *
  *  C-form (Video 1 present — the motion-shot production recipe, E2E
- *  SC-0921-9V4Y SH01.c8, tg 17976): zero H3Keyframes nodes, identity rides
- *  ref_images.ref_image_0 = the character's angle portrait (per refAngle),
- *  <Video 1> blockout via VHS_LoadVideo carries motion only, BINDINGS_CFORM
- *  on the split node, and the guider's conditioning is cond_cs alone.
+ *  SC-0921-9V4Y SH01.c8, tg 17976): identity rides ref_images.ref_image_0
+ *  = the character's angle portrait (per refAngle), <Video 1> blockout via
+ *  VHS_LoadVideo carries motion only, BINDINGS_CFORM on the split node.
+ *  Zero H3Keyframes only when no positions — written positions + 0%/100%
+ *  coexist KF via H3KeyframeInject on the r2v conditioning entry (Sol 0926
+ *  裁決 E); refs/KF never ride ConditioningCombine side by side there.
  *
  *  A-form (no Video 1 — still-to-video): official H3Keyframes anchors 0%
  *  (and 100% with kfEnd), combined with the r2v conditioning via
@@ -251,7 +262,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   const positions = opts.keyframePositions?.trim() ?? "";
   if (!positions && hasVideo1 && (opts.kfStartName || opts.kfEndName || opts.kfExtraNames?.length)) {
     throw new Error(
-      `keyframes_video1_coexist: 冇寫 positions 就同時有走位片 (${opts.blockoutName}) 同鍵格檔 ` +
+      `keyframes_need_positions: 冇寫 positions 就同時有走位片 (${opts.blockoutName}) 同鍵格檔 ` +
         `(${opts.kfStartName ?? ""}${opts.kfEndName ? " + kf_end" : ""})`,
     );
   }
@@ -443,6 +454,37 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   const keyform = Boolean(positions) || variant === "bkf" || variant === "c" || (variant === "a" && !hasVideo1);
   if (keyform) {
     if (!opts.kfStartName) throw new Error("keyframes require kfStartName");
+    const injectMarks = positions.split(/[,，]/).map((p) => p.trim()).filter(Boolean);
+    // Sol 0926 裁決 E：refs 同 KF 必須入同一 conditioning entry——
+    // ConditioningCombine 淨係 c1+c2 並列，node1 deployed merge patch（同
+    // kwargs 同時有 minimax_refs＋minimax_keyframes）唔會觸發。首尾兩針行
+    // loaded H3KeyframeInject（object_info 只有 start/end，唔假設 disk
+    // mid_image 已載入）。任意位置＋refs 嘅同 entry 合流係 TODO：行返
+    // H3Keyframes 舊路，唔立互斥禁令。
+    const injectable = Boolean(positions) && hasVideo1 && Boolean(opts.kfEndName)
+      && injectMarks.length === 2 && injectMarks[0] === "0%" && injectMarks[1] === "100%";
+    if (injectable) {
+      g.kf_start_in = { class_type: "LoadImage", inputs: { image: opts.kfStartName } };
+      g.kf_end_in = { class_type: "LoadImage", inputs: { image: opts.kfEndName! } };
+      g.kf_inject = {
+        class_type: "H3KeyframeInject",
+        inputs: {
+          conditioning: ["r2v", 0],
+          // live object_info required：conditioning/vae/start_image/width/height/
+          // length（Sol 留底 h3-ruling-0926/live-inject-object-info.json）；
+          // 第一次 queue 漏 vae 被驗證層拒（冇燒 GPU）。
+          vae: ["vvae", 0],
+          start_image: ["kf_start_in", 0],
+          end_image: ["kf_end_in", 0],
+          width: width,
+          height: height,
+          length: opts.frames,
+        },
+      };
+      // Sol 鏈序：R2V → H3KeyframeInject → H3FreeTextEncoder → 單一
+      // H3ConditionStrength → Guider（sampler latent 仍 R2V output 1）
+      g.cond_evict.inputs.conditioning = ["kf_inject", 0];
+    } else {
     const kfInputs: Record<string, unknown> = {
       clip: ["clip", 0],
       vae: ["vvae", 0],
@@ -499,6 +541,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       inputs: { conditioning_1: ["cond_cs", 0], conditioning_2: ["kf_strength", 0] },
     };
     condOut = ["cond_combine", 0];
+    }
   }
   g.noise_a = { class_type: "RandomNoise", inputs: { noise_seed: opts.seed } };
   g.sampler_sel = { class_type: "KSamplerSelect", inputs: { sampler_name: SAMPLER } };

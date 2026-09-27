@@ -1,7 +1,8 @@
 import { chatJsonSeat, type CrewConfig, type RepairNote } from "./crew-llm";
 import { WRITER_BEATS_CHARTER, WRITER_OUTLINE_CHARTER } from "./seat-charters";
-import { assemblePlaybook, markPass } from "./playbook";
+import { markPass } from "./playbook";
 import {
+  actionVerbGaps,
   assertBeatTotal,
   outlineSchema,
   rangesFor,
@@ -14,6 +15,9 @@ import {
 
 export type WriterPacket = {
   brief: string;
+  /** SC-CREATIVE-OS-0927：導演席 treatment（有觀看價值嘅全片方案）。有佢
+   *  嗰陣 writer 唔係由裸 brief 發明，係喺 treatment 上寫對白／人物細節。 */
+  treatment?: string;
   targetSec: number;
   language?: "auto" | "zh-Hant" | "zh-Hans" | "yue" | "en";
   castRoster: string[];
@@ -136,8 +140,10 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
   // the slate's own seconds decide the band: 300s episodes are not squeezed features
   ranges ??= rangesFor(packet.targetSec);
   const receipts: string[] = [];
-  // system = charter (law) + global playbook + own playbook; charter never shrinks
-  const book = assemblePlaybook("writer", io.playbookDir, io.drama);
+  // §11（0927 修正令）：system 淨返章程層。assemblePlaybook 拼入嘅舊 job
+  // 報錯（577幀/148詞/600秒6場/汽水右手呢類單幕補丁）停止入 prompt——
+  // 佢哋留喺 seats/*.primitive.md 做 job 收據，唔准教下一句。
+  receipts.push("playbook: 停止拼入 system（0927 §11）");
   const attemptLamp = (unit: string) =>
     io.warn &&
     ((r: { attempt: number; valid: boolean; errors: string[] }) => {
@@ -151,9 +157,10 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
     onAttempt: attemptLamp("outline"),
     model: io.model,
     crew: io.crew,
-    system: WRITER_OUTLINE_CHARTER + book.text,
+    system: WRITER_OUTLINE_CHARTER,
     user: JSON.stringify({
       brief: packet.brief,
+      ...(packet.treatment ? { treatment_md: packet.treatment } : {}),
       targetSec: packet.targetSec,
       language: packet.language ?? "auto",
       castRoster: packet.castRoster,
@@ -183,7 +190,7 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
       onAttempt: attemptLamp(scene.id),
       model: io.model,
       crew: io.crew,
-      system: WRITER_BEATS_CHARTER + book.text,
+      system: WRITER_BEATS_CHARTER,
       user: JSON.stringify({
         scene,
         title: outline.title,
@@ -202,6 +209,13 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
     });
     receipts.push(...pass.receipts);
     scenes.push(pass.value);
+    // SC-CREATIVE-OS-0927 P0：可見動詞覆蓋＝非阻塞診斷——缺口係驗收器要補嘅
+    // 訊號，唔迫 writer 換動作（瞇眼冤案類別）。
+    const verbGaps = actionVerbGaps(pass.value.beats.map((b) => b.action));
+    if (verbGaps.length) {
+      receipts.push(`writer: 可見動詞詞表缺口（非阻塞診斷）${scene.id}: ${verbGaps.join("／")}`);
+      await io.warn?.(`writer ${scene.id} 動詞詞表未覆蓋（照收，唔改寫）：${verbGaps.join("／")}`);
+    }
     await io.speak?.(pass.value.thinking);
     for (const beat of pass.value.beats) {
       io.index?.({ id: `beat:${beat.id}`, text: `${beat.action} ${beat.dialogue ?? ""}`.trim() });

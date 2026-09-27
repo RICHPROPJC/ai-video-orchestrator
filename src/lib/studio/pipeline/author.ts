@@ -1,0 +1,326 @@
+import fs from "node:fs";
+import path from "node:path";
+import { emit } from "../store";
+import { loadCallSheet } from "../writer";
+import { runWriter } from "../seat-writer";
+import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreativeManifest, updateCreativeManifest, unplacedDialogueOf, declaredDialogueOf, planDivergence } from "../creative";
+import type { DirectorSkeleton } from "../seat-boards";
+import { runBoards } from "../seat-boards";
+import { jobDir, jobFile, seatsDir } from "../paths";
+import { rangesFor } from "../script-contract";
+import { indexPlanTexts, upsertDoc, vaultStats } from "../vault";
+import { assertSameCanon, continuityMarkdown, lockContinuity } from "../continuity";
+import { applyCombatPass } from "../combat-adapter";
+import { buildNarrativePlan, planMarkdown } from "../narrative";
+import { open, packetLine, seal } from "../dispatch";
+import { gapEvent, gapMessage, storyboardZeroGap } from "../capability-gap";
+import type { AgentId, CallSheet, ProduceInput } from "../types";
+import type { SlateConfig } from "../config";
+import { patch, type Ctx } from "./shared";
+
+/** Speaking parts must be castable, so the roster is read from a data file the
+ *  operator points at — never from a list living in src. */
+function readCastRoster(file?: string): string[] {
+  if (!file) return [];
+  const raw = JSON.parse(fs.readFileSync(file, "utf8")) as { cast?: { name?: string }[] };
+  const names = (raw.cast ?? []).map((c) => c.name).filter((n): n is string => Boolean(n));
+  if (!names.length) throw new Error(`--cast-roster ${file} lists no names`);
+  return names;
+}
+
+type SeatVoice = {
+  speak: (agent: AgentId, message: string, level?: "info" | "warn" | "pass" | "fail") => Promise<void>;
+  think: (agent: AgentId) => Promise<void>;
+};
+
+/** Where the callsheet comes from: a resumed slate, the plug (factory tests
+ *  only), or — by default now — 阿文 and 阿圖 actually writing it. */
+async function authorCallSheet(
+  jobId: string,
+  input: ProduceInput,
+  cfg: SlateConfig,
+  io: SeatVoice,
+): Promise<CallSheet> {
+  const existing = path.join(jobDir(jobId), "callsheet.json");
+  if (input.resume && fs.existsSync(existing)) {
+    // SCOPE §6：creative revision 同 callsheet 同步失效——manifest 話 briefSha
+    // 唔夾，callsheet 係由過期 creative 鏈生出嚟嘅，唔准照食（重行創作鏈）。
+    // 舊 job 冇 creative/manifest（null）＝無 revision 資訊，照舊相容。
+    const man = readCreativeManifest(path.join(jobDir(jobId), "creative"));
+    if (man && man.briefSha !== briefSha(input.brief)) {
+      await io.speak(
+        "producer",
+        `resume 拒絕：briefSha 唔夾（creative 鏈 ${man.briefSha} vs 今次 ${briefSha(input.brief)}）——callsheet 同 creative/ 一齊過期，重行創作鏈。`,
+        "warn",
+      );
+    } else {
+      const sheet = loadCallSheet(existing);
+      await io.speak("producer", `resume：照返 callsheet.json（${sheet.shots.length} 鏡），唔重開檯。`);
+      return sheet;
+    }
+  }
+  if (input.callSheetPath) {
+    const sheet = loadCallSheet(input.callSheetPath);
+    await io.speak("producer", `callsheet plug 載入：${sheet.shots.length} 鏡。`);
+    return sheet;
+  }
+  const targetSec = input.durationSec ?? 600;
+  const receiptDir = path.join(jobDir(jobId), "seats");
+  // SC-CREATIVE-OS-0927 §3 創作主路徑第一段：短 brief → 導演席（treatment＋
+  // 節奏骨架）。新 slate 先行；已有 creative/ 就照舊（resume 冪等）。fail-loud：
+  // 導演席塌咗唔靜靜降級返裸 brief 路（嗰條係碎切/補秒病溫床）。
+  const creativeDir = path.join(jobDir(jobId), "creative");
+  let treatment: string | undefined;
+  let directorSkeleton: DirectorSkeleton | undefined;
+  const skeletonOf = (plan: {
+    vision?: unknown; rhythmMap?: { beatId: string; label?: string; job?: string; rhythm?: string; deletionLoss?: string }[];
+    shots?: { shotId: string; startSec?: number; endSec?: number; purpose?: string; audienceEye?: string; cutReason?: string; dialogue?: string; frame?: string }[];
+    dialogueClock?: { placements?: { word: string; startSec?: number; endSec?: number; onImage?: string }[] };
+  }): DirectorSkeleton => ({
+    ...(typeof plan.vision === "string" ? { vision: plan.vision } : {}),
+    ...(plan.rhythmMap ? { beats: plan.rhythmMap.map((b) => ({ beatId: b.beatId, ...(b.label ? { label: b.label } : {}), ...(b.job ? { job: b.job } : {}), ...(b.rhythm ? { rhythm: b.rhythm } : {}), ...(b.deletionLoss ? { deletionLoss: b.deletionLoss } : {}) })) } : {}),
+    ...(plan.shots ? { shots: plan.shots.map((sh) => ({ shotId: sh.shotId, ...(sh.startSec !== undefined ? { startSec: sh.startSec } : {}), ...(sh.endSec !== undefined ? { endSec: sh.endSec } : {}), ...(sh.purpose ? { purpose: sh.purpose } : {}), ...(sh.audienceEye ? { audienceEye: sh.audienceEye } : {}), ...(sh.cutReason ? { cutReason: sh.cutReason } : {}), ...(sh.dialogue ? { dialogue: sh.dialogue } : {}), ...(sh.frame ? { frame: sh.frame } : {}) })) } : {}),
+    ...(plan.dialogueClock?.placements ? { dialoguePlacements: plan.dialogueClock.placements } : {}),
+  });
+  const planOnDiskFile = path.join(creativeDir, "director-plan.json");
+  const manHere = readCreativeManifest(creativeDir);
+  const creativeFresh = fs.existsSync(planOnDiskFile) && (!manHere || manHere.briefSha === briefSha(input.brief));
+  if (!creativeFresh) {
+    let plan = await runDirector(
+      { brief: input.brief, targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) },
+      {
+        crew: cfg.crew,
+        model: cfg.crew.directorModel ?? (() => { throw new Error("director_model_missing: 導演席要明示 directorModel——創作整合唔借 writer 嘅平腦（SC-CREATIVE-OS-0927 分開明示）"); })(),
+        receiptDir,
+        fallbackModel: cfg.crew.secondFallback,
+      },
+    );
+    const written = writeCreativeArtifacts(jobId, creativeDir, input.brief, plan, { targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) });
+    const planSha = written.planSha;
+    await io.speak(
+      "producer",
+      `導演席：${plan.shots.length} 鏡節奏骨架落 creative/（assumptions ${plan.assumptions?.length ?? 0}、capability_gaps ${plan.capabilityGaps.length} 條明報）。writer 跟 treatment 寫，唔再由裸 brief 發明。`,
+    );
+    treatment = plan.treatment;
+    directorSkeleton = skeletonOf(plan);
+    // BRIEF_TO_SCRIPT：故事流（flow 提劇本/故事/敘事）→ 編劇席正式 callsite
+    // （非故事流——MV/教學/素材剪輯——唔行呢段，flow 淨係導演宣告，執行器
+    // 未有對應流程，詳見 IMPLEMENTATION_MAP 誠實位）。
+    const flowText = typeof plan.flow === "string" ? plan.flow : JSON.stringify(plan.flow ?? "");
+    if (/劇本|故事|敘事|narrative|script/i.test(flowText)) {
+      const script = await runPlaywright(
+        { brief: input.brief, treatment: plan.treatment, assets: [
+            ...(plan.spec?.product ? [`產品：${plan.spec.product}`] : []),
+            "人物／場景事實以 brief 逐字為準；資產身份以後續 cast/portraits 收據為準",
+          ], targetSec },
+        { crew: cfg.crew, model: cfg.crew.directorModel ?? "", receiptDir, fallbackModel: cfg.crew.secondFallback },
+      );
+      fs.writeFileSync(path.join(creativeDir, "script.md"), script.script_md);
+      fs.writeFileSync(path.join(creativeDir, "script.json"), JSON.stringify(script, null, 2));
+      // §6：script dependsOn plan（上游 sha），同 plan 同鏈
+      updateCreativeManifest(creativeDir, input.brief, { file: "script.md", dependsOn: planSha });
+      updateCreativeManifest(creativeDir, input.brief, { file: "script.json", dependsOn: planSha });
+      await io.speak("producer", `編劇席：${script.segments.length} 段可演劇本落 creative/（指定台詞保留 ${script.dialogue_verbatim_kept.length} 句；新增 ${script.newElements.length} 項全部標明）。`);
+      // 編劇→導演修訂迴路：編劇版引號台詞有導演 dialogueClock 冇落點嘅（或
+      // 明報新增元素）＝鏡表過期——回導演出一輪修訂版（一輪收口，唔遞迴）。
+      // 修訂版三件套重寫＝manifest revision 遞增（SCOPE §6）。
+      {
+        // 對白事件對齊（唔用字數閾值）：來源渠道＝dialogueAdded／verbatimKept／
+        // md 引號（全長）；歸一化子串雙向比對＋事件計數（同字多次講要逐個落點）
+        const unplaced = unplacedDialogueOf(script, plan);
+        // 聲明欄提示（明報新/指定台詞→要有落點；唔入消耗池——v2 雙計事故修正）
+        const declared = declaredDialogueOf(script).filter(
+          (d) => !unplacedDialogueOf({ script_md: script.script_md }, { dialogueClock: plan.dialogueClock })
+            .some((u) => u.line.replace(/[。]/g, "") === d.replace(/[。]/g, "")),
+        );
+        // 非對白渠道（C 統籌 0927：敲檯類動作／接觸／時間改動都令鏡表失效）：
+        // 時間覆蓋空洞＋動作動詞差集（VISIBLE_ACTION_VERBS 語義詞表）＋產品接觸缺席
+        const div = planDivergence(script, plan);
+        if (unplaced.length > 0 || script.newElements.length > 0 || declared.length > 0
+          || div.timeGaps.length > 0 || div.actionNews.length > 0 || div.contactNews.length > 0) {
+          await io.speak(
+            "producer",
+            `修訂迴路：編劇版有 ${unplaced.length} 句台詞冇導演落點${div.actionNews.length ? `＋新動作 ${div.actionNews.length} 項` : ""}${div.contactNews.length ? `＋新接觸 ${div.contactNews.length} 項` : ""}${div.timeGaps.length ? `＋時間冇對應鏡 ${div.timeGaps.length} 段` : ""}${script.newElements.length ? `＋新增元素 ${script.newElements.length} 項` : ""}——回導演修訂鏡表一輪。`,
+          );
+          const revised = await runDirector(
+            { brief: input.brief, targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) },
+            {
+              crew: cfg.crew,
+              model: cfg.crew.directorModel ?? (() => { throw new Error("director_model_missing: 導演席要明示 directorModel"); })(),
+              receiptDir,
+              fallbackModel: cfg.crew.secondFallback,
+            },
+            { scriptMd: script.script_md, previousPlan: plan },
+          );
+          const rewritten = writeCreativeArtifacts(jobId, creativeDir, input.brief, revised, { targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) });
+          updateCreativeManifest(creativeDir, input.brief, { file: "script.md", dependsOn: rewritten.planSha });
+          updateCreativeManifest(creativeDir, input.brief, { file: "script.json", dependsOn: rewritten.planSha });
+          plan = revised;
+          directorSkeleton = skeletonOf(revised);
+        }
+      }
+      treatment = `${script.script_md}
+
+【導演 treatment 原稿】
+${plan.treatment}`;
+    }
+  } else {
+    const planOnDisk = JSON.parse(fs.readFileSync(path.join(creativeDir, "director-plan.json"), "utf8")) as Parameters<typeof skeletonOf>[0] & { treatment?: string };
+    treatment = planOnDisk.treatment;
+    directorSkeleton = skeletonOf(planOnDisk);
+  }
+  const index = (doc: { id: string; text: string; shotId?: string }) => {
+    upsertDoc({ id: doc.id, slate: jobId, modality: "text", shotId: doc.shotId, text: doc.text });
+  };
+
+  await io.think("writer");
+  await io.speak("writer", `寫故事同對白。${cfg.crew.writerModel} · 目標 ${targetSec}s。`);
+  const writer = await runWriter(
+    {
+      brief: input.brief,
+      ...(treatment ? { treatment } : {}),
+      targetSec,
+      language: input.language,
+      castRoster: readCastRoster(input.castRosterPath),
+    },
+    {
+      crew: cfg.crew,
+      model: cfg.crew.writerModel,
+      receiptDir,
+      speak: (thinking) => io.speak("writer", thinking),
+      warn: (message) => io.speak("writer", message, "warn"),
+      index,
+      playbookDir: seatsDir(),
+      drama: input.drama,
+    },
+    rangesFor(targetSec),
+  );
+
+  await io.think("boards");
+  await io.speak("boards", `拆鏡。${cfg.crew.boardsModel} · ${writer.script.outline.scenes.length} 場。`);
+  const boards = await runBoards(
+    {
+      script: writer.script,
+      draftOnly: input.dryRun,
+      targetSec,
+      aspect: input.aspect,
+      writer: { model: writer.model, receipts: writer.receipts },
+      ...(directorSkeleton ? { directorSkeleton } : {}),
+    },
+    {
+      crew: cfg.crew,
+      model: cfg.crew.boardsModel,
+      receiptDir,
+      boardsDir: path.join(jobDir(jobId), "boards"),
+      speak: (thinking) => io.speak("boards", thinking),
+      warn: (message) => io.speak("boards", message, "warn"),
+      index,
+      playbookDir: seatsDir(),
+      drama: input.drama,
+    },
+  );
+  return boards.sheet;
+}
+
+/** 拆層段（author）：由 runPipeline 原序搬入，行為零變——絕唔重排 call 次序、
+ *  絕唔刪／合併任何 emit/speak/patch；early-return 以 ctx.stopped 回報。 */
+export async function authorStage(ctx: Ctx): Promise<void> {
+  const { jobId, input, cfg } = ctx;
+  const { speak, think } = ctx;
+  const trace = ctx.trace;
+  await think("producer");
+  // L1b: the producer is the only writer of the lifetime ids — a job that
+  // names its drama runs in that drama's base layer, its episode's surface
+  // playbooks, and its base cast wardrobe facts
+  if (input.drama || input.episode) {
+    ctx.job = patch(ctx.job, {
+      ...(input.drama ? { drama: input.drama } : {}),
+      ...(input.episode ? { episode: input.episode } : {}),
+    });
+  }
+  await speak(
+    "producer",
+    `收 brief。開呢份 slate 嘅信封。舊 project 唔入袋。${input.drama ? `劇目 ${input.drama}${input.episode ? `・${input.episode}` : ""}。` : ""}`,
+  );
+  const sheet = await authorCallSheet(jobId, input, cfg, { speak, think });
+  fs.writeFileSync(jobFile(jobId, "callsheet.json"), JSON.stringify(sheet, null, 2));
+  ctx.job = patch(ctx.job, {
+    callSheet: sheet,
+    providers: trace,
+    progress: 8,
+    outputs: { ...ctx.job.outputs, callSheet: "callsheet.json" },
+  });
+  await speak(
+    "producer",
+    `${sheet.title} · ${sheet.durationSec.toFixed(1)}s · ${sheet.shots.length} shots · ${sheet.location}`,
+  );
+
+  const toBoards = seal({
+    slate: jobId,
+    from: "writer",
+    to: "boards",
+    payload: { brief: input.brief, sheet },
+  });
+  await speak("producer", packetLine(toBoards));
+
+  const boarded = open(toBoards, { slate: jobId, to: "boards" });
+  const continuity = assertSameCanon(lockContinuity(boarded.sheet));
+  ctx.continuity = continuity;
+  const locked: CallSheet = { ...boarded.sheet, shots: continuity.boards };
+  ctx.locked = locked;
+
+  // COMBAT_PORT_0921: boards-stage combat pass — combat-signal gated (≥2
+  // marked characters + a combat cause in the action). No signal → no-op,
+  // non-combat path byte-identical; with a signal it attaches causal combat
+  // state (Beat七欄/state relay) to the fight shots in place, emits
+  // ACTION_RISK events and writes the combat/combat-pass.json receipt.
+  applyCombatPass(jobId, locked, (event) => emit(jobId, event));
+  const plan = buildNarrativePlan({
+    slate: jobId,
+    brief: boarded.brief,
+    sheet: locked,
+    continuity,
+  });
+  fs.writeFileSync(jobFile(jobId, "callsheet.json"), JSON.stringify(locked, null, 2));
+  fs.writeFileSync(jobFile(jobId, "continuity.json"), JSON.stringify(continuity, null, 2));
+  fs.writeFileSync(jobFile(jobId, "narrative-plan.json"), JSON.stringify(plan, null, 2));
+  fs.writeFileSync(jobFile(jobId, "delivery", "continuity.md"), continuityMarkdown(continuity));
+  fs.writeFileSync(jobFile(jobId, "delivery", "narrative-plan.md"), planMarkdown(plan));
+  indexPlanTexts(jobId, plan.nodes);
+  ctx.job = patch(ctx.job, {
+    continuity,
+    callSheet: locked,
+    narrativePlan: plan,
+    vault: vaultStats(jobId),
+    progress: 14,
+    outputs: {
+      ...ctx.job.outputs,
+      continuity: "delivery/continuity.md",
+      narrativePlan: "narrative-plan.json",
+      vault: "vault.json",
+    },
+  });
+  const boardCount = locked.storyboard?.length ?? 0;
+  // CAPGAP_0927（110 條 #31）：零可見分鏡板從前 warn 唔 block——靜靜雞照行
+  // 係繞過位。而家硬反轉：blocked 等指示；逃生門＝人手 opt-in
+  // --allow-no-storyboard（ProduceInput.allowNoStoryboard，預設 false）。
+  if (boardCount === 0 && !input.allowNoStoryboard) {
+    const gap = storyboardZeroGap();
+    ctx.job = patch(ctx.job, {
+      status: "blocked",
+      currentAgent: "boards",
+      providers: trace,
+      error: gapMessage(gap),
+    });
+    emit(jobId, gapEvent(jobId, gap));
+    ctx.stopped = true;
+    return;
+  }
+  await speak(
+    "boards",
+    boardCount > 0
+      ? `分鏡專職鎖咗 ${continuity.cut.length} 鏡。可見板 ${boardCount} 格。故事＝分鏡＝剪接。Vault 只得 ${jobId}。下一席接走位。`
+      : `文字表 ${continuity.cut.length} 鏡。可見分鏡板 0，未逐格 GREEN。未算分鏡完成（--allow-no-storyboard 人手確認照行）。`,
+    boardCount > 0 ? "info" : "warn",
+  );
+}

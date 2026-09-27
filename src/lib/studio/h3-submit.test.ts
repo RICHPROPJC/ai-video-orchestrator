@@ -56,7 +56,7 @@ test("dry run C-form (Video 1 asset given): 56-frame receipt, zero keyframe node
   }
   assert.deepEqual(graph.r2v.inputs["ref_videos.ref_video_0"], ["blender_vid", 0]);
   assert.deepEqual(graph.r2v.inputs["ref_images.ref_image_0"], ["ref_img_0", 0]);
-  assert.match(String(graph.split.inputs.bindings), /<Picture 1> is the sole appearance and identity reference/);
+  assert.match(String(graph.split.inputs.bindings), /<Picture 1> is this shot.s own reference photograph/);
   assert.deepEqual(graph.guider_a.inputs.conditioning, ["cond_cs", 0]);
   // §5b: 8-step road carries zero FBC/SolAttn nodes
   assert.equal("fbc_ref2va" in graph, false);
@@ -113,7 +113,7 @@ test("§5b prohibition: blockoutMp4 + kfEnd in one submit refuses to emit", asyn
         dryRun: true,
         shot: "SH01",
       }),
-    /keyframes_video1_coexist/,
+    /keyframes_need_positions/,
   );
 });
 

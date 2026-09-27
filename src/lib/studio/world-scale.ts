@@ -165,16 +165,21 @@ export type ShotAim = {
   size: string;
   lookAtId?: string;
   hold: boolean;
+  /** 環境動畫軌道（世界暫停前後動作）：worldJson（bake --world-json 輸入檔）
+   *  嘅數據通道——bake_combat.py 讀取要 COS patch（HAND_CONTACT_BAKE_PATCH_SPEC
+   *  擴充段）；我樹內 blockout render（renderBlockout）已經照讀。 */
+  envAnim?: import("./types").EnvAnimTrack[];
 };
 
 /** A shot looks at a piece already in the world. No callsheet xyz. */
 export function aimShot(
-  shot: { id: string; lensMm: number; size: string; location?: string; heldPropId?: string },
+  shot: { id: string; lensMm: number; size: string; location?: string; heldPropId?: string; envAnim?: import("./types").EnvAnimTrack[] },
   placed: PlacedPiece[],
 ): ShotAim {
   const held = shot.heldPropId ? placed.find((p) => p.id === shot.heldPropId) : undefined;
   const scene = shot.location ? placed.find((p) => p.id === shot.location && p.role === "scene") : undefined;
   const look = held ?? scene;
-  if (!look) return { id: shot.id, lensMm: shot.lensMm, size: shot.size, hold: true };
-  return { id: shot.id, lensMm: shot.lensMm, size: shot.size, lookAtId: look.id, hold: false };
+  const env = shot.envAnim?.length ? { envAnim: shot.envAnim } : {};
+  if (!look) return { id: shot.id, lensMm: shot.lensMm, size: shot.size, hold: true, ...env };
+  return { id: shot.id, lensMm: shot.lensMm, size: shot.size, lookAtId: look.id, hold: false, ...env };
 }

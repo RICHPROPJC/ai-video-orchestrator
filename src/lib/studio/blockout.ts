@@ -110,6 +110,29 @@ export async function assertFiguresVisible(f0png: string, shot: Shot): Promise<v
   // insert = detail framing (hands/prop); the body mark is off-frame by design, so the
   // figure crop sees only figure+floor (5.1.2: 159 vs 179, span 20) — no figure claim to gate
   if (shot.size === "insert") return;
+  // SC-CREATIVE-OS-0927 §2C：空 cast＝產品／環境鏡——冇人形可驗。改驗畫面有
+  // 主體：中央 crop 唔係全平（YMIN<YMAX 有層次）。唔准為過人形閘偷塞人。
+  if (shot.marks.length === 0) {
+    const w = Math.round(width * 0.6);
+    const h = Math.round(height * 0.6);
+    const x = Math.round((width - w) / 2);
+    const y = Math.round((height - h) / 2);
+    const r = await runCommand("ffprobe", [
+      "-v", "error",
+      "-f", "lavfi", "-i", `movie='${f0png.replaceAll("'", "\\'")}',format=gray,crop=${w}:${h}:${x}:${y},signalstats`,
+      "-show_entries", "frame_tags=lavfi.signalstats.YMIN,lavfi.signalstats.YMAX",
+      "-of", "json",
+    ]);
+    if (r.code !== 0) throw new Error(`${shot.id} subject check ffprobe failed: ${r.stderr}`);
+    const frames = (JSON.parse(r.stdout).frames ?? []) as { tags?: Record<string, string> }[];
+    const tags = frames[0]?.tags ?? {};
+    const ymin = Number(tags["lavfi.signalstats.YMIN"] ?? 255);
+    const ymax = Number(tags["lavfi.signalstats.YMAX"] ?? 0);
+    if (Number.isFinite(ymin) && Number.isFinite(ymax) && ymax - ymin < 12) {
+      throw new Error(`${shot.id} 空 cast 鏡中央冇主體（span ${ymax - ymin}）——產品/環境鏡都要有嘢喺畫面`);
+    }
+    return;
+  }
   for (const mark of shot.marks) {
     const w = Math.round(width * 0.16);
     const h = Math.round(height * 0.4);

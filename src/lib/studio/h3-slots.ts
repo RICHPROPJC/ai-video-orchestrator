@@ -21,10 +21,12 @@ export type KeyframeSource = "our_still" | "our_end_still";
 export type PrevLastPolicy = "forbidden" | "inspect_only";
 
 /** §5b plan form, routed by the Video 1 asset (the blockout mp4):
- *  - "c": Video 1 present — zero H3Keyframes, identity rides
- *    ref_images.ref_image_0 = the character's angle portrait (per refAngle)
+ *  - "c": Video 1 present — identity rides ref_images.ref_image_0; keyframes
+ *    only when the shot wrote positions, riding H3KeyframeInject in the same
+ *    conditioning entry as the refs (Sol 0926 裁決 E — coexist is legal)
  *  - "a": no Video 1 — still-to-video, H3Keyframes 0%/100% on our U1.5 stills
- *  The two never coexist (E2E SC-0921-9V4Y: keyframes × Video 1 = 4/8/20步全滅). */
+ *  KF stills wired with Video 1 but WITHOUT positions throw — the marks are
+ *  what let refs+KF merge into one entry, not a coexistence ban. */
 export type H3PlanForm = "a" | "c";
 
 /** One character's identity ref on the C-form — the angle-version portrait
@@ -192,14 +194,14 @@ export function planH3Shot(opts: {
     missKeyframe: form === "c"
       ? {
           tune: [
-            "ref_image_0 = this character's angle portrait (refAngle column picks front/45°)",
+            "ref_image_0 = this shot's own GREEN still (Sol 0926 E；angle portrait 留做上游身份資產)",
             "Video 1 = this blockout only (positions/timing, never look)",
             "identity pin in prose names <Picture 1>, not a keyframe image",
             "keep Video 1 length = wav snap frames",
           ],
           never: [
             "do not retune or split AuK /tts",
-            "do not wire H3Keyframes together with Video 1 (§5b coexist ban)",
+            "refs＋KF merge: H3KeyframeInject 同一 conditioning entry — 唔好用 ConditioningCombine 並列（Sol 0926 E；§5b 模型級禁令已撤）",
             "do not swap the 45° shot's portrait for the frontal version (B-lane face-drag regression)",
             "do not put previous H3 mp4 in ref_video_1",
           ],
@@ -243,7 +245,7 @@ export function assertH3Plan(plan: H3ShotPlan): void {
   }
   if (plan.form === "c") {
     if (plan.keyframes !== null) {
-      throw new Error(`${plan.shotId}: C-form plans carry no keyframes (§5b: keyframes × Video 1 coexist ban)`);
+      throw new Error(`${plan.shotId}: C-form 冇寫 positions 就唔帶鍵格——寫咗 keyframePositions，refs＋KF 先可以行同一 conditioning entry（Sol 0926 E：共存合法）`);
     }
     if (plan.slots.video.length !== 1 || plan.slots.video[0]?.bind !== "ref_videos.ref_video_0") {
       throw new Error(`${plan.shotId}: C-form requires the blockout as ref_video_0 (motion only)`);
@@ -262,8 +264,9 @@ export function assertH3Plan(plan: H3ShotPlan): void {
 }
 
 /**
- * Fail loud when the submit about to POST would eat the old scene — or would
- * emit the §5b dead shape (Video 1 + H3Keyframes in one graph). Missed
+ * Fail loud when the submit about to POST would eat the old scene — or wires
+ * KF stills without positions (the marks let refs+KF ride one entry; the
+ * coexistence itself is legal, Sol 0926 E). Missed
  * identity anchor → retune these files. Never TTS.
  */
 export function assertH3SubmitWiring(
@@ -281,8 +284,9 @@ export function assertH3SubmitWiring(
   assertH3Plan(plan);
   if (plan.form === "c" && (wiring.kfStart || wiring.kfEnd) && !plan.positions) {
     throw new Error(
-      `keyframes_video1_coexist: ${plan.shotId} is C-form (Video 1 in ref_video_0) but the wiring carries ` +
-        `keyframe stills — keyframes × Video 1 is the §5b model-level double exposure; drop one`,
+      `keyframes_need_positions: ${plan.shotId} is C-form (Video 1 in ref_video_0) and the wiring carries ` +
+        `keyframe stills without positions — write the marks so refs+KF ride one conditioning entry ` +
+        `(Sol 0926 E: H3KeyframeInject, 唔係 §5b 模型級禁令)`,
     );
   }
   if (plan.form === "a" && wiring.blockout) {
