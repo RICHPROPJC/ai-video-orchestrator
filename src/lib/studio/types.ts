@@ -416,6 +416,10 @@ export type JobRecord = {
   /** V3（PLAN-v2 0928）§9.1：per-shot blocked 彙總——emit data.blocked 自動
    *  upsert；同 shot 有 pass verdict 自動清。UI／resume 讀同一份狀態。 */
   blockedShots?: { shot: string; stage?: string; reason: string; ts: string }[];
+  /** §7②（0928）：聲畫對位缺口——audioTimeline 對照 missing 嘅句子。
+   *  resume 時 authorStage 讀到＝強制導演 revise（帶差距回責任席），
+   *  唔照食舊 callsheet。修訂成功後 gaps 由新 callsheet 重算清返。 */
+  placementGaps?: { utterance: string; text: string; ts: string }[];
   retries: { stills: number; voice: number; motion: number };
   outputs: {
     stills: string[];

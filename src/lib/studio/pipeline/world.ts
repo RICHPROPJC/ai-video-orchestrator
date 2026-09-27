@@ -36,6 +36,7 @@ import {
   verbsForGate,
   writeSelections,
   type MotionShotLine, type MotionSpec } from "../motion-select";
+import { sheetDigest } from "../seat-boards";
 import type { CallSheet, Shot } from "../types";
 import { relInJob } from "../isolate";
 import { depStampOf, ffmpeg, mediaSeconds, patch, shotsForScene, type Ctx, stableJson } from "./shared";
@@ -313,15 +314,28 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     const rows = await audioTimelineRows(ctx.locked!.audioEvents, eventTakes.takes, wavSeconds, ctx.locked!.directorPlacements);
     // 裁決 0928 D：聲畫對位缺口回責任席線——missing placement 逐句 emit
     // （唔阻行：收據落 events；revise_unclosed 已喺上游 fail-loud 把關）
+    // §7①：剪接對照收據——每句 utterance 實際由邊啲鏡播出（audioBeats）
     for (const r of rows) {
-      if (r.placement === "missing") {
-        emit(jobId, { agent: "producer", level: "warn",
-          message: `聲畫對位缺口：${r.text.slice(0, 60)} 冇導演落點（回導演席修訂）`,
-          data: { stage: "audio-placement", blocked: null, utterance: r.beatId, text: r.text.slice(0, 120) } });
-      }
+      r.coveredByShotIds = ctx.locked!.shots
+        .filter((sh) => (sh.audioBeats ?? []).includes(r.beatId) || (sh.beatIds ?? []).includes(r.beatId))
+        .map((sh) => sh.id);
     }
+    // §7②：缺口寫 job（resume 攔截強制 revise——emit 之外嘅真回修路徑）
+    const missingRows = rows.filter((r) => r.placement === "missing");
+    for (const r of missingRows) {
+      emit(jobId, { agent: "producer", level: "warn",
+        message: `聲畫對位缺口：${r.text.slice(0, 60)} 冇導演落點（resume 時回導演席修訂）`,
+        data: { stage: "audio-placement", blocked: null, utterance: r.beatId, text: r.text.slice(0, 120) } });
+    }
+    // 重算語義：gaps＝今次對照嘅 missing 全集（revise 後已解嘅自然消失）
+    ctx.job = patch(ctx.job, {
+      placementGaps: missingRows.map((m) => ({ utterance: m.beatId, text: m.text, ts: new Date().toISOString() })),
+    });
     fs.writeFileSync(jobFile(jobId, "creative", "audio-timeline.json"), JSON.stringify({
       generatedAt: new Date().toISOString(),
+      // §7③：採用 revision 收據——呢份 timeline 由邊個 callsheet 生出嚟
+      // （cut/mix/mux 同源對照用；revision 唔一致唔可以混做最終交付）
+      callsheetDigest: sheetDigest(ctx.locked!),
       note: "實際音軌時長回填（共同時間線）；take 一次生成逐鏡切片，呢度係事件層時鐘",
       events: rows,
     }, null, 2));
@@ -395,7 +409,8 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     const h3 = h3WavByShot.get(s.id);
     if (h3) s.h3_clock_s = Math.round((await wavSeconds(h3)) * 1e4) / 1e4;
   }
-  fs.writeFileSync(cutPlanFile, JSON.stringify(cutPlanOnDisk, null, 2));
+  // §7③：cut plan 採用 revision 收據（同 audio-timeline 同源對照）
+  fs.writeFileSync(cutPlanFile, JSON.stringify({ ...cutPlanOnDisk, callsheetDigest: sheetDigest(ctx.locked!) }, null, 2));
   const timed: CallSheet = ctx.locked!;
   ctx.timed = timed;
 

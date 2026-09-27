@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { emit } from "../store";
+import { emit, readJob } from "../store";
 import { loadCallSheet } from "../writer";
 import { runWriter } from "../seat-writer";
 import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreativeManifest, updateCreativeManifest, unplacedDialogueOf, declaredDialogueOf, dialogueSignalsOf, planDivergence } from "../creative";
@@ -43,7 +43,20 @@ async function authorCallSheet(
   io: SeatVoice,
 ): Promise<CallSheet> {
   const existing = path.join(jobDir(jobId), "callsheet.json");
-  if (input.resume && fs.existsSync(existing)) {
+  // §7②（0928）：回修路徑——placementGaps 有積留＝唔照食 callsheet，帶差距
+  //  返導演席 revise（creative 冪等同時跳過，runDirector 以 revise 輪行）。
+  //  修訂後新 callsheet 落盤，world 段重算 gaps 清返——emit 之外嘅真回修。
+  const placementGaps: { utterance: string; text: string; ts: string }[] = readJob(jobId)?.placementGaps ?? [];
+  if (input.resume && fs.existsSync(existing) && placementGaps.length) {
+    await io.speak(
+      "producer",
+      `回修：${placementGaps.length} 句聲畫對位缺口積留（${placementGaps.map((g) => g.text.slice(0, 24)).join("、").slice(0, 200)}）——唔照食 callsheet，帶差距返導演席修訂落點。`,
+      "warn",
+    );
+    emit(jobId, { agent: "producer", level: "warn",
+      message: `placement-gap revise：${placementGaps.length} 句回導演席`,
+      data: { stage: "revise", gaps: placementGaps.map((g) => g.text.slice(0, 60)) } });
+  } else if (input.resume && fs.existsSync(existing)) {
     // SCOPE §6：creative revision 同 callsheet 同步失效——manifest 話 briefSha
     // 唔夾，callsheet 係由過期 creative 鏈生出嚟嘅，唔准照食（重行創作鏈）。
     // 舊 job 冇 creative/manifest（null）＝無 revision 資訊，照舊相容。
@@ -110,8 +123,20 @@ async function authorCallSheet(
   });
   const planOnDiskFile = path.join(creativeDir, "director-plan.json");
   const manHere = readCreativeManifest(creativeDir);
-  const creativeFresh = fs.existsSync(planOnDiskFile) && (!manHere || manHere.briefSha === briefSha(input.brief));
+  // §7②：placementGaps 積留＝creative 唔算 fresh（強制行 revise 輪帶差距
+  //  返導演席）；修訂後新 plan 落盤，下游 callsheet/world 重算。
+  const creativeFresh = fs.existsSync(planOnDiskFile) && (!manHere || manHere.briefSha === briefSha(input.brief)) && !placementGaps.length;
   if (!creativeFresh) {
+    // §7②：gaps 情況＝revise 輪（帶磁碟上嘅 plan＋script＋差距 hint 返導演席）
+    const reviseForGaps = placementGaps.length && fs.existsSync(planOnDiskFile)
+      ? {
+          previousPlan: JSON.parse(fs.readFileSync(planOnDiskFile, "utf8")) as unknown,
+          scriptMd: fs.existsSync(path.join(creativeDir, "script.md"))
+            ? fs.readFileSync(path.join(creativeDir, "script.md"), "utf8")
+            : "",
+          hint: `聲畫對位缺口（world 段 audioTimeline 對照發現，resume 回修）：${placementGaps.map((g) => g.text.slice(0, 60)).join("；").slice(0, 400)}——補返呢啲句子嘅 dialogueClock 落點`,
+        }
+      : undefined;
     let plan = await runDirector(
       { brief: input.brief, targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) },
       {
@@ -120,6 +145,7 @@ async function authorCallSheet(
         receiptDir,
         fallbackModel: cfg.crew.secondFallback,
       },
+      reviseForGaps,
     );
     const written = writeCreativeArtifacts(jobId, creativeDir, input.brief, plan, { targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) });
     const planSha = written.planSha;

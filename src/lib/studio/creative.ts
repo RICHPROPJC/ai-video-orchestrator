@@ -587,6 +587,8 @@ export type AudioTimelineRow = {
   placement?: "matched" | "missing";
   onImage?: string;
   placementDriftSec?: number;
+  /** §7①：實際播出鏡（audioBeats 對照）——剪接區間收據 */
+  coveredByShotIds?: string[];
 };
 
 export async function audioTimelineRows(
