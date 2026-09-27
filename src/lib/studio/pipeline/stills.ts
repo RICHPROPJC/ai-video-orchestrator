@@ -21,7 +21,9 @@ import { submitH3Shot } from "../h3-submit";
 import { wardrobeClauses } from "../h3-prose";
 import { upsertDoc } from "../vault";
 import { relInJob } from "../isolate";
-import { h3GraphVariant, h3MotionPack, kfRideFor, patch, prevShotOf, shotsForScene, writeH3Plan, type Ctx } from "./shared";
+import { open, packetLine, seal } from "../dispatch";
+import { h3GraphVariant, h3MotionPack, kfRideFor, patch, prevShotOf, shotsForScene, uncutIdentityFiles, writeH3Plan, type Ctx } from "./shared";
+import type { Shot } from "../types";
 
 /** T44 §1 (Fable 08:58): `first` means a face the viewer has not seen — the
  *  slate's first shot or a character's first appearance. A size change alone
@@ -87,7 +89,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
   // --scene hop composes only its own shots: an out-of-scene prompt_too_thin
   // throw must not fail the hop (WR1Q SC01 died on SH06)
   const planBoards = input.scene ? shotsForScene(ctx.continuity!.boards, input.scene) : ctx.continuity!.boards;
-  const baseCast = ctx.ctx.job.drama ? loadBaseCast(projectsDir(), ctx.ctx.job.drama) : undefined;
+  const baseCast = ctx.job.drama ? loadBaseCast(projectsDir(), ctx.job.drama) : undefined;
   // Two PE routes, before /edit. Web search on: wigolo → nex, qwen38 backup,
   // facts land in the packet. Web search off: 6.8 rewrites the shot, no wigolo.
   // Already-pinned stills skip both. Dry-run never POSTs.
@@ -162,7 +164,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       const rideCuts = Boolean(positions) && cutFiles.length > 0;
       const pack = h3MotionPack(ctx.timed!, shot, variant, stillPng, ctx.portraits!.files, prev, {
         hasVideo1,
-        portraitDir: path.join(jobDir(jobId), "ctx.portraits!"),
+        portraitDir: path.join(jobDir(jobId), "portraits"),
         plugDir: input.portraitsDir,
         sheets: ctx.portraits!.sheets,
         ...(rideCuts && hasVideo1 ? { cformStillRef: cutFiles[0] } : {}),
@@ -358,7 +360,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
   for (const [si, moments] of sheets.entries()) {
     const identity = [...new Set([...new Set(moments.map((m) => m.shotId))].flatMap((id) => {
       const shot = hopStillPlans.find((p) => p.shot.id === id)!.shot;
-      return uncutIdentityFiles(shot, ctx.portraits!.sheets, [path.join(jobDir(jobId), "ctx.portraits!"), input.portraitsDir ?? ""]);
+      return uncutIdentityFiles(shot, ctx.portraits!.sheets, [path.join(jobDir(jobId), "portraits"), input.portraitsDir ?? ""]);
     }))];
     if (identity.length > MAX_IMAGES) throw new Error("boards: identity sheets exceed U1.5 image capacity; split the board");
     // 素材管事實（SAMPLES40 ①）：道具外形由 GREEN plate 以圖入 ref 照抄，文字
@@ -451,7 +453,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     // keyframe — no query file (first shot) or a down embed eye means no
     // memory refs this pass; the GREEN gate below still vets what returns
     const memHits = !first && prevKeyframe && cfg.embed.endpoint.trim()
-      ? await queryRefs(ctx.ctx.job.slate, {
+      ? await queryRefs(ctx.job.slate, {
           queryFile: prevKeyframe,
           characters: refIds,
           scene: shot.location || ctx.timed!.location,
@@ -676,7 +678,12 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
           seat: "pictureQc",
           constraints_checked: ["photo-qc"],
         });
-        editInputs.set(shot.id, { ...inputs0, prompt: keyframeEditPrompt(ctx.timed!, promptShot, { first, ...(baseCast ? { cast: baseCast } : {}) }) });
+        // V0 修：inputs0 可能 undefined（scene-retry 冇 /edit 記錄嗰陣）——spread 會令
+        // nodePaths/base/refs/first 全變 optional 炸型。缺記錄就唔 set，行下面通用
+        // retry 重建（L605 已 emit warn）。
+        if (inputs0) {
+          editInputs.set(shot.id, { ...inputs0, prompt: keyframeEditPrompt(ctx.timed!, promptShot, { first, ...(baseCast ? { cast: baseCast } : {}) }) });
+        }
       }
     }
     if (result.status === "FAIL") {
@@ -765,7 +772,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       const regate = refsGreenOnly((inputs.refs ?? []).filter((f) => /\/stills\//.test(f.replace(/\\/g, "/"))));
       for (const r of regate.rejected) refRejected(shot.id, r);
       const sheets = uncutIdentityFiles(shot, ctx.portraits!.sheets, [
-        path.join(jobDir(jobId), "ctx.portraits!"),
+        path.join(jobDir(jobId), "portraits"),
         input.portraitsDir ?? "",
       ]);
       const retryImages = sheets.slice(0, MAX_IMAGES);
@@ -880,7 +887,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     if (cfg.embed.endpoint.trim()) {
       try {
         await ingestStill({
-          ep: ctx.ctx.job.slate,
+          ep: ctx.job.slate,
           shot: shot.id,
           character: shot.marks[0]?.characterId ?? "",
           scene: shot.location || ctx.timed!.location,
