@@ -413,6 +413,21 @@ export function buildShortlist(
 // S2 — one-call decider (hard constraint: ONE HTTP call per selectMotions)
 // ---------------------------------------------------------------------------
 
+/** V3.2（PLAN-v2 0928）§9.2：frozen motion spec——呢鏡動作嘅 typed 規格，
+ *  由 callsheet 現有欄衍生（marks stance/stanceEnd＋combat incoming/outgoing
+ *  ＋envAnim＋props 持有）。selection prompt、selection.json、H3 prose 三處
+ *  食同一份：bake 線同 prose 線唔再各說各話（〈Video 1〉契約由磁碟痕跡升級
+ *  typed）。py 側（相機 intent/接觸 bake）＝bake_combat.py owner 釐清後另輪。 */
+export type MotionSpec = {
+  startStance?: string;
+  endStance?: string;
+  contact?: string;
+  incoming?: string;
+  outgoing?: string;
+  envChange?: string;
+  durationSec: number;
+};
+
 export type MotionShotLine = {
   id: string;
   heading: string;
@@ -420,6 +435,7 @@ export type MotionShotLine = {
   durationSec: number;
   gait?: string;
   stance?: string;
+  spec?: MotionSpec;
 };
 
 /** trial-verbatim strict line: `SHOTID Cnn | Cnn Cnn | reason` */
@@ -462,7 +478,15 @@ export function buildDecisionPrompt(shortlist: Shortlist, shots: MotionShotLine[
     const legal = legalCandidates(shortlist, s.action);
     const gated = verbsForGate(s.action).needAny.length > 0;
     const only = gated ? `\nonly these codes: ${legal.map((c) => c.code).join(" ")}` : "";
-    return `[${s.id}] ${s.heading}\naction: ${s.action} (${s.durationSec}s${s.gait ? `, gait ${s.gait}` : ""}${s.stance ? `, stance ${s.stance}` : ""})${only}`;
+    const specBits = s.spec
+      ? [
+          ...(s.spec.startStance ? [`from ${s.spec.startStance}`] : []),
+          ...(s.spec.endStance ? [`to ${s.spec.endStance}`] : []),
+          ...(s.spec.contact ? [`contact ${s.spec.contact}`] : []),
+          ...(s.spec.outgoing ? [`ends ${String(s.spec.outgoing).slice(0, 120)}`] : []),
+        ].join(", ")
+      : "";
+    return `[${s.id}] ${s.heading}\naction: ${s.action} (${s.durationSec}s${s.gait ? `, gait ${s.gait}` : ""}${s.stance ? `, stance ${s.stance}` : ""}${specBits ? `, ${specBits}` : ""})${only}`;
   });
   const system = (
     "You are a mocap casting router for a film pipeline. For EACH shot, " +
@@ -691,6 +715,8 @@ export type MotionSelection = {
   conf: number | null;
   auto: boolean;
   bake: { start: number; len: number; step: number; auto_anchor: boolean };
+  /** V3.2：frozen spec 隨選用落 selection.json（機讀收據；resume setKey 已食） */
+  spec?: MotionSpec;
   runners: string[];
   reason: string;
   needs_human?: boolean;
@@ -822,6 +848,7 @@ export function decideSelection(
     .filter((id): id is string => Boolean(id) && id !== chosen);
   return {
     shot: shot.id,
+    ...(shot.spec ? { spec: shot.spec } : {}),
     bvh: finalRow ? finalRow.bvh : "",
     conf,
     auto,

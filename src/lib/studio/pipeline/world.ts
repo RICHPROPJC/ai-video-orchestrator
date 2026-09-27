@@ -35,8 +35,7 @@ import {
   selectMotions,
   verbsForGate,
   writeSelections,
-  type MotionShotLine,
-} from "../motion-select";
+  type MotionShotLine, type MotionSpec } from "../motion-select";
 import type { CallSheet, Shot } from "../types";
 import { relInJob } from "../isolate";
 import { depStampOf, ffmpeg, mediaSeconds, patch, shotsForScene, type Ctx, stableJson } from "./shared";
@@ -60,6 +59,23 @@ async function raster(svg: string, outFile: string) {
 
 /** 拆層段（world）：由 runPipeline 原序搬入，行為零變——絕唔重排 call 次序、
  *  絕唔刪／合併任何 emit/speak/patch；early-return 以 ctx.stopped 回報。 */
+/** V3.2（PLAN-v2 0928）§9.2：frozen motion spec 衍生——由 callsheet 現有欄
+ *  （marks stance/stanceEnd＋combat incoming/outgoing＋envAnim＋props 持有）
+ *  組 typed 規格。selection prompt／selection.json／H3 prose 三處同一份。 */
+function motionSpecOf(s: Shot): MotionSpec {
+  const m0 = s.marks[0];
+  const combat = s.combat as { incoming_state?: unknown; outgoing_state?: unknown } | undefined;
+  return {
+    ...(m0?.stance ? { startStance: String(m0.stance) } : {}),
+    ...((m0 as { stanceEnd?: unknown } | undefined)?.stanceEnd ? { endStance: String((m0 as { stanceEnd?: string }).stanceEnd) } : {}),
+    ...(s.props?.length ? { contact: s.props.map((pp) => `${pp.name}${pp.heldBy ? `(${pp.heldBy})` : ""}`).join("、") } : {}),
+    ...(combat?.incoming_state ? { incoming: String(combat.incoming_state) } : {}),
+    ...(combat?.outgoing_state ? { outgoing: String(combat.outgoing_state) } : {}),
+    ...(s.envAnim ? { envChange: `${(s.envAnim as { object?: unknown }).object ?? "?"}:${(s.envAnim as { channel?: unknown }).channel ?? "?"}` } : {}),
+    durationSec: s.durationSec,
+  };
+}
+
 export async function worldStage(ctx: Ctx): Promise<void> {
   const { jobId, input, cfg } = ctx;
   const { speak, think } = ctx;
@@ -89,6 +105,7 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         durationSec: s.durationSec,
         gait: s.marks[0]?.gait,
         stance: s.marks[0]?.stance,
+        spec: motionSpecOf(s),
       }));
       for (const line of lines) {
         const clash = postureConflict(line);
