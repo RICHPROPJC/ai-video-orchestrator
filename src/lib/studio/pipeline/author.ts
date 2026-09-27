@@ -140,7 +140,9 @@ async function authorCallSheet(
         { brief: input.brief, treatment: plan.treatment, assets: [
             ...(plan.spec?.product ? [`產品：${plan.spec.product}`] : []),
             "人物／場景事實以 brief 逐字為準；資產身份以後續 cast/portraits 收據為準",
-          ], targetSec },
+          ], targetSec,
+          // 裁決 0928 B：講者綁定——roster 隨 packet 入編劇席（speaker 欄對應）
+          castRoster: readCastRoster(input.castRosterPath) },
         { crew: cfg.crew, model: cfg.crew.directorModel ?? "", receiptDir, fallbackModel: cfg.crew.secondFallback },
       );
       scriptDialogueLines = dialogueSignalsOf(script).map((d) => d.line);
@@ -199,6 +201,19 @@ async function authorCallSheet(
           updateCreativeManifest(creativeDir, input.brief, { file: "script.json", dependsOn: rewritten.planSha });
           plan = revised;
           directorSkeleton = skeletonOf(revised);
+          // 裁決 0928 C（SEAT-AUDIT-DECISION §3）：revise 後驗真收口——第二次
+          // unplaced 對照（之前 revise 完冇人驗）。重有 unplaced＝差距列明回
+          // 責任席線（導演 revise 咗一輪都收唔到）——fail loud 保存已試修法，
+          // 唔遞迴唔硬收。
+          const unplacedAfter = unplacedDialogueOf(script, revised);
+          if (unplacedAfter.length) {
+            emit(jobId, {
+              agent: "producer", level: "warn",
+              message: `revise 後仍有 ${unplacedAfter.length} 句冇落點：${unplacedAfter.map((u) => u.line).join("／").slice(0, 300)}`,
+              data: { stage: "revise-verify", unplaced: unplacedAfter.map((u) => u.line) },
+            });
+            throw new Error(`revise_unclosed: ${unplacedAfter.length} 句對白 revise 一輪後仍冇導演落點（${unplacedAfter.map((u) => u.line).join("；").slice(0, 300)}）——差距已列明，回導演席帶同片 history 修訂`);
+          }
         }
       }
       directorPlacements = (plan.dialogueClock?.placements ?? []).map((pl) => ({

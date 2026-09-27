@@ -721,7 +721,7 @@ export const PLAYWRIGHT_CHARTER = [
   "- 唔准用重複特寫、慢動作、加鏡數、加對白字數嚕夠秒——每一段都要有佢嘅工。",
   "- 引號（「」『』“”）內嘅字係指定台詞，逐字保留喺佢哋嘅位置，一個字都唔好改、唔好刪、唔好搬去第二個位置；引號以外嘅對白先係你嘅創作空間，加嘅嘢講明「新增」。",
   "",
-  "工程欄位：segments[] 每段 {timeEstimate（例如 0-3s 標『估計』）, performance, sound, audienceEffect, dialogueAdded?}；結構機器會對，你嘅本事花喺上面五點。",
+  "工程欄位：segments[] 每段 {timeEstimate（例如 0-3s 標『估計』）, performance, sound, audienceEffect, dialogueAdded?, speaker?}；有對白嘅段盡量標 speaker（castRoster 內角色名；畫外聲/旁白標 VO）——講者係聲畫分工嘅一半；結構機器會對，你嘅本事花喺上面五點。",
 ].join("\n");
 
 const playwrightSegment = z.object({
@@ -731,6 +731,10 @@ const playwrightSegment = z.object({
   audienceEffect: z.string().optional(),
   /** 新台詞明報原文：完整保留（dialogueSignalsOf 最強來源渠道）；冇字數閘。 */
   dialogueAdded: z.string().min(1).optional(),
+  /** 裁決 0928 B（SEAT-AUDIT-DECISION §3）：講者綁定——有對白嘅段標主要
+   *  講者（castRoster 內名）；畫外聲/旁白標 "VO"。等價 compiler 透傳落
+   *  beats 參考；真源 speaker 閘仍喺阿文 beats（dialogue⇔speaker 成對）。 */
+  speaker: z.string().min(1).max(24).optional(),
 });
 
 export const PlaywrightScriptSchema = z.object({
@@ -779,6 +783,7 @@ export function compilePlaywrightScript(raw: unknown): { script: PlaywrightScrip
       ...(typeof (s.sound ?? s.audio) === "string" ? { sound: String(s.sound ?? s.audio) } : {}),
       ...(typeof (s.audienceEffect ?? s.audience ?? s.effect) === "string" ? { audienceEffect: String(s.audienceEffect ?? s.audience ?? s.effect) } : {}),
       ...(typeof (s.dialogueAdded ?? s.newDialogue) === "string" ? { dialogueAdded: String(s.dialogueAdded ?? s.newDialogue) } : {}),
+      ...(typeof (s.speaker ?? s.speakerId) === "string" ? { speaker: String(s.speaker ?? s.speakerId) } : {}),
     };
   });
   const verbatim = pick("dialogue_verbatim_kept", "dialogueVerbatim", "keptVerbatim");
@@ -822,7 +827,7 @@ export function compilePlaywrightScript(raw: unknown): { script: PlaywrightScrip
 
 /** 編劇席：treatment→可演劇本。glm-5.3 同腦（創作整合分開明示）。 */
 export async function runPlaywright(
-  packet: { brief: string; treatment: string; assets: string[]; targetSec: number },
+  packet: { brief: string; treatment: string; assets: string[]; targetSec: number; castRoster?: string[] },
   io: { crew: CrewConfig; model: string; receiptDir: string; fallbackModel?: string },
 ): Promise<PlaywrightScript & { compileReceipt: string[] }> {
   const loose = z.object({}).passthrough();
@@ -831,6 +836,7 @@ export async function runPlaywright(
     director_treatment: packet.treatment,
     asset_facts: packet.assets,
     targetSec: packet.targetSec,
+    ...(packet.castRoster?.length ? { cast_roster: packet.castRoster } : {}),
   });
   const pass = await chatJsonSeat<Record<string, unknown>>({
     seat: "creative",
