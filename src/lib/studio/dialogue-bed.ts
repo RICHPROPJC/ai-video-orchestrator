@@ -9,6 +9,10 @@ const FADE_OUT = 0.28;
 /** abs sample under this counts as a hole in sound QC */
 const AUDIBLE = 0.02;
 
+/** §11③：bed 混音行為版本——fade/limiter/amix 參數改動時 bump；grid 全軌
+ *  凍結重用指紋對呢個，bump 即全部失效重建。 */
+export const GRID_BED_VERSION = "1";
+
 export type BedSegment = {
   id: string;
   /** AuK take, or a silent plug for a picture beat. Silent takes are not mixed. */

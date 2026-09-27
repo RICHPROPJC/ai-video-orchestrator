@@ -7,7 +7,7 @@ import { emit, readJob } from "../store";
 import { renderBlockingSvg } from "../painter";
 import { ensureDir, jobDir, jobFile } from "../paths";
 import { snapDurationToFrames, wavSeconds } from "../frame-grid";
-import { layDialogueBed } from "../dialogue-bed";
+import { GRID_BED_VERSION, layDialogueBed } from "../dialogue-bed";
 import { plugShotWavs, plugVoiceEvents } from "../shot-wav-plug";
 import { buildCutPlan } from "../cut-plan";
 import { writeAnchors } from "../dhash-anchors";
@@ -392,10 +392,20 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     // revision 嘅建立唔依賴是否有對白；mux 三比全合法路徑有據（N/A 收據同
     // cut_plan 同本輪 digest）。殘留舊 timeline 同時被覆蓋——歷史檔唔會被
     // 誤認成本輪（舊 digest 過唔到三比）。
+    // §11①：兩分支共同收口——由有對白方案修訂成合法無對白係狀態轉移，前輪
+    // placementGaps/audio-placement rows 呢輪清（唔殘留幽靈 gap 觸發回修或
+    // 永久 blocked）；他 stage 未解原因保留。absence 屬必需資料遺失（導演
+    // 聲畫路缺 events）嘅分流喺 creative §9③ runtime 判嗰度（events 有 text
+    // ＝required 缺全 missing），呢度淨收合法無事件轉移。
+    const diskRows = readJob(jobId)?.blockedShots ?? [];
+    ctx.job = patch(ctx.job, {
+      placementGaps: [],
+      blockedShots: diskRows.filter((b) => b.stage !== "audio-placement"),
+    });
     fs.writeFileSync(jobFile(jobId, "creative", "audio-timeline.json"), JSON.stringify({
       generatedAt: new Date().toISOString(),
       callsheetDigest: sheetDigest(ctx.locked!),
-      note: "本 callsheet 冇 audioEvents（無對白／外來音訊時間線）——聲音時間線 N/A 收據",
+      note: "本 callsheet 冇 audioEvents（無對白／外來音訊時間線）——聲音時間線 N/A 收據；前輪聲畫 gap 已清（§11①）",
       events: [],
     }, null, 2));
     ctx.callsheetDigest = sheetDigest(ctx.locked!);
@@ -440,29 +450,33 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   // Sol 0926 凍結令：resume 唔重鋪 grid bed（H3 ref_audio）——bed render 非
   // bytes-deterministic，每跑一個樣本 sha 就變（R0/R2 實證），H3 音訊要凍結
   // 同一份 bytes。已有檔＋時長吱一 gridSec 就照用。
-  // §10.4：keep 綁實際依賚——{id}.h3.json sidecar 記 take bytes sha256＋gridSec；
-  // resume 重用＝時長啱＋sidecar 指紋對本輪。修訂改台詞／換聲線重生成 take→
-  // sha 變→keep 失效重建（三份表頭 digest 一致都防唔到嘅實際聲軌換血喺呢度收）。
-  // voice/clone/provider 依賴經 take bytes 間接覆蓋（聲變→bytes 變）；bed 鋪床
-  // 參數隨 segments（gridSec）一併對。
-  const gridSegs: { id: string; take: string; out: string; seconds: number; stampFile: string; takeSha: string }[] = [];
-  for (const r of bedRows) {
-    const stampFile = path.join(audioDir, `${r.id}.h3.json`);
-    const takeSha = createHash("sha256").update(fs.readFileSync(r.take)).digest("hex");
-    let keep = false;
-    if (input.resume && fs.existsSync(r.grid) && fs.existsSync(stampFile)) {
-      const stamp = JSON.parse(fs.readFileSync(stampFile, "utf8")) as { takeSha?: string; gridSec?: number };
-      keep = stamp.takeSha === takeSha
-        && stamp.gridSec === r.gridSec
-        && Math.abs((await wavSeconds(r.grid)) - r.gridSec) <= 1 / 48;
+  // §11③（supersede 10.4a per-shot h3.json）：layDialogueBed 係全時間線運算
+  // （連續 amix＋全序列頭尾 fade）——dirty 子集重鋪會令子集首尾 fade／bed 相
+  // 位同完整鏡序唔一致。全軌指紋（有序 shot IDs＋take hashes＋gridSec＋bed
+  // 版本）完全一致先凍結重用全部；任一依賴變→完整當輪序列交 layDialogueBed
+  // 重建＋更新 track 收據（bed-grid.track.json）。take 生成輸入指紋（clone/
+  // src bytes）喺 events textSidecar（§11②）上游收。
+  const trackFile = path.join(audioDir, "bed-grid.track.json");
+  const curTrackShots = bedRows.map((r) => ({
+    id: r.id,
+    takeSha: createHash("sha256").update(fs.readFileSync(r.take)).digest("hex"),
+    gridSec: r.gridSec,
+  }));
+  let gridKeepAll = false;
+  if (input.resume && fs.existsSync(trackFile)) {
+    try {
+      const prev = JSON.parse(fs.readFileSync(trackFile, "utf8")) as { bedVersion?: string; shots?: typeof curTrackShots };
+      const seqEq = prev.bedVersion === GRID_BED_VERSION && JSON.stringify(prev.shots) === JSON.stringify(curTrackShots);
+      const durs = await Promise.all(bedRows.map(async (r) =>
+        fs.existsSync(r.grid) && Math.abs((await wavSeconds(r.grid)) - r.gridSec) <= 1 / 48));
+      gridKeepAll = seqEq && durs.every(Boolean);
+    } catch {
+      gridKeepAll = false;
     }
-    if (!keep) gridSegs.push({ id: r.id, take: r.take, out: r.grid, seconds: r.gridSec, stampFile, takeSha });
   }
-  if (gridSegs.length) {
-    await layDialogueBed({ segments: gridSegs.map(({ stampFile: _sf, takeSha: _ts, ...seg }) => seg), workDir: path.join(audioDir, "bed-grid") });
-    for (const g of gridSegs) {
-      fs.writeFileSync(g.stampFile, JSON.stringify({ takeSha: g.takeSha, gridSec: g.seconds, generatedAt: new Date().toISOString() }, null, 2));
-    }
+  if (!gridKeepAll) {
+    await layDialogueBed({ segments: bedRows.map((r) => ({ id: r.id, take: r.take, out: r.grid, seconds: r.gridSec })), workDir: path.join(audioDir, "bed-grid") });
+    fs.writeFileSync(trackFile, JSON.stringify({ bedVersion: GRID_BED_VERSION, shots: curTrackShots, generatedAt: new Date().toISOString() }, null, 2));
   }
   for (const row of bedRows) h3WavByShot.set(row.id, row.grid);
   await speak("voice", "對白留 AuK 原長。底下鋪連續床，只喺成片頭淡入、尾淡出。");

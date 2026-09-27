@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { runCommand, writeWav } from "./audio";
@@ -97,22 +98,36 @@ export async function plugVoiceEvents(opts: {
     // 重新 copy 同一個 src——plug 係外部錄音，內容真源喺人手嗰邊，呢度淨
     // 可以對 TTS 路嚴格；TTS 路文字改＝重新合成）。
     const textSidecar = path.join(opts.audioDir, "events", `${ev.beatId}.text.json`);
-    const textMatches = () => {
+    // §11②：take cache 輸入指紋——text/speaker 之外綁實際生成輸入：plug 路
+    // ＝src wav bytes sha；auk 路＝cloneRef bytes sha。同 speaker 換 clone 檔
+    // 內容／外來 wav 同路徑換血→sha 變→重生成。舊 sidecar（淨 text/speaker）
+    // 冇記輸入＝provenance-unknown，一律當 mismatch 明示重建（升級一次過）。
+    const inputSha = (f?: string) => (f && fs.existsSync(f)
+      ? createHash("sha256").update(fs.readFileSync(f)).digest("hex")
+      : "none");
+    const src = opts.wavDir ? path.join(opts.wavDir, `${cover[0]!.shotId}.wav`) : undefined;
+    const curDeps = {
+      text: ev.text,
+      speaker: ev.speaker ?? "",
+      via: src ? "plug" : "auk",
+      srcSha: inputSha(src),
+      cloneSha: inputSha(opts.cloneRef),
+    };
+    const depsMatch = () => {
       try {
-        // §8.4：綁文字＋講者——換 speaker 重用舊 take（錯聲）會被擋
-        const prev = JSON.parse(fs.readFileSync(textSidecar, "utf8")) as { text?: string; speaker?: string };
-        return prev.text === ev.text && (prev.speaker ?? "") === (ev.speaker ?? "");
+        const prev = JSON.parse(fs.readFileSync(textSidecar, "utf8")) as typeof curDeps;
+        return prev.text === curDeps.text && prev.speaker === curDeps.speaker
+          && prev.via === curDeps.via && prev.srcSha === curDeps.srcSha && prev.cloneSha === curDeps.cloneSha;
       } catch {
         return false;
       }
     };
-    if (!(fs.existsSync(dst) && wavIsAudible(dst) && textMatches())) {
-      const src = opts.wavDir ? path.join(opts.wavDir, `${cover[0]!.shotId}.wav`) : undefined;
+    if (!(fs.existsSync(dst) && wavIsAudible(dst) && depsMatch())) {
       if (src && !fs.existsSync(src)) {
         throw new Error(`--wav-dir 缺 ${cover[0]!.shotId}.wav（事件 ${ev.beatId} 首鏡 plug，${src}）`);
       }
       await ensureAudibleShotWav({ src, dst, text: ev.text, synthesize: synth });
-      fs.writeFileSync(textSidecar, JSON.stringify({ text: ev.text, speaker: ev.speaker, ts: new Date().toISOString(), via: src ? "plug" : "auk" }, null, 2));
+      fs.writeFileSync(textSidecar, JSON.stringify({ ...curDeps, ts: new Date().toISOString() }, null, 2));
     }
     takes.push({ beatId: ev.beatId, file: dst });
   }
