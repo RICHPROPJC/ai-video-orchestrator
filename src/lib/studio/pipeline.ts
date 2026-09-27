@@ -824,8 +824,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
         ? soundQcFromRemote({
             remote: remoteSv,
             expectedText: expectedSpeech,
-            expectedEmotion: "NEUTRAL",
-            cloneSimilarity: 1,
+            // 裁決 0928 §4：方案冇 emotion 指定→唔傳（標未指定）；
+            // cloneSimilarity 冇量度→null＋note（soundQcFromRemote 內處理）
             wav: wavCheck,
           })
         : soundQcUnconfigured(`sensevoice ${cfg.soundQc.endpoint} unreachable or unparseable`);

@@ -154,11 +154,14 @@ export function wavPrecheck(opts: { audioFile: string }): {
 export function soundQcFromRemote(opts: {
   remote: NonNullable<Awaited<ReturnType<typeof senseVoiceHttp>>>;
   expectedText: string;
-  expectedEmotion: string;
-  cloneSimilarity: number;
+  /** 創作方案有 performance intent 先傳；冇＝唔傳（標未指定） */
+  expectedEmotion?: string;
   wav: ReturnType<typeof wavPrecheck>;
 }): SoundQc {
   const issues = [...opts.wav.issues];
+  // 裁決 0928 §4：expectedEmotion 只收「創作方案真有指定」嘅值（undefined＝
+  // 未指定，唔准自行假設整片 neutral）；cloneSimilarity 冇量度通道＝null
+  // ＋note，唔准常數扮結果。
   const { rate, code } = scriptEditRate(opts.expectedText, opts.remote.transcript ?? "");
   if (rate > 0.18) {
     issues.push({
@@ -170,12 +173,13 @@ export function soundQcFromRemote(opts: {
     provider: opts.remote.provider ?? "sensevoice-http",
     transcript: opts.remote.transcript ?? "",
     language: opts.remote.language ?? (/[㐀-鿿]/.test(opts.expectedText) ? "yue/zh" : "en"),
-    emotion: opts.remote.emotion ?? opts.expectedEmotion,
+    emotion: opts.remote.emotion ?? opts.expectedEmotion ?? "未指定（創作方案冇 performance intent）",
     events: opts.remote.events ?? ["Speech"],
     wer: rate,    durationSec: opts.wav.durationSec,
     peak: opts.wav.peak,
     silenceRatio: opts.wav.silenceRatio,
-    cloneSimilarity: opts.cloneSimilarity,
+    cloneSimilarity: null,
+    cloneSimilarityNote: "未量度——AuK clone 無 similarity 量度通道（capability gap，需要驗收即列具名缺口）",
     pass: !issues.some((i) => i.severity === "block"),
     issues,
   };

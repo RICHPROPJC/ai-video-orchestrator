@@ -51,7 +51,6 @@ test("soundQcFromRemote: matching SenseVoice transcript is a real verdict", () =
     remote: { provider: "sensevoice-http", transcript: "今日天氣好", emotion: "NEUTRAL", events: ["Speech"], language: "zh" },
     expectedText: "今日天氣好",
     expectedEmotion: "NEUTRAL",
-    cloneSimilarity: 1,
     wav: WAV,
   });
   assert.equal(s.pass, true);
@@ -64,7 +63,6 @@ test("soundQcFromRemote: CJK char edit + clipping block the delivery", () => {
     remote: { transcript: "完全唔同嘅句子", emotion: "NEUTRAL" },
     expectedText: "今日天氣好",
     expectedEmotion: "NEUTRAL",
-    cloneSimilarity: 1,
     wav: { durationSec: 1, peak: 0.99, silenceRatio: 0.1, issues: [{ code: "clip", severity: "block", detail: "Peak clipping on VO" }] },
   });
   assert.equal(s.pass, false);
@@ -132,3 +130,15 @@ if (bareBun) {
     if (failed > 0) process.exit(1);
   })();
 }
+
+// 裁決 0928 §4 行為鎖：emotion 冒充中性＋cloneSimilarity 無量度常數＝誠實狀態
+test("soundQC 誠實化：冇 emotion 指定標未指定；cloneSimilarity null＋note", () => {
+  const s = soundQcFromRemote({
+    remote: { transcript: "今日天氣好" }, // remote 冇 emotion
+    expectedText: "今日天氣好",
+    wav: WAV,
+  });
+  assert.ok(String(s.emotion).includes("未指定"), `emotion 應標未指定，got: ${s.emotion}`);
+  assert.equal(s.cloneSimilarity, null, "冇量度＝null");
+  assert.ok(s.cloneSimilarityNote?.includes("未量度"), "note 要講原因");
+});

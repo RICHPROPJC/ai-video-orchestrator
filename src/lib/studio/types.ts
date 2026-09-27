@@ -353,7 +353,10 @@ export type SoundQc = {
   durationSec: number;
   peak: number;
   silenceRatio: number;
-  cloneSimilarity: number;
+  /** 裁決 0928（SEAT-AUDIT-DECISION §4）：冇實際量度＝null（附 note 讀原因），
+   *  唔准無量度常數扮相似度結果。 */
+  cloneSimilarity: number | null;
+  cloneSimilarityNote?: string;
   pass: boolean;
   issues: QcIssue[];
 };
