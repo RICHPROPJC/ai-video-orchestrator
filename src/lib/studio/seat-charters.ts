@@ -55,6 +55,10 @@ export const BOARDS_CHARTER = `# 分鏡席技能 — 分鏡思考流程＋決策
 - Wikipedia：Eyeline match、180-degree rule（continuity editing 條目）
 - NoFilmSchool／PremiumBeat 剪接教材（action match：動作中間切）
 
+# 聲畫採用責任（§12 優先2——directorSkeleton.dialoguePlacements 有內容時必做）
+
+導演拍附 dialoguePlacements（每句對白嘅 onImage＝嗰刻畫面要有乜）。呢個係佢嘅聲畫意圖，你係採用者：每條 placement 你要交代「點落地」——喺本場輸出 onImageAdoptions：每條 { placement（指認邊句）, shotIds（落喺邊鏡）, plan（畫面安排：邊個/邊樣嘢喺畫面點樣呈現嗰個 onImage）, reason（點解咁安排） }。三件事合法唔使改：講者唔使上鏡（聲畫分離——畫面可以係聽者反應/物件/空鏡）；一句跨多鏡；一鏡多句。真矛盾先列 adoptionIssues（一句講清邊條 placement 同節奏/場面/連續性打交、點解解唔到）——會返返導演修訂，唔係你自己改佢意圖。冇 placements 就唔使填。
+
 # 主體：分鏡思考次序（五步，逐格行）
 
 **第①步——呢個動作嘅信息核心喺邊。**

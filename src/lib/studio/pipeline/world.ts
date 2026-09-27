@@ -352,8 +352,20 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     // 唔漏計）。額度真源＝job.placementGaps（磁碟；author 攔截／行內 loop／
     // resume 共用，10.1 後 explicit patch 直達）。
     const prevAttempts = new Map((ctx.job.placementGaps ?? []).map((g) => [g.text, g.attempts ?? 0]));
+    // §12 優先2：boards 席採用矛盾行同一有界修訂鏈——sheet.adoptionIssues
+    // 併入 placementGaps（attempts 繼承鍵＝text 同一套；額度同池；emit 播出
+    // 鏡 blocked 唔適用——issues 係計劃層矛盾，修訂輪 author/導演處理）。
+    const adoptionGapRows = (ctx.locked!.adoptionIssues ?? []).map((issue, i) => ({
+      utterance: `adoption:${i}`,
+      text: `聲畫採用矛盾：${issue}`,
+      ts: new Date().toISOString(),
+      attempts: prevAttempts.get(`聲畫採用矛盾：${issue}`) ?? 0,
+    }));
     ctx.job = patch(ctx.job, {
-      placementGaps: missingRows.map((m) => ({ utterance: m.beatId, text: m.text, ts: new Date().toISOString(), attempts: prevAttempts.get(m.text) ?? 0 })),
+      placementGaps: [
+        ...missingRows.map((m) => ({ utterance: m.beatId, text: m.text, ts: new Date().toISOString(), attempts: prevAttempts.get(m.text) ?? 0 })),
+        ...adoptionGapRows,
+      ],
     });
     // §8.2：受影響生成阻住——gap 句嘅實際播出鏡 per-shot blocked（V3.1
     // blockedShots 自動入帳；motion loop 見 placement-gap skip 唔燒）

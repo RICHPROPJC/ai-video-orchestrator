@@ -128,6 +128,17 @@ const boardsSceneShape = z.object({
   sceneId: z.string().regex(SCENE_ID_RE),
   thinking: z.string().min(1).max(400),
   shots: z.array(boardShotShape).min(1),
+  /** §12 優先2：聲畫採用判斷（生成前計劃語義）——導演 dialoguePlacements/
+   *  onImage 點喺本場畫面落地。每條：placement 指認→落鏡→安排＋理由；
+   *  矛盾/未能安排列 adoptionIssues（行同一有界修訂鏈）。講者唔使上鏡、一句
+   *  跨鏡、一鏡多句合法；詞命中（onImageCheck）只係診斷唔代替呢度判斷。 */
+  onImageAdoptions: z.array(z.object({
+    placement: z.string().min(1).max(80),
+    shotIds: z.array(z.string()).min(1),
+    plan: z.string().min(1).max(300),
+    reason: z.string().min(1).max(300),
+  })).optional(),
+  adoptionIssues: z.array(z.string().min(1).max(200)).optional(),
 });
 
 export type BoardShot = z.infer<typeof boardShotShape>;

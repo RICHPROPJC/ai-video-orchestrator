@@ -186,6 +186,9 @@ export function expandBoards(opts: {
     },
     shots,
     ...(audioEvents.length ? { audioEvents } : {}),
+    // §12 優先2：boards 席採用收據收齊落 sheet（可追溯；issues 交 world 入修訂鏈）
+    ...(opts.boards?.some((b) => b.onImageAdoptions?.length) ? { onImageAdoptions: opts.boards.flatMap((b) => b.onImageAdoptions ?? []) } : {}),
+    ...(opts.boards?.some((b) => b.adoptionIssues?.length) ? { adoptionIssues: opts.boards.flatMap((b) => b.adoptionIssues ?? []) } : {}),
     voiceover: audioEvents.map((e) => e.text).join(" ") || shots.map((s) => s.dialogue).filter(Boolean).join(" "),
     scenes: outline.scenes.map((s) => ({ id: s.id, heading: s.heading, summary: s.summary, targetSec: s.targetSec })),
   };

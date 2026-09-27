@@ -328,6 +328,10 @@ export type CallSheet = {
    *  有呢個 key＝聲音／畫面分離生效（voice hop 逐事件一 take、逐鏡切片；
    *  soundQC 對事件序）；冇（舊 plug callsheet）＝每鏡一句舊路，行為照舊。 */
   audioEvents?: AudioEvent[];
+  /** §12 優先2：boards 席聲畫採用收據（scene 級收集）——生成前計劃語義
+   *  判斷；adoptionIssues 由 world 併入 placementGaps 行同一有界修訂鏈。 */
+  onImageAdoptions?: { placement: string; shotIds: string[]; plan: string; reason: string }[];
+  adoptionIssues?: string[];
   voiceover: string;
   scenes?: { id: string; heading: string; summary: string; targetSec: number }[];
   /** One era, ten building types, one 4K board. Absent → the factory does not invent eras. */
