@@ -133,62 +133,72 @@ export function writeJob(job: JobRecord, owner?: JobOwner) {
   fs.renameSync(tmp, file);
 }
 
-/** root R2 修④＋R3/R4 修④（0928）：job.json 跨進程 read-modify-write 序列化。
- *  方案（root R4 裁決「可證互斥，勿再 rename 當 token CAS」）：lockdir＋
- *  per-holder token 檔案——acquire＝O_EXCL 建自己檔（檔名即 identity，無內容
- *  寫入時序窗口）→readdir 列全部鎖檔→字典序最小者＝唯一 winner（tie-break
- *  可證：兩 contender 同時建檔，兩者 readdir 都見到對方，只有較小 token 保留，
- *  輸家刪自己檔 spin）。release＝剷自己嗰個檔（檔名核對天然 ownership，絕
- *  唔會剷人）。失敗恢復 fail-closed：遺留鎖（holder crash）唔按 mtime/pid
- *  自搶——3s timeout throw 具名遺留 tokens；恢復行顯式 breakJobLock（上層
- *  裁決）。呢個係序列化，唔係 CAS（無 revision 比較）。 */
+/** root R2→R5 修④（0928）：job.json 跨進程 read-modify-write 序列化。
+ *  方案（root R5 裁決「唔再發明選舉」——R5 lockdir tie-break 有靜態反例：
+ *  A 過咗 verify 唔會再 readdir，B 後建檔照樣以為自己最小，兩者同時臨界
+ *  區，已撤回）：每 job 固定唯一 lock 目錄，acquire＝fs.mkdirSync(lockDir)
+ *  （非 recursive——mkdir 原子，唯成功者 owner）；EEXIST 一律等待／timeout，
+ *  唔按 token 大小唔自搶；owner 成功後寫 metadata token（metadata 未寫好
+ *  都視 held）；release 剛自己 owner 檔＋空 dir rmdir；孤兒具名 fail-closed。
+ *  呢個係序列化，唔係 CAS（無 revision 比較）。 */
 export function mutateJob<T>(id: string, fn: (job: JobRecord) => T, owner?: JobOwner): T {
-  const lockDir = path.join(jobDir(id), ".job.lock.d");
-  ensureDir(lockDir);
+  ensureDir(jobDir(id));
+  const lockDir = path.join(jobDir(id), ".job.lock");
+  const ownerFile = path.join(lockDir, "owner");
   const myToken = `${process.pid}-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
-  const myFile = path.join(lockDir, myToken);
-  const listTokens = (): string[] =>
-    fs.readdirSync(lockDir).filter((f) => !f.startsWith(".")).sort();
-  let won = false;
+  let acquired = false;
   const deadline = Date.now() + 3_000;
-  while (!won) {
-    fs.writeFileSync(myFile, String(process.pid), { flag: "wx" });
-    const all = listTokens();
-    if (all[0] === myToken) {
-      won = true;
-      break;
+  while (!acquired) {
+    try {
+      fs.mkdirSync(lockDir); // 原子互斥：唯成功者 owner（EEXIST 以外錯直接 bubble＝fail-closed）
+      acquired = true;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      if (Date.now() > deadline) {
+        // 孤兒具名 fail-closed：metadata 讀唔到（未寫好／壞）都視 held
+        let held = "unknown（metadata 未寫好或不可讀——一律視 held）";
+        try {
+          const t = fs.readFileSync(ownerFile, "utf8").trim();
+          if (t) held = t;
+        } catch { /* 保持 unknown 具名 */ }
+        throw new Error(`job_lock_timeout: ${id} job 鎖 3s 內取唔到（held by ${held}——live 等待或 crash 孤兒；恢復行 breakJobLock 運維路徑，唔自搶）`);
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);
     }
-    // 輸家：刪自己檔（唔掂任何人）重試
-    try { fs.rmSync(myFile, { force: true }); } catch { /* 俾人清咗都唔緊要 */ }
-    if (Date.now() > deadline) {
-      throw new Error(`job_lock_timeout: ${id} job 鎖 3s 內取唔到（現存 holder tokens：${all.join(", ") || "空"}——live 等待或 crash 遺留；遺留恢復行 breakJobLock，唔自搶）`);
-    }
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);
   }
   try {
+    fs.writeFileSync(ownerFile, myToken); // metadata（未寫好都視 held）
     const job = readJob(id);
     if (!job) throw new Error(`unknown-slate:${id}（mutateJob：讀時 job 已消失）`);
     const value = fn(job);
     writeJob(job, owner);
     return value;
   } finally {
-    // release：剷自己檔（檔名＝ownership；唔存在＝已被顯式 break，唔重剷）
-    try { fs.rmSync(myFile, { force: true }); } catch { /* 已清 */ }
+    // release：剷自己 owner 檔＋空 dir rmdir（非空＝他人運維檔在場，rmdir
+    // ENOTEMPTY 自然留俾持有人——唔自搶）；dir 已消失＝已被 break，唔重做
+    try { fs.rmSync(ownerFile, { force: true }); } catch { /* 已清 */ }
+    try { fs.rmdirSync(lockDir); } catch { /* 非空或已消失＝留俾持有人 */ }
   }
 }
 
-/** 鎖遺留嘅顯式恢復（root R4 裁決：唔自搶，上層裁決後人手／運維路徑）。
- *  清走 lockdir 全部遺留鎖檔——caller 要帶 reason 落 log（邊個裁決、點解）。 */
-export function breakJobLock(id: string, reason: string): { cleared: string[]; reason: string } {
-  const lockDir = path.join(jobDir(id), ".job.lock.d");
-  const cleared: string[] = [];
+/** 鎖遺留嘅顯式恢復（root R5 裁決收緊）：運維路徑——caller 要已確認
+ *  quiescent（無 live writer）＋對準 expected token（讀到嘅 metadata 先准
+ *  清，唔清 live lock）。孤兒冇 metadata（crash 喺寫 metadata 前）＝呢度
+ *  對唔準 token 唔清，人手 rmdir 處理。 */
+export function breakJobLock(id: string, expectedToken: string, reason: string): { cleared: boolean; detail: string } {
+  const lockDir = path.join(jobDir(id), ".job.lock");
+  const ownerFile = path.join(lockDir, "owner");
   try {
-    for (const f of fs.readdirSync(lockDir)) {
-      fs.rmSync(path.join(lockDir, f), { force: true });
-      cleared.push(f);
+    const held = fs.readFileSync(ownerFile, "utf8").trim();
+    if (held !== expectedToken) {
+      return { cleared: false, detail: `token 唔夾（expected ${expectedToken} vs held ${held || "空"}）——live 或唔係目標鎖，唔清` };
     }
-  } catch { /* lockdir 唔在＝冇遺留 */ }
-  return { cleared, reason };
+    fs.rmSync(ownerFile, { force: true });
+    fs.rmdirSync(lockDir);
+    return { cleared: true, detail: `已清 expected token ${expectedToken}（reason：${reason}）` };
+  } catch (e) {
+    return { cleared: false, detail: `break 失敗（${(e as Error).message}）——人手核` };
+  }
 }
 
 export function listJobs(): JobRecord[] {

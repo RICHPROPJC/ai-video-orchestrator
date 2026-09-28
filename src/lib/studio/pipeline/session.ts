@@ -22,8 +22,17 @@ export type SessionTurn = {
   text: string;
   status: "recorded" | "queued-behind-owner" | "adopted" | "blocked";
   /** turn 觀察到嘅依賴 revision（callsheetDigest／creative manifest 版本——綁
-   *  採納基礎；A3 consumer 對唔到＝stale 具名） */
-  dependsOn?: { callsheetDigest?: string | null; creativeRevision?: number | null };
+   *  採納基礎；A3 consumer 對唔到＝stale 具名）。
+   *  root R5 修②（0928）：typed observed state 隨 turn 落盤——invalid 同
+   *  missing 唔壓埋 null；consumer 對照「當初 state」（當初 invalid 即使後來
+   *  修好 valid 都唔默認首創採納）；digestSchema 版本欄（公式唔同比唔到
+   *  具名）。legacy turn 缺 state＝unknown 具名，唔猜 missing。 */
+  dependsOn?: {
+    callsheetDigest?: string | null;
+    callsheetState?: "valid" | "missing" | "invalid";
+    digestSchema?: string;
+    creativeRevision?: number | null;
+  };
   adoption?: { adoptedRef: string; revision: string; affectedScope: string };
   blockedReason?: string;
   /** assistant ask 回覆來源（LLM 席 vs job-facts fallback——誠實分層，UI 唔
@@ -126,6 +135,10 @@ export function currentCallsheetDigestState(jobId: string): CallsheetDigestState
   }
 }
 
+/** digest 計法版本欄（route 落盤／consumer 對照共用；改公式＝新版本號，
+ *  舊 turn 值比唔到會具名 stale 唔靜靚食）。 */
+export const DIGEST_SCHEMA = "sheetDigest-v1";
+
 export function reviseTurnTextsOf(jobId: string, digestState: CallsheetDigestState): { adopt: { turnId: string; text: string }[]; stale: { turnId: string; reason: string }[] } {
   const session = readSession(jobId);
   const adopt: { turnId: string; text: string }[] = [];
@@ -137,16 +150,42 @@ export function reviseTurnTextsOf(jobId: string, digestState: CallsheetDigestSta
     if (!t) { stale.push({ turnId, reason: "turn 唔喺 sessions.jsonl（數據源斷）" }); continue; }
     // root R4 修③：legacy turn 冇 dependsOn 資訊＝採納基礎未知——具名唔靜默 adopt
     if (!t.dependsOn) { stale.push({ turnId, reason: "legacy turn 無 dependsOn 資訊（採納基礎未知）——重交對話修訂" }); continue; }
-    const turnDigest = t.dependsOn.callsheetDigest ?? null;
-    // root R4 修③：invalid＝基礎不可讀，唔同 missing 撈埋（唔可以靜靜當首創）
+    const dep = t.dependsOn;
+    // root R5 修②：schema 版本唔同＝比唔到，具名（唔靜靚食）
+    if (dep.digestSchema !== undefined && dep.digestSchema !== DIGEST_SCHEMA) {
+      stale.push({ turnId, reason: `stale：turn digest schema（${dep.digestSchema}）對唔上現行（${DIGEST_SCHEMA}）——比唔到，重交` });
+      continue;
+    }
+    // 當下 invalid＝基礎而家不可讀，全部唔採納
     if (digestState.kind === "invalid") {
       stale.push({ turnId, reason: `stale：磁碟 callsheet 壞（${digestState.detail}）——採納基礎不可讀，重交` });
       continue;
     }
-    if (turnDigest === null) {
-      // turn 交喺未有 callsheet 時（真 missing 或壞檔期綁 null）——而家 valid
-      // 就採納落現行（首創語義）；missing（兩邊未有）同樣合法採納。
+    if (dep.callsheetState === "invalid") {
+      // root R5 修②：當初 invalid＝基礎當初不可讀——唔採納（即使後來修好
+      // valid 都唔默認首創）；要用戶修好後重交先採納
+      stale.push({ turnId, reason: "stale：turn 觀察時 callsheet invalid（採納基礎當初不可讀）——修好後重交先採納" });
+      continue;
+    }
+    if (dep.callsheetState === "missing") {
+      // 當初真 missing＝首創語義：而家 valid→採納落現行；而家 missing→兩邊未有同樣合法
       adopt.push({ turnId, text: t.text });
+      continue;
+    }
+    // R4 期 turn：dependsOn 有 callsheetDigest 但冇 callsheetState——真值（route
+    // 只在 valid 時寫真值）照比；null＝missing/invalid 當初壓埋＝unknown 具名
+    // （root R5：唔猜 missing，唔靜靜首創）
+    if (dep.callsheetState === undefined && dep.callsheetDigest == null) {
+      stale.push({ turnId, reason: "stale：turn 觀察 state 缺席（null 壓埋，unknown——唔猜 missing）——重交" });
+      continue;
+    }
+    if (dep.callsheetState === "valid" && dep.callsheetDigest == null) {
+      stale.push({ turnId, reason: "stale：turn 標 valid 但冇 digest（數據矛盾）——重交" });
+      continue;
+    }
+    const turnDigest = dep.callsheetDigest ?? null;
+    if (turnDigest === null) {
+      stale.push({ turnId, reason: "stale：turn 冇有效 digest（unknown）——重交" });
       continue;
     }
     if (digestState.kind === "missing") {

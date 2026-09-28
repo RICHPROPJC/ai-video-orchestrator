@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJob } from "@/lib/studio/store";
 import { ownerHeartbeatMs, ownerIsStale } from "@/lib/studio/store";
-import { appendTurn, findUserTurnByRequestId, queueReviseTurn, replyToAskTurn, currentCallsheetDigestState } from "@/lib/studio/pipeline/session";
+import { appendTurn, findUserTurnByRequestId, queueReviseTurn, replyToAskTurn, currentCallsheetDigestState, DIGEST_SCHEMA } from "@/lib/studio/pipeline/session";
 import { loadConfig } from "@/lib/studio/config";
 import { jobDir } from "@/lib/studio/paths";
 
@@ -33,17 +33,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const ms = ownerHeartbeatMs(id);
   const ownerActive = ms !== null && !ownerIsStale(id);
-  // root R3 修③＋R4 修③（0928）：dependsOn 綁值同源——currentCallsheetDigestState
-  // typed 三態（valid 先綁真值；missing/invalid 綁 null＝「觀察時冇有效 callsheet」，
-  // author 側 invalid/missing 各自具名判斷，唔會靜靜當首創以外語義）。
+  // root R5 修②（0928）：typed observed state 隨 turn 落盤——valid/missing/
+  // invalid 三態唔壓埋 null（consumer 對照「當初 state」：當初 invalid 即使
+  // 後來修好 valid 都唔默認首創採納）；digestSchema 版本欄隨落盤（公式改
+  // 版＝舊 turn 比唔到具名）。
   const digestState = currentCallsheetDigestState(id);
-  const digestNow = digestState.kind === "valid" ? digestState.digest : null;
+  const dependsOn = digestState.kind === "valid"
+    ? { callsheetDigest: digestState.digest, callsheetState: "valid" as const, digestSchema: DIGEST_SCHEMA }
+    : { callsheetDigest: null, callsheetState: digestState.kind };
   if (intent === "revise" && ownerActive) {
     // §33-8：有活躍 owner 時修改 turn 持久排隊，綁觀察到嘅 source revision
     const turn = appendTurn(id, {
       requestId: body.requestId, role: "user", text: body.text,
       status: "queued-behind-owner",
-      dependsOn: { callsheetDigest: digestNow },
+      dependsOn,
       blockedReason: `活躍執行者（heartbeat ${ms}ms 前）——turn 已持久排隊，owner 安全點採納（A4 consumer 已接：frozen 快照採納，狀態如實）`,
     });
     queueReviseTurn(id, turn.turnId); // root 競態修①：owner 都要入 queue——owner 過咗 author 段嘅 turn 由下一 run 撿
@@ -53,7 +56,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const turn = appendTurn(id, {
     requestId: body.requestId, role: "user", text: body.text,
     status: "recorded",
-    dependsOn: { callsheetDigest: digestNow },
+    dependsOn,
   });
   // §P33 A3（0928）：revise turn 入 job 佇列——pipeline owner 安全點（author
   // 段）讀佢採納（revise hint 帶 user text→責任席修訂→manifest 新 revision
