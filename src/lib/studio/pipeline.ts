@@ -921,9 +921,11 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // 故事時長猜——§29 原文）；blocked 段唔入收據（events 已具名）。
     const editReceipts: {
       id: string; shots: string[];
-      source: { file: string; sha256: string; muxMode: string; sourceDurSec: number | null; muxedDurSec: number | null; inOut: [number, number | null]; note: string };
-      destination: { inOut: [number | null, number | null] };
-      wav: string;
+      source: { file: string; sha256: string; muxMode: string; sourceDurSec: number | null; sourceConsumedInOut: "unknown"; note: string; h3SubmitRefs: string[] };
+      muxedOutput: { file: string; sha256: string; durationSec: number | null };
+      wav: { file: string; sha256: string };
+      destination: { inOut: [number | null, number | null]; basis: string; note: string };
+      shotBoundaries: string;
     }[] = [];
     let destCursor: number | null = 0;
     for (const t of muxTargets) {
@@ -950,17 +952,14 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       if (marked?.frames) await padH3Wav(wav, clockWav, marked.frames);
       const out = path.join(motionDir, `${t.id}.muxed.mp4`);
       await ffmpeg(muxArgs(mp4, clockWav, out));
-      // §29-3（GPT-6 review 修正 0928）：source in/out 用 source 檔本身實測時長
-      // （唔係 muxed 檔）；muxArgs 用 -shortest＝實際使用終點 ≤ muxed 實測時長
-      // （聲軌短會截）——報晒兩個實測值＋muxMode 明示，唔固定聲稱整片使用；
-      // probe 唔到＝null 明示，dest 累計遇 null 傳導到後段全部 null（前段未知
-      // 就後段位置都未知，唔猜）。
+      // §30（0928）深修：①來源消費區間冇足夠證據＝具名 unknown——容器 duration
+      // 係探測參考值，唔反寫成「已證 source 全長消費」（-shortest 下實際終點
+      // 由聲軌決定，精確 trim 點要剪接層契約）；②dest 累計用原始浮點（顯示先
+      // round，唔中間 round 當精確全片鐘），prefix 未知傳導；③muxed/wav hash＋
+      // h3_submit 引用入收據；④段內 shot 實際邊界未證明示（segment 拆分資料
+      // 缺＝未證，唔均分秒數猜）。
       const srcDur = await mediaSeconds(mp4).catch(() => null);
       const muxedDur = await mediaSeconds(out).catch(() => null);
-      const destIn = destCursor === null ? null : Number(destCursor.toFixed(3));
-      const destOut = destCursor === null || muxedDur === null
-        ? null
-        : Number((destCursor + muxedDur).toFixed(3));
       editReceipts.push({
         id: t.id,
         shots: t.shots,
@@ -969,16 +968,41 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           sha256: createHash("sha256").update(fs.readFileSync(mp4)).digest("hex"),
           muxMode: "ffmpeg-shortest",
           sourceDurSec: srcDur,
-          muxedDurSec: muxedDur,
-          inOut: [0, srcDur],
-          note: "-shortest 下實際使用終點 ≤ muxedDurSec（聲軌較短會截）；精確 trim 點要剪接層明示，唔由本收據猜",
+          sourceConsumedInOut: "unknown",
+          note: "-shortest 下實際使用終點由聲軌決定（≤ muxedDurSec）；來源消費區間未證＝unknown，容器 duration 只係探測參考",
+          h3SubmitRefs: t.shots.map((id) => `motion/${id}.h3_submit.json`),
         },
-        destination: { inOut: [destIn, destOut] },
-        wav: path.basename(clockWav),
+        muxedOutput: {
+          file: path.basename(out),
+          sha256: createHash("sha256").update(fs.readFileSync(out)).digest("hex"),
+          durationSec: muxedDur,
+        },
+        wav: {
+          file: path.basename(clockWav),
+          sha256: createHash("sha256").update(fs.readFileSync(clockWav)).digest("hex"),
+        },
+        destination: {
+          inOut: [
+            destCursor === null ? null : Number(destCursor.toFixed(3)),
+            destCursor === null || muxedDur === null ? null : Number((destCursor + muxedDur).toFixed(3)),
+          ],
+          basis: "container-duration-cumulative",
+          note: "容器時長累計＝粗略拼接估計，唔宣稱精確 video PTS 位置；前綴未知則後續同 null",
+        },
+        shotBoundaries: "unverified",
       });
       destCursor = destCursor === null || muxedDur === null ? null : destCursor + muxedDur;
       muxed.push(out);
     }
+    // §30-4：blocked 省略對帳——planned cut 中冇入 concat 嘅段連 events blocked
+    // 理由（同一 job/attempt/revision 下 planned vs 省略可對；引用既有 events
+    // 理由字串，唔重造狀態真源）。
+    const includedIds = new Set(editReceipts.map((r) => r.id));
+    const omittedFromConcat = muxTargets.filter((t) => !includedIds.has(t.id)).map((t) => ({
+      id: t.id,
+      shots: t.shots,
+      reason: `blocked（events stage=mux 已具名：motion-missing/wav-missing ${t.id}）`,
+    }));
     const muxList = jobFile(jobId, "motion", "mux-list.txt");
     fs.writeFileSync(muxList, muxed.map((v) => `file '${v.replaceAll("'", "'\\''")}'`).join("\n"));
     const pictureLock = jobFile(jobId, "delivery", "picture-lock.mp4");
@@ -988,11 +1012,16 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // （cutOrder＋段組成 stableJson——唔用 callsheetDigest 冒充 cut 內容版本）
     // ＋交付路徑明示。
     fs.writeFileSync(jobFile(jobId, "delivery", "edit-receipts.json"), JSON.stringify({
-      cutDigest: stableJson({ cutOrder: cut, segments: editReceipts.map((r) => ({ id: r.id, shots: r.shots, wav: r.wav })) }).slice(0, 16),
+      cutDigest: stableJson({ cutOrder: cut, segments: editReceipts.map((r) => ({ id: r.id, shots: r.shots })) }).slice(0, 16),
       callsheetDigest: ctx.callsheetDigest ?? null,
       cutOrder: cut,
-      delivery: { pictureLock: "delivery/picture-lock.mp4", outcome: "concat-delivered" },
+      delivery: {
+        pictureLock: "delivery/picture-lock.mp4",
+        pictureLockSha256: createHash("sha256").update(fs.readFileSync(pictureLock)).digest("hex"),
+        outcome: "concat-delivered",
+      },
       segments: editReceipts,
+      ...(omittedFromConcat.length ? { omittedFromConcat } : {}),
     }, null, 2));
 
     const markGeometry = localPictureQc({
