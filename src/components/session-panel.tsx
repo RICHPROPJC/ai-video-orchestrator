@@ -10,6 +10,8 @@ type Turn = {
   role: "user" | "assistant";
   text: string;
   status: string;
+  /** R2：assistant turn 嘅回覆來源——job-facts-fallback＝自動回覆（LLM fail 誠實降級），seat＝席答。 */
+  replySource?: string;
   adoptedRef?: string;
   blockedReason?: string;
 };
@@ -83,7 +85,7 @@ export function SessionPanel({ jobId }: { jobId: string }) {
           turnId: string;
           status: string;
           queued?: string;
-          reply?: string;
+          reply?: { turnId: string; at: string; text: string; replySource: string } | { error: string };
           blockedReason?: string;
           adoption?: { adoptedRef: string; revision: string; affectedScope: string };
         };
@@ -91,12 +93,19 @@ export function SessionPanel({ jobId }: { jobId: string }) {
       .then((res) => {
         setText("");
         setFailedReq("");
+        const replyNote = !res.reply
+          ? " —— 未有回覆文字（等 consumer）"
+          : "error" in res.reply
+            ? ` —— ask 回覆未有：${res.reply.error}`
+            : "";
+        const replyText = res.reply && !("error" in res.reply) ? res.reply.text : "";
         setNote(
           `${STATUS_NOTE[res.status] ?? res.status}` +
             (res.queued ? ` · ${res.queued}` : "") +
             (res.adoption ? ` · 採納 ${res.adoption.adoptedRef}@r${res.adoption.revision}（${res.adoption.affectedScope}）` : "") +
             (res.blockedReason ? ` · ${res.blockedReason}` : "") +
-            (res.reply ? "" : " —— 未有回覆文字（等 consumer）"),
+            replyNote +
+            (replyText ? `｜答：${replyText}${res.reply && !("error" in res.reply) && res.reply.replySource === "job-facts-fallback" ? "（自動回覆）" : ""}` : ""),
         );
         reload();
       })
@@ -126,7 +135,7 @@ export function SessionPanel({ jobId }: { jobId: string }) {
             <p key={t.turnId} className={t.role === "user" ? "text-foreground" : "text-muted-foreground"}>
               <span className="font-mono text-[10px] opacity-70">
                 {t.at ? `${t.at.slice(11, 16)} ` : ""}
-                {t.role === "user" ? "你" : "答"} · {STATUS_NOTE[t.status] ?? t.status}
+                {t.role === "user" ? "你" : `答${t.replySource === "job-facts-fallback" ? "（自動回覆）" : t.replySource === "seat" ? "（席）" : ""}`} · {STATUS_NOTE[t.status] ?? t.status}
                 {t.adoptedRef ? ` · ${t.adoptedRef}` : ""}
                 {t.blockedReason ? ` · ${t.blockedReason}` : ""}
               </span>
