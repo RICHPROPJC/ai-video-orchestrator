@@ -94,28 +94,18 @@ export function setActiveOwner(owner?: JobOwner) {
 }
 export function patch(job: JobRecord, partial: Partial<JobRecord>) {
   // §10.1：本輪明確提交嘅欄優先——own-property presence 分辨「未提交」與
-  // 「明確 []」（attempts+1／新 gaps／清空唔再被磁碟舊值吞）；未提交該欄先
-  // 由磁碟承接（emit/world 重算寫嘅狀態唔被舊 ctx 快照蓋走）。
-  // root R3 修①（0928）：read-modify-write 行 mutateJob（鎖內 disk 最新做
-  // 底＋同 route 側同一寫入協定）——producer stale ctx 唔會蓋走併發入隊嘅
-  // pending turn；承接欄清單加 pendingReviseTurns（own-property presence
-  // 同語義）。
+  // 「明確 []」（attempts+1／新 gaps／清空唔再被磁碟舊值吞）。
+  // root R4 修①（0928）：基底反轉——next＝{...disk 最新，...explicit partial}。
+  // 舊版 {...ctx.job} 基底＋白名單承接，partial 外嘅一切（input／digest／
+  // route 併發入隊嘅 pendingReviseTurns 等）都會被 stale ctx 蓋；反轉後
+  // caller 淨可以透過明示 partial 改欄（grep 已核 pipeline 16 個 caller 零
+  // 就地 mutation，全部明示 partial），磁碟值唔受 stale ctx 污染。承接白名單
+  // 由基底天然成立（partial 冇提＝disk 值），「明確 []」語義照舊靠
+  // own-property presence。
+  // episode 三分（§14.1a/§15.1a/§25 A）維持：caller 明確 null＝已閉；本輪
+  // 唔提交＝disk 原樣（含 null）承接，nullish 回退冇得發生（基底即 disk）。
   return mutateJob(job.id, (diskJob) => {
-    const next = { ...job, ...partial };
-    if (!("blockedShots" in partial)) next.blockedShots = diskJob.blockedShots ?? next.blockedShots;
-    if (!("placementGaps" in partial)) next.placementGaps = diskJob.placementGaps ?? next.placementGaps;
-    // §14.1a＋§15.1a：episode 承接三分——磁碟有記錄（含 null＝已閉）原樣承接，
-    // 唔可以 nullish 回退復活 stale ctx 嘅舊 episode；磁碟冇欄（undefined）＝
-    // 冇狀態可承接，照 next。明確 partial 優先權保留。
-    if (!("soundRepairEpisode" in partial) && diskJob.soundRepairEpisode !== undefined) {
-      next.soundRepairEpisode = diskJob.soundRepairEpisode;
-    }
-    // §25 A：callsheet 修訂 episode 同一承接三分（disk 有記錄含 null 原樣承接）
-    if (!("callsheetRepairEpisode" in partial) && diskJob.callsheetRepairEpisode !== undefined) {
-      next.callsheetRepairEpisode = diskJob.callsheetRepairEpisode;
-    }
-    // root R3 修①：route 側 queue 併發寫入承接（唔被 stale ctx 蓋走）
-    if (!("pendingReviseTurns" in partial)) next.pendingReviseTurns = diskJob.pendingReviseTurns ?? next.pendingReviseTurns;
+    const next = { ...diskJob, ...partial };
     // 鎖內基底食埋合成結果（mutateJob 落盤）；caller 拿 next 繼續做
     Object.assign(diskJob, next);
     return next;

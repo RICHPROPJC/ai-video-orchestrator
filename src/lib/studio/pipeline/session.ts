@@ -106,24 +106,27 @@ export function queueReviseTurn(jobId: string, turnId: string): void {
   });
 }
 
-/** root R3 修③（0928）：採納基準 digest 同源 helper——兩側共用「當下磁碟
- *  callsheet.json 全文 sheetDigest」（route dependsOn 綁值＝author 採納輪
- *  對比值，同公式同來源）；冇 callsheet／壞 callsheet＝null（首創採納合法；
- *  綁真值而嚟 null＝採納基礎消失，唔當 same）。job.callsheetDigest 欄
- *  （world 段寫）維持 mux 契約用途，唔係呢條鏈真源。 */
-export function currentCallsheetDigest(jobId: string): string | null {
+/** root R3 修③＋R4 修③（0928）：採納基準 digest 同源 helper（typed 三態）
+ *  ——兩側共用「當下磁碟 callsheet.json 全文 sheetDigest」。三態語義（root
+ *  R4 裁決）：valid＝正常對比；missing＝真係冇 callsheet（首創採納唯一合法
+ *  例外）；invalid＝檔在但 parse 壞——採納基礎不可讀，唔可以同 missing 撈
+ *  埋當 null 靜靜首創。job.callsheetDigest 欄（world 段寫）維持 mux 契約
+ *  用途，唔係呢條鏈真源。 */
+export type CallsheetDigestState = { kind: "valid"; digest: string } | { kind: "missing" } | { kind: "invalid"; detail: string };
+
+export function currentCallsheetDigestState(jobId: string): CallsheetDigestState {
   const file = path.join(jobDir(jobId), "callsheet.json");
-  if (!fs.existsSync(file)) return null;
+  if (!fs.existsSync(file)) return { kind: "missing" };
   try {
     const { loadCallSheet } = require("../writer") as typeof import("../writer");
     const { sheetDigest } = require("../seat-boards") as typeof import("../seat-boards");
-    return sheetDigest(loadCallSheet(file));
-  } catch {
-    return null; // 壞 callsheet（parse fail）＝來源唔可信，唔硬造 digest
+    return { kind: "valid", digest: sheetDigest(loadCallSheet(file)) };
+  } catch (e) {
+    return { kind: "invalid", detail: (e as Error).message.slice(0, 120) };
   }
 }
 
-export function reviseTurnTextsOf(jobId: string, callsheetDigest: string | null | undefined): { adopt: { turnId: string; text: string }[]; stale: { turnId: string; reason: string }[] } {
+export function reviseTurnTextsOf(jobId: string, digestState: CallsheetDigestState): { adopt: { turnId: string; text: string }[]; stale: { turnId: string; reason: string }[] } {
   const session = readSession(jobId);
   const adopt: { turnId: string; text: string }[] = [];
   const stale: { turnId: string; reason: string }[] = [];
@@ -132,16 +135,26 @@ export function reviseTurnTextsOf(jobId: string, callsheetDigest: string | null 
   for (const turnId of pending) {
     const t = session.turns.find((x) => x.turnId === turnId);
     if (!t) { stale.push({ turnId, reason: "turn 唔喺 sessions.jsonl（數據源斷）" }); continue; }
-    const turnDigest = t.dependsOn?.callsheetDigest ?? null;
-    const nowDigest = callsheetDigest ?? null;
-    // root R3 修③：兩邊都非 null 先可比（同源同公式）；綁真值而家冇/壞
-    // callsheet＝採納基礎消失（唔當 same 靜靜採納）；兩邊 null＝首創採納合法。
-    if (turnDigest !== null && nowDigest === null) {
-      stale.push({ turnId, reason: `stale：turn 綁 digest ${turnDigest.slice(0, 12)} 但磁碟 callsheet 唔在／壞——採納基礎消失，重交` });
+    // root R4 修③：legacy turn 冇 dependsOn 資訊＝採納基礎未知——具名唔靜默 adopt
+    if (!t.dependsOn) { stale.push({ turnId, reason: "legacy turn 無 dependsOn 資訊（採納基礎未知）——重交對話修訂" }); continue; }
+    const turnDigest = t.dependsOn.callsheetDigest ?? null;
+    // root R4 修③：invalid＝基礎不可讀，唔同 missing 撈埋（唔可以靜靜當首創）
+    if (digestState.kind === "invalid") {
+      stale.push({ turnId, reason: `stale：磁碟 callsheet 壞（${digestState.detail}）——採納基礎不可讀，重交` });
       continue;
     }
-    if (turnDigest !== null && nowDigest !== null && turnDigest !== nowDigest) {
-      stale.push({ turnId, reason: `stale：turn 綁 digest ${turnDigest.slice(0, 12)} 對本輪 ${nowDigest.slice(0, 12)} 唔夾——重交修訂唔靜靚食` });
+    if (turnDigest === null) {
+      // turn 交喺未有 callsheet 時（真 missing 或壞檔期綁 null）——而家 valid
+      // 就採納落現行（首創語義）；missing（兩邊未有）同樣合法採納。
+      adopt.push({ turnId, text: t.text });
+      continue;
+    }
+    if (digestState.kind === "missing") {
+      stale.push({ turnId, reason: `stale：turn 綁 digest ${turnDigest.slice(0, 12)} 但磁碟 callsheet 唔在——採納基礎消失，重交` });
+      continue;
+    }
+    if (turnDigest !== digestState.digest) {
+      stale.push({ turnId, reason: `stale：turn 綁 digest ${turnDigest.slice(0, 12)} 對本輪 ${digestState.digest.slice(0, 12)} 唔夾——重交修訂唔靜靚食` });
       continue;
     }
     adopt.push({ turnId, text: t.text });

@@ -18,7 +18,7 @@ import { gapEvent, gapMessage, storyboardZeroGap } from "../capability-gap";
 import type { AgentId, CallSheet, ProduceInput } from "../types";
 import type { SlateConfig } from "../config";
 import { GAP_BUDGET, SHEET_REPAIR_BUDGET, patch, type Ctx } from "./shared";
-import { reviseTurnTextsOf, completeAdoptedTurns, currentCallsheetDigest } from "./session";
+import { reviseTurnTextsOf, completeAdoptedTurns, currentCallsheetDigestState } from "./session";
 
 /** Speaking parts must be castable, so the roster is read from a data file the
  *  operator points at — never from a list living in src. */
@@ -56,8 +56,8 @@ async function authorCallSheet(
   // 磁碟 callsheet 全文 sheetDigest——route dependsOn 綁值同一真源，KF 後續
   // 回填兩側一齊計，唔再有 job 欄 vs 重算唔同源）。模型後 complete 用同一
   // 快照——快照後入隊嘅後到 turn 唔會混入本輪 adopt 集合。
-  const digestOnDisk = currentCallsheetDigest(jobId);
-  const frozenQueue = reviseTurnTextsOf(jobId, digestOnDisk);
+  const digestState = currentCallsheetDigestState(jobId);
+  const frozenQueue = reviseTurnTextsOf(jobId, digestState);
   const pendingAdopt = frozenQueue.adopt;
   // root R3 修②（0928）：唔行修訂輪嘅路徑一律明確收口（唔靜默失聯）——
   // adopt 全標 blocked（具名原因）＋stale 照回寫；收口後凍結集合清空，

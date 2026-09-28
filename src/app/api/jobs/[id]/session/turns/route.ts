@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJob } from "@/lib/studio/store";
 import { ownerHeartbeatMs, ownerIsStale } from "@/lib/studio/store";
-import { appendTurn, findUserTurnByRequestId, queueReviseTurn, replyToAskTurn, currentCallsheetDigest } from "@/lib/studio/pipeline/session";
+import { appendTurn, findUserTurnByRequestId, queueReviseTurn, replyToAskTurn, currentCallsheetDigestState } from "@/lib/studio/pipeline/session";
 import { loadConfig } from "@/lib/studio/config";
 import { jobDir } from "@/lib/studio/paths";
 
@@ -33,10 +33,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const ms = ownerHeartbeatMs(id);
   const ownerActive = ms !== null && !ownerIsStale(id);
-  // root R3 修③（0928）：dependsOn 綁值同源——currentCallsheetDigest（當下
-  // 磁碟 callsheet 全文），同 author 採納輪同一真源（唔用 job.callsheetDigest
-  // 欄：嗰個係 world 時凍結，KF 後續回填兩側唔再對得齊）。
-  const digestNow = currentCallsheetDigest(id);
+  // root R3 修③＋R4 修③（0928）：dependsOn 綁值同源——currentCallsheetDigestState
+  // typed 三態（valid 先綁真值；missing/invalid 綁 null＝「觀察時冇有效 callsheet」，
+  // author 側 invalid/missing 各自具名判斷，唔會靜靜當首創以外語義）。
+  const digestState = currentCallsheetDigestState(id);
+  const digestNow = digestState.kind === "valid" ? digestState.digest : null;
   if (intent === "revise" && ownerActive) {
     // §33-8：有活躍 owner 時修改 turn 持久排隊，綁觀察到嘅 source revision
     const turn = appendTurn(id, {

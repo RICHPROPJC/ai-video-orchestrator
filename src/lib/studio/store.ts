@@ -133,63 +133,36 @@ export function writeJob(job: JobRecord, owner?: JobOwner) {
   fs.renameSync(tmp, file);
 }
 
-/** root R2 修④＋R3 修④（0928）：job.json 跨進程 read-modify-write 序列化
- *  ——O_EXCL 檔鎖＋ownership token（鎖檔內容＝「pid-ts-nonce」）。規則：
- *  ①release 核 token 係自己先剷（被接管後唔剷新 holder 鎖）；②live holder
- *  （pid 仲在生）唔按 mtime 擅搶——淨 pid 已死／鎖壞先可以用 rename 原子
- *  搶（多 contender 同時 rename 只得一個成功）；③等鎖 3s timeout fail-loud
- *  （具名 holder pid）。呢個係序列化，唔係 CAS（冇 revision 比較）。 */
+/** root R2 修④＋R3/R4 修④（0928）：job.json 跨進程 read-modify-write 序列化。
+ *  方案（root R4 裁決「可證互斥，勿再 rename 當 token CAS」）：lockdir＋
+ *  per-holder token 檔案——acquire＝O_EXCL 建自己檔（檔名即 identity，無內容
+ *  寫入時序窗口）→readdir 列全部鎖檔→字典序最小者＝唯一 winner（tie-break
+ *  可證：兩 contender 同時建檔，兩者 readdir 都見到對方，只有較小 token 保留，
+ *  輸家刪自己檔 spin）。release＝剷自己嗰個檔（檔名核對天然 ownership，絕
+ *  唔會剷人）。失敗恢復 fail-closed：遺留鎖（holder crash）唔按 mtime/pid
+ *  自搶——3s timeout throw 具名遺留 tokens；恢復行顯式 breakJobLock（上層
+ *  裁決）。呢個係序列化，唔係 CAS（無 revision 比較）。 */
 export function mutateJob<T>(id: string, fn: (job: JobRecord) => T, owner?: JobOwner): T {
-  ensureDir(jobDir(id));
-  const lock = path.join(jobDir(id), ".job.lock");
+  const lockDir = path.join(jobDir(id), ".job.lock.d");
+  ensureDir(lockDir);
   const myToken = `${process.pid}-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
-  const writeLock = () => fs.writeFileSync(lock, myToken, { flag: "wx" });
-  const holderOf = (): { pid: number | null } => {
-    try {
-      const tok = fs.readFileSync(lock, "utf8").trim();
-      const pid = Number.parseInt(tok.split("-")[0] ?? "", 10);
-      return Number.isFinite(pid) && pid > 0 ? { pid } : { pid: null };
-    } catch {
-      return { pid: null };
-    }
-  };
-  const holderAlive = (): boolean => {
-    const { pid } = holderOf();
-    if (pid === null) return false; // 壞鎖/舊格式＝冇在生證據
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false; // pid 已死（holder 進程釘咗，鎖係孤兒）
-    }
-  };
-  // 原子搶：rename 走舊鎖＝獨得所有權證據（同 batch contender rename 失敗）
-  const tryTakeover = (): boolean => {
-    const taken = `${lock}.takeover-${myToken}`;
-    try {
-      fs.renameSync(lock, taken);
-    } catch {
-      return false;
-    }
-    try { fs.rmSync(taken, { force: true }); } catch { /* 收尾失敗唔阻得手 */ }
-    return true;
-  };
-  let locked = false;
+  const myFile = path.join(lockDir, myToken);
+  const listTokens = (): string[] =>
+    fs.readdirSync(lockDir).filter((f) => !f.startsWith(".")).sort();
+  let won = false;
   const deadline = Date.now() + 3_000;
-  while (!locked) {
-    try {
-      writeLock();
-      locked = true;
+  while (!won) {
+    fs.writeFileSync(myFile, String(process.pid), { flag: "wx" });
+    const all = listTokens();
+    if (all[0] === myToken) {
+      won = true;
       break;
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
     }
-    const holder = holderOf().pid;
-    if (holder !== null && !holderAlive() && tryTakeover()) {
-      try { writeLock(); locked = true; } catch { /* 同 batch contender 搶先——重試 */ }
-      continue;
+    // 輸家：刪自己檔（唔掂任何人）重試
+    try { fs.rmSync(myFile, { force: true }); } catch { /* 俾人清咗都唔緊要 */ }
+    if (Date.now() > deadline) {
+      throw new Error(`job_lock_timeout: ${id} job 鎖 3s 內取唔到（現存 holder tokens：${all.join(", ") || "空"}——live 等待或 crash 遺留；遺留恢復行 breakJobLock，唔自搶）`);
     }
-    if (Date.now() > deadline) throw new Error(`job_lock_timeout: ${id} job 鎖 3s 內取唔到（holder pid ${holder ?? "?"}${holder !== null && holderAlive() ? " live 中" : " 爭搶中"}）`);
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);
   }
   try {
@@ -199,11 +172,23 @@ export function mutateJob<T>(id: string, fn: (job: JobRecord) => T, owner?: JobO
     writeJob(job, owner);
     return value;
   } finally {
-    // release 核 ownership：token 唔夾＝鎖已被接管，剷嘅唔係自己嗰把——唔郁
-    try {
-      if (fs.readFileSync(lock, "utf8").trim() === myToken) fs.rmSync(lock, { force: true });
-    } catch { /* 鎖檔已唔在＝已釋放 */ }
+    // release：剷自己檔（檔名＝ownership；唔存在＝已被顯式 break，唔重剷）
+    try { fs.rmSync(myFile, { force: true }); } catch { /* 已清 */ }
   }
+}
+
+/** 鎖遺留嘅顯式恢復（root R4 裁決：唔自搶，上層裁決後人手／運維路徑）。
+ *  清走 lockdir 全部遺留鎖檔——caller 要帶 reason 落 log（邊個裁決、點解）。 */
+export function breakJobLock(id: string, reason: string): { cleared: string[]; reason: string } {
+  const lockDir = path.join(jobDir(id), ".job.lock.d");
+  const cleared: string[] = [];
+  try {
+    for (const f of fs.readdirSync(lockDir)) {
+      fs.rmSync(path.join(lockDir, f), { force: true });
+      cleared.push(f);
+    }
+  } catch { /* lockdir 唔在＝冇遺留 */ }
+  return { cleared, reason };
 }
 
 export function listJobs(): JobRecord[] {
