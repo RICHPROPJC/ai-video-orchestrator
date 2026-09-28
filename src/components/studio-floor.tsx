@@ -87,7 +87,8 @@ export function StudioFloor({
   recents: JobRecord[];
   initialTab: FloorTab;
 }) {
-  const [brief, setBrief] = useState(initialJob?.input.brief || EXAMPLES[0] || "");
+  /** P33：新建預設空 brief——唔暗帶當前項目內容；續做係左列表獨立入口，唔經呢個表。 */
+  const [brief, setBrief] = useState("");
   const [duration, setDuration] = useState(String(initialJob?.input.durationSec ?? 15));
   const [aspect, setAspect] = useState(initialJob?.input.aspect ?? "16:9");
   const [language, setLanguage] = useState(initialJob?.input.language ?? "auto");
@@ -104,6 +105,8 @@ export function StudioFloor({
   const [tab, setTab] = useState<FloorTab>(initialTab);
   const logRef = useRef<HTMLDivElement>(null);
   const [logFilter, setLogFilter] = useState<"tail" | "key" | "all">("tail");
+  /** P33：手機左抽屜（同一個項目列表；入口常駐 header，唔藏頁底）。 */
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const probeNow = useCallback(() => {
     setProbingFleet(true);
@@ -217,26 +220,15 @@ export function StudioFloor({
               <p className="text-xs text-muted-foreground">開麥拉組 · 交付級影片 agent team</p>
             </div>
           </div>
-          {/* B0（Sol UI-PLAN）：頂部當前項目切換器——手機都見到，唔使碌去左欄。 */}
-          <div className="flex min-w-0 items-center gap-2">
-            <select
-              aria-label="切換項目"
-              className="min-w-0 max-w-[9rem] truncate rounded border border-border bg-background px-1.5 py-1 text-[11px] sm:max-w-[14rem]"
-              value={job?.id ?? ""}
-              onChange={(e) => {
-                if (e.target.value && e.target.value !== job?.id) window.location.href = slateHref(e.target.value, tab);
-              }}
-            >
-              <option value="" disabled>
-                揀項目…
-              </option>
-              {rows.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.slate} · {r.status} · 片{r.outputs.shots.length}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* P33：頂部 select 退役——手機用左抽屜入口（常駐可見），桌面用左欄常駐列表。 */}
+          <button
+            type="button"
+            className="rounded border border-border px-2 py-1.5 text-xs lg:hidden"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="打開項目列表"
+          >
+            ☰ 項目
+          </button>
           <div className="hidden items-center gap-2 text-[11px] tracking-wider text-muted-foreground sm:flex">
             <span>U1.5</span>
             <span className="text-primary">/</span>
@@ -251,13 +243,37 @@ export function StudioFloor({
         </div>
       </header>
 
+      {/* P33（§1）：手機左抽屜——同一個 ProjectList，入口常駐唔藏頁底。 */}
+      {drawerOpen ? (
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-label="項目列表抽屜">
+          <button type="button" aria-label="閂抽屜" className="absolute inset-0 bg-black/60" onClick={() => setDrawerOpen(false)} />
+          <div className="absolute inset-y-0 left-0 flex w-[85%] max-w-xs flex-col gap-3 overflow-y-auto bg-background p-3 shadow-xl">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium">項目</span>
+              <button type="button" className="rounded border border-border px-2 py-1" onClick={() => setDrawerOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <ProjectList rows={rows} current={job?.id} tab={tab} />
+          </div>
+        </div>
+      ) : null}
+
       <main className="mx-auto grid max-w-[1400px] gap-4 px-4 py-6 md:px-8 lg:grid-cols-[340px_minmax(0,1fr)]">
         {/* Chau 0928（臃腫回報）：版面分返層——左邊淨係項目列表，右邊項目表。
             開新 slate／機隊 rack 收 details，唔再成欄霸住。 */}
         <section className="order-2 w-full space-y-3 lg:order-1">
-          <SlatePicker rows={rows} current={job?.id} tab={tab} />
+          <Card>
+            <CardHeader className="border-b">
+              <CardTitle>項目</CardTitle>
+            </CardHeader>
+            {/* P33：左列表＝主要入口；列表自己捲（max-h），顯示狀態／進度／阻塞原因＋續做。 */}
+            <CardContent className="max-h-[70vh] overflow-y-auto">
+              <ProjectList rows={rows} current={job?.id} tab={tab} />
+            </CardContent>
+          </Card>
           <details className="rounded-lg border px-3 py-2 text-xs">
-            <summary className="cursor-pointer font-medium">＋ 開新 slate</summary>
+            <summary className="cursor-pointer font-medium">＋ 新建項目（生新 ID）</summary>
             <Card className="mt-2 border-0 bg-card/80">
             <CardHeader className="border-b">
               <CardTitle>開新 slate</CardTitle>
@@ -276,6 +292,7 @@ export function StudioFloor({
                   required
                   value={brief}
                   onChange={(e) => setBrief(e.target.value)}
+                  placeholder="新項目 brief——空白開始，唔會帶入而家項目內容（續做用左列表嘅「▶ 續做」）"
                   className="min-h-36 text-[15px] leading-relaxed"
                 />
                 <div className="flex flex-wrap gap-2">
@@ -349,12 +366,7 @@ export function StudioFloor({
                   </div>
                   <label className="mt-2 flex items-center gap-2"><input type="checkbox" name="dryRun" value="1" />dry-run</label>
                   <label className="mt-1 flex items-center gap-2"><input type="checkbox" name="noMotionSelect" value="1" />唔揀 mocap</label>
-                  {job?.id ? (
-                    <label className="mt-1 flex items-center gap-2">
-                      <input type="checkbox" name="resume" value={job.id} />
-                      接返 {job.id}
-                    </label>
-                  ) : null}
+                  {/* P33：resume checkbox 刪走——續做係左列表獨立入口，新建表格淨係新建。 */}
                 </details>
                 <label className="flex cursor-pointer items-center justify-between rounded-lg border border-dashed border-border px-3 py-2 text-xs">
                   <span className="flex items-center gap-2 text-muted-foreground">
@@ -368,7 +380,7 @@ export function StudioFloor({
                   disabled={!fleet?.ready}
                   className={cn(buttonVariants({ size: "lg" }), "w-full")}
                 >
-                  {fleet && !fleet.ready ? "機未齊 · 唔開工" : "開工交片"}
+                  {fleet && !fleet.ready ? "機未齊 · 唔開工" : "新建開工（生新 ID）"}
                 </button>
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
                   CLI 同等：<code className="text-primary">npm run slatecrew -- produce &quot;brief&quot;</code>
@@ -549,6 +561,14 @@ export function StudioFloor({
                 })}
               </div>
                 </div>
+              </details>
+              {/* P33（§5）：同項目對話入口——named-missing，等 A 交 session/turn
+                  小 shape 先接；唔 fake chat、唔將 FEEDBACK 扮執行。 */}
+              <details className="rounded border border-dashed border-border px-2 py-1.5 text-[10px] text-muted-foreground">
+                <summary className="cursor-pointer">💬 同呢個項目對話（同一 session 續傾／要修改）</summary>
+                <p className="mt-1 leading-relaxed">
+                  尚未接通：對話 API（等 A 交 session/turn 小 shape——job/session identity、GET history、POST turn 意圖）。而家 🚩 問題表只係「已記錄」，唔會觸發修改或執行。
+                </p>
               </details>
             </CardContent>
           </Card>
@@ -871,23 +891,21 @@ function slateHref(id: string, tab: FloorTab) {
   return `/?${q.toString()}`;
 }
 
-function SlatePicker({ rows, current, tab }: { rows: JobRecord[]; current?: string; tab: FloorTab }) {
+/** P33（§1/§3）：左側項目列表＝主要入口——真實狀態／進度／阻塞原因；
+ *  跑緊＝附着既有 run 唔重入；舊項目有明確「續做」（原 ID resume，
+ *  唔重填 brief 唔複製新 ID）；locked＝已交付，要改走對話修訂。 */
+function ProjectList({ rows, current, tab }: { rows: JobRecord[]; current?: string; tab: FloorTab }) {
   const live = rows.filter((item) => item.status === "running" || item.status === "queued");
   const rest = rows.filter((item) => item.status !== "running" && item.status !== "queued");
   return (
-    <Card>
-      <CardHeader className="border-b">
-        <CardTitle>揀 slate</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <PickerGroup label="做緊" items={live} empty="而家冇一份喺跑" current={current} tab={tab} />
-        <PickerGroup label="其餘" items={rest} empty="冇" current={current} tab={tab} />
-      </CardContent>
-    </Card>
+    <div className="space-y-3">
+      <ProjectGroup label="做緊" items={live} empty="而家冇一份喺跑" current={current} tab={tab} />
+      <ProjectGroup label="其餘" items={rest} empty="冇" current={current} tab={tab} />
+    </div>
   );
 }
 
-function PickerGroup({
+function ProjectGroup({
   label,
   items,
   empty,
@@ -902,28 +920,47 @@ function PickerGroup({
 }) {
   return (
     <div className="space-y-1">
-      <p className="text-[11px] tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-[11px] tracking-wider text-muted-foreground">{label} · {items.length}</p>
       {items.length === 0 ? <p className="text-xs text-muted-foreground">{empty}</p> : (
-        <div className="max-h-48 space-y-1 overflow-y-auto">
-          {items.map((item) => (
-            <a
-              key={item.id}
-              href={slateHref(item.id, tab)}
-              className={cn(
-                buttonVariants({ variant: item.id === current ? "default" : "outline", size: "sm" }),
-                "h-auto w-full justify-between whitespace-normal px-2 py-1.5",
-              )}
-            >
-              <span className="text-left">
-                <span className="font-mono">{item.slate}</span>
-                <span className="mt-0.5 block text-[10px] opacity-80">{item.callSheet?.title ?? item.input.brief.slice(0, 18)}</span>
-              </span>
-              <span className="text-right text-[10px] leading-tight">
-                {item.status} {item.progress}%
-                <span className="block">片{item.outputs.shots.length}{item.outputs.pictureLock ? " · lock" : ""}</span>
-              </span>
-            </a>
-          ))}
+        <div className="space-y-1.5">
+          {items.map((item) => {
+            const running = item.status === "running" || item.status === "queued";
+            const locked = item.status === "locked";
+            return (
+              <div key={item.id} className={`rounded-lg border p-2 text-xs ${item.id === current ? "border-primary bg-primary/10" : "border-border"}`}>
+                <a href={slateHref(item.id, tab)} className="block">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono font-medium">{item.slate}</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      {item.status} {item.progress}% · 片{item.outputs.shots.length}{item.outputs.pictureLock ? " · lock" : ""}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{item.callSheet?.title ?? item.input.brief.slice(0, 24)}</p>
+                  {item.error ? (
+                    <p className="mt-0.5 truncate text-[10px] text-destructive" title={item.error}>⚠ {item.error}</p>
+                  ) : null}
+                </a>
+                {running ? (
+                  <p className="mt-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">跑緊——撳入去附着既有 run，唔另起執行</p>
+                ) : locked ? (
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    已交付——去 <a className="text-primary underline" href={`/?slate=${item.id}&tab=lock`}>成片</a> 睇；要修改＝對話修訂（對話 API 未接通，等 A 交 shape）
+                  </p>
+                ) : (
+                  <form action="/api/jobs" method="post" className="mt-1">
+                    <input type="hidden" name="_redirect" value="1" />
+                    <input type="hidden" name="resume" value={item.id} />
+                    <button
+                      type="submit"
+                      className="w-full rounded border border-border px-2 py-0.5 text-left text-[10px] hover:border-primary hover:text-primary"
+                    >
+                      ▶ 續做（原 ID {item.slate}——唔重填 brief、唔複製新項）
+                    </button>
+                  </form>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
