@@ -146,7 +146,22 @@ const boardsSceneShape = z.object({
     plan: z.string().min(1),
     reason: z.string().min(1),
   })).optional(),
-  adoptionIssues: z.array(z.string().min(1)).optional(),
+  /** BOUP SC05 a3 實證（0928）：模型交 object 自然形（{token/placement, issue/
+   *  conflict/reason}）被 string 閘拒——等價映射收自然形：欄位組句保留具名
+   *  token（`word#idx` 驗收 regex 食呢個），唔係缺語義唔教三輪。 */
+  adoptionIssues: z.array(z.preprocess((v) => {
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const o = v as Record<string, unknown>;
+      const token = ["token", "placement", "word", "id"]
+        .map((k) => (typeof o[k] === "string" ? o[k] as string : ""))
+        .find((s) => s.length > 0) ?? "";
+      const rest = ["issue", "conflict", "reason", "why", "note", "detail"]
+        .map((k) => (typeof o[k] === "string" ? o[k] as string : ""))
+        .filter((s) => s.length > 0).join("；");
+      return [token, rest].filter((s) => s.length > 0).join("：");
+    }
+    return v;
+  }, z.string().min(1))).optional(),
 });
 
 export type BoardShot = z.infer<typeof boardShotShape>;
