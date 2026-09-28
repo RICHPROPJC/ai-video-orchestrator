@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { loadConfig } from "./config";
 import { snapDurationToFrames, wavSeconds } from "./frame-grid";
 import { SCRIPT_HEADER, validateProse, type ValidateProseOpts } from "./h3-prose";
-import { buildH3Graph, h3SizeForAspect, BINDINGS, BINDINGS_CFORM, type H3GraphModels, type H3GraphVariant } from "./h3-r2v-graph";
+import { buildH3Graph, h3SizeForAspect, resolveRoute, BINDINGS, BINDINGS_CFORM, type H3GraphModels, type H3GraphVariant, type H3RouteRecipe } from "./h3-r2v-graph";
 import { validateProsePositive } from "./h3-prose";
 import { scpToHost } from "./scp-upload";
 import { queuePrompt, waitHistory, downloadView, uploadComfyFile } from "./comfy";
@@ -13,6 +13,8 @@ export type H3SubmitReceipt = {
   dry_run: boolean;
   shot: string | null;
   graph_variant: H3GraphVariant;
+  /** §P34 批二：實際採用 route（derived=true＝由 variant/multishot 推導，非任務決策採納） */
+  route: H3RouteRecipe & { derived: boolean };
   /** §5b form of a variant-a submit: "c" = Video 1 present (zero keyframes,
    *  ref_image_0 = angle portrait); "a" = still-to-video keyframes lane;
    *  "ms" = standalone multishot (MULTISHOT_WIRE_0921). null on the b/bkf/c
@@ -211,6 +213,9 @@ export async function submitH3Shot(opts: {
   requireQuote?: boolean;
   wardrobe?: ValidateProseOpts["wardrobe"];
   graphVariant?: H3GraphVariant;
+  /** §P34 批二：任務決策採納嘅 typed route（可選——冇就用 graphVariant/
+   *  multishot 推，receipt 記 derived:true） */
+  route?: H3RouteRecipe;
   /** ECOM1A: callsheet aspect — resolved to the graph canvas (h3SizeForAspect);
  *    undefined keeps the v6-parity 864×480. Unknown strings refuse to emit. */
   aspect?: string;
@@ -224,6 +229,7 @@ export async function submitH3Shot(opts: {
   };
   const cfg = loadConfig();
   const variant = opts.graphVariant ?? "a";
+
   const cform = variant === "a" && Boolean(opts.blockoutMp4);
   const isMultishot = Boolean(opts.multishot);
   if (variant !== "a" && opts.blockoutMp4) {
@@ -276,6 +282,18 @@ export async function submitH3Shot(opts: {
   const seconds = opts.durationSec ?? (await wavSeconds(opts.wavFile));
   const frames = snapDurationToFrames(seconds);
   const steps = opts.stepsOverride ?? cfg.motion.steps;
+  // §P34 批二：typed route 解析——未接線 route 具名 blocked throw（graph 唔
+  // 構造、唔降級、唔 fallback；同 request 指定 route 而能力缺＝blocked）
+  const route = opts.route ?? resolveRoute({ variant, steps, multishot: opts.multishot, chain: opts.chain }).route;
+  if (route.kind === "fl2va") {
+    throw new Error("h3_route_blocked: fl2va route 未接線——FL2VA patch 後 model 無可達 SaveVideo consumer（P34 map #3）；要求 fl2va 唔會 fallback 去 ref2va");
+  }
+  if (route.kind === "mixed") {
+    throw new Error("h3_route_blocked: mixed route 部署未核——兩 base 同次採用無合法接法（P34 map #4；refs+KF 共存≠model 混用）；capability gap 具名，唔用二選一結案");
+  }
+  if (route.kind === "pdd-8step") {
+    throw new Error("h3_route_blocked: pdd-8step route 未接線——MiniMaxH3PDDAccApply source 零接線（P34 map #6）；8-step PDD 唔退 20-step 裸模型、唔靜換 4-step");
+  }
   const seed = cfg.motion.seed;
   const tag = opts.dryRun ? "dryrun" : crypto.randomUUID().replaceAll("-", "").slice(0, 8);
 
@@ -417,6 +435,7 @@ export async function submitH3Shot(opts: {
       dry_run: true,
       shot: opts.shot ?? null,
       graph_variant: variant,
+      route: { ...route, derived: opts.route ? false : true },
       motion_form: motionForm,
       server: cfg.motion.comfyUrl,
       prompt: promptText,
@@ -548,6 +567,7 @@ export async function submitH3Shot(opts: {
     dry_run: false,
     shot: opts.shot ?? null,
     graph_variant: variant,
+    route: { ...route, derived: opts.route ? false : true },
     motion_form: motionForm,
     server: cfg.motion.comfyUrl,
     prompt: promptText,

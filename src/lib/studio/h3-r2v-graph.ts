@@ -134,6 +134,34 @@ export type H3MultishotOpts = {
   voiceRefName?: string;
 };
 
+/** §P34 批二（0928）：typed route/recipe——路由決策與 graph 構造分開。
+ *  route 由已採納任務決策（caller）傳落；graph builder 照 route 構造；
+ *  submit receipt 記實際採用 route（§5 收據誠實）。未接線 route
+ *  （fl2va／mixed／pdd-8step）＝submit 入口具名 throw blocked——graph 唔
+ *  構造唔降級唔 fallback（同 request 指定 route 而能力缺＝blocked）。
+ *  turboAccel 唔係獨立 route：steps=4 行 FBC+SolAttn 快路、其他直落——
+ *  turbo patch hard-locked 4-step schedule（離開即 tensor 爆）。 */
+export type H3RouteRecipe =
+  | { kind: "ref2va-still"; steps: number }     // A-form：靜畫起動（H3Keyframes 0/100）
+  | { kind: "ref2va-video1"; steps: number }    // C-form：Video 1 motion-only ref
+  | { kind: "ref2va-multishot"; steps: number } // MS-A standalone：整段 H3MultishotSampler
+  | { kind: "fl2va"; steps: number }            // 未接線：blocked（FL2VA patch 後 model 無可達 SaveVideo consumer）
+  | { kind: "mixed" }                           // 部署未核：blocked（兩 base 同次採用無合法接法已核）
+  | { kind: "pdd-8step" };                      // 未接線：blocked（MiniMaxH3PDDAccApply source 零接線）
+
+/** 未傳 route 時由現有欄位推（向後兼容）——receipt 記 derived:true 標明
+ *  呢個 route 係推導唔係任務決策採納。 */
+export function resolveRoute(opts: {
+  variant?: H3GraphVariant;
+  steps: number;
+  multishot?: unknown;
+  chain?: unknown;
+}): { route: H3RouteRecipe; derived: true } {
+  if (opts.multishot) return { route: { kind: "ref2va-multishot", steps: opts.steps }, derived: true };
+  // A＝still 起動；C＝有 Video 1（blockoutName）——§5b 分流照舊
+  return { route: { kind: opts.variant === "c" ? "ref2va-video1" : "ref2va-still", steps: opts.steps }, derived: true };
+}
+
 export type BuildH3GraphOpts = {
   script: string;
   bindings: string;
@@ -163,6 +191,9 @@ export type BuildH3GraphOpts = {
   blockoutName?: string;
   wavName: string;
   models: H3GraphModels;
+  /** §P34 批二：任務決策採納嘅 typed route——有就照佢構造＋receipt 記
+   *  derived:false；冇就用 resolveRoute 推（向後兼容）＋receipt derived:true。 */
+  route?: H3RouteRecipe;
   /** default A — the production path; §5b splits it by the Video 1 asset:
    *  with Video 1 the graph is C-form (Video 1 motion-only; zero keyframes
    *  only when no positions — written positions coexist KF via
