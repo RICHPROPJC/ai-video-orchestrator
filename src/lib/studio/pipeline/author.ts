@@ -239,7 +239,9 @@ async function authorCallSheet(
             "人物／場景事實以 brief 逐字為準；資產身份以後續 cast/portraits 收據為準",
           ], targetSec,
           // 裁決 0928 B：講者綁定——roster 隨 packet 入編劇席（speaker 欄對應）
-          castRoster: readCastRoster(input.castRosterPath) },
+          castRoster: readCastRoster(input.castRosterPath),
+        // §25 verbatim：採納契約（plan placements）隨 packet 入編劇席
+        directorPlacements: plan.dialogueClock?.placements },
         { crew: cfg.crew, model: cfg.crew.directorModel ?? "", receiptDir, fallbackModel: cfg.crew.secondFallback },
       );
       scriptDialogueLines = dialogueSignalsOf(script).map((d) => d.line);

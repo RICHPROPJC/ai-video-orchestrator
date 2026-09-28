@@ -734,9 +734,16 @@ export function evaluateScriptAgainstPlan(
   plan: { dialogueClock?: { placements?: { word?: string }[] } } & Parameters<typeof planDivergence>[1],
 ): PlanScriptEvaluation {
   const unplaced = unplacedDialogueOf(script, plan);
-  const declaredMissing = declaredDialogueOf(script).filter(
-    (d) => normCountOf(String(script.script_md ?? ""), d) === 0,
-  );
+  // §25 C：聲明驗宣稱都對實際台詞實體（dialogueSignalsOf 演出句）——唔對成個
+  // script_md 計數（複合引號／說明文字會假中）；norm 雙向包含。
+  const utterances = dialogueSignalsOf({ script_md: String(script.script_md ?? "") }).map((u) => u.line);
+  const declaredMissing = declaredDialogueOf(script).filter((d) => {
+    const w = normDialogue(d);
+    return w.length === 0 || !utterances.some((line) => {
+      const n = normDialogue(line);
+      return n.length > 0 && (n.includes(w) || w.includes(n));
+    });
+  });
   const div = planDivergence(script, plan);
   return {
     unplaced,
@@ -896,29 +903,35 @@ export const PlaywrightScriptSchema = z.object({
 
 export type PlaywrightScript = z.infer<typeof PlaywrightScriptSchema>;
 
-/** §23 watch-verbatim：brief 指定台詞提取（引號句＝用戶原話，同 PLAYWRIGHT_
- *  CHARTER「引號內係指定台詞」同一慣例）。驗收真源——編劇自報
- *  dialogue_verbatim_kept 陣列唔係證據。brief 冇引號＝N/A（合法）；新增台詞／
- *  擴寫合法，引號以外嘅 brief 文字唔鎖死。同句兩個引號＝需要次數 2。 */
-export function designatedLinesOf(brief: string): string[] {
-  const out: string[] = [];
+/** §25 verbatim 收口（0928）：指定台詞契約＝「brief 引號句（用戶指定）∩
+ *  導演 plan 已採納 placement word」——引號淨係聲稱，採納先係契約；引號句
+ *  精確匹配 word（norm 相等）先鎖，複合列舉引號（「凍、甜、而家」）唔係逐
+ *  句指定唔鎖死（§25「不能所有引號鎖死」）。required＝plan 同 word placement
+ *  數（導演採納講幾多次就驗幾多次）。無 placements＝合法 N/A；自報
+ *  dialogue_verbatim_kept 唔係證據。 */
+export type DesignatedLine = { word: string; required: number };
+
+export function designatedLinesOf(
+  plan: { dialogueClock?: { placements?: { word?: string }[] } } | undefined,
+  brief: string,
+): DesignatedLine[] {
+  const placements = (plan?.dialogueClock?.placements ?? [])
+    .map((p) => String(p.word ?? "").trim())
+    .filter((w) => w.length > 0);
+  if (!placements.length) return [];
+  const briefQuotes: string[] = [];
   const re = /[「『“]([^」』”]+)[」』”]/g;
   for (const m of brief.matchAll(re)) {
     const line = (m[1] ?? "").trim();
-    if (line) out.push(line);
+    if (line) briefQuotes.push(line);
+  }
+  const out: DesignatedLine[] = [];
+  for (const word of [...new Set(placements)]) {
+    const designated = briefQuotes.some((q) => normDialogue(q) === normDialogue(word));
+    if (!designated) continue;
+    out.push({ word, required: placements.filter((w) => w === word).length });
   }
   return out;
-}
-
-/** 歸一化出現次數（verbatim watch 用：norm presence 證「保留到」，但唔標
- *  「逐字保留」——標點歸一化配對唔可證逐字，§23 分工明言）。 */
-function normCountOf(haystack: string, needle: string): number {
-  const h = normDialogue(haystack);
-  const n = normDialogue(needle);
-  if (!n) return 0;
-  let count = 0;
-  for (let at = h.indexOf(n); at >= 0; at = h.indexOf(n, at + n.length)) count += 1;
-  return count;
 }
 
 /** 編劇 compiler（同導演 compiler 精神：命名等價、內容零改寫、缺語義先報）。
@@ -927,7 +940,7 @@ function normCountOf(haystack: string, needle: string): number {
  *  預算，唔另開迴路。 */
 export function compilePlaywrightScript(
   raw: unknown,
-  opts?: { designatedLines?: string[] },
+  opts?: { designatedLines?: DesignatedLine[] },
 ): { script: PlaywrightScript; receipt: string[]; misses: string[] } {
   const receipt: string[] = [];
   const misses: string[] = [];
@@ -971,17 +984,21 @@ export function compilePlaywrightScript(
     ].filter(Boolean).join("\n\n");
     receipt.push("script_md ← 由 segments/arc/soundDesignMasterNotes 組裝（全部原文，淨加結構標題）");
   }
-  // §23 watch-verbatim：指定台詞對實際正文驗保留＋需要次數（自報陣列唔係證據）。
-  // 歸一化 presence 證「保留到」，唔標逐字；缺口入 misses 行既有 gap-retry。
+  // §25 verbatim 收口：驗收對象＝實際台詞實體（dialogueSignalsOf 演出句——
+  // 已過濾聲：欄／自報段，唔會命中說明／舞台註記）；raw text includes 計次數
+  // （逐字鎖定驗收——norm 只用於落點匹配，唔取代逐字）。required＝plan 採納
+  // placement 數。缺口入 misses 行既有 gap-retry 同一預算。
   const designated = opts?.designatedLines ?? [];
-  for (const d of designated) {
-    const need = designated.filter((x) => x === d).length;
-    const have = normCountOf(scriptMdFinal, d);
-    if (have < need) {
-      misses.push(`指定台詞保留不足（brief 指定 ${need} 次，正文歸一化對到 ${have} 次）：${d}`);
+  if (designated.length) {
+    const utterances = dialogueSignalsOf({ script_md: scriptMdFinal }).map((u) => u.line);
+    for (const d of designated) {
+      const have = utterances.filter((line) => line.includes(d.word)).length;
+      if (have < d.required) {
+        misses.push(`指定台詞保留不足（導演採納 ${d.required} 次，實際台詞實體 ${have} 次）：${d.word}`);
+      }
     }
+    receipt.push(`verbatim watch：採納指定 ${designated.length} 句對實際台詞實體驗保留（raw text＋required 次數）`);
   }
-  if (designated.length) receipt.push(`verbatim watch：brief 指定 ${designated.length} 句對正文驗保留（歸一化 presence＋次數）`);
   // §19：撤字數質素 verdict——非空已由組裝/zod；完整性歸責任席
   const script = PlaywrightScriptSchema.parse({
     ...(typeof pick("title", "meta") === "string" ? { title: String(pick("title", "meta")) } : {}),
@@ -1004,7 +1021,7 @@ export function compilePlaywrightScript(
 
 /** 編劇席：treatment→可演劇本。glm-5.3 同腦（創作整合分開明示）。 */
 export async function runPlaywright(
-  packet: { brief: string; treatment: string; assets: string[]; targetSec: number; castRoster?: string[] },
+  packet: { brief: string; treatment: string; assets: string[]; targetSec: number; castRoster?: string[]; directorPlacements?: { word?: string }[] },
   io: { crew: CrewConfig; model: string; receiptDir: string; fallbackModel?: string },
 ): Promise<PlaywrightScript & { compileReceipt: string[] }> {
   const loose = z.object({}).passthrough();
@@ -1027,8 +1044,11 @@ export async function runPlaywright(
     receiptDir: io.receiptDir,
   });
   fs.writeFileSync(path.join(io.receiptDir, "creative.playwright.raw.json"), JSON.stringify(pass.value, null, 2));
-  // §23 watch-verbatim：指定台詞來源＝brief 原文（引號句）；無引號＝N/A
-  const designated = designatedLinesOf(packet.brief);
+  // §25 verbatim：契約源＝導演採納 placements∩brief 引號（精確匹配）；無採納＝N/A
+  const designated = designatedLinesOf(
+    packet.directorPlacements?.length ? { dialogueClock: { placements: packet.directorPlacements } } : undefined,
+    packet.brief,
+  );
   let compiled = compilePlaywrightScript(pass.value, { designatedLines: designated });
   // V2b（PLAN-v2 0928）§7.2：gap-retry 補位迴路（照 runDirector 6e39c66 範式）
   // ——canonical 閘 miss＝帶住「缺咗乜」返去同一個方案補一次，唔准編（code
