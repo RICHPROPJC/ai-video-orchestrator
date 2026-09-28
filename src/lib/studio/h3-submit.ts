@@ -21,6 +21,8 @@ export type H3SubmitReceipt = {
    *  並列（部署 H3KeyframeInject object_info 淨 start/end——任意位置同
    *  entry 合流部署未有，並列≠合流，唔冒充）；keyframes-only＝冇 refs。 */
   keyframes?: { positions: string; fusion: "same-entry" | "conditioning-combined" | "keyframes-only" };
+  /** §P34 P1：native latent 升階實況（未開＝冇欄；開＝節點+learned model） */
+  nativeUpscale?: { node: "MiniMaxH3LatentUpscaleCombined"; learnedModel: string };
   /** §5b form of a variant-a submit: "c" = Video 1 present (zero keyframes,
    *  ref_image_0 = angle portrait); "a" = still-to-video keyframes lane;
    *  "ms" = standalone multishot (MULTISHOT_WIRE_0921). null on the b/bkf/c
@@ -223,6 +225,8 @@ export async function submitH3Shot(opts: {
   /** §P34 批二：任務決策採納嘅 typed route（可選——冇就用 graphVariant/
    *  multishot 推，receipt 記 derived:true） */
   route?: H3RouteRecipe;
+  /** §P34 P1：H3 native latent 升階（LatentUpscaleCombined；唔傳＝唔開） */
+  nativeUpscale?: boolean;
   /** ECOM1A: callsheet aspect — resolved to the graph canvas (h3SizeForAspect);
  *    undefined keeps the v6-parity 864×480. Unknown strings refuse to emit. */
   aspect?: string;
@@ -350,6 +354,7 @@ export async function submitH3Shot(opts: {
   }) =>
     buildH3Graph({
       route,
+      ...(opts.nativeUpscale ? { nativeUpscale: true } : {}),
       script: promptText,
       bindings,
       frames,
@@ -443,6 +448,7 @@ export async function submitH3Shot(opts: {
       shot: opts.shot ?? null,
       graph_variant: variant,
       route: { ...route, derived: opts.route ? false : true },
+    ...(opts.nativeUpscale ? { nativeUpscale: { node: "MiniMaxH3LatentUpscaleCombined" as const, learnedModel: "h3_clean_latent_upscaler_film_epoch200.safetensors" } } : {}),
       ...(opts.keyframePositions?.trim() ? { keyframes: {
         positions: opts.keyframePositions,
         fusion: (Boolean(opts.blockoutMp4) && Boolean(opts.kfEnd)
@@ -584,6 +590,7 @@ export async function submitH3Shot(opts: {
     shot: opts.shot ?? null,
     graph_variant: variant,
     route: { ...route, derived: opts.route ? false : true },
+    ...(opts.nativeUpscale ? { nativeUpscale: { node: "MiniMaxH3LatentUpscaleCombined" as const, learnedModel: "h3_clean_latent_upscaler_film_epoch200.safetensors" } } : {}),
     ...(opts.keyframePositions?.trim() ? { keyframes: {
       positions: opts.keyframePositions,
       fusion: (Boolean(opts.blockoutMp4) && Boolean(opts.kfEnd)

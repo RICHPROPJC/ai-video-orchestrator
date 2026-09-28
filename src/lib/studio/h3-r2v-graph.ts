@@ -196,6 +196,11 @@ export type BuildH3GraphOpts = {
   /** §P34 批二：任務決策採納嘅 typed route——有就照佢構造＋receipt 記
    *  derived:false；冇就用 resolveRoute 推（向後兼容）＋receipt derived:true。 */
   route?: H3RouteRecipe;
+  /** §P34 P1 第四刀（§4）：H3 native latent 升階——true 時 samp_a 輸出經
+   *  MiniMaxH3LatentUpscaleCombined（部署已核：learned film_epoch200＋
+   *  samples/model/noise/sigmas）先 decode；唔用 RealESRGAN 冒充 H3 原生。
+   *  冇傳＝唔升階（維持現狀，唔默認開）。 */
+  nativeUpscale?: boolean;
   /** default A — the production path; §5b splits it by the Video 1 asset:
    *  with Video 1 the graph is C-form (Video 1 motion-only; zero keyframes
    *  only when no positions — written positions coexist KF via
@@ -619,8 +624,25 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       latent_image: ["r2v", 1],
     },
   };
-  g.dec_v = { class_type: "VAEDecode", inputs: { samples: ["samp_a", 0], vae: ["vvae", 0] } };
-  g.dec_a = { class_type: "VAEDecodeAudio", inputs: { samples: ["samp_a", 0], vae: ["avae", 0] } };
+  let decodeSrc: [string, number] = ["samp_a", 0];
+  if (opts.nativeUpscale) {
+    g.upscale_native = {
+      class_type: "MiniMaxH3LatentUpscaleCombined",
+      inputs: {
+        samples: ["samp_a", 0],
+        method: "learned model",
+        learned_model: "h3_clean_latent_upscaler_film_epoch200.safetensors",
+        model: modelOut,
+        noise: ["noise_a", 0],
+        sigmas: ["sched_a", 0],
+        audio_denoise: 0.0,
+        noise_resample: "independent",
+      },
+    };
+    decodeSrc = ["upscale_native", 0];
+  }
+  g.dec_v = { class_type: "VAEDecode", inputs: { samples: decodeSrc, vae: ["vvae", 0] } };
+  g.dec_a = { class_type: "VAEDecodeAudio", inputs: { samples: decodeSrc, vae: ["avae", 0] } };
   // single shot: orphan (inspect after render, never next kf_start); chained:
   // the TRUE endframe seeding H3MultishotSampler (H3_HardMode_Chained wiring)
   g.lastf = { class_type: "H3LastFrame", inputs: { images: ["dec_v", 0] } };
