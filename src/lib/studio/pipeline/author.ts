@@ -18,6 +18,7 @@ import { gapEvent, gapMessage, storyboardZeroGap } from "../capability-gap";
 import type { AgentId, CallSheet, ProduceInput } from "../types";
 import type { SlateConfig } from "../config";
 import { GAP_BUDGET, SHEET_REPAIR_BUDGET, patch, type Ctx } from "./shared";
+import { reviseTurnTextsOf, completeAdoptedTurns } from "./session";
 
 /** Speaking parts must be castable, so the roster is read from a data file the
  *  operator points at — never from a list living in src. */
@@ -280,6 +281,11 @@ async function authorCallSheet(
               // §23 B：typed hint——完整差異原文＋newElements 內容（撤 slice
               // 200/300/400 截斷，遺失必要資料）；診斷類標明啟發式交導演逐項裁
               hint: [
+                // §P33 A3/A4（0928）：owner 安全點——採納佇列 revise turn（digest
+                // 核對；stale 具名）帶入修訂 hint；完成後回寫 adopted。
+                ...(reviseTurnTextsOf(jobId, undefined).adopt.length
+                  ? reviseTurnTextsOf(jobId, undefined).adopt.map((t) => `【用戶對話修訂請求 ${t.turnId}】${t.text}`)
+                  : []),
                 ...(ev.unplaced.length ? [`【必要契約】冇落點台詞 ${ev.unplaced.length} 句：${ev.unplaced.map((u) => u.line).join("／")}`] : []),
                 ...(ev.declaredMissing.length ? [`【必要契約】聲明台詞正文缺席（宣稱保留/新增但正文冇）：${ev.declaredMissing.join("／")}`] : []),
                 ...(ev.newElements.length ? [`【變更紀錄】編劇明報新增元素 ${ev.newElements.length} 項——每項要採納到鏡表、或有來源嘅拒絕並同步修改劇本、或明示未解（唔可以清空紀錄過閘，拒絕唔可改用戶硬要求）：${ev.newElements.map((n) => `${n.what}（${n.why}）`).join("；")}`] : []),
@@ -290,6 +296,14 @@ async function authorCallSheet(
             },
           );
           const rewritten = writeCreativeArtifacts(jobId, creativeDir, input.brief, revised, { targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) });
+          // §P33 A3：修訂採納完成——回寫 turn adopted（manifest revision 做
+          // adoptedRef；affectedScope＝creative 修訂範圍）
+          {
+            const { adopt, stale } = reviseTurnTextsOf(jobId, undefined);
+            if (adopt.length || stale.length) {
+              completeAdoptedTurns(jobId, adopt.map((t) => ({ turnId: t.turnId, adoptedRef: "creative/director-plan.json", revision: rewritten.planSha.slice(0, 12), affectedScope: "creative：director plan 修訂輪（含用戶對話請求）" })), stale);
+            }
+          }
           updateCreativeManifest(creativeDir, input.brief, { file: "script.md", dependsOn: rewritten.planSha });
           updateCreativeManifest(creativeDir, input.brief, { file: "script.json", dependsOn: rewritten.planSha });
           plan = revised;

@@ -80,3 +80,51 @@ export function appendTurn(jobId: string, turn: Omit<SessionTurn, "turnId" | "se
   fs.appendFileSync(sessionFile(jobId), JSON.stringify(full) + "\n");
   return full;
 }
+
+
+/** §P33 A3/A4（0928）：revise turn 採納鏈——turn 落盤後入 job pendingReviseTurns
+ *  佇列；pipeline 喺 owner 安全點（author 段開頭，owner 已 acquire）讀佇列：
+ *  dependsOn.callsheetDigest 對得上 ctx＝採納（revise hint 帶 user text），
+ *  唔夾＝stale 具名；修訂完成後 completeAdoptedTurns 回寫 adopted＋adoption。
+ *  runtime 觸發照舊 produce 邊界——本鏈淨接線，唔自行開 LLM。 */
+export function queueReviseTurn(jobId: string, turnId: string): void {
+  const { readJob, writeJob } = require("../store") as typeof import("../store");
+  const job = readJob(jobId);
+  if (!job) return;
+  const next = [...new Set([...(job.pendingReviseTurns ?? []), turnId])];
+  writeJob({ ...job, pendingReviseTurns: next });
+}
+
+export function reviseTurnTextsOf(jobId: string, callsheetDigest: string | null | undefined): { adopt: { turnId: string; text: string }[]; stale: { turnId: string; reason: string }[] } {
+  const session = readSession(jobId);
+  const adopt: { turnId: string; text: string }[] = [];
+  const stale: { turnId: string; reason: string }[] = [];
+  const { readJob } = require("../store") as typeof import("../store");
+  const pending = readJob(jobId)?.pendingReviseTurns ?? [];
+  for (const turnId of pending) {
+    const t = session.turns.find((x) => x.turnId === turnId);
+    if (!t) { stale.push({ turnId, reason: "turn 唔喺 sessions.jsonl（數據源斷）" }); continue; }
+    if (t.dependsOn?.callsheetDigest && callsheetDigest && t.dependsOn.callsheetDigest !== callsheetDigest) {
+      stale.push({ turnId, reason: `stale：turn 綁 digest ${t.dependsOn.callsheetDigest.slice(0, 12)} 對本輪 ${callsheetDigest.slice(0, 12)} 唔夾——重交修訂唔靜靚食` });
+      continue;
+    }
+    adopt.push({ turnId, text: t.text });
+  }
+  return { adopt, stale };
+}
+
+export function completeAdoptedTurns(jobId: string, adopted: { turnId: string; adoptedRef: string; revision: string; affectedScope: string }[], staleOut: { turnId: string; reason: string }[]): void {
+  const session = readSession(jobId);
+  const file = sessionFile(jobId);
+  const lines = session.turns.map((t) => {
+    const hit = adopted.find((a) => a.turnId === t.turnId);
+    if (hit) return JSON.stringify({ ...t, status: "adopted" as const, adoption: { adoptedRef: hit.adoptedRef, revision: hit.revision, affectedScope: hit.affectedScope } });
+    const st = staleOut.find((a) => a.turnId === t.turnId);
+    if (st) return JSON.stringify({ ...t, status: "blocked" as const, blockedReason: st.reason });
+    return JSON.stringify(t);
+  });
+  fs.writeFileSync(file, lines.join("\n") + "\n");
+  const { readJob, writeJob } = require("../store") as typeof import("../store");
+  const job = readJob(jobId);
+  if (job) writeJob({ ...job, pendingReviseTurns: [] });
+}

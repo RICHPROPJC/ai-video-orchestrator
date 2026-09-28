@@ -441,6 +441,8 @@ export type JobRecord = {
   /** §25 A（0928）：callsheet 時長修訂 episode（跨 resume／換模型同一額度）
    *  ——author 讀傳 runBoards、每輪 onAttempt patch 遞增；null＝已閉。 */
   callsheetRepairEpisode?: { attempts: number } | null;
+  /** §P33 A3（0928）：待採納 revise turn 佇列（sessions.jsonl turnId）——pipeline owner 安全點讀 */
+  pendingReviseTurns?: string[];
   retries: { stills: number; voice: number; motion: number };
   outputs: {
     stills: string[];

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJob } from "@/lib/studio/store";
 import { ownerHeartbeatMs, ownerIsStale } from "@/lib/studio/store";
-import { appendTurn, findUserTurnByRequestId } from "@/lib/studio/pipeline/session";
+import { appendTurn, findUserTurnByRequestId, queueReviseTurn } from "@/lib/studio/pipeline/session";
 
 export const runtime = "nodejs";
 
@@ -46,8 +46,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     requestId: body.requestId, role: "user", text: body.text,
     status: "recorded",
     dependsOn: { callsheetDigest: (job as { callsheetDigest?: string }).callsheetDigest ?? null },
-    ...(intent === "revise" ? { blockedReason: "revise consumer（A3）未接——如實 recorded，唔顯示執行中" } : {}),
   });
+  // §P33 A3（0928）：revise turn 入 job 佇列——pipeline owner 安全點（author
+  // 段）讀佢採納（revise hint 帶 user text→責任席修訂→manifest 新 revision
+  // →completeAdoptedTurns 回寫 adopted）；runtime 觸發照舊 produce 邊界。
+  if (intent === "revise") queueReviseTurn(id, turn.turnId);
   return NextResponse.json({ turnId: turn.turnId, at: turn.at, status: "recorded", intent,
-    ...(intent === "revise" ? { pending: "A3 revise consumer 未接——採納/執行迴路下一批" } : { note: "ask 回覆 consumer（A3）未接——已記錄" }) });
+    ...(intent === "revise"
+      ? { queued: "已入採納佇列（job.pendingReviseTurns）——pipeline 下一輪 owner 安全點採納；未有 owner 時等 resume/下一 run" }
+      : { note: "ask 回覆：recorded（文字回覆 consumer 屬後續）" }) });
 }
