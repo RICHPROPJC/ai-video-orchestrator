@@ -30,7 +30,8 @@ function sceneRelevantPlacements(
 }
 
 
-export type BoardsResult = { sheet: CallSheet; model: string; receipts: string[] };
+/** §25 A：sheetRepairUsed＝本 run 實際用咗幾輪修訂（caller 併入持久 episode） */
+export type BoardsResult = { sheet: CallSheet; model: string; receipts: string[]; sheetRepairUsed?: number };
 
 type Handoff = Record<string, { slot: string; depth: string; stance: string; props: string[] }>;
 
@@ -214,7 +215,10 @@ export type DirectorSkeleton = {
   dialoguePlacements?: { word: string; startSec?: number; endSec?: number; onImage?: string }[];
 };
 
-type BoardsOptions = { script: Script; targetSec: number; aspect?: CallSheet["aspect"]; writer: { model: string; receipts: string[] }; draftOnly?: boolean; directorSkeleton?: DirectorSkeleton };
+/** §25 A（0928）：sheet 時長責任修訂額度——attempts 由 caller（author）讀 job
+ *  持久 episode 傳入；onAttempt 每輪回報令 caller 即刻 patch job（resume／換
+ *  模型唔各自刷新額度）。max 上限由 caller 定（裁決：首輪候選後最多兩輪）。 */
+type BoardsOptions = { script: Script; targetSec: number; aspect?: CallSheet["aspect"]; writer: { model: string; receipts: string[] }; draftOnly?: boolean; directorSkeleton?: DirectorSkeleton; sheetRepair?: { attempts: number; max: number; onAttempt?: (attempts: number) => void } };
 type BoardsIo = SeatIo & { boardLane?: BoardLane; boardsDir?: string };
 export function runBoards(opts: { render: BoardsVisualOptions }): ReturnType<typeof renderBoards>;
 export function runBoards(opts: BoardsOptions, io: BoardsIo): Promise<BoardsResult>;
@@ -236,10 +240,13 @@ export async function runBoards(
   const declared = script.outline.scenes.reduce((a, s) => a + s.targetSec, 0) || 1;
   const budget = (sec: number) => sec;
 
-  for (const [i, scene] of script.outline.scenes.entries()) {
-    // qwen on litellm sometimes returns an empty JSON object if the prior scene
-    // call finished milliseconds ago; a short gap avoids that race.
-    if (i > 0 && !io.fetchImpl) await new Promise((r) => setTimeout(r, 5000));
+  // §25 A（0928）：逐場生成抽可重入 helper——sheet 時長修訂迴路對爆場帶具名
+  // gap 重入（同一 chatJsonSeat 接線，hint 唔同）；handoff 鏈重行由 caller 段負責。
+  const runScene = async (
+    scene: Script["outline"]["scenes"][number],
+    handoff: Handoff,
+    hint?: string,
+  ): Promise<{ value: BoardsScene; receipts: string[] }> => {
     const beats = script.scenes.find((s) => s.sceneId === scene.id)?.beats ?? [];
     const budgetSec = budget(scene.targetSec);
     const pass = await chatJsonSeat({
@@ -272,13 +279,22 @@ export async function runBoards(
           heightM: c.heightM,
           speaks: c.speaks,
         })),
-        previousSceneHandoff: carried,
+        previousSceneHandoff: handoff,
+        ...(hint ? { 修訂要求: hint } : {}),
       }),
       schema: boardsSceneSchema({ sceneId: scene.id, beats, characters, budgetSec, scriptBeatIds: script.scenes.flatMap((sc) => sc.beats.map((b) => b.id)), dialoguePlacements: sceneRelevantPlacements(opts.directorSkeleton?.dialoguePlacements, script.outline.scenes, scene.id) }),
       normalize: (raw, note) => padBoardDurations(raw, budgetSec, note),
       receiptDir: io.receiptDir,
       fetchImpl: io.fetchImpl,
     });
+    return { value: pass.value, receipts: pass.receipts };
+  };
+
+  for (const [i, scene] of script.outline.scenes.entries()) {
+    // qwen on litellm sometimes returns an empty JSON object if the prior scene
+    // call finished milliseconds ago; a short gap avoids that race.
+    if (i > 0 && !io.fetchImpl) await new Promise((r) => setTimeout(r, 5000));
+    const pass = await runScene(scene, carried);
     receipts.push(...pass.receipts);
     boards.push(pass.value);
     carried = handoffFrom(pass.value, carried);
@@ -286,11 +302,57 @@ export async function runBoards(
     io.index?.({ id: `boards:${scene.id}`, text: pass.value.shots.map((s) => s.action).join(" ") });
   }
 
-  // §25 B（0928）：callsheet 閘基準＝brief 硬時長（opts.targetSec 用戶目標）；
+  // §25 A＋B（0928）：callsheet 閘基準＝brief 硬時長（opts.targetSec 用戶目標）；
   // outline 分配合計（declared）具名分開傳入——唔靜靜用聲明合計替換用戶目標
   //（BOUP 實證：brief 26s vs outline 26.33s 兩個數冇人分開報）。
-  const expanded = expandBoards({ script, boards, targetSec: opts.targetSec, aspect: opts.aspect });
-  assertSheetGates(expanded, { script, targetSec: opts.targetSec, declaredOutlineSec: declared });
+  // 時長爆／不足唔係淨 throw：同一 evaluator 計爆場差額→帶具名 gap 返 boards
+  // 修訂（有界，episode 由 caller 持久化）；耗盡先具名 throw 阻下游。
+  const buildSheet = () => {
+    const expanded = expandBoards({ script, boards, targetSec: opts.targetSec, aspect: opts.aspect });
+    assertSheetGates(expanded, { script, targetSec: opts.targetSec, declaredOutlineSec: declared });
+    return expanded;
+  };
+  let sheetRepairUsed = 0;
+  let expanded: ReturnType<typeof expandBoards>;
+  for (;;) {
+    try {
+      expanded = buildSheet();
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.startsWith("callsheet runs")) throw error;
+      const repair = opts.sheetRepair;
+      const already = repair ? repair.attempts + sheetRepairUsed : 0;
+      if (!repair || already >= repair.max) {
+        // 耗盡：保存候選（receipts／boards 落盤照舊）＋具名 gap 阻下游——
+        // 唔冒充 accepted；爆場若 budget 唔夠實現採納內容，呢度係返導演重分
+        // 場嘅入口（caller 見 callsheet_runtime_unclosed 決定上返 creative 層）。
+        const overflows = sceneOverflows();
+        throw new Error(`callsheet_runtime_unclosed: ${message}；爆場＝${overflows.map((o) => `${o.sceneId} ${o.actual.toFixed(1)}s/budget ${o.budget.toFixed(1)}s`).join("、")}——修訂額度已用 ${already} 輪（候選已存 receipts）`);
+      }
+      const overflows = sceneOverflows();
+      if (!overflows.length) throw error; // 冇單場超 band 都爆 sheet＝結構性，交上層
+      sheetRepairUsed += 1;
+      repair.onAttempt?.(repair.attempts + sheetRepairUsed);
+      for (const o of overflows) {
+        const scene = script.outline.scenes.find((s) => s.id === o.sceneId);
+        if (!scene) continue;
+        const pass = await runScene(scene, carried, `【時長修訂】本場鏡合計 ${o.actual.toFixed(1)}s 對場 budget ${o.budget.toFixed(1)}s 超 ${(o.actual - o.budget).toFixed(1)}s（全片 callsheet 同時超 brief 硬時長）——合鏡／多 beat 同鏡／壓縮內容返 band 內；唔准刪台詞／接觸事件／用戶硬要求；若 budget 唔夠實現採納內容，喺 adoptionIssues 具名講明要返導演重分場，唔可以靜靜剪剩。`);
+        receipts.push(...pass.receipts);
+        const at = boards.findIndex((b) => b.sceneId === o.sceneId);
+        if (at >= 0) boards[at] = pass.value;
+        await io.speak?.(pass.value.thinking);
+        io.index?.({ id: `boards:${o.sceneId}`, text: pass.value.shots.map((s) => s.action).join(" ") });
+      }
+    }
+  }
+  function sceneOverflows(): { sceneId: string; actual: number; budget: number }[] {
+    return boards.map((b) => ({
+      sceneId: b.sceneId,
+      actual: b.shots.reduce((a, s) => a + s.durationSec, 0),
+      budget: script.outline.scenes.find((sc) => sc.id === b.sceneId)?.targetSec ?? 0,
+    })).filter((o) => o.actual > o.budget * (1 + SCENE_BUDGET_TOLERANCE) + 1e-6);
+  }
   if (!opts.draftOnly) {
     receipts.push(...markPass(["boards", "global"], io.playbookDir, io.drama));
   }
@@ -302,5 +364,5 @@ export async function runBoards(
       sha256: sheetDigest(expanded),
     },
   };
-  return { sheet, model: io.model, receipts };
+  return { sheet, model: io.model, receipts, ...(sheetRepairUsed ? { sheetRepairUsed } : {}) };
 }

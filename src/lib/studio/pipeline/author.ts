@@ -17,7 +17,7 @@ import { open, packetLine, seal } from "../dispatch";
 import { gapEvent, gapMessage, storyboardZeroGap } from "../capability-gap";
 import type { AgentId, CallSheet, ProduceInput } from "../types";
 import type { SlateConfig } from "../config";
-import { GAP_BUDGET, patch, type Ctx } from "./shared";
+import { GAP_BUDGET, SHEET_REPAIR_BUDGET, patch, type Ctx } from "./shared";
 
 /** Speaking parts must be castable, so the roster is read from a data file the
  *  operator points at — never from a list living in src. */
@@ -308,12 +308,21 @@ async function authorCallSheet(
             throw new Error(`revise_unclosed: 必要契約 revise 一輪後仍未解 ${contractGaps.length} 項（${contractGaps.join("；")}）——差距已列明，回導演席帶同片 history 修訂`);
           }
           if (after.newElements.length || after.timeGaps.length || after.actionNews.length || after.contactNews.length) {
+            // §25 §23-B：newElements 採納核對——每項對 revised plan 全文 presence
+            // 具名記錄（採納到鏡表＝找到／未採納）；唔係淨 warning 當採納證據。
+            // 拒絕結構化渠道（導演修訂版 rejection 欄）未存在——未採納者明示
+            // 「要責任席有來源採納或有據拒絕」，唔冒充已處理。
+            const revisedText = JSON.stringify(revised);
+            const adoptionCheck = after.newElements.map((n) => ({
+              what: n.what,
+              planPresence: revisedText.includes(n.what),
+            }));
             emit(jobId, {
               agent: "producer", level: "warn",
-              message: `revise 後非契約訊號仍在（變更紀錄 ${after.newElements.length} 項未採納核對／診斷 ${after.timeGaps.length + after.actionNews.length + after.contactNews.length} 項待導演逐項裁）——唔機械 FAIL，明示未解`,
+              message: `revise 後非契約訊號仍在（變更紀錄 ${after.newElements.length} 項：${adoptionCheck.filter((a) => a.planPresence).length} 採納到 plan、${adoptionCheck.filter((a) => !a.planPresence).length} 未採納待責任席有據處理／診斷 ${after.timeGaps.length + after.actionNews.length + after.contactNews.length} 項待導演逐項裁）——唔機械 FAIL，明示未解`,
               data: {
                 stage: "revise-verify-noncontract",
-                newElements: after.newElements,
+                newElements: adoptionCheck,
                 diagnostics: { timeGaps: after.timeGaps, actionNews: after.actionNews, contactNews: after.contactNews },
               },
             });
@@ -379,6 +388,16 @@ ${plan.treatment}`;
       aspect: input.aspect,
       writer: { model: writer.model, receipts: writer.receipts },
       ...(directorSkeleton ? { directorSkeleton } : {}),
+      // §25 A：callsheet 時長修訂 episode——額度真源＝job 持久欄（跨 resume
+      // ／換模型唔刷新）；每輪 onAttempt 即刻 patch 落 job。
+      sheetRepair: {
+        attempts: readJob(jobId)?.callsheetRepairEpisode?.attempts ?? 0,
+        max: SHEET_REPAIR_BUDGET,
+        onAttempt: (attempts) => {
+          const j = readJob(jobId);
+          if (j) patch(j, { callsheetRepairEpisode: { attempts } });
+        },
+      },
     },
     {
       crew: cfg.crew,

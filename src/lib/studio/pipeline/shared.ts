@@ -84,6 +84,10 @@ export function stableJson(v: unknown): string {
 /** §9④：聲畫 gap 修訂額度（跨 resume；author 攔截遞增，行內回修同樣食） */
 export const GAP_BUDGET = 2;
 
+/** §25 A（0928）：callsheet 時長修訂額度——首輪候選後最多兩輪完整修訂
+ * （裁決原文），callsheetRepairEpisode 跨 resume／換模型同一額度。 */
+export const SHEET_REPAIR_BUDGET = 2;
+
 let activeOwner: JobOwner | undefined;
 export function setActiveOwner(owner?: JobOwner) {
   activeOwner = owner;
@@ -101,6 +105,10 @@ export function patch(job: JobRecord, partial: Partial<JobRecord>) {
   // 冇狀態可承接，照 next。明確 partial 優先權保留。
   if (!("soundRepairEpisode" in partial) && disk && disk.soundRepairEpisode !== undefined) {
     next.soundRepairEpisode = disk.soundRepairEpisode;
+  }
+  // §25 A：callsheet 修訂 episode 同一承接三分（disk 有記錄含 null 原樣承接）
+  if (!("callsheetRepairEpisode" in partial) && disk && disk.callsheetRepairEpisode !== undefined) {
+    next.callsheetRepairEpisode = disk.callsheetRepairEpisode;
   }
   writeJob(next, activeOwner);
   return next;

@@ -434,6 +434,9 @@ export type JobRecord = {
    *  episode 內已消耗修訂次數（author 攔截遞增；行內 loop/resume 共用）。
    *  beatId/text/issue 描述係內容映射，唔係開新 episode 條件——改台詞唔重置。 */
   soundRepairEpisode?: { id: string; openedAt: string; source: string; attempts: number } | null;
+  /** §25 A（0928）：callsheet 時長修訂 episode（跨 resume／換模型同一額度）
+   *  ——author 讀傳 runBoards、每輪 onAttempt patch 遞增；null＝已閉。 */
+  callsheetRepairEpisode?: { attempts: number } | null;
   retries: { stills: number; voice: number; motion: number };
   outputs: {
     stills: string[];
