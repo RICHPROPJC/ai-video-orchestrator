@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +28,7 @@ import { H3PlanCard } from "@/components/h3-plan-card";
 import { clinicH3Plans } from "@/lib/studio/h3-slots";
 import { Album } from "@/components/album";
 import { BlockCanvas } from "@/components/block-canvas";
+import { SessionPanel } from "@/components/session-panel";
 import { ShotFeedback } from "@/components/feedback-form";
 import { ShotInspector } from "@/components/shot-inspector";
 import { StoryboardPanel, ShotAudio } from "@/components/episode-media";
@@ -589,14 +591,9 @@ export function StudioFloor({
               </div>
                 </div>
               </details>
-              {/* P33（§5）：同項目對話入口——named-missing，等 A 交 session/turn
-                  小 shape 先接；唔 fake chat、唔將 FEEDBACK 扮執行。 */}
-              <details className="rounded border border-dashed border-border px-2 py-1.5 text-[10px] text-muted-foreground">
-                <summary className="cursor-pointer">💬 同呢個項目對話（同一 session 續傾／要修改）</summary>
-                <p className="mt-1 leading-relaxed">
-                  尚未接通：對話 API（等 A 交 session/turn 小 shape——job/session identity、GET history、POST turn 意圖）。而家 🚩 問題表只係「已記錄」，唔會觸發修改或執行。
-                </p>
-              </details>
+              {/* B33（A shape 已交＋A2 endpoint live）：同項目持久對話面板——
+                  history／ask／revise／requestId 冪等；API 未接通時面板內具名。 */}
+              {job?.id ? <SessionPanel jobId={job.id} /> : null}
             </CardContent>
           </Card>
 
@@ -974,16 +971,7 @@ function ProjectGroup({
                     已交付——去 <a className="text-primary underline" href={`/?slate=${item.id}&tab=lock`}>成片</a> 睇；要修改＝對話修訂（對話 API 未接通，等 A 交 shape）
                   </p>
                 ) : (
-                  <form action="/api/jobs" method="post" className="mt-1">
-                    <input type="hidden" name="_redirect" value="1" />
-                    <input type="hidden" name="resume" value={item.id} />
-                    <button
-                      type="submit"
-                      className="w-full rounded border border-border px-2 py-0.5 text-left text-[10px] hover:border-primary hover:text-primary"
-                    >
-                      ▶ 續做（原 ID {item.slate}——唔重填 brief、唔複製新項）
-                    </button>
-                  </form>
+                  <ResumeButton jobId={item.id} slate={item.slate} />
                 )}
               </div>
             );
@@ -996,6 +984,55 @@ function ProjectGroup({
 
 function Empty({ label }: { label: string }) {
   return <p className="rounded-lg border border-dashed p-8 text-sm text-muted-foreground">{label}</p>;
+}
+
+/** B33：續做走 POST /api/jobs/:id/resume（A1 admission）——attached（活躍
+ *  owner，返既有 run 狀態）／resumed（跳返項目頁）／blocked（具名原因）。
+ *  無效 ID 具名報錯，絕不 fallback 走新建。 */
+function ResumeButton({ jobId, slate }: { jobId: string; slate: string }) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  const router = useRouter();
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        disabled={busy}
+        className="w-full rounded border border-border px-2 py-0.5 text-left text-[10px] hover:border-primary hover:text-primary disabled:opacity-40"
+        onClick={() => {
+          setBusy(true);
+          setNote("");
+          void fetch(`/api/jobs/${jobId}/resume`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ requestId: crypto.randomUUID() }),
+          })
+            .then(async (r) => {
+              if (!r.ok) {
+                const why = (await r.json().catch(() => ({}))) as { error?: string };
+                throw new Error(why.error ?? `${r.status}`);
+              }
+              return (await r.json()) as { jobId: string; status: string; lastError?: string; progress?: number };
+            })
+            .then((res) => {
+              if (res.status === "blocked") {
+                setNote(res.lastError ?? "blocked（具名原因待 backend）");
+                setBusy(false);
+                return;
+              }
+              router.push(`/?slate=${jobId}`);
+            })
+            .catch((e: unknown) => {
+              setNote(`續做失敗：${e instanceof Error ? e.message : "error"}——原 ID，唔會 fallback 新建`);
+              setBusy(false);
+            });
+        }}
+      >
+        {busy ? "續做緊…" : `▶ 續做（原 ID ${slate}——唔重填 brief、唔複製新項）`}
+      </button>
+      {note ? <p className="mt-0.5 text-[10px] text-destructive">{note}</p> : null}
+    </div>
+  );
 }
 
 function ProductLinks({ job }: { job: JobRecord | null }) {
