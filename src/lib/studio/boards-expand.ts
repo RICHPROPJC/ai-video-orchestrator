@@ -53,7 +53,7 @@ export function deriveAudioEvents(
   }
   for (const [uid, refs] of refsByUid) {
     const u = uttById.get(uid);
-    if (!u) continue; // 懸空引用——utteranceBeatCoverage 具名（唔靜靜跳）
+    if (!u) continue; // 懸空引用——beat 落真 legacy 字串路（下個 loop）；coverage 具名
     const coverIdx = [...new Set(refs.flatMap((r) => r.cover))].sort((a, b) => a - b);
     if (coverIdx.length === 0) continue; // 引用 beat 未有鏡播——assertSheetGates 報
     const first = windowOf[coverIdx[0]!]!;
@@ -68,7 +68,12 @@ export function deriveAudioEvents(
     });
   }
   for (const [beatId, beat] of beatById) {
-    if (beat.utteranceIds?.length) continue; // 有引用鏈——per-utterance 路已建事件
+    // root R7（0928）：legacy 只顯式真 legacy 適用——引用 uid 全部 dangling
+    // （清單對唔到）＝引用鏈完全冇效，句本身照字串路出 event（真 legacy）；
+    // 有任何有效 uid＝per-utterance 路已建事件，字串路唔重複（dangling 部分
+    // 由 utteranceBeatCoverage 具名，唔靜靜吞）。
+    const effectiveUids = (beat.utteranceIds ?? []).filter((uid) => uttById.has(uid));
+    if (beat.utteranceIds?.length && effectiveUids.length > 0) continue;
     const text = beat.dialogue?.trim() ?? "";
     if (!text) continue;
     const cover = audioCoverShots(beatId, carrier);

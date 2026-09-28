@@ -302,6 +302,10 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   // ——digest 驗（utterancesDigest 對 ctx.utteranceProvenance＋callsheetDigest
   // 對本輪 locked）；唔夾＝stale emit 照 legacy pool（唔靜靜退）。
   let frozenPairs: Map<string, { word?: string; startSec?: number; endSec?: number; onImage?: string }> | undefined;
+  // root R7（0928）：typed 場景凍結映射失效（stale/缺/壞）＝具名阻塞——typed
+  // events 標 missing 帶 reason，唔靜退 legacy pool（版本契約）；legacy events
+  // （無 utteranceId）照 pool 唔受影響。
+  let typedBlockedReason: string | undefined;
   if (ctx.utteranceProvenance && ctx.locked!.directorPlacements?.length) {
     const frozenFile = jobFile(jobId, "creative", "utterance-placements.json");
     if (fs.existsSync(frozenFile)) {
@@ -312,11 +316,17 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         if (digestOk) {
           frozenPairs = new Map(frozen.pairs.map((pair) => [pair.utteranceId, ctx.locked!.directorPlacements![pair.placementIdx] ?? { word: pair.norm }]));
         } else {
+          typedBlockedReason = `凍結映射 stale（utterancesDigest/callsheetDigest 唔夾）`;
           emit(jobId, { agent: "producer", level: "warn",
-            message: "utterance 凍結映射 stale（utterancesDigest/callsheetDigest 唔夾）——聲畫對照呢輪行 legacy pool 配對（同字歧義無 ID 保護）",
+            message: `utterance 凍結映射 stale——typed 配對阻塞（${typedBlockedReason}），legacy events 照 pool`,
             data: { stage: "utterance-placements", frozenUtterancesDigest: frozen.utterancesDigest, frozenCallsheetDigest: frozen.callsheetDigest.slice(0, 12) } });
         }
-      } catch { /* 壞檔＝照 legacy pool（凍結映射係 ID 保護路，唔係硬依賴） */ }
+      } catch {
+        typedBlockedReason = "凍結映射檔壞（parse fail）";
+        emit(jobId, { agent: "producer", level: "warn", message: `utterance 凍結映射檔壞——typed 配對阻塞，legacy events 照 pool`, data: { stage: "utterance-placements" } });
+      }
+    } else {
+      typedBlockedReason = "凍結映射檔缺（author 採納輪未落盤？）";
     }
   }
   const eventTakes = ctx.locked!.audioEvents?.length
@@ -333,7 +343,7 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   // overflow 警告，唔靜靜食）。落 creative/audio-timeline.json 俾 producer/
   // 下游讀實際時鐘，唔改窗口（窗口＝callsheet，要改係修訂輪嘅事）。
   if (eventTakes && ctx.locked!.audioEvents) {
-    const rows = await audioTimelineRows(ctx.locked!.audioEvents, eventTakes.takes, wavSeconds, ctx.locked!.directorPlacements, frozenPairs);
+    const rows = await audioTimelineRows(ctx.locked!.audioEvents, eventTakes.takes, wavSeconds, ctx.locked!.directorPlacements, frozenPairs, typedBlockedReason);
     // 裁決 0928 D：聲畫對位缺口回責任席線——missing placement 逐句 emit
     // （唔阻行：收據落 events；revise_unclosed 已喺上游 fail-loud 把關）
     // §8.1：coverage 收據改用實際音訊切片（plugVoiceEvents slices）——

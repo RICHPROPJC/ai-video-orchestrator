@@ -710,6 +710,10 @@ export async function audioTimelineRows(
    *  utteranceId）行 ID 直配：有映射→matched（時間/onImage 由映射 placement
    *  攞）；冇映射→missing 具名（唔落 pool 亂配）。legacy event 照 pool。 */
   frozenPairs?: Map<string, { word?: string; startSec?: number; endSec?: number; onImage?: string }>,
+  /** root R7（0928）：typed 場景凍結映射失效（digest 唔夾/缺檔）＝具名阻塞
+   *  reason——typed events（有 utteranceId）全部 missing 帶 reason，唔靜退
+   *  legacy pool（版本契約：typed 失效唔可以靜靜降級）。 */
+  typedBlockedReason?: string,
 ): Promise<AudioTimelineRow[]> {
   const rows: AudioTimelineRow[] = [];
   // §8.4＋§23 C：消耗式配對——共享 claimPlacementOnce 核心（author/world 同一
@@ -738,6 +742,8 @@ export async function audioTimelineRows(
       ...(take ? {} : { note: "take 缺（事件冇鏡覆蓋？plugVoiceEvents 應已 throw）" }),
       ...(placements === undefined && !events.some((e2) => e2.text.trim())
         ? { placement: "na" as const, note: "片冇對白且導演冇交 dialogueClock（流程唔要求落點＝N/A）" }
+        : typedBlockedReason && ev.utteranceId
+          ? { placement: "missing" as const, note: `typed 配對阻塞：${typedBlockedReason}` }
         : frozenPairs && ev.utteranceId
           ? (() => {
               // G1 批四 typed 路：凍結映射 ID 直配（唔經 pool——同字歧義已喺
