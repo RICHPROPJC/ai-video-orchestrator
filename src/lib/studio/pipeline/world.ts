@@ -181,8 +181,11 @@ export async function worldStage(ctx: Ctx): Promise<void> {
               sel.bake = { ...sel.bake, start: 1 };
               delete sel.segment;
             }
-            sel.tie_break = `human pick ${cand.id}`;
-            sel.decisionSource = "human-override";
+            sel.tie_break = `pick ${cand.id} via --motion-pick`;
+            // R21 裁決③（0929）：human-override 淨留畀真人具名令（Chau 親落
+            // flag 嘅 receipt）；production/席位鏈代揀（Mo 表＋重做授權）標
+            // seat-decision——唔冒認人手。
+            sel.decisionSource = "seat-decision:--motion-pick";
             delete sel.needs_human;
           }
         }

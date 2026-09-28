@@ -520,6 +520,29 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     await speak("stills", `鍵格板 ${si + 1}：一次出 ${moments.length} 格再切。`);
   }
 
+  // R21 裁決①（0929）：role-aware 道具 refs（per-shot plate＋GREEN cut）——
+  // first-pass /edit 與 retry 共用同一集合。道具靠文字自由發明係杯/罐病根
+  // （R20k retry 淨身份 refs 三次出杯實證——cut 視覺 ref 喺場先壓得住灰模
+  // 手形聯想；同 run KF 線 cut 在場出正確樽嘅對照）。
+  const propRefsFor = (shotId: string): string[] => {
+    const plan0 = hopStillPlans.find((p) => p.shot.id === shotId);
+    if (!plan0) return [];
+    const ids0 = [...new Set((plan0.shot.props ?? []).map((pp) => propAssetId(pp.name)))];
+    if (!ids0.length) return [];
+    const plates = diffPropPlates(path.join(jobDir(jobId), "assets"), path.join(jobDir(jobId), "assets", "props.pinned.json"), ids0)
+      .resolved.map((r) => r.file).filter((f) => fs.existsSync(f));
+    const cuts: string[] = [];
+    try {
+      const pinned0 = JSON.parse(fs.readFileSync(path.join(jobDir(jobId), "assets", "props.pinned.json"), "utf8")) as { assets?: { assetId?: string; qcFile?: string; qcStatus?: string }[] };
+      for (const a of pinned0.assets ?? []) {
+        if (!a.assetId || !ids0.includes(a.assetId) || a.qcStatus !== "GREEN" || !a.qcFile) continue;
+        const b = a.qcFile.replace(/\.photo_qc\.json$/, "");
+        const cut = /\.cut$/.test(b) ? `${b}.png` : `${b}.cut.png`;
+        if (fs.existsSync(cut) && !plates.includes(cut)) cuts.push(cut);
+      }
+    } catch { /* 壞 manifest＝plate 照舊 */ }
+    return [...plates, ...cuts];
+  };
   for (const { shot, first, prompt, require } of hopStillPlans) {
     const out = path.join(ctx.stillDir!, `${shot.id}.png`);
     const recordJson = path.join(ctx.stillDir!, `${shot.id}.u15_edit.json`);
@@ -631,7 +654,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       .map((id) => ctx.portraits!.sheets?.[id] || ctx.portraits!.files[id])
       .filter((p): p is string => Boolean(p && fs.existsSync(p)));
     const sheetPrompt = keyframeSheetPrompt(momentsForShot(shot, ctx.stillDir!));
-    editInputs.set(shot.id, { prompt: sheetPrompt, nodePaths: [], base, refs: identity, first });
+    editInputs.set(shot.id, { prompt: sheetPrompt, nodePaths: [], base, refs: [...identity, ...propRefsFor(shot.id)], first });
     prevKeyframe = cells[cells.length - 1]!;
     stills.push(out);
     upsertDoc({
@@ -851,7 +874,15 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
         path.join(jobDir(jobId), "portraits"),
         input.portraitsDir ?? "",
       ]);
-      const retryImages = sheets.slice(0, MAX_IMAGES);
+      // R21 裁決①：retry packet 同 first-pass 同源 role-aware——moment frame
+      // （base f0）＋身份＋道具 plate/cut＋上一鏡 GREEN still 一齊入；唔可以
+      // retry 淨身份 refs（R20k 實證出杯）。容量超＝具名 fail 唔靜靚 slice 丟。
+      const retryBase = inputs.base && fs.existsSync(inputs.base) ? [inputs.base] : [];
+      const retryAll = [...retryBase, ...sheets, ...propRefsFor(shot.id), ...regate.kept];
+      if (retryAll.length > MAX_IMAGES) {
+        throw new Error(`${shot.id} retry refs 超容量（${retryAll.length}＞${MAX_IMAGES}：base ${retryBase.length}＋身份 ${sheets.length}＋道具 ${propRefsFor(shot.id).length}＋prev GREEN ${regate.kept.length}）——要合法分組，唔靜靚 slice 丟必需 refs`);
+      }
+      const retryImages = retryAll;
       // The outer shot QC rejected its primary still; other anchors stay pinned.
       const retryMoments = momentsForShot(promptShot, ctx.stillDir!).slice(0, 1);
       await runBoards({ render: {

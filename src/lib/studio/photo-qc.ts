@@ -897,15 +897,28 @@ async function runPhotoQcLive(
   const desc = await describeFive(eyeUrl, eyeModel, legs);
   const blind = desc.whole;
 
-  let judgeOutput: PhotoQcRecord["judgeOutput"];
-  let verdict: QcVerdict;
-  try {
-    judgeOutput = await runPackageJudge(judgeUrl, judgeModel, require, desc);
-    verdict = packageVerdict(require, judgeOutput);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    judgeOutput = { parse_error: message, raw: blind.slice(0, 2000) };
-    verdict = { status: "FAIL", checks: { status: "FAIL", fail_reasons: [`judge parse: ${message}`] } };
+  let judgeOutput!: PhotoQcRecord["judgeOutput"];
+  // TS definite-assignment：成功路徑必賦值；infra 全爛路徑 throw 唔會流出去。
+  let verdict: QcVerdict = { status: "FAIL", checks: { status: "FAIL", fail_reasons: [] } };
+  // R21 裁決④（0929）：judge 格式／transport 錯≠content FAIL——infra 分類有限
+  // 重試（2 attempts，全部照計 model call 成本）；唔補造 verdict（syntax-only
+  // normalize 唔代表判官有講嘢）；耗盡具名停，等上游 infra 處理而唔係食咗
+  // 個 content FAIL 額（R20k 實證：judge 爛 JSON 當圖 FAIL 燒生成 retry）。
+  const judgeInfraAttempts = 2;
+  let judgeErr: unknown = null;
+  for (let attempt = 1; attempt <= judgeInfraAttempts; attempt += 1) {
+    try {
+      judgeOutput = await runPackageJudge(judgeUrl, judgeModel, require, desc);
+      verdict = packageVerdict(require, judgeOutput);
+      judgeErr = null;
+      break;
+    } catch (error) {
+      judgeErr = error;
+    }
+  }
+  if (judgeErr) {
+    const message = judgeErr instanceof Error ? judgeErr.message : String(judgeErr);
+    throw new Error(`judge_infra_failed（${judgeInfraAttempts} attempts 全爛）：${message}——judge 格式/transport 錯唔算 content FAIL 唔補造 verdict；infra 重試耗盡具名停`);
   }
 
   // 0927 Chau 令：唔准夾硬改 QC。pose 覆核／樽瓶特徵推翻／四格局部翻案
