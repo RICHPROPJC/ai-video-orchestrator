@@ -36,6 +36,8 @@ import {
   selectMotions,
   verbsForGate,
   writeSelections,
+  adoptSelections,
+  readAdoptedSelections,
   type MotionShotLine, type MotionSpec } from "../motion-select";
 import { sheetDigest } from "../seat-boards";
 import type { CallSheet, Shot } from "../types";
@@ -57,6 +59,20 @@ async function raster(svg: string, outFile: string) {
     .render()
     .asPng();
   fs.writeFileSync(outFile, png);
+}
+
+/** R19 裁決④（0929）：0927 bake log 重建表（motion/adopted-0927.json，
+ *  provenance＝events 0927 blockout bake speak 逐鏡固化）——舊 sceneStamp
+ *  fingerprint 公式唔同版時嘅實質依賴（bvh/bake）對帳源。 */
+function bakeAdoptLogOf(jobId: string): Record<string, { bvh: string; bake: { start: number; len: number; step: number } }> | null {
+  try {
+    const f = path.join(jobDir(jobId), "motion", "adopted-0927.json");
+    if (!fs.existsSync(f)) return null;
+    const raw = JSON.parse(fs.readFileSync(f, "utf8")) as { shots?: Record<string, { bvh: string; bake: { start: number; len: number; step: number } }> };
+    return raw.shots ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** 拆層段（world）：由 runPipeline 原序搬入，行為零變——絕唔重排 call 次序、
@@ -116,39 +132,83 @@ export async function worldStage(ctx: Ctx): Promise<void> {
           throw new Error(`${line.id}: 冇合法 motion，GPU 前停`);
         }
       }
-      const { rows, calls } = await selectMotions({ shots: lines, shortlist });
-      const sels = lines.map((s) =>
-        decideSelection(rows.find((r) => r.shot === s.id)!, shortlist, rank, s, null),
-      );
-      writeSelections(path.join(jobDir(jobId), "motion"), sels, {
-        job: jobId,
-        one_call: true,
-        calls,
-        n_candidates: shortlist.nCandidates,
-        decider_model: DECIDER_DEFAULTS.model,
-      });
-      // CAPGAP_0927：needs_human 由死人 flag 變真閘——未有人手接嘅揀片
-      // 唔准入 motionSelections（bake map），collect 成 capability gap block 成 job。
-      const humanSels = sels.filter((s) => s.needs_human);
-      for (const sel of sels) {
-        if (!sel.needs_human) motionSelections.set(sel.shot, sel);
-      }
-      const auto = sels.filter((s) => s.auto).length;
-      await speak(
-        "layout",
-        `motion-select：${calls} 個 decider call 揀齊 ${sels.length} 鏡 → motion/selection.json（${auto} auto${humanSels.length ? `、${humanSels.length} needs_human` : ""}；120候選）。`,
-      );
-      const humanGap = motionNeedsHumanGap(sels);
-      if (humanGap) {
-        ctx.job = patch(ctx.job, {
-          status: "blocked",
-          currentAgent: "layout",
-          providers: trace,
-          error: gapMessage(humanGap),
+      const motionDir = path.join(jobDir(jobId), "motion");
+      // R19 裁決④（0929）：resume 先讀 adopted selection——逐鏡 frozen spec 比對，
+      // 無差異嘅鏡重用舊採納（零 decider call、採納鏈不斷）；淨 spec 變咗嘅鏡
+      // 重揀。0928 R19c 重 call decider 產生溫度漂移（SH02/06/12 pick 變咗）＋
+      // 覆寫 0927 採納版，就係冇呢個短路。
+      const adopted = input.resume ? readAdoptedSelections(motionDir) : null;
+      const specChanged = (s: Shot): boolean => {
+        const row = adopted?.find((r) => r.shot === s.id);
+        if (!row) return true;
+        return stableJson(motionSpecOf(s)) !== stableJson(row.spec ?? {});
+      };
+      const changedShots = adopted ? selShots.filter(specChanged) : selShots;
+      if (adopted && changedShots.length === 0) {
+        for (const r of adopted) motionSelections.set(r.shot, r);
+        await speak(
+          "layout",
+          `motion-select 重用 adopted selection ${adopted.length} 鏡（frozen spec 無差異，零 decider call；attempt/adopted 分檔後採納鏈不斷）。`,
+        );
+      } else {
+        const relines = changedShots.map((s) => lines.find((l) => l.id === s.id)!);
+        const { rows, calls } = await selectMotions({ shots: relines, shortlist });
+        const fresh = relines.map((s) =>
+          decideSelection(rows.find((r) => r.shot === s.id)!, shortlist, rank, s, null),
+        );
+        // R19 裁決③（0929）：人手 override 入口——--motion-pick SH01=026/26_09
+        // （可多次）。人手接嘅鏡直接採用指定候選留 decisionSource；係補入口，
+        // 唔係主流程唯一恢復路（主流程＝席位 decision→採納→resume）。
+        if (input.motionPicks) {
+          for (const sel of fresh) {
+            const code = input.motionPicks[sel.shot];
+            if (!code) continue;
+            const cand = shortlist.candidates.find((c) => c.code === code);
+            if (!cand) throw new Error(`--motion-pick ${sel.shot}=${code}：唔係 shortlist 候選`);
+            sel.bvh = cand.bvh;
+            sel.tie_break = `human pick ${cand.id}`;
+            sel.decisionSource = "human-override";
+            delete sel.needs_human;
+          }
+        }
+        // 合併：spec 無差異嘅鏡保留 adopted row（無差異唔重揀）；變咗/新鏡用 fresh
+        const freshById = new Map(fresh.map((r) => [r.shot, r]));
+        const sels = selShots.map((s) =>
+          adopted && !specChanged(s) ? adopted.find((r) => r.shot === s.id)! : freshById.get(s.id)!,
+        );
+        writeSelections(motionDir, sels, {
+          job: jobId,
+          one_call: true,
+          calls,
+          n_candidates: shortlist.nCandidates,
+          decider_model: DECIDER_DEFAULTS.model,
+          ...(adopted ? { reused_adopted: sels.length - fresh.length } : {}),
         });
-        emit(jobId, gapEvent(jobId, humanGap));
-        ctx.stopped = true;
-        return;
+        adoptSelections(motionDir);
+        // CAPGAP_0927 motion 閘保留：真 needs_human（將來 creative lock 類）照
+        // block；R19 裁決②後席位決策路徑（tie-break/未觀測）已唔再生 needs_human。
+        const humanSels = sels.filter((s) => s.needs_human);
+        for (const sel of sels) {
+          if (!sel.needs_human) motionSelections.set(sel.shot, sel);
+        }
+        const auto = sels.filter((s) => s.auto).length;
+        const seatDecided = sels.filter((s) => s.decisionSource).length;
+        await speak(
+          "layout",
+          `motion-select：${calls} 個 decider call 揀齊 ${fresh.length}/${sels.length} 鏡 → attempt 經席位決策採納（${auto} auto${seatDecided ? `、${seatDecided} seat-decided` : ""}${humanSels.length ? `、${humanSels.length} needs_human` : ""}；120候選${adopted ? `；重用 adopted ${sels.length - fresh.length}` : ""}）。`,
+        );
+        const humanGap = motionNeedsHumanGap(sels);
+        if (humanGap) {
+          ctx.job = patch(ctx.job, {
+            status: "blocked",
+            currentAgent: "layout",
+            providers: trace,
+            error: gapMessage(humanGap),
+          });
+          emit(jobId, gapEvent(jobId, humanGap));
+          ctx.stopped = true;
+          return;
+        }
       }
     }
   }
@@ -882,10 +942,13 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     const outMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
     const frames = snapDurationToFrames(shot.durationSec);
     const sceneStamp = path.join(blockoutDir, `${shot.id}.scene.json`);
-    // V2c（PLAN-v2 0928）§8：fingerprint 入 setKey——shot 內容（action／cast
-    // 企位姿態／props 持有／durationSec 時間／camera）＋motion 選用變咗，
-    // blockout 即過期重 render。舊 sceneStamp 冇呢段＝唔夾＝一次過重 render
-    // （新 revision，來源清楚）。
+    // V2c（PLAN-v2 0928）§8＋R19 裁決④（0929）：fingerprint 入 setKey——shot
+    // 內容（action／cast 企位姿態／props 持有／durationSec 時間／camera）＋
+    // motion 實質依賴（bvh＋bake 窗口）變咗，blockout 即過期重 render。
+    // 舊公式食成個 MotionSelection object（連 conf/reason/runners/flags 呢啲
+    // 收據欄）——收據欄變化唔係實質依賴，唔應令 blockout 過期（無差異唔重
+    // bake）。舊 sceneStamp 冇呢段＝唔夾＝一次過重 render（新 revision）。
+    const selDep = motionSelections.get(shot.id);
     const shotFingerprint = createHash("sha256")
       .update(stableJson({
         action: shot.action,
@@ -894,7 +957,7 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         durationSec: shot.durationSec,
         camera: shot.camera,
         size: shot.size,
-        motion: motionSelections.get(shot.id) ?? null,
+        motion: selDep ? { bvh: selDep.bvh, bake: selDep.bake } : null,
       }))
       .digest("hex")
       .slice(0, 12);
@@ -914,10 +977,31 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       }
     }
     const gotFrames = fs.existsSync(outMp4) ? Math.round((await mediaSeconds(outMp4)) * 24) : 0;
-    const kept = input.resume && sceneStamped && gotFrames > 0;
+    let kept = input.resume && sceneStamped && gotFrames > 0;
+    let keptVia = "stamp";
+    if (!kept && input.resume && gotFrames > 0 && selDep) {
+      // R19 裁決④（0929）：0927 舊 stamp 用全 object fingerprint 公式，同新
+      // 公式（實質依賴）自然唔夾——但 0927 bake log 重建表（motion/
+      // adopted-0927.json，provenance＝events bake speak）在場＋實質依賴
+      // （bvh/bake）一致＝無差異，照 kept 唔重 bake；kept 後 stamp 重寫做新
+      // 公式（以後純 setKey 比對）。
+      const logged = bakeAdoptLogOf(jobId)?.[shot.id];
+      if (logged && logged.bvh === selDep.bvh && JSON.stringify(logged.bake) === JSON.stringify(selDep.bake)) {
+        kept = true;
+        keptVia = "0927-bake-log";
+      }
+    }
     if (kept) {
-      trace.blender = "resume (kept)";
-      await speak("layout", `${shot.id} blockout 照舊 ${frames}f，唔重 render。`);
+      trace.blender = keptVia === "0927-bake-log" ? "resume (kept via 0927 bake-log)" : "resume (kept)";
+      if (!sceneStamped && selDep) {
+        fs.writeFileSync(sceneStamp, JSON.stringify({ setKey, dep: { bvh: selDep.bvh, bake: selDep.bake } }) + "\n");
+      }
+      await speak(
+        "layout",
+        keptVia === "0927-bake-log"
+          ? `${shot.id} blockout 照舊 ${frames}f（0927 bake-log 對帳：bvh/bake 無差異），唔重 render。`
+          : `${shot.id} blockout 照舊 ${frames}f，唔重 render。`,
+      );
     } else if (input.blockoutDir) {
       const plugged = await blockoutFromPlug(input.blockoutDir, shot.id, h3WavByShot.get(shot.id)!);
       fs.copyFileSync(plugged, outMp4);

@@ -115,7 +115,12 @@ function clipIdOf(basename: string): string {
 /** BVH header `Frames:` count — read forward in chunks (the MOTION block sits
  *  ~4KB in on CMU files), never the whole clip */
 export function bvhClipFrames(bvhRelToData: string, root = MOTION_LIB_ROOT): number | null {
-  const file = path.join(root, "cmu-mocap", bvhRelToData);
+  // R19 裁決①（0929）路徑修復：bvh 欄係 data/-relative（:712 註釋明文，
+  // bake_combat.py 自己加 data/）。兩種形態歸一——CMU index 唔帶 data/ 前綴
+  // （舊 code 漏 data/ 令全庫評分讀唔到檔返 null，tie-break 兩維從未觀測）；
+  // trial fixture 帶 data/ 前綴（直 join 會 double-data）。
+  const rel = bvhRelToData.replace(/^data\//, "");
+  const file = path.join(root, "cmu-mocap", "data", rel);
   try {
     const fd = fs.openSync(file, "r");
     try {
@@ -146,7 +151,9 @@ export function bvhHipStats(bvhRelToData: string, root = MOTION_LIB_ROOT): HipSt
   if (hipCache.has(bvhRelToData)) return hipCache.get(bvhRelToData) ?? null;
   let out: HipStats | null = null;
   try {
-    const file = path.join(root, "cmu-mocap", bvhRelToData);
+    // R19 裁決①（0929）路徑修復：同 bvhClipFrames——兩種 bvh 欄形態歸一。
+    const rel = bvhRelToData.replace(/^data\//, "");
+    const file = path.join(root, "cmu-mocap", "data", rel);
     const text = fs.readFileSync(file, "latin1");
     const motionAt = text.indexOf("MOTION");
     if (motionAt < 0) throw new Error("no MOTION block");
@@ -722,6 +729,13 @@ export type MotionSelection = {
   needs_human?: boolean;
   tie_break?: string | null;
   flags: string[];
+  /** R19 裁決②（0929）：席位決策來源——tie-break 唔再交人手，記邊個位憑咩
+   *  決：seat-tiebreak:stable-id-order（觀測等價→穩定次序）／
+   *  seat-pick:unobserved-tie（維度未觀測→照 decider 本鏡需求 pick）／
+   *  human-override（--motion-pick 人手接）。唔假造 conf。 */
+  decisionSource?: string;
+  /** 平手時嘅候選證據：每個 rival 各維度觀測狀態＋verbGate 結果（收據）。 */
+  candidateEvidence?: { id: string; bvh: string; arm_ranked: boolean; hip_stats: boolean; frames_read: boolean; verb_pass: boolean }[];
   /** CMU 覆蓋唔到嘅動作（手部動詞）——pipeline 讀到 gap.remedy==="kf_driven"
    *  就行鍵格驅動路，唔好假 Video1 motion。 */
   gap?: MotionGap;
@@ -736,7 +750,9 @@ export type MotionGap = {
 };
 
 /** conf ≥0.7 auto; below → tie-break over pick+runners (arm-axis mean low →
- *  CMU high subject → clip length nearest the shot); still tied → needs_human */
+ *  CMU high subject → clip length nearest the shot). R19 裁決②（0929）：still
+ *  tied → 席位決策（觀測等價→穩定 id 序；維度未觀測→照 decider pick），
+ *  留 decisionSource＋candidateEvidence；needs_human 唔再由呢條路生。 */
 export function decideSelection(
   row: DeciderRow,
   shortlist: Shortlist,
@@ -805,11 +821,25 @@ export function decideSelection(
   const conf = row.conf;
   let auto = conf !== null && conf >= 0.7;
   let tieBreak: string | null = null;
-  let needsHuman = false;
+  const needsHuman = false; // R19 裁決②：席位決策路徑唔再生 needs_human；將來真 creative lock 類先設
+  // R19 裁決②（0929）：「conf<0.7＋平手→needs_human」係 source 新增 policy，
+  // 唔係用戶法——未指定創作選擇由系統合理處理係既有要求。席位（decider）
+  // 有權揀，留 decisionSource＋候選證據。分兩種平手：
+  //   觀測等價（arm/hip/duration 有實數而相同）→穩定 id 字典序 tie-break；
+  //   維度未觀測（評分資料缺）→照 decider pick（本鏡需求）行。
+  // 唔假造 conf（照 logprobs 觀測原值）；needs_human 唔再由呢條路生。
+  let decisionSource: string | undefined;
+  let candidateEvidence: MotionSelection["candidateEvidence"];
   if (!auto) {
-    const rivals = [row.pick, ...row.runner]
+    const rivalsAll = [row.pick, ...row.runner]
       .map((code) => shortlist.candidates.find((c) => c.code === code) ?? null)
       .filter((c): c is ShortlistEntry => Boolean(c));
+    // R19 裁決②（0929）：評分排名只喺任務相容（verbGate 過）嘅候選之間行——
+    // 舊版評分排序會蓋過前面 verb-miss swap 揀出嘅相容候選。
+    const rivals = rivalsAll.filter(
+      (c) => need.needAny.length === 0 || verbGate({ desc: c.desc, category: c.category }, need).pass,
+    );
+    if (rivals.length === 0) rivals.push(...rivalsAll); // 全唔過＝前面 verb gate 已 throw，呢度唔會到；防禦性 fallback
     const scoreOf = (c: ShortlistEntry): [number, number, number, number] => {
       const arm = ranking.get(c.id);
       const fr = clipFramesFor(c.bvh);
@@ -830,11 +860,41 @@ export function decideSelection(
       return 0;
     });
     const winner = rivals[0]!;
-    const tied = rivals.filter((r) => JSON.stringify(scoreOf(r)) === JSON.stringify(scoreOf(winner)));
+    // R19 裁決①：tied 判定改 typed 逐維比較——舊版 JSON.stringify 把
+    // Infinity/NaN 轉 null，「兩個都冇資料」睇落完全一樣＝假平手。
+    const tied = rivals.filter((r) => {
+      const sa = scoreOf(r);
+      const sw = scoreOf(winner);
+      return sa.every((v, i) => v === sw[i]);
+    });
     if (tied.length > 1) {
-      needsHuman = true;
-      tieBreak = `unresolved after arm-axis/family-hip/subject/duration (${tied.map((t) => t.id).join(",")})`;
-      chosen = winner.id;
+      // 評分維度觀測狀態：未觀測唔係合格（R19 裁決①）——資料缺要明示
+      const armObserved = ranking.has(winner.id);
+      const hipObserved = bvhHipStats(winner.bvh) !== null;
+      const framesObserved = clipFramesFor(winner.bvh) !== null;
+      candidateEvidence = rivals.map((c) => ({
+        id: c.id,
+        bvh: c.bvh,
+        arm_ranked: ranking.has(c.id),
+        hip_stats: bvhHipStats(c.bvh) !== null,
+        frames_read: clipFramesFor(c.bvh) !== null,
+        verb_pass: need.needAny.length === 0 ? true : verbGate({ desc: c.desc, category: c.category }, need).pass,
+      }));
+      if (armObserved && hipObserved && framesObserved) {
+        // 觀測等價：穩定 tie-break（id 字典序，deterministic 可重現）
+        const stable = [...tied].sort((a, b) => a.id.localeCompare(b.id))[0]!;
+        chosen = stable.id;
+        tieBreak = `observed-equal after arm-axis/family-hip/subject/duration; stable id-order among (${tied.map((t) => t.id).join(",")})`;
+        decisionSource = "seat-tiebreak:stable-id-order";
+      } else {
+        // 維度未觀測＝資料缺，唔當等價：保持任務相容 chosen（verb-miss swap
+        // 後嘅 decider 需求修正優先——R19 裁決②）
+        chosen = chosen ?? winner.id;
+        const miss = [!armObserved && "arm", !hipObserved && "hip", !framesObserved && "duration"].filter(Boolean).join("/");
+        tieBreak = `tie on unobserved dims (${miss}); seat keeps task-compatible pick per shot need`;
+        decisionSource = "seat-pick:unobserved-tie";
+      }
+      flags.push(`tie seat-decided (${decisionSource})`);
       auto = false;
     } else {
       chosen = winner.id;
@@ -857,6 +917,8 @@ export function decideSelection(
     reason: row.reason,
     ...(needsHuman ? { needs_human: true } : {}),
     ...(tieBreak ? { tie_break: tieBreak } : {}),
+    ...(decisionSource ? { decisionSource } : {}),
+    ...(candidateEvidence ? { candidateEvidence } : {}),
     ...(gap ? { gap } : {}),
     flags,
   };
@@ -869,12 +931,44 @@ function clipFramesFor(bvh: string): number | null {
   return frameCache.get(bvh) ?? null;
 }
 
-/** write the machine-readable per-job selection (motion/selection.json) */
+/** write the machine-readable per-job motion selection.
+ *  R19 裁決④（0929）：新 attempt 唔可覆寫最後 adopted selection——decider
+ *  結果寫 selection.attempt.json；selection.json 係 adopted 真源，經
+ *  adoptSelections()（席位決策閘過後採納）先寫，寫前自動 snapshot 舊版。 */
 export function writeSelections(jobMotionDir: string, selections: MotionSelection[], meta: Record<string, unknown>): string {
   fs.mkdirSync(jobMotionDir, { recursive: true });
-  const file = path.join(jobMotionDir, "selection.json");
-  fs.writeFileSync(file, JSON.stringify({ ...meta, shots: selections }, null, 2) + "\n");
+  const file = path.join(jobMotionDir, "selection.attempt.json");
+  fs.writeFileSync(file, JSON.stringify({ ...meta, attempt: true, shots: selections }, null, 2) + "\n");
   return file;
+}
+
+/** 採納：attempt 升格做 selection.json（adopted 真源）；舊 adopted 自動
+ *  snapshot 做 selection.adopted.<mtime>.json——provenance 鏈零丟失
+ *  （R19 裁決④：0927 版 selection 被 0928 R19c 覆寫失去就係呢個位缺）。 */
+export function adoptSelections(jobMotionDir: string): string {
+  const attempt = path.join(jobMotionDir, "selection.attempt.json");
+  const adoptedFile = path.join(jobMotionDir, "selection.json");
+  if (!fs.existsSync(attempt)) throw new Error(`adoptSelections: attempt 唔在盤（${attempt}）`);
+  const raw = JSON.parse(fs.readFileSync(attempt, "utf8")) as Record<string, unknown> & { shots: MotionSelection[] };
+  if (fs.existsSync(adoptedFile)) {
+    const stamp = fs.statSync(adoptedFile).mtime.toISOString().replace(/[:.]/g, "-");
+    fs.copyFileSync(adoptedFile, path.join(jobMotionDir, `selection.adopted.${stamp}.json`));
+  }
+  const { attempt: _drop, ...meta } = raw;
+  fs.writeFileSync(adoptedFile, JSON.stringify({ ...meta, adoptedAt: new Date().toISOString(), shots: raw.shots }, null, 2) + "\n");
+  return adoptedFile;
+}
+
+/** resume 重用讀 adopted selection（selection.json）。 */
+export function readAdoptedSelections(jobMotionDir: string): MotionSelection[] | null {
+  const adoptedFile = path.join(jobMotionDir, "selection.json");
+  if (!fs.existsSync(adoptedFile)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(adoptedFile, "utf8")) as { shots?: MotionSelection[] };
+    return Array.isArray(raw.shots) && raw.shots.length ? raw.shots : null;
+  } catch {
+    return null;
+  }
 }
 
 /** blockout landing path convention — the §5b C-form router's Video 1 field:

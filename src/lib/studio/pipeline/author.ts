@@ -646,10 +646,14 @@ export async function authorStage(ctx: Ctx): Promise<void> {
     },
   });
   const boardCount = locked.storyboard?.length ?? 0;
-  // CAPGAP_0927（110 條 #31）：零可見分鏡板從前 warn 唔 block——靜靜雞照行
-  // 係繞過位。而家硬反轉：blocked 等指示；逃生門＝人手 opt-in
-  // --allow-no-storyboard（ProduceInput.allowNoStoryboard，預設 false）。
-  if (boardCount === 0 && !input.allowNoStoryboard) {
+  // R19 裁決⑤（0929）：零可見板係執行格式／實際資料 coverage 問題——
+  // callsheet 有合法鏡表（shots 非空＋continuity 鎖到）＝文字表模式依現行
+  // 需求自動採納（記 source/mode，唔虛構用戶按過 override）。歷史曾照行只
+  // 證歷史行為，唔係人手 allow 嘅證據——所以採納來源寫「現行需求自動採納」。
+  // --allow-no-storyboard 降級做人手顯式 override（唔再係唯一路）。缺故事/
+  // 鏡表（shots 空）照舊 capability gap 返負責席。
+  const shotsLegal = (locked.shots?.length ?? 0) > 0 && continuity.cut.length > 0;
+  if (boardCount === 0 && !shotsLegal && !input.allowNoStoryboard) {
     const gap = storyboardZeroGap();
     ctx.job = patch(ctx.job, {
       status: "blocked",
@@ -661,11 +665,18 @@ export async function authorStage(ctx: Ctx): Promise<void> {
     ctx.stopped = true;
     return;
   }
+  if (boardCount === 0 && shotsLegal) {
+    ctx.job = patch(ctx.job, {
+      outputs: { ...ctx.job.outputs, storyboardMode: "text-only-callsheet (auto-adopt per current requirement)" },
+    });
+  }
   await speak(
     "boards",
     boardCount > 0
       ? `分鏡專職鎖咗 ${continuity.cut.length} 鏡。可見板 ${boardCount} 格。故事＝分鏡＝剪接。Vault 只得 ${jobId}。下一席接走位。`
-      : `文字表 ${continuity.cut.length} 鏡。可見分鏡板 0，未逐格 GREEN。未算分鏡完成（--allow-no-storyboard 人手確認照行）。`,
-    boardCount > 0 ? "info" : "warn",
+      : shotsLegal
+        ? `文字表 ${continuity.cut.length} 鏡（callsheet 合法鏡表）。可見分鏡板 0——零板＋合法鏡表依現行需求自動採納 text-only 模式（source=auto-adopt；--allow-no-storyboard 係人手顯式 override 版）。`
+        : `文字表 ${continuity.cut.length} 鏡。可見分鏡板 0，未逐格 GREEN。未算分鏡完成（--allow-no-storyboard 人手確認照行）。`,
+    boardCount > 0 ? "info" : shotsLegal ? "info" : "warn",
   );
 }

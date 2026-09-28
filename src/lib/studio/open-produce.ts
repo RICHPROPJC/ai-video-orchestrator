@@ -75,6 +75,7 @@ export type ResumePatch = {
   blockoutDir?: string;
   gapSec?: number;
   noMotionSelect?: boolean;
+  motionPicks?: Record<string, string>;
   allowNoStoryboard?: boolean;
   dryRun?: boolean;
   until?: ProduceInput["until"];
@@ -98,6 +99,7 @@ export function resumeSlate(slate: string, patch: ResumePatch): OpenedSlate | { 
     blockoutDir: patch.blockoutDir ?? job.input.blockoutDir,
     gapSec: patch.gapSec ?? job.input.gapSec,
     noMotionSelect: patch.noMotionSelect || job.input.noMotionSelect,
+    motionPicks: patch.motionPicks ?? job.input.motionPicks,
     allowNoStoryboard: patch.allowNoStoryboard || job.input.allowNoStoryboard,
     dryRun: patch.dryRun,
     until: patch.until,

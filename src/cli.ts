@@ -39,6 +39,10 @@ Flags
   --wav-dir <dir>       每鏡 SHxx.wav（可加 spine.wav 全片聲軌）；缺＝voice 席用 AuK :9882 自動出 VO（要 tts.promptWav／--clone）
   --portraits <dir>     角色肖像 A.png/B.png（首次出場 /edit 參考圖；45°用A_45.png）
   --no-motion-select    跳過motion-select（唔叫decider、唔bake mocap，workbench灰模照舊）
+  --motion-pick SH01=026/26_09  人手接揀片（可多次）：該鏡直接用指定 shortlist 候選，
+                        留 decisionSource=human-override；補入口，唔係主流程唯一恢復路
+  --allow-no-storyboard 顯式 override：零可見分鏡板照行（R19 裁決⑤後零板＋callsheet
+                        合法鏡表已自動採納記 mode，呢道門係人手明示版）
   --blockout-dir <dir>  預渲染 blockout SHxx.mp4（864x480 24fps，frames=wav snap）
   --callsheet <json>    載入現成 callsheet，跳過兩張檯（結構唔齊即刻 fail）
   --cast-roster <json>  可出聲角色名單（有聲音檔嘅名），編劇檯只准用呢批名
@@ -68,6 +72,29 @@ function die(opened: { error: string }): never {
   process.exit(1);
 }
 
+/** R19 裁決③（0929）：--motion-pick SH01=026/26_09（可多次）→ Record。 */
+function parseMotionPicks(): Record<string, string> | undefined {
+  const picks: Record<string, string> = {};
+  for (const a of process.argv) {
+    const m = /^--motion-pick=(.+)$/.exec(a) ?? (/^--motion-pick$/.test(a) ? ["", ""] : null);
+    if (!m) continue;
+    if (!m[1]) {
+      const i = process.argv.indexOf(a);
+      const v = process.argv[i + 1];
+      if (!v || v.startsWith("--")) { console.error("--motion-pick 要 SH01=026/26_09 形式"); process.exit(1); }
+      Object.assign(picks, parseOneMotionPick(v));
+    } else {
+      Object.assign(picks, parseOneMotionPick(m[1]));
+    }
+  }
+  return Object.keys(picks).length ? picks : undefined;
+}
+function parseOneMotionPick(v: string): Record<string, string> {
+  const m = /^(SH\w+)=(.+)$/.exec(v);
+  if (!m) { console.error(`--motion-pick 要 SH01=026/26_09 形式（收到 ${v}）`); process.exit(1); }
+  return { [m[1]]: m[2] };
+}
+
 function makeJob(brief: string) {
   const opened = createSlate({
     brief,
@@ -80,9 +107,12 @@ function makeJob(brief: string) {
     blockoutDir: arg("--blockout-dir"),
     gapSec: Number(arg("--gap", "0")),
     noMotionSelect: process.argv.includes("--no-motion-select"),
+    motionPicks: parseMotionPicks(),
+    allowNoStoryboard: process.argv.includes("--allow-no-storyboard"),
     dryRun: process.argv.includes("--dry-run"),
     until: arg("--until") as ProduceInput["until"],
     scene: arg("--scene"),
+    only: arg("--only"),
     shot: arg("--shot"),
     callSheetPath: arg("--callsheet"),
     castRosterPath: arg("--cast-roster"),
@@ -102,9 +132,12 @@ function resumeJob(slate: string) {
     blockoutDir: arg("--blockout-dir"),
     gapSec: process.argv.includes("--gap") ? Number(arg("--gap", "0")) : undefined,
     noMotionSelect: process.argv.includes("--no-motion-select"),
+    motionPicks: parseMotionPicks(),
+    allowNoStoryboard: process.argv.includes("--allow-no-storyboard"),
     dryRun: process.argv.includes("--dry-run"),
     until: arg("--until") as ProduceInput["until"],
     scene: arg("--scene"),
+    only: arg("--only"),
     shot: arg("--shot"),
     graphVariant: arg("--graph-variant") ? (arg("--graph-variant") as ProduceInput["graphVariant"]) : undefined,
     steps: process.argv.includes("--steps") ? Number(arg("--steps", "4")) : undefined,

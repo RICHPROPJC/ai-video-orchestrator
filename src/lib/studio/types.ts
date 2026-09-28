@@ -47,8 +47,14 @@ export type ProduceInput = {
   /** MULTISHOT_WIRE: skip the motion-select step (no decider call, no mocap
    *  bake — the workbench grey blockouts stand). */
   noMotionSelect?: boolean;
+  /** R19 裁決③（0929）：人手 override 入口——--motion-pick SH01=026/26_09
+   *  （可多次）。人手接嘅鏡直接採用指定 shortlist 候選留 decisionSource；
+   *  係補入口，唔係主流程唯一恢復路（主流程＝席位 decision→採納→resume）。 */
+  motionPicks?: Record<string, string>;
   /** CAPGAP_0927: 可見分鏡板 0 格預設係 capability gap（job blocked）。人手
-   *  確認照行先開呢道門（CLI --allow-no-storyboard）；預設 false。 */
+   *  確認照行先開呢道門（CLI --allow-no-storyboard）；預設 false。R19 裁決⑤
+   *  後零板＋callsheet 合法鏡表依現行需求自動採納（記 source/mode），呢道
+   *  門係顯式 override 唔再係唯一路。 */
   allowNoStoryboard?: boolean;
   dryRun?: boolean;
   /** stop early: boards = seats have written the callsheet (no wavs yet),
@@ -463,6 +469,9 @@ export type JobRecord = {
     voice?: string;
     blenderScript?: string;
     blockingPreview?: string;
+    /** R19 裁決⑤（0929）：零可見板＋callsheet 合法鏡表自動採納 text-only 模式
+     *  嘅機讀記錄（source=auto-adopt per current requirement）。 */
+    storyboardMode?: string;
     pictureLock?: string;
     callSheet?: string;
     continuity?: string;
