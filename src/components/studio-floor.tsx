@@ -25,10 +25,25 @@ import { FleetRack } from "@/components/fleet-rack";
 import { ShotTruth } from "@/components/shot-truth";
 import { H3PlanCard } from "@/components/h3-plan-card";
 import { clinicH3Plans } from "@/lib/studio/h3-slots";
-import { ShotCanvas } from "@/components/shot-canvas";
+import { Album } from "@/components/album";
+import { BlockCanvas } from "@/components/block-canvas";
+import { ShotFeedback } from "@/components/feedback-form";
 import { ShotInspector } from "@/components/shot-inspector";
 import { StoryboardPanel, ShotAudio } from "@/components/episode-media";
 import { Clapperboard, Film, Lock, Upload } from "lucide-react";
+
+/** B0（Sol UI-PLAN §6）：每個工作區一句用途——入頁即知呢度做乜。 */
+const TAB_NOTES: Record<FloorTab, string> = {
+  album: "圖片畫簿：揀圖、比較版本、查角色／場景來源。",
+  cut: "剪接：並排灰片／正片，選本段 percent 或跨鏡 span，建立重整要求。",
+  h3: "剪接：並排灰片／正片，選本段 percent 或跨鏡 span，建立重整要求。（舊入口别名→剪接）",
+  canvas: "H3 畫布：沿時間軸核對灰模每格／refs／空段短長——接錯即刻現形。",
+  board: "分鏡：睇已交分鏡板圖，定位鏡段（文字表唔算分鏡）。",
+  plan: "創作計劃：故事／聲畫安排同修改影響。",
+  block: "場景走位：本任務嘅世界／機位／動作產物。",
+  qc: "QC：分項結果同原證據，搵問題源頭。",
+  lock: "成片：實際交付、下載，或未交付原因。",
+};
 
 const EXAMPLES = [
   "重生得到系統做國家領導人。攻心計，軟硬手。坦克／飛機／槍／導彈／無人機。EP01 第一場 SC01，約 300 秒一集、一場一 hop。",
@@ -39,6 +54,26 @@ const EXAMPLES = [
 function media(id: string, rel?: string) {
   if (!rel) return "";
   return `/api/media/${id}/${rel}`;
+}
+
+/** Chau 0927（手機回報）：更新應該只動嗰個框——內容冇變嘅 poll／SSE
+ *  一律唔觸發 render（signature 相同就返 prev，React 自動 bail）。 */
+function jobSig(j: JobRecord | null): string {
+  if (!j) return "";
+  return [
+    j.updatedAt, j.status, j.progress, j.error ?? "", j.currentAgent ?? "",
+    j.outputs.stills.length, j.outputs.blockout.length, j.outputs.shots.length, j.outputs.receipts.length,
+    j.outputs.pictureLock ?? "", j.outputs.scenePreview ?? "",
+    j.callSheet?.shots.length ?? 0, j.callSheet?.storyboard?.length ?? 0,
+  ].join("|");
+}
+
+function rowsSig(rows: JobRecord[]): string {
+  return rows.map((r) => `${r.id}:${r.status}:${r.progress}:${r.updatedAt}`).join("|");
+}
+
+function eventsChanged(prev: JobEvent[], next: JobEvent[]): boolean {
+  return prev.length !== next.length || prev[prev.length - 1]?.ts !== next[next.length - 1]?.ts;
 }
 
 export function StudioFloor({
@@ -66,8 +101,9 @@ export function StudioFloor({
   const [frameNote, setFrameNote] = useState("");
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<{ id: string; modality: string; score: number; text: string; shotId?: string }[] | null>(null);
-  const tab = initialTab;
+  const [tab, setTab] = useState<FloorTab>(initialTab);
   const logRef = useRef<HTMLDivElement>(null);
+  const [logFilter, setLogFilter] = useState<"tail" | "key" | "all">("tail");
 
   const probeNow = useCallback(() => {
     setProbingFleet(true);
@@ -87,7 +123,8 @@ export function StudioFloor({
   }, []);
 
   useEffect(() => {
-    probeNow();
+    const raf = window.requestAnimationFrame(() => probeNow());
+    return () => window.cancelAnimationFrame(raf);
   }, [probeNow]);
 
   useEffect(() => {
@@ -96,7 +133,8 @@ export function StudioFloor({
       void fetch("/api/jobs", { cache: "no-store" })
         .then((r) => r.json() as Promise<{ jobs?: JobRecord[] }>)
         .then((data) => {
-          if (!stop && data.jobs) setRows(data.jobs);
+          const next = data.jobs;
+          if (!stop && next) setRows((prev) => (rowsSig(prev) === rowsSig(next) ? prev : next));
         })
         .catch(() => undefined);
     };
@@ -113,10 +151,14 @@ export function StudioFloor({
     const listed = rows.find((item) => item.id === job.id);
     if (!listed || listed.updatedAt < job.updatedAt) return;
     if (listed.status === job.status && listed.error === job.error && listed.updatedAt === job.updatedAt) return;
-    setJob({
-      ...listed,
-      callSheet: listed.callSheet?.storyboard?.length ? listed.callSheet : job.callSheet,
+    const raf = window.requestAnimationFrame(() => {
+      setJob((prev) =>
+        prev && prev.id === listed.id
+          ? { ...listed, callSheet: listed.callSheet?.storyboard?.length ? listed.callSheet : prev.callSheet }
+          : prev,
+      );
     });
+    return () => window.cancelAnimationFrame(raf);
   }, [rows, job]);
 
   useEffect(() => {
@@ -128,7 +170,8 @@ export function StudioFloor({
       setEvents((prev) => (prev.some((p) => p.ts === ev.ts && p.message === ev.message) ? prev : [...prev, ev]));
     });
     src.addEventListener("job", (e) => {
-      setJob(JSON.parse((e as MessageEvent).data) as JobRecord);
+      const next = JSON.parse((e as MessageEvent).data) as JobRecord;
+      setJob((prev) => (prev && jobSig(prev) === jobSig(next) ? prev : next));
     });
     src.onerror = () => {
       src.close();
@@ -139,8 +182,9 @@ export function StudioFloor({
         .then(async (res) => {
           if (!res.ok || stop) return;
           const data = (await res.json()) as JobRecord & { events?: JobEvent[] };
-          setJob(data);
-          if (data.events?.length) setEvents(data.events);
+          setJob((prev) => (prev && jobSig(prev) === jobSig(data) ? prev : data));
+          const evs = data.events;
+          if (evs?.length) setEvents((prev) => (eventsChanged(prev, evs) ? evs : prev));
           if (data.status === "locked" || data.status === "failed" || data.status === "blocked" || data.status === "boarded") {
             window.clearInterval(poll);
           }
@@ -173,6 +217,26 @@ export function StudioFloor({
               <p className="text-xs text-muted-foreground">開麥拉組 · 交付級影片 agent team</p>
             </div>
           </div>
+          {/* B0（Sol UI-PLAN）：頂部當前項目切換器——手機都見到，唔使碌去左欄。 */}
+          <div className="flex min-w-0 items-center gap-2">
+            <select
+              aria-label="切換項目"
+              className="min-w-0 max-w-[9rem] truncate rounded border border-border bg-background px-1.5 py-1 text-[11px] sm:max-w-[14rem]"
+              value={job?.id ?? ""}
+              onChange={(e) => {
+                if (e.target.value && e.target.value !== job?.id) window.location.href = slateHref(e.target.value, tab);
+              }}
+            >
+              <option value="" disabled>
+                揀項目…
+              </option>
+              {rows.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.slate} · {r.status} · 片{r.outputs.shots.length}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="hidden items-center gap-2 text-[11px] tracking-wider text-muted-foreground sm:flex">
             <span>U1.5</span>
             <span className="text-primary">/</span>
@@ -188,9 +252,13 @@ export function StudioFloor({
       </header>
 
       <main className="mx-auto grid max-w-[1400px] gap-4 px-4 py-6 md:px-8 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <section className="order-2 space-y-4 lg:order-1">
+        {/* Chau 0928（臃腫回報）：版面分返層——左邊淨係項目列表，右邊項目表。
+            開新 slate／機隊 rack 收 details，唔再成欄霸住。 */}
+        <section className="order-2 w-full space-y-3 lg:order-1">
           <SlatePicker rows={rows} current={job?.id} tab={tab} />
-          <Card className="bg-card/80">
+          <details className="rounded-lg border px-3 py-2 text-xs">
+            <summary className="cursor-pointer font-medium">＋ 開新 slate</summary>
+            <Card className="mt-2 border-0 bg-card/80">
             <CardHeader className="border-b">
               <CardTitle>開新 slate</CardTitle>
               <p className="text-muted-foreground text-xs leading-relaxed">
@@ -308,8 +376,12 @@ export function StudioFloor({
               </form>
             </CardContent>
           </Card>
+          </details>
 
-          <FleetRack fleet={fleet} probing={probingFleet} onProbe={probeNow} />
+          <details className="rounded-lg border px-3 py-2 text-xs">
+            <summary className="cursor-pointer font-medium">機隊／模型 rack</summary>
+            <div className="mt-2 space-y-3">
+            <FleetRack fleet={fleet} probing={probingFleet} onProbe={probeNow} />
 
           <Card>
             <CardHeader className="border-b">
@@ -372,19 +444,23 @@ export function StudioFloor({
               </ul>
             </CardContent>
           </Card>
+            </div>
+          </details>
         </section>
 
         <section className="order-1 min-w-0 space-y-4 lg:order-2">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between border-b">
-              <div>
+              <div className="min-w-0">
                 <CardTitle className="flex items-center gap-2">
                   <Film className="size-4 text-primary" />
                   {job?.slate ?? "未開 slate"}
                 </CardTitle>
-              <p className="text-muted-foreground mt-1 text-xs">
+              <p className="text-muted-foreground mt-1 min-w-0 truncate text-xs" title={job?.callSheet?.title ?? job?.input.brief ?? ""}>
                   {job?.callSheet?.title ?? job?.input.brief ?? "等 brief"} · {job?.status ?? "idle"}
-                  {job?.continuity?.cut?.length ? ` · ${job.continuity.cut.join("→")}` : ""}
+                  {job?.continuity?.cut?.length
+                    ? ` · cut ${job.continuity.cut.length} 鏡（${job.continuity.cut[0]}→…→${job.continuity.cut[job.continuity.cut.length - 1]}）`
+                    : ""}
                 </p>
                 {job ? (
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -411,6 +487,9 @@ export function StudioFloor({
             <CardContent className="space-y-4">
               <Progress value={job?.progress ?? 0} />
               <ProductLinks job={job} />
+              <details className="rounded border px-2 py-1.5 text-xs text-muted-foreground">
+                <summary className="cursor-pointer">席位／抽 QC 幀</summary>
+                <div className="mt-2 space-y-3">
               {job?.id ? (
                 <form
                   className="flex flex-wrap items-end gap-2 text-xs"
@@ -469,50 +548,76 @@ export function StudioFloor({
                   );
                 })}
               </div>
+                </div>
+              </details>
             </CardContent>
           </Card>
 
-          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="min-w-0 space-y-2">
             <div className="min-w-0">
-              <div className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
+              {/* Chau 0927（手機回報）：tab 切換改 client-side——淨換下面個框，
+                  唔再成個網 reload；replaceState 保持 URL 可 share 唅觸發 navigation。
+                  手機單行橫向碌，唔再 wrap 到兩三行亂晒。 */}
+              <div className="flex gap-1 overflow-x-auto rounded-lg bg-muted p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {(
                   [
+                    ["album", "畫簿"],
+                    ["cut", "剪接"],
                     ["canvas", "畫布"],
                     ["board", "分鏡"],
                     ["plan", "計劃"],
                     ["block", "走位"],
-                    ["h3", "H3"],
                     ["qc", "QC"],
                     ["lock", "成片"],
                   ] as const
-                ).map(([id, label]) => {
-                  const q = new URLSearchParams();
-                  if (job?.id) q.set("slate", job.id);
-                  if (id !== "board") q.set("tab", id);
-                  const href = `/?${q.toString()}`;
-                  return (
-                    <a
-                      key={id}
-                      href={href}
-                      className={cn(
-                        buttonVariants({ variant: tab === id ? "default" : "ghost", size: "sm" }),
-                      )}
-                    >
-                      {label}
-                    </a>
-                  );
-                })}
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={cn(
+                      buttonVariants({ variant: tab === id ? "default" : "ghost", size: "sm" }),
+                      "shrink-0 whitespace-nowrap",
+                    )}
+                    onClick={() => {
+                      setTab(id);
+                      const q = new URLSearchParams();
+                      if (job?.id) q.set("slate", job.id);
+                      if (id !== "board") q.set("tab", id);
+                      window.history.replaceState(null, "", `/?${q.toString()}`);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-              {tab === "canvas" ? <ShotCanvas key={job?.id} job={job} /> : null}
+              <p className="px-1 text-[10px] text-muted-foreground">{TAB_NOTES[tab]}</p>
+              {tab === "album" ? <Album key={job?.id} job={job} /> : null}
+              {/* Chau 0928（畫布真義）：node graph 換走——畫布＝灰模逐格對帳牆。 */}
+              {tab === "canvas" ? <BlockCanvas key={job?.id} job={job} /> : null}
+              {job ? (
+                <div className="mt-2">
+                  <details className="rounded-lg border border-amber-700/50 bg-amber-950/20 p-2 text-xs">
+                    <summary className="cursor-pointer text-amber-300">🚩 見到問題？展開報俾 Claude（實時收）</summary>
+                    <ShotFeedback jobId={job.id} shots={(job.callSheet?.shots ?? []).map((s) => s.id)} />
+                  </details>
+                </div>
+              ) : null}
               {tab === "board" ? (
-                <div className="mt-3 grid gap-3 lg:grid-cols-[11rem_minmax(0,1fr)_20rem]">
-                  <div className="space-y-1 text-xs">
-                    {(job?.callSheet?.shots ?? []).map((shot) => (
-                      <p key={shot.id} className="font-mono">{shot.id} · {shot.location}</p>
-                    ))}
-                  </div>
-                  <StoryboardPanel job={job} />
-                  {job?.id ? <ShotInspector jobId={job.id} shots={job.callSheet?.shots.map((s) => s.id) ?? []} /> : null}
+                <div className="mt-3 min-h-48 space-y-3">
+                  {/* Chau 0927（糾正）：KF stills 唔係分鏡格——唔好用 stills 砌格牆。
+                      呢個 tab 淨係顯示真分鏡板交付物（板原圖＋切格 Gallery）；
+                      格牆／KF／灰模／refs 嘅呈現歸畫布 tab。逐鏡條目軸已判死，鏟走。 */}
+                  {job?.callSheet?.storyboard?.length ? (
+                    <StoryboardPanel job={job} />
+                  ) : (
+                    <Empty label="分鏡板未交付——文字鏡頭表唔算分鏡。" />
+                  )}
+                  {job?.id ? (
+                    <details className="rounded-lg border px-3 py-2 text-xs text-muted-foreground">
+                      <summary className="cursor-pointer">逐鏡收據（ShotInspector）</summary>
+                      <ShotInspector jobId={job.id} shots={job.callSheet?.shots.map((s) => s.id) ?? []} />
+                    </details>
+                  ) : null}
                 </div>
               ) : null}
               {tab === "plan" ? (
@@ -568,6 +673,19 @@ export function StudioFloor({
                       ))}
                     </ul>
                   ) : null}
+                  {/* Chau 0928（重組）：§5b H3 範本 demo 由舊 H3 tab 搬嚟收埋。 */}
+                  <details className="rounded-lg border px-3 py-2 text-xs text-muted-foreground">
+                    <summary className="cursor-pointer">H3 範本參考（§5b demo，唔係呢份 job 嘅數據）</summary>
+                    {(() => {
+                      const { hold, hop } = clinicH3Plans();
+                      return (
+                        <div className="mt-2 grid gap-3 lg:grid-cols-2">
+                          <H3PlanCard title="Hold · same world" plan={hold} />
+                          <H3PlanCard title="Hop · prev last forbidden" plan={hop} />
+                        </div>
+                      );
+                    })()}
+                  </details>
                 </div>
               ) : null}
               {tab === "block" ? (
@@ -613,25 +731,11 @@ export function StudioFloor({
                   </div>
                 </div>
               ) : null}
-              {tab === "h3" ? (
-                <div className="mt-3 min-h-48 space-y-3">
-                  <p className="text-xs text-muted-foreground">
-                    一鏡一 generate。真 U1.5 鍵格可以同灰模參考片一齊用。灰模圖唔可以當鍵格。{" "}
-                    <a className="text-primary underline" href="/h3">
-                      /h3
-                    </a>
-                  </p>
-                  {(() => {
-                    const { hold, hop } = clinicH3Plans();
-                    return (
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        <H3PlanCard title="Hold · same world" plan={hold} />
-                        <H3PlanCard title="Hop · prev last forbidden" plan={hop} />
-                      </div>
-                    );
-                  })()}
-                </div>
-              ) : null}
+              {/* Chau 0928（重組）：H3 獨立 tab 刪走——KF↔灰模↔出片對照、全片
+                  連接軸、h3_plan refs 三槽全部歸畫簿 H3對齊 view；舊 ?tab=h3
+                  落畫簿同一個 view，唔爆 link。 */}
+              {/* Chau 0928：剪接＝H3對齊同一頁（cut/h3 兩個入口同一個 view）。 */}
+              {tab === "h3" || tab === "cut" ? <Album key={job?.id} job={job} initialView="h3" /> : null}
               {tab === "lock" ? (
                 <div className="mt-3 min-h-48 space-y-4">
                 <ShotAudio job={job} />
@@ -687,20 +791,51 @@ export function StudioFloor({
               ) : null}
             </div>
 
-            <Card className="min-h-72">
+            <details className="rounded-lg border px-3 py-2 text-xs">
+              <summary className="cursor-pointer font-medium">場地對講（紀錄）</summary>
+            <Card className="mt-2 min-h-72">
               <CardHeader className="border-b">
                 <CardTitle>場地對講</CardTitle>
+                {/* Chau 0927：記錄冇分層全部塞埋一齊——預設「當前」淨睇尾 30 筆（任何
+                    level）；要痛點先撳「要點」（error/fail/warn），要全量先撳「全部」。 */}
+                <div className="flex gap-1 pt-1 text-[11px]">
+                  {(
+                    [
+                      ["tail", "當前（尾 30 筆）"],
+                      ["key", "要點（錯/敗/警）"],
+                      ["all", "全部"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={cn(
+                        buttonVariants({ variant: logFilter === id ? "default" : "ghost", size: "sm" }),
+                      )}
+                      onClick={() => setLogFilter(id)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <span className="ml-auto self-center text-muted-foreground">
+                    {events.filter((e) => e.level === "error" || e.level === "fail").length} 錯敗 ·{" "}
+                    {events.filter((e) => e.level === "warn").length} 警 · {events.length} 總
+                  </span>
+                </div>
               </CardHeader>
               <CardContent className="p-0">
-                <ScrollArea className="h-[420px]">
+                <ScrollArea className="h-[280px] xl:h-[420px]">
                   <div ref={logRef} className="space-y-2 p-3 font-mono text-[11px] leading-relaxed">
                     {events.length === 0 ? (
                       <p className="text-muted-foreground">等開工。Agent 會喺呢度報位。</p>
                     ) : (
-                      events.map((e, i) => (
+                      (logFilter === "tail"
+                        ? events.slice(-30)
+                        : events.filter((e) => logFilter === "all" || e.level === "error" || e.level === "fail" || e.level === "warn")
+                      ).map((e, i) => (
                         <p key={`${e.ts}-${i}`}>
                           <span className="text-primary">{e.agent === "system" ? "system" : whoLine(e.agent)}</span>{" "}
-                          <span className={e.level === "fail" ? "text-destructive" : e.level === "pass" ? "text-emerald-400" : "text-muted-foreground"}>
+                          <span className={e.level === "fail" ? "text-destructive" : e.level === "pass" ? "text-emerald-400" : e.level === "warn" ? "text-amber-400" : e.level === "error" ? "text-destructive font-bold" : "text-muted-foreground"}>
                             {e.level}
                           </span>{" "}
                           {e.message}
@@ -711,6 +846,7 @@ export function StudioFloor({
                 </ScrollArea>
               </CardContent>
             </Card>
+            </details>
           </div>
         </section>
       </main>
@@ -782,7 +918,10 @@ function PickerGroup({
                 <span className="font-mono">{item.slate}</span>
                 <span className="mt-0.5 block text-[10px] opacity-80">{item.callSheet?.title ?? item.input.brief.slice(0, 18)}</span>
               </span>
-              <span className="text-[10px]">{item.status} {item.progress}%</span>
+              <span className="text-right text-[10px] leading-tight">
+                {item.status} {item.progress}%
+                <span className="block">片{item.outputs.shots.length}{item.outputs.pictureLock ? " · lock" : ""}</span>
+              </span>
             </a>
           ))}
         </div>
@@ -819,7 +958,7 @@ function ProductLinks({ job }: { job: JobRecord | null }) {
   ].filter((p): p is string => Boolean(p));
   if (!files.length) return null;
   return (
-    <div className="flex flex-wrap gap-2 text-[11px]">
+    <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto text-[11px] leading-relaxed">
       {files.map((file) => (
         <a key={file} className="text-primary underline" href={media(job.id, file)}>
           {file}
