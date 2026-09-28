@@ -143,7 +143,7 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         if (!row) return true;
         return stableJson(motionSpecOf(s)) !== stableJson(row.spec ?? {});
       };
-      const changedShots = adopted ? selShots.filter(specChanged) : selShots;
+      const changedShots = adopted ? selShots.filter((s) => specChanged(s) || Boolean(input.motionPicks?.[s.id])) : selShots;
       if (adopted && changedShots.length === 0) {
         for (const r of adopted) motionSelections.set(r.shot, r);
         await speak(

@@ -229,6 +229,12 @@ export function buildCmuIndex(root = MOTION_LIB_ROOT): CmuIndex {
 // ---------------------------------------------------------------------------
 
 export const MOTION_FAMILIES: ReadonlyArray<readonly [string, readonly string[]]> = [
+  // R20 裁決②（0929）：action-direct 通道排最前——keywords 空（picks 由
+  // actionDirectKeywords 直搜直接 set）；前置係因為尾段 pre.slice(0,120)
+  // 按 family 順序截——排尾會被 family cap 總和（120）食滿斬走（probe
+  // 實證兩度丟失：未註冊時 picks 被丟；註冊排尾時被 slice 斬）。
+  // action-specific 候選優先過泛 family（walk/idle 呢啲萬金油）。
+  ["actionDirect", []],
   ["martial", ["martial", "boxing", "punch", "kick", "fight", "karate", "kungfu", "kung fu", "swordplay", "defensive", "attack"]],
   ["walk", ["walk", "stroll", "march"]],
   ["run", ["run", "jog", "sprint", "chase"]],
@@ -244,6 +250,8 @@ export const FAMILY_CAPS: Record<string, number> = {
   bend_pick: 20,
   sit: 18,
   stand_idle: 12,
+  // R20 裁決②（0929）：action-direct 直搜通道 cap（action 詞典 hit index 描述）
+  actionDirect: 40,
 };
 
 
@@ -306,6 +314,39 @@ export function legalCandidates(shortlist: Shortlist, action: string): Shortlist
   return shortlist.candidates.filter((c) => verbGate({ desc: c.desc, category: c.category }, need).pass);
 }
 
+/** R20 裁決②（0929）：通用動作詞典（中文 action 詞 → index 英文描述詞）。
+ *  係「任何影片嘅動作詞都查到」嘅對照表，唔係某片嘅 clip 清單——shortlist
+ *  由 family 表（combat/walk/…）之外加一條 action-direct 直搜通道，action
+ *  詞直接 hit index 描述（unscrew/drink 呢類 family 表冇覆蓋嘅動作由此入）。 */
+const ACTION_VERB_DICT: [RegExp, string[]][] = [
+  [/扭|擰|開蓋|開樽/, ["unscrew", "screw", "twist", "bottlecap", "bottle cap", "jar lid"]],
+  [/飲|喝|啜|對嘴/, ["drink", "sipping", "soda", "beverage"]],
+  [/倒|斟|注/, ["pour", "fill", "pouring"]],
+  [/抹|擦|拭/, ["wipe", "wiping", "rub", "rubbing"]],
+  [/拎|提|舉|拿起|執起|握/, ["lift", "lifting", "pick up", "picking up", "carry", "carrying", "raise", "raising", "hold", "grab"]],
+  [/放低|放下|擺|掂檯/, ["put down", "placing", "place", "lay down", "lower", "lowering", "set down"]],
+  [/行|走|行埋|埋去|接近/, ["walk", "walking", "step", "approach"]],
+  [/坐|坐低/, ["sit", "sitting", "sit down", "seat"]],
+  [/跑|奔/, ["run", "running", "jog"]],
+  [/跳/, ["jump", "jumping", "leap"]],
+  [/望|看|望向|望鏡/, ["look", "looking", "gaze", "stare"]],
+  [/講|說|開口|講嘢/, ["talk", "talking", "speak", "speaking", "say"]],
+  [/笑/, ["laugh", "laughing"]],
+  [/揮手|招手/, ["wave", "waving", "beckon"]],
+  [/轉身|轉/, ["turn", "turning", "spin"]],
+];
+
+/** action 文本 → 直搜英文詞集（family 詞之外嘅補充通道）。 */
+export function actionDirectKeywords(actions: string[]): string[] {
+  const kws = new Set<string>();
+  for (const a of actions) {
+    for (const [re, en] of ACTION_VERB_DICT) {
+      if (re.test(a)) for (const k of en) kws.add(k);
+    }
+  }
+  return [...kws];
+}
+
 export type ShortlistEntry = {
   family: string;
   id: string;
@@ -354,6 +395,30 @@ export function buildShortlist(
   const seenSibling = new Set<string>(); // `${subject}|${desc}` dedupe key
   const count = (fam: string) => [...picks.values()].filter((f) => f === fam).length;
 
+  // R20 裁決②（0929）：action-direct 直搜通道先行——action 詞典詞直接 hit
+  // index 描述（unscrew/drink 呢類 family 表冇覆蓋嘅動作由此入 shortlist；
+  // 通用詞典通道，支援任何影片嘅 action 詞，唔係某片 clip 清單）。兩輪制：
+  // specific 詞先行（泛詞 walk/hold/lift 會被 index 大量 clip 食滿 cap，
+  // soda 類 specific clip 反而入唔到——probe 實證），泛詞後補。
+  const directKws = actionDirectKeywords(actions);
+  const GENERIC_DIRECT = new Set(["walk", "walking", "step", "approach", "lift", "lifting", "pick up", "picking up", "carry", "carrying", "raise", "raising", "hold", "grab", "put down", "placing", "place", "lay down", "lower", "lowering", "set down", "run", "running", "jog", "jump", "jumping", "leap", "turn", "turning", "spin"]);
+  const specificKws = directKws.filter((k) => !GENERIC_DIRECT.has(k));
+  const runDirect = (kws: string[], cap: number) => {
+    if (!kws.length) return;
+    for (const clip of index.clips) {
+      if (count("actionDirect") >= cap) break;
+      if (picks.has(clip.id)) continue;
+      const hay = `${clip.desc} ${clip.category ?? ""}`.toLowerCase();
+      if (!kws.some((k) => hay.includes(k))) continue;
+      const sib = `${clip.subject}|${clip.desc}`;
+      if (seenSibling.has(sib)) continue;
+      picks.set(clip.id, "actionDirect");
+      seenSibling.add(sib);
+    }
+  };
+  runDirect(specificKws, 20); // specific 先行（unscrew/drink/wipe…）
+  runDirect(directKws, FAMILY_CAPS.actionDirect!); // 泛詞後補至 cap
+
   // martial: ranking order (evidence first), then keyword fill to cap
   for (const cid of ranking.keys()) {
     if (count("martial") >= FAMILY_CAPS.martial) break;
@@ -373,7 +438,7 @@ export function buildShortlist(
     picks.set(clip.id, "martial");
     seenSibling.add(sib);
   }
-  for (const [fam] of MOTION_FAMILIES.slice(1)) {
+  for (const [fam] of MOTION_FAMILIES.slice(2)) { // [0]=actionDirect（獨立段）、[1]=martial（ranking 先行段）——都唔行呢度 keyword filter
     for (const clip of index.clips) {
       if (count(fam) >= FAMILY_CAPS[fam]!) break;
       if (picks.has(clip.id)) continue;
@@ -714,6 +779,61 @@ export function bakeFor(durationSec: number): { start: number; len: number; step
   return { start: 1, len: Math.round(durationSec * 120), step: 2, auto_anchor: true };
 }
 
+/** R20 裁決②（0929）：clip 活動段偵測（通用，任何 BVH）——每幀全 channel
+ *  delta 絕對和做活動量；企定基線＝中位數；超基線×3 連續 ≥18 幀（0.15s）
+ *  算活動段，取累計活動量最大嘅主段。bake start 由主段起，唔再硬編 1
+ *  （「選整條 clip 然後 bake start=1 假設動作即刻開始」對症——CMU soda
+ *  clip 企定開場會食晒鏡長）。工程估計級：分唔到 unscrew vs 飲（細分要
+ *  FK 語義分析，Mo 0929 八 clip 幀級表係人手版）；偵測唔到＝照舊 start 1
+ *  且 segment 收據留空，唔作假。 */
+export function bvhActivityWindow(bvhRelToData: string, root = MOTION_LIB_ROOT): { startF: number; endF: number; startSec: number; endSec: number; method: string } | null {
+  try {
+    const rel = bvhRelToData.replace(/^data\//, "");
+    const file = path.join(root, "cmu-mocap", "data", rel);
+    const text = fs.readFileSync(file, "latin1");
+    const motionAt = text.indexOf("MOTION");
+    if (motionAt < 0) return null;
+    const lines = text.slice(motionAt).split(/\r?\n/);
+    const frames: number[][] = [];
+    for (const line of lines.slice(2)) {
+      const tok = line.trim().split(/\s+/).map(Number);
+      if (tok.length > 3 && tok.every(Number.isFinite)) frames.push(tok);
+    }
+    if (frames.length < 60) return null;
+    const acts: number[] = [0];
+    for (let i = 1; i < frames.length; i += 1) {
+      let s = 0;
+      const a = frames[i]!, b = frames[i - 1]!;
+      for (let c = 0; c < a.length; c += 1) s += Math.abs((a[c] ?? 0) - (b[c] ?? 0));
+      acts.push(s);
+    }
+    const sorted = [...acts].sort((x, y) => x - y);
+    const base = sorted[Math.floor(sorted.length / 2)]!;
+    if (!(base > 0)) return null;
+    // 閾值：median×3 對 120Hz 逐幀 delta 太緊（企定旋轉噪聲已近 median），
+    // 實測全 null。改 P85 同 median×1.5 取大——活動幀 ~15% 起捕（Mo 人手
+    // 表 14_05 unscrew 佔 ~11% + 飲用段 ≥15% 對得上）。
+    const thresh = Math.max(sorted[Math.floor(sorted.length * 0.85)]!, base * 1.5);
+    const runs: { s: number; e: number; sum: number }[] = [];
+    let s = -1, sum = 0;
+    for (let i = 0; i < acts.length; i += 1) {
+      if (acts[i]! >= thresh) {
+        if (s < 0) { s = i; sum = 0; }
+        sum += acts[i]!;
+      } else if (s >= 0) {
+        if (i - s >= 18) runs.push({ s, e: i - 1, sum });
+        s = -1;
+      }
+    }
+    if (s >= 0 && acts.length - s >= 18) runs.push({ s, e: acts.length - 1, sum });
+    if (!runs.length) return null;
+    const main = runs.reduce((x, y) => (y.sum > x.sum ? y : x))!;
+    return { startF: main.s + 1, endF: main.e + 1, startSec: Number(((main.s) / 120).toFixed(2)), endSec: Number(((main.e) / 120).toFixed(2)), method: "activity-detect-v1(median×3,run≥18f)" };
+  } catch {
+    return null;
+  }
+}
+
 export type MotionSelection = {
   shot: string;
   /** path RELATIVE to cmu-mocap/data/ — the double-data docstring path is the
@@ -736,6 +856,9 @@ export type MotionSelection = {
   decisionSource?: string;
   /** 平手時嘅候選證據：每個 rival 各維度觀測狀態＋verbGate 結果（收據）。 */
   candidateEvidence?: { id: string; bvh: string; arm_ranked: boolean; hip_stats: boolean; frames_read: boolean; verb_pass: boolean }[];
+  /** R20 裁決②（0929）：採納活動段收據——bake start 由呢度起（幀/秒/方法），
+   *  KF at 0/mid/end 對應實際 clip 區段有得對帳。偵測唔到＝欄位缺席唔作假。 */
+  segment?: { startF: number; endF: number; startSec: number; endSec: number; method: string };
   /** CMU 覆蓋唔到嘅動作（手部動詞）——pipeline 讀到 gap.remedy==="kf_driven"
    *  就行鍵格驅動路，唔好假 Video1 motion。 */
   gap?: MotionGap;
@@ -903,6 +1026,10 @@ export function decideSelection(
     }
   }
   const finalRow = byId.get(chosen!) ?? chosenRow;
+  // R20 裁決②（0929）：bake start 對實際活動段（通用偵測）——唔硬編 1；
+  // 段窗口落 selection.segment 收據。偵測唔到＝照舊 start 1＋欄位缺席。
+  const activityWin = finalRow ? bvhActivityWindow(finalRow.bvh) : null;
+  const bake = activityWin ? { ...bakeFor(shot.durationSec), start: activityWin.startF } : bakeFor(shot.durationSec);
   // runners list every alternative the decider offered plus a demoted pick
   const runnerIds = [...new Set([pickId, ...row.runner.map((code) => shortlist.candidates.find((c) => c.code === code)?.id ?? code)])]
     .filter((id): id is string => Boolean(id) && id !== chosen);
@@ -912,7 +1039,8 @@ export function decideSelection(
     bvh: finalRow ? finalRow.bvh : "",
     conf,
     auto,
-    bake: bakeFor(shot.durationSec),
+    bake,
+    ...(activityWin ? { segment: activityWin } : {}),
     runners: runnerIds,
     reason: row.reason,
     ...(needsHuman ? { needs_human: true } : {}),
