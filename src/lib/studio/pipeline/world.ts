@@ -980,11 +980,12 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     let kept = input.resume && sceneStamped && gotFrames > 0;
     let keptVia = "stamp";
     if (!kept && input.resume && gotFrames > 0 && selDep) {
-      // R19 裁決④（0929）：0927 舊 stamp 用全 object fingerprint 公式，同新
-      // 公式（實質依賴）自然唔夾——但 0927 bake log 重建表（motion/
-      // adopted-0927.json，provenance＝events bake speak）在場＋實質依賴
-      // （bvh/bake）一致＝無差異，照 kept 唔重 bake；kept 後 stamp 重寫做新
-      // 公式（以後純 setKey 比對）。
+      // R20 裁決④（0929）：bake-log fallback 只證 motion 依賴（bvh/bake）——
+      // 世界件/rig/mesh/camera/marks/props/frameclock/spec 依賴**唔會**由
+      // 舊 stamp（全 object fingerprint 舊公式）驗到。舊版 kept 後重寫新
+      // setKey＝把 unknown 舊片冒充 verified 新採納——唔再寫。kept 照用（mp4
+      // 在場＋motion 依賴對到＝legacy 沿用），stamp 留空等下次真 render 先
+      // 由新公式寫 verified 版；trace 標 legacy 唔標 verified。
       const logged = bakeAdoptLogOf(jobId)?.[shot.id];
       const bakeEq =
         logged &&
@@ -995,18 +996,15 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         (logged.bake.auto_anchor ?? true) === (selDep.bake.auto_anchor ?? true);
       if (logged && bakeEq && logged.bvh === selDep.bvh) {
         kept = true;
-        keptVia = "0927-bake-log";
+        keptVia = "0927-bake-log-legacy";
       }
     }
     if (kept) {
-      trace.blender = keptVia === "0927-bake-log" ? "resume (kept via 0927 bake-log)" : "resume (kept)";
-      if (!sceneStamped && selDep) {
-        fs.writeFileSync(sceneStamp, JSON.stringify({ setKey, dep: { bvh: selDep.bvh, bake: selDep.bake } }) + "\n");
-      }
+      trace.blender = keptVia === "0927-bake-log-legacy" ? "resume (legacy via 0927 bake-log; world/rig deps unverified)" : "resume (kept)";
       await speak(
         "layout",
-        keptVia === "0927-bake-log"
-          ? `${shot.id} blockout 照舊 ${frames}f（0927 bake-log 對帳：bvh/bake 無差異），唔重 render。`
+        keptVia === "0927-bake-log-legacy"
+          ? `${shot.id} blockout 沿用舊片 ${frames}f（legacy：motion bvh/bake 對到 0927 bake-log；world/rig 等其餘依賴未驗——唔重寫 stamp 唔冒充 verified；要 verified 由真 render 重出）。`
           : `${shot.id} blockout 照舊 ${frames}f，唔重 render。`,
       );
     } else if (input.blockoutDir) {

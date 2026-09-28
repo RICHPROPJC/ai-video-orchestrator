@@ -865,7 +865,7 @@ export async function runDirector(
   // 知識已內嵌 DIRECTOR_CHARTER（照官方 ViMax：agent prompt 一段）。
   const system = DIRECTOR_CHARTER + (revise ? `
 
-【修訂輪（REVISE）】你之前交咗一版導演方案；編劇席照你嘅 treatment 寫咗完整劇本，加咗你鏡表未有嘅嘢。而家出修訂版：flow／spec／願景唔郁；rhythmMap／shots／dialogueClock 全部對返新劇本（新台詞要有落點，鏡表時間軸重新夾）。保留啱嘅嘢，改錯嘅嘢，唔好由零重作。` : "");
+【修訂輪（REVISE）】你之前交咗一版導演方案；編劇席照你嘅 treatment 寫咗完整劇本，加咗你鏡表未有嘅嘢。而家出修訂版：flow／spec／願景唔郁；rhythmMap／shots／dialogueClock 全部對返新劇本（新台詞要有落點，鏡表時間軸重新夾）。保留啱嘅嘢，改錯嘅嘢，唔好由零重作。範圍原則（R20 裁決⑤）：邊樣觸發就修邊樣——hint 指明只補落點嗰陣，鏡表骨架（鏡數/次序/每鏡時長/動作）保持當前採納版原封，淨補 dialogueClock 落點；hint 冇限範圍先係全面對返。` : "");
   const user = JSON.stringify(revise
     ? { ...buildCreativeEnvelope(packet.brief, packet), revise: { 原導演方案: revise.previousPlan, 新劇本原文: revise.scriptMd, ...(revise.hint ? { 上一輪被機器閘擋嘅錯: revise.hint } : {}) } }
     : buildCreativeEnvelope(packet.brief, packet));

@@ -100,7 +100,10 @@ export async function renderBoards(opts: BoardsVisualOptions) {
       for (const [j, m] of group.entries()) {
         const file = staged[j]!.file;
         const qc = file.replace(/\.png$/, ".photo_qc.json");
-        const result = await opts.lane.qc(file, qc, opts.require?.[m.shotId] ?? {});
+        // R20 裁決①（0929）：require lookup 先 per-moment（destination file key，
+        // endpoint-state 格 require）後 per-shot（舊介面）——一格一格按採納
+        // moment 驗，唔把完整 shot 動詞塞每 cell。
+        const result = await opts.lane.qc(file, qc, opts.require?.[m.file] ?? opts.require?.[m.shotId] ?? {});
         attempt.cells.push({ shotId: m.shotId, at: m.at, file, destination: m.file, sha256: digest(file), qc, status: result.status });
         if (result.status === "GREEN") {
           fs.mkdirSync(path.dirname(m.file), { recursive: true });

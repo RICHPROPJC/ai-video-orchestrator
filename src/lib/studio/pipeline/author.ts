@@ -271,7 +271,7 @@ async function authorCallSheet(
             const notes = (sheetNow.onImageAdoptions ?? []).map((a) => `${a.placement}→${a.shotIds.join("/")}：${a.plan}（理由：${a.reason}）`);
             return [
               ...(pendingAdopt.length ? pendingAdopt.map((t) => `【用戶對話修訂請求 ${t.turnId}】${t.text}`) : []),
-              missing.length ? `聲畫對位缺口（world audioTimeline 對照）：${missing.map((g) => g.text).join("；")}——補返呢啲句子嘅 dialogueClock 落點` : "",
+              missing.length ? `聲畫對位缺口（world audioTimeline 對照）：${missing.map((g) => g.text).join("；")}——只補返呢啲句子嘅 dialogueClock 落點：鏡表骨架（鏡數/次序/每鏡時長/動作）保持當前採納版原封，唔重寫骨架、唔因劇本句子增減重排鏡表（R20 裁決⑤：placement 修復係補落點輪，唔係重創作輪；劇本新句冇位就報 gap 唔硬塞）` : "",
               adoptions.length ? `boards 席聲畫採用矛盾（placement/onImage 落地打交）：${adoptions.map((g) => g.text).join("；")}——重新協調 placement 同鏡面安排，唔可以靠加一句 placement 字串消掉語義矛盾` : "",
               adoptions.length && notes.length ? `boards 現行採用明細：${notes.join("；")}` : "",
             ].filter(Boolean).join("\n") || undefined;

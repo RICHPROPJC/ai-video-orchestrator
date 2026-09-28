@@ -416,7 +416,12 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
         const pinned = JSON.parse(fs.readFileSync(path.join(jobDir(jobId), "assets", "props.pinned.json"), "utf8")) as { assets?: { assetId?: string; qcFile?: string; qcStatus?: string }[] };
         for (const a of pinned.assets ?? []) {
           if (!a.assetId || !sheetPropIds.includes(a.assetId) || a.qcStatus !== "GREEN" || !a.qcFile) continue;
-          const cut = a.qcFile.replace(/\.photo_qc\.json$/, ".cut.png");
+          // R20 裁決③（0929）：qcFile 兩款形態——plate 版（…png.photo_qc.json）
+          // 同 cut 版（…cut.photo_qc.json）。舊 replace 一律加 .cut.png，cut 版
+          // 砌出 double-cut（…cut.cut.png）唔存在→成條 GREEN cut ref 鏈靜靜斷
+          // （R19g KF receipt inputs 淨 plate 實證）。改剝尾後按 base 形態接。
+          const base = a.qcFile.replace(/\.photo_qc\.json$/, "");
+          const cut = /\.cut$/.test(base) ? `${base}.png` : `${base}.cut.png`;
           if (fs.existsSync(cut)) propCutRefs.push(cut);
         }
       } catch { /* 壞 manifest＝淨 plate 照舊 */ }
@@ -484,7 +489,19 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       lane: sheetLane,
       seed: cfg.motion.seed + bump * 10,
       receiptDir: path.join(jobDir(jobId), "seats", "boards"),
-      require: Object.fromEntries(hopStillPlans.map((p) => [p.shot.id, p.require])),
+      require: Object.fromEntries([
+        ...hopStillPlans.map((p) => [p.shot.id, p.require] as const),
+        // R20 裁決①（0929）：per-moment endpoint-state require——KF 格按採納
+        // moment 驗（嗰格瞬間嘅到達/接觸/持有/位置完成態）；行進過程由
+        // blockout/video 驗。唔要求單圖證完整動作歷程，亦唔因 caption 冇提
+        // 過程就放過真位置/接觸錯。
+        ...moments.flatMap((m) => {
+          const p = hopStillPlans.find((x) => x.shot.id === m.shotId);
+          const beat = m.beat?.trim();
+          if (!p || !beat) return [];
+          return [[m.file, { ...p.require, action: `${beat}（定格驗收：呢格驗呢個瞬間嘅完成姿勢——人物位置/手接觸/持有狀態啱唔啱；行進過程由片驗，唔要求單圖畫出行過程，但位置/接觸錯唔放過）` }] as const];
+        }),
+      ]),
     } });
     for (const m of moments) {
       const list = shotCells.get(m.shotId) ?? [];

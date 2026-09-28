@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import type { CallSheet, Character, RefAngle } from "./types";
 import { buildGeneratePayload, u15Generate, type GeneratePayload } from "./u15-generate";
 import { photoQcEyesFromEnv, runPhotoQc, type PhotoQcRecord, type QcRequire } from "./photo-qc";
@@ -105,6 +106,33 @@ export async function ensurePortraits(opts: {
     }
     const outFile = path.join(opts.outDir, `${character.id}.png`);
     const prompt = portraitPrompt(character);
+    // R20 裁決③（0929）：resume 重用——生成契約（prompt+seed+character 資料）
+    // sha sidecar 對上＋肖像 QC GREEN 收據 sha 對當前檔，先照舊唔重出（R19d/g
+    // 每次 kick 重出 A 肖像嘅缺口；身份/衣著/角度/契約一致先算同一件資產）。
+    {
+      const contractFile = path.join(opts.outDir, `${character.id}.gen_contract.json`);
+      const qcFile = path.join(opts.outDir, `${character.id}.photo_qc.json`);
+      let reuse = false;
+      try {
+        if (fs.existsSync(outFile) && fs.existsSync(contractFile) && fs.existsSync(qcFile)) {
+          const contract = { prompt, seed, character };
+          const wantSha = createHash("sha256").update(JSON.stringify(contract)).digest("hex");
+          const saved = JSON.parse(fs.readFileSync(contractFile, "utf8")) as { contractSha?: string };
+          const q = JSON.parse(fs.readFileSync(qcFile, "utf8")) as { status?: string; sha256?: string };
+          const nowPng = createHash("sha256").update(fs.readFileSync(outFile)).digest("hex");
+          if (saved.contractSha === wantSha && q.status === "GREEN" && q.sha256 === nowPng) {
+            reuse = true;
+          }
+        }
+      } catch { reuse = false; }
+      if (reuse) {
+        files[character.id] = outFile;
+        made.push(character.id);
+        opts.onEvent?.(`${character.id} 肖像照舊 GREEN（契約 sha 對上，唔重出）`, { file: outFile });
+        if (opts.angleBoard) await runAngleBoard(character);
+        continue;
+      }
+    }
     let last = "";
     for (const [attempt, trySeed] of [seed, seed + 1].entries()) {
       await lane.generate({
@@ -117,6 +145,14 @@ export async function ensurePortraits(opts: {
       if (verdict.status === "GREEN") {
         files[character.id] = outFile;
         made.push(character.id);
+        // R20 裁決③：GREEN 收藏埋契約 sidecar——下次 resume 對 sha 先重用。
+        try {
+          const contract = { prompt, seed, character };
+          fs.writeFileSync(
+            path.join(opts.outDir, `${character.id}.gen_contract.json`),
+            JSON.stringify({ contractSha: createHash("sha256").update(JSON.stringify(contract)).digest("hex"), savedAt: new Date().toISOString() }, null, 2) + "\n",
+          );
+        } catch { /* sidecar 唔寫＝下次重出，唔致命 */ }
         opts.onEvent?.(
           `${character.id} 肖像 GREEN（seed ${trySeed}）`,
           { file: outFile, attempt: attempt + 1 },

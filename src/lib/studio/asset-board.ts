@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { runCommand } from "./audio";
 import type { Character, ShotProp } from "./types";
@@ -79,7 +80,7 @@ function gridCellLabel(i: number, count: number): string {
   return `第${row}行${i % 2 === 0 ? "左" : "右"}格`;
 }
 
-export type SheetMoment = { shotId: string; at: string; text: string; file: string };
+export type SheetMoment = { shotId: string; at: string; text: string; file: string; beat?: string };
 
 /** Percents written on the shot are that shot's keyframes, any count.
  *  No written string → the shot is one cell of a shared U1.5 sheet. */
@@ -87,6 +88,9 @@ export function momentsForShot(
   shot: { id: string; action: string; heading: string; stillPrompt?: string; keyframePositions?: string; size?: string; location?: string; props?: { name: string }[] },
   stillDir: string,
 ): SheetMoment[] {
+  // R20 裁決①（0929）：每格 moment 附加純 beat 文字（endpoint-state 素材）——
+  // QC require 按格驗嗰格嘅完成態（到達/接觸/持有/位置），行進過程由
+  // blockout/video 驗，唔把完整 shot 動詞塞每 cell 同一 require。
   const place = shot.location ? `場所${shot.location}，背景就係呢個場所，唔好換成另一個房。` : "";
   const sizeLine = shot.size === "closeup" || shot.size === "insert"
     ? "景別特寫，畫面只見頭部同手上嘅物件，唔見全身。"
@@ -118,6 +122,7 @@ export function momentsForShot(
       at: written[i] ?? "",
       text: `${place}${sizeLine}${beat}${modsStr}`,
       file: path.join(stillDir, `${shot.id}.kf-${String(i).padStart(2, "0")}.png`),
+      beat,
     }));
     for (let i = beats.length; i < written.length; i += 1) {
       moments.push({
@@ -125,12 +130,13 @@ export function momentsForShot(
         at: written[i]!,
         text: `${place}${sizeLine}${body}${modsStr}`,
         file: path.join(stillDir, `${shot.id}.kf-${String(i).padStart(2, "0")}.png`),
+        beat: body,
       });
     }
     return moments;
   }
   const text = `${place}${sizeLine}${body}${modsStr}`;
-  return [{ shotId: shot.id, at: written[0] ?? "", text, file: path.join(stillDir, `${shot.id}.png`) }];
+  return [{ shotId: shot.id, at: written[0] ?? "", text, file: path.join(stillDir, `${shot.id}.png`), beat: body }];
 }
 
 /** One moment per frame of the shot. Batches of 16 are separate spawns. */
@@ -551,6 +557,34 @@ export async function produceBoard(opts: ProduceBoardOpts): Promise<BoardResult>
   fs.mkdirSync(opts.pinDir, { recursive: true });
   fs.mkdirSync(opts.boardsDir, { recursive: true });
   const board = path.join(opts.boardsDir, opts.boardName);
+  // R20 裁決③（0929）：per-cell GREEN pin 重用——cut QC GREEN 收據在場＋sha
+  // 對當前 cut 檔嘅格照舊（唔重 cut/QC）；成板 edit 淨喺有缺格時行（R19d/g
+  // 每次連 front/side/back 重出重 QC 嘅浪費對症）。
+  const cellReusable = (angle: BoardAngle): { cutFile: string; file: string } | null => {
+    const cutFile = path.join(opts.pinDir, cellName(opts.id, angle, "cut"));
+    const file = path.join(opts.pinDir, cellName(opts.id, angle));
+    if (!fs.existsSync(file) || !fs.existsSync(cutFile)) return null;
+    const qcFile = cutFile.replace(/\.png$/, ".photo_qc.json");
+    if (!fs.existsSync(qcFile)) return null;
+    try {
+      const q = JSON.parse(fs.readFileSync(qcFile, "utf8")) as { status?: string; sha256?: string };
+      if (q.status !== "GREEN" || !q.sha256) return null;
+      const now = createHash("sha256").update(fs.readFileSync(cutFile)).digest("hex");
+      if (now !== q.sha256) return null;
+      return { cutFile, file };
+    } catch {
+      return null;
+    }
+  };
+  const reusable = new Map(BOARD_ANGLES.map((a) => [a, cellReusable(a)]));
+  if ([...reusable.values()].every((v): v is { cutFile: string; file: string } => Boolean(v))) {
+    const cells = BOARD_ANGLES.map((angle) => {
+      const r = reusable.get(angle)!;
+      return { angle, file: r.file, cutFile: r.cutFile, pinned: true, status: "GREEN", fail_reasons: [] as string[] };
+    });
+    opts.onEvent?.(`${opts.id} 四角度格 GREEN pin 齊（sha 對上，成板唔重出）`, {});
+    return { board, cells, seed };
+  }
   await lane.edit({
     prompt: opts.prompt,
     images: opts.images,
@@ -564,6 +598,12 @@ export async function produceBoard(opts: ProduceBoardOpts): Promise<BoardResult>
   const half = { w: Math.floor(size.width / 2), h: Math.floor(size.height / 2) };
   const cells: BoardCellResult[] = [];
   for (const [i, angle] of BOARD_ANGLES.entries()) {
+    const pre = reusable.get(angle);
+    if (pre) {
+      cells.push({ angle, file: pre.file, cutFile: pre.cutFile, pinned: true, status: "GREEN", fail_reasons: [] });
+      opts.onEvent?.(`${opts.id} ${angle} 格照舊 GREEN pin（sha 驗過，唔重出）`, { file: pre.file, cutFile: pre.cutFile, pinned: true, board });
+      continue;
+    }
     const cutFile = path.join(opts.pinDir, cellName(opts.id, angle, "cut"));
     const crop = opts.turnaroundStrip
       ? turnaroundCrop(size.width, size.height, i)
