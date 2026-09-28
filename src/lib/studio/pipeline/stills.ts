@@ -407,6 +407,20 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       ? diffPropPlates(path.join(jobDir(jobId), "assets"), path.join(jobDir(jobId), "assets", "props.pinned.json"), sheetPropIds)
         .resolved.map((r) => r.file).filter((f) => fs.existsSync(f))
       : [];
+    // R18（root 0928）：同 asset **GREEN cut 版**附加做第二道具 ref（比較實驗
+    // 差異——refs/attempt hashes 留 receipt；pinned manifest qcFile 同源）；冇
+    // cut 收據（舊款）淨 plate 照舊，唔靜靚加未驗圖。
+    const propCutRefs: string[] = [];
+    if (sheetPropIds.length) {
+      try {
+        const pinned = JSON.parse(fs.readFileSync(path.join(jobDir(jobId), "assets", "props.pinned.json"), "utf8")) as { assets?: { assetId?: string; qcFile?: string; qcStatus?: string }[] };
+        for (const a of pinned.assets ?? []) {
+          if (!a.assetId || !sheetPropIds.includes(a.assetId) || a.qcStatus !== "GREEN" || !a.qcFile) continue;
+          const cut = a.qcFile.replace(/\.photo_qc\.json$/, ".cut.png");
+          if (fs.existsSync(cut)) propCutRefs.push(cut);
+        }
+      } catch { /* 壞 manifest＝淨 plate 照舊 */ }
+    }
     const leadId = moments[0]!.shotId;
     // 單格板改餵單張正面肖像：4 格角度板做 ref 會令 U1.5 抄埋版式（board_layout
     // asked 1 columns picture has 4 實證）；多格板先需要角度板。
@@ -433,15 +447,27 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     // 冇 blockout 嘅鏡（motion gap 行 KF 驅動／零 cast 現象鏡）冇 f0，照舊。
     const leadF0 = path.join(ctx.blockoutDir!, `${leadId}.f0.png`);
     const greyLayout = fs.existsSync(leadF0) ? [leadF0] : [];
-    const images = [...greyLayout, ...baseStill, ...identity, ...propRefs];
+    const images = [...greyLayout, ...baseStill, ...identity, ...propRefs, ...propCutRefs];
     if (images.length > MAX_IMAGES) throw new Error("boards: still+identity+prop refs exceed U1.5 image capacity; split the board");
     // 非位置描述（GPT-6 覆核）：repairBoard prepend 會改變圖序——角色按「係咩」
     // 講，唔按「第幾張」講，prepend 後唔會錯號。
+    // R18：本 sheet 首鏡 tool/tool_shape（正面句材料）——真源＝
+    // stills/<id>.require.json（QcRequire 落盤檔；ShotRequire type 冇 tool 欄）
+    let leadRequireTool: { name: string; shapes: string[] } | null = null;
+    try {
+      const rq = JSON.parse(fs.readFileSync(path.join(ctx.stillDir!, `${leadId}.require.json`), "utf8")) as { tool?: string; tool_shape?: string[] };
+      if (rq.tool) leadRequireTool = { name: rq.tool, shapes: rq.tool_shape ?? [] };
+    } catch { /* 冇 require 檔＝冇 tool 句 */ }
     const refNote = [
       ...(greyLayout.length ? ["灰模企位圖＝人物位置、構圖、鏡位照佢；外觀（人樣/衫/道具look）永遠唔參考佢"] : []),
       ...(baseStill.length ? ["上一鏡劇照（同場同一人同一道具嗰張）＝畫面續接基礎"] : []),
       ...(identity.length ? ["角色肖像／角度板＝同一人，跨格一致"] : []),
-      ...(propRefs.length ? ["道具實物照＝該道具嘅外形、顏色、質感、比例照抄，文字唔取代"] : []),
+      ...(propRefs.length ? [
+        `道具實物照＝該道具嘅外形、顏色、質感、比例照抄，文字唔取代`,
+        // R18：require 驅動材質/形狀正面句（當集 tool_shape 詞直列——正面
+        // 寫法，唔 negative token；KF-01 分項死因「杯/材質未提及」對症）
+        ...(leadRequireTool ? [`${leadRequireTool.name}：${leadRequireTool.shapes.join("、")}——呢啲形狀/材質特徵必須畫得出嚟`] : []),
+      ] : []),
     ].join("；") + "。";
     const bumpFile = path.join(ctx.stillDir!, `${leadId}.seedbump`);
     let bump = 0;

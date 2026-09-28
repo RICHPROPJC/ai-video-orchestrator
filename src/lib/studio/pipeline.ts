@@ -256,6 +256,12 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
   try {
     await authorStage(ctx);
     if (ctx.stopped) return;
+    // R18（root 0928）：--until 真停止位——之前 fleetGateOf 硬返 full、pipeline
+    // 零消費（聲稱支援實際行到底落 H3/mux）。boards＝callsheet 出完停。
+    if (input.until === "boards") {
+      await speak("producer", `--until boards：callsheet/creative 已落盤，停喺 boards 位（唔入 world/H3/mux）。`);
+      return;
+    }
     await worldStage(ctx);
   // §9④：有界自主回修——world 發現聲畫 gap 且額度內→行內返 author revise→
   // world 重算，先放行受影響 still/motion；額度耗盡先照落（gap 鏡已 per-shot
@@ -276,8 +282,18 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     await worldStage(ctx);
   }
     if (ctx.stopped) return;
+    // R18：blockout＝world（含 blockout mp4）出完停——唔入 stills/motion/H3/mux。
+    if (input.until === "blockout") {
+      await speak("producer", `--until blockout：callsheet＋world＋blockout mp4 已落盤，停喺 blockout 位（唔入 stills/H3/mux）。`);
+      return;
+    }
     await stillsStage(ctx);
     if (ctx.stopped) return;
+    // R18：stills＝GREEN 劇照出完停——唔入 motion/H3/mux。
+    if (input.until === "stills") {
+      await speak("producer", `--until stills：stills/QC 已落盤，停喺 stills 位（唔入 motion/H3/mux）。`);
+      return;
+    }
     // motion: H3 R2V per shot — photo QC pin must be accepted before submit
     const motionDir = path.join(jobDir(jobId), "motion");
     ensureDir(motionDir);
@@ -908,6 +924,11 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       await ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", out]);
       return out;
     };
+    // R18：motion＝H3 per-shot 出完停——唔入 mux/交付。
+    if (input.until === "motion") {
+      await speak("producer", `--until motion：H3 per-shot mp4 已落盤，停喺 motion 位（唔入 mux/交付）。`);
+      return;
+    }
     // mux targets in cut order: manifest segments first, then legacy solo files
     const inManifest = new Set((segManifest ?? []).flatMap((s) => s.shots));
     const muxTargets = [
