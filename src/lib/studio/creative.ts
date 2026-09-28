@@ -713,11 +713,20 @@ export async function runDirector(
   let compiled = compileDirectorPlan(pass.value);
   // 判斷歸判斷＋迴路（照官方 ViMax camera-tree 範式）：canonical 閘 miss＝帶住
   // 「缺咗乜」返去同一個方案補一次，唔准編（code 唔填空），兩次都缺先 fail loud。
-  if (compiled.misses.length) {
+  // BOUP-fix（0928）：miss 清單同一真源——canonical 閘淨驗存在嘅 placements，
+  // 「劇本有句但 plan 零 placement」係盲區（BOUP「甜」）；fail 閘用
+  // unplacedDialogueOf 全集。revise 輪 scriptMd 在手，unplaced 全集併入
+  // miss 清單——修嘅人同驗嘅人同一張單。
+  const unplacedRows: string[] = revise
+    ? unplacedDialogueOf({ script_md: revise.scriptMd } as Parameters<typeof dialogueSignalsOf>[0], { dialogueClock: (pass.value as { dialogueClock?: { placements?: { word?: string }[] } }).dialogueClock })
+        .map((u) => `劇本句冇落點（plan 零 placement）：${u.line}`)
+    : [];
+  const missAll = [...compiled.misses, ...unplacedRows];
+  if (missAll.length) {
     const retryUser = JSON.stringify({
       ...JSON.parse(user),
       "之前交咗嘅方案": pass.value,
-      "機器閘 miss 清單": compiled.misses,
+      "機器閘 miss 清單": missAll,
       "補位要求": "照返你之前交嘅同一個方案，只補齊 miss 清單指明嘅欄位（欄位名照 DirectorPlan 契約：shots[] 要有 purpose 每鏡一句、startSec/endSec 數字、beats/rhythmMap、treatment、vision）。唔好由零重作，唔好改已經啱嘅嘢。",
     });
     const retryPass = await chatJsonSeat<Record<string, unknown>>({
