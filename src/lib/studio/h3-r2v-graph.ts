@@ -147,9 +147,9 @@ export type H3RouteRecipe =
   | { kind: "ref2va-still"; steps: number }     // A-form：靜畫起動（H3Keyframes 0/100）
   | { kind: "ref2va-video1"; steps: number }    // C-form：Video 1 motion-only ref
   | { kind: "ref2va-multishot"; steps: number } // MS-A standalone：整段 H3MultishotSampler
-  | { kind: "fl2va"; steps: number }            // 未接線：blocked（FL2VA patch 後 model 無可達 SaveVideo consumer）
-  | { kind: "mixed" }                           // 部署未核：blocked（兩 base 同次採用無合法接法已核）
-  | { kind: "pdd-8step" };                      // 未接線：blocked（MiniMaxH3PDDAccApply source 零接線）
+  | { kind: "fl2va"; steps: number }            // R8 已接線：I2V 路（turbo 鏈）
+  | { kind: "mixed" }                           // 兩 base 同 checkpoint 合流＝hybrid 候選（R7 降級唔做）；KF+refs 同 generation 走 ref2va-*
+  | { kind: "pdd-8step"; nfe?: 8; base?: "ref2va" | "fl2va" } // R9 兩 profile：base 款＋PDD 8-step recipe（default ref2va）
 
 /** 未傳 route 時由現有欄位推（向後兼容）——receipt 記 derived:true 標明
  *  呢個 route 係推導唔係任務決策採納。 */
@@ -403,10 +403,12 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       `a-form requires kfStartName: no Video 1 asset means still-to-video — H3Keyframes anchors 0% on the U1.5 still`,
     );
   }
-  // R8：fl2va route＝I2V 路（MiniMaxH3ImageToVideo 造 cond+latent；冇
+  // R8/R9：fl2va base＝I2V 路（MiniMaxH3ImageToVideo 造 cond+latent；冇
   // ref_videos/ref_audios——Video1/timing wav 唔支援＝真差異 throw 具名，
-  // 唔靜靚跳過；KF 走 I2V first/last_frame 內建）
-  const fl2vaRoute = opts.route?.kind === "fl2va";
+  // 唔靜靚跳過；KF 走 I2V first/last_frame 內建）。R9 兩 profile：pdd-8step
+  // route 加 base 參數——FL-PDD8＝fl2va base＋PDD Apply fl2va 款同一 recipe。
+  const fl2vaBase = opts.route?.kind === "fl2va" || (opts.route?.kind === "pdd-8step" && (opts.route as { base?: string }).base === "fl2va");
+  const fl2vaRoute = fl2vaBase; // I2V cond/latent 路條件（R8 命名維持）
   const g: ComfyGraph = {
     clip: { class_type: "H3ClipLoaderAny", inputs: { clip_name: m.textEncoder, type: m.encoderType } },
     vvae: { class_type: "VAELoader", inputs: { vae_name: m.videoVae } },
@@ -476,7 +478,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     const pddFile = opts.models.pddAccFile ?? "MiniMax-H3-Ref2VA-Acc-8Step.safetensors";
     g.sigma_pdd = {
       class_type: "MiniMaxH3SigmaShift",
-      inputs: { model: ["ref2va", 0], shift_video: SIGMA_VIDEO, shift_audio: SIGMA_AUDIO },
+      inputs: { model: fl2vaBase ? ["fl2va", 0] : ["ref2va", 0], shift_video: SIGMA_VIDEO, shift_audio: SIGMA_AUDIO },
     };
     g.pdd_apply = {
       class_type: "MiniMaxH3PDDAccApply",
