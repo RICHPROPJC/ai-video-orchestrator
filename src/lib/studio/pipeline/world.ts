@@ -163,8 +163,11 @@ export async function worldStage(ctx: Ctx): Promise<void> {
           for (const sel of fresh) {
             const code = input.motionPicks[sel.shot];
             if (!code) continue;
-            const cand = shortlist.candidates.find((c) => c.code === code);
-            if (!cand) throw new Error(`--motion-pick ${sel.shot}=${code}：唔係 shortlist 候選`);
+            // R20（0929）：三態匹配——code（C##）／id（14_05）／bvh（014/14_05[.bvh]）
+            const cand = shortlist.candidates.find(
+              (c) => c.code === code || c.id === code || c.bvh === code || c.bvh === `${code}.bvh`,
+            );
+            if (!cand) throw new Error(`--motion-pick ${sel.shot}=${code}：唔係 shortlist 候選（可用 code C##／id／bvh；shortlist 前列見 selection.attempt.json）`);
             sel.bvh = cand.bvh;
             sel.tie_break = `human pick ${cand.id}`;
             sel.decisionSource = "human-override";
