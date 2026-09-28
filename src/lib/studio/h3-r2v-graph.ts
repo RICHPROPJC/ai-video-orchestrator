@@ -294,6 +294,19 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       `graph_size_invalid: ${width}x${height} — H3 canvas needs two /32 ints in 32–4096 (node1 object_info step 32)`,
     );
   }
+  // §P34/R6（0928）README 兩-pass：pdd8＋nativeUpscale＝PDD hi-res fix——pass1
+  // render 喺 final÷1.5（864×480→576×320，兩個 /32 對齊），AVLatentUpscaleBy
+  // ×1.5 返 final（node snap patch grid）。final÷1.5 非 /32 整數＝具名拒（9:16
+  // 544÷1.5 唔整——兩-pass 未支援）；chain（multishot）同兩-pass 未定義組合同拒。
+  const twoPass = Boolean(opts.route?.kind === "pdd-8step" && opts.nativeUpscale);
+  if (twoPass && opts.chain) {
+    throw new Error("h3_route_blocked: pdd-8step native upscale 兩-pass 同 chain（multishot）未定義組合——named unsupported");
+  }
+  if (twoPass && (width % 48 !== 0 || height % 48 !== 0)) {
+    throw new Error(`h3_native_upscale_size_invalid: 兩-pass pass1＝final÷1.5 要 /32 對齊（final ${width}x${height}÷1.5＝${width / 1.5}x${height / 1.5} 唔整數）——呢個尺寸未支援，具名拒`);
+  }
+  const passW = twoPass ? Math.round(width / 1.5) : width;
+  const passH = twoPass ? Math.round(height / 1.5) : height;
   // 鍵格同參考片可以一齊入。冇寫百分比就同時塞鍵格檔同走位片，先拒。
   // 灰模片只入 ref_videos，唔當鍵格。
   const hasVideo1 = Boolean(opts.blockoutName);
@@ -482,7 +495,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   if (variant === "a" && hasVideo1) {
     g.blender_vid = {
       class_type: "VHS_LoadVideo",
-      inputs: { video: opts.blockoutName!, custom_width: width, custom_height: height, ...BLOCKOUT_VHS },
+      inputs: { video: opts.blockoutName!, custom_width: passW, custom_height: passH, ...BLOCKOUT_VHS },
     };
   }
   const r2vInputs: Record<string, unknown> = {
@@ -490,8 +503,8 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     vae: ["vvae", 0],
     audio_vae: ["avae", 0],
     prompt: ["split", 0],
-    width: width,
-    height: height,
+    width: passW,
+    height: passH,
     length: opts.frames,
     ref_image_size: REF_IMAGE_SIZE,
     "ref_audios.ref_audio_0": ["voice_guard", 0],
@@ -555,8 +568,8 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
           vae: ["vvae", 0],
           start_image: ["kf_start_in", 0],
           end_image: ["kf_end_in", 0],
-          width: width,
-          height: height,
+          width: passW,
+          height: passH,
           length: opts.frames,
         },
       };
@@ -568,8 +581,8 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       clip: ["clip", 0],
       vae: ["vvae", 0],
       prompt: ["split", 0],
-      width: width,
-      height: height,
+      width: passW,
+      height: passH,
       length: opts.frames,
       positions: "0%",
       image_1: ["kf_start_in", 0],
@@ -643,7 +656,36 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     },
   };
   let decodeSrc: [string, number] = ["samp_a", 0];
-  if (opts.nativeUpscale) {
+  let audioDecodeSrc: [string, number] = ["samp_a", 0];
+  if (opts.nativeUpscale && twoPass) {
+    // §P34/R6（0928）README 兩-pass（PDD hi-res fix，golden＝pdd_acc_t2v_
+    // latent_upscale.json）：AVLatentUpscaleBy ×1.5（video half per-frame
+    // resize＋patch-grid snap；audio passes through——core LatentUpscale 處理
+    // 唔到 H3 nested AV latent）→ PDDAccScheduler denoise 0.25 partial-denoise
+    // refine（round(8*0.25)=淨重跑 last 2 trained blocks＝resume sigma 0.8，
+    // stay on trained grid——唔用 Apply sigmas：嗰個係全長）。video 出 refine；
+    // audio 出 pass1（README：refine 唔掂 audio）。scheduler nfe 同 Apply
+    // partition（"8"）對齊。
+    g.upscale_av = {
+      class_type: "MiniMaxH3AVLatentUpscaleBy",
+      inputs: { samples: ["samp_a", 0], upscale_method: "bislerp", scale_by: 1.5 },
+    };
+    g.sched_refine = { class_type: "MiniMaxH3PDDAccScheduler", inputs: { nfe: "8", denoise: 0.25 } };
+    g.samp_refine = {
+      class_type: "SamplerCustomAdvanced",
+      inputs: {
+        noise: ["noise_a", 0],
+        guider: ["guider_a", 0],
+        sampler: ["sampler_sel", 0],
+        sigmas: ["sched_refine", 0],
+        latent_image: ["upscale_av", 0],
+      },
+    };
+    decodeSrc = ["samp_refine", 0];
+    audioDecodeSrc = ["samp_a", 0];
+  } else if (opts.nativeUpscale) {
+    // 非 PDD 路（A-form/turbo4）：learned 款照舊（trained-grid refine 語義只
+    // 對 PDD 成立——PDDAccScheduler 係 PDD sigmas emitter）
     g.upscale_native = {
       class_type: "MiniMaxH3LatentUpscaleCombined",
       inputs: {
@@ -658,9 +700,10 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       },
     };
     decodeSrc = ["upscale_native", 0];
+    audioDecodeSrc = ["upscale_native", 0];
   }
   g.dec_v = { class_type: "VAEDecode", inputs: { samples: decodeSrc, vae: ["vvae", 0] } };
-  g.dec_a = { class_type: "VAEDecodeAudio", inputs: { samples: decodeSrc, vae: ["avae", 0] } };
+  g.dec_a = { class_type: "VAEDecodeAudio", inputs: { samples: audioDecodeSrc, vae: ["avae", 0] } };
   // single shot: orphan (inspect after render, never next kf_start); chained:
   // the TRUE endframe seeding H3MultishotSampler (H3_HardMode_Chained wiring)
   g.lastf = { class_type: "H3LastFrame", inputs: { images: ["dec_v", 0] } };
