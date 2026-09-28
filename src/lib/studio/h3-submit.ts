@@ -86,6 +86,32 @@ function sourceOf(role: string, file?: string | null): { role: string; path: str
   return { role, path: file, sha256: fileSha(file) };
 }
 
+/** B2 spec #2/#3（UI worker 0928）：實際 media metadata——ffprobe duration/fps/
+ *  frame_count（實際值非請求值）。probe 唔到＝欄位唔寫（UI named-missing 顯示，
+ *  唔捏造）；本地 ffprobe JSON，唔引入 pipeline 層依賴。 */
+async function ffprobeMedia(file: string): Promise<{ durationSec?: number; fps?: number; frameCount?: number }> {
+  const { execFile } = await import("node:child_process");
+  const json = await new Promise<string>((resolve, reject) => {
+    execFile("ffprobe", ["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", file], { maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
+  }).catch(() => "");
+  if (!json) return {};
+  try {
+    const d = JSON.parse(json) as { format?: { duration?: string }; streams?: { avg_frame_rate?: string; nb_frames?: string }[] };
+    const st = d.streams?.[0];
+    const dur = d.format?.duration !== undefined ? Number(d.format.duration) : undefined;
+    const fr = st?.avg_frame_rate;
+    const fps = fr && /^\d+\/\d+$/.test(fr) && !fr.startsWith("0/") ? Number(fr.split("/")[0]) / Number(fr.split("/")[1]) : undefined;
+    const nb = st?.nb_frames !== undefined ? Number(st.nb_frames) : undefined;
+    return {
+      ...(typeof dur === "number" && Number.isFinite(dur) ? { durationSec: Number(dur.toFixed(4)) } : {}),
+      ...(typeof fps === "number" && Number.isFinite(fps) && fps > 0 ? { fps: Number(fps.toFixed(3)) } : {}),
+      ...(typeof nb === "number" && Number.isFinite(nb) && nb > 0 ? { frameCount: nb } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
 function writeReceipt(file: string, record: H3SubmitReceipt): string {
   // a real-render receipt is never clobbered by a dry-run one: only a file
   // that says "dry_run": true (a previous dry receipt) may be overwritten
@@ -506,6 +532,8 @@ export async function submitH3Shot(opts: {
   const item = outputs.videos[0] ?? outputs.gifs[0] ?? outputs.images[0];
   if (!item) throw new Error(`render finished but SaveVideo has no output (prompt_id=${promptId})`);
   await downloadView(cfg.motion.comfyUrl, item, opts.outMp4);
+  // B2 #2/#3：實際 media metadata（產出＋每個 source；probe 唔到＝欄位唔寫）
+  const outputMedia = await ffprobeMedia(opts.outMp4);
   const receipt: H3SubmitReceipt = {
     dry_run: false,
     shot: opts.shot ?? null,
@@ -534,8 +562,14 @@ export async function submitH3Shot(opts: {
       ms_voice: uploadedMsVoice,
       ms_start: uploadedMsStart,
     },
-    output: { filename: item.filename, subfolder: item.subfolder, bytes: fs.statSync(opts.outMp4).size, sha256: fileSha(opts.outMp4) },
-    sources: [
+    output: {
+      filename: item.filename,
+      subfolder: item.subfolder,
+      bytes: fs.statSync(opts.outMp4).size,
+      sha256: fileSha(opts.outMp4),
+      ...(Object.keys(outputMedia).length ? { media: outputMedia } : {}),
+    },
+    sources: await Promise.all([
       sourceOf("wav", opts.wavFile),
       sourceOf("blockout", opts.blockoutMp4),
       sourceOf("kf_start", opts.kfStart),
@@ -543,7 +577,10 @@ export async function submitH3Shot(opts: {
       ...(opts.kfExtraFiles ?? []).map((file, i) => sourceOf(`kf_extra_${i}`, file)),
       ...(opts.refImageFiles ?? []).map((file, i) => sourceOf(`ref_image_${i}`, file)),
       sourceOf("audio_timing", opts.audioTimingFile),
-    ].filter((row): row is { role: string; path: string; sha256: string } => Boolean(row)),
+    ].filter((row): row is { role: string; path: string; sha256: string } => Boolean(row)).map(async (row) => {
+      const media = await ffprobeMedia(row.path);
+      return { ...row, ...(Object.keys(media).length ? { media } : {}) };
+    })),
     graph,
   };
   return { receipt, receiptFile: writeReceipt(opts.receiptJson, receipt) };
