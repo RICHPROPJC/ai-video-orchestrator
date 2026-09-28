@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { z } from "zod";
+import { chatJsonSeat, type CrewConfig } from "../crew-llm";
 import { jobDir } from "../paths";
 
 /** SC-UI-SESSION-0928-P33 A2（§33-5/6）：同項目持久對話身份＋turn 落盤。
@@ -24,6 +26,9 @@ export type SessionTurn = {
   dependsOn?: { callsheetDigest?: string | null; creativeRevision?: number | null };
   adoption?: { adoptedRef: string; revision: string; affectedScope: string };
   blockedReason?: string;
+  /** assistant ask 回覆來源（LLM 席 vs job-facts fallback——誠實分層，UI 唔
+   *  將 fallback 當席答） */
+  replySource?: "seat" | "job-facts-fallback";
 };
 
 export type SlateSession = {
@@ -136,4 +141,65 @@ export function completeAdoptedTurns(jobId: string, adopted: { turnId: string; a
   const job = readJob(jobId);
   const processed = [...adopted.map((a) => a.turnId), ...staleOut.map((a) => a.turnId)];
   if (job) writeJob({ ...job, pendingReviseTurns: (job.pendingReviseTurns ?? []).filter((id) => !processed.includes(id)) });
+}
+
+/** §P33 A3 ask reply consumer（0928）：ask turn 唔再淨 recorded——生文字回覆
+ *  （assistant turn）。誠實邊界：回覆只講 job facts＋session 近況，唔扮執行
+ *  （想改嘢＝intent=revise 條路）。LLM 席 fail 唔殺會話——fallback 用 job
+ *  facts 組裝（replySource 具名，UI 唔當席答）。細席模型（flash 級，同
+ *  world-sizes 一族）過 crew deny 閘。 */
+const ASK_REPLY_CHARTER = `你係製作台（SlateCrew）嘅會話回覆席。用戶喺同一條片（job）嘅持久 session 問問題，你負責文字回覆。
+規則：
+1. 只根據提供嘅 job facts 同 session 近況作答；facts 冇嘅嘢就話「我呢度冇資料」，唔好作。
+2. 唔好扮任何嘢已經執行：你唔會改 plan、唔會觸發 produce、唔會開 generation。用戶想改嘢→叫佢交 intent=revise（嗰條路先入採納佇列）。
+3. 語言跟用戶問題嘅語言（用戶中文你中文，英文你英文）。
+4. 一至三句答完，直接有用，唔兜圈。`;
+
+const askReplySchema = z.object({ reply: z.string().min(4) });
+
+export async function replyToAskTurn(
+  jobId: string,
+  job: { status?: string; progress?: number; currentAgent?: string; error?: string | null; callsheetDigest?: string; outputs?: Record<string, unknown> },
+  userTurn: SessionTurn,
+  io: { model: string; crew: CrewConfig; receiptDir: string; fallbackModel?: string },
+): Promise<{ turn: SessionTurn; replySource: "seat" | "job-facts-fallback" }> {
+  const facts = {
+    jobId,
+    status: job.status ?? "unknown",
+    ...(typeof job.progress === "number" ? { progress: job.progress } : {}),
+    ...(job.currentAgent ? { currentAgent: job.currentAgent } : {}),
+    ...(job.error ? { error: String(job.error).slice(0, 200) } : {}),
+    ...(job.callsheetDigest ? { callsheetDigest: job.callsheetDigest } : {}),
+    outputKeys: Object.keys(job.outputs ?? {}),
+  };
+  const recent = readSession(jobId).turns.slice(-6).map((t) => ({ role: t.role, text: t.text.slice(0, 300) }));
+  let text: string;
+  let replySource: "seat" | "job-facts-fallback" = "job-facts-fallback";
+  try {
+    const pass = await chatJsonSeat({
+      seat: "producer",
+      unit: "session-ask-reply",
+      model: io.model,
+      crew: io.crew,
+      receiptDir: io.receiptDir,
+      ...(io.fallbackModel ? { fallbackModel: io.fallbackModel } : {}),
+      system: ASK_REPLY_CHARTER,
+      user: JSON.stringify({ job: facts, session_recent: recent, user_question: userTurn.text }),
+      schema: askReplySchema,
+    });
+    text = pass.value.reply;
+    replySource = "seat";
+  } catch {
+    // LLM 唔係 ask 回覆嘅硬依賴——fail 落誠實現況組裝（唔扮答到）
+    text = `（回覆席暫時唔在場——如實現況）job ${facts.status}${facts.currentAgent ? `，當前席位 ${facts.currentAgent}` : ""}${typeof facts.progress === "number" ? `，進度 ${facts.progress}%` : ""}${facts.error ? `；最後錯誤：${facts.error}` : ""}。你嘅問題已記錄（turn ${userTurn.turnId}）；要改嘢請用 intent=revise 重交。`;
+  }
+  const turn = appendTurn(jobId, {
+    requestId: `${userTurn.requestId}:reply`,
+    role: "assistant",
+    text,
+    status: "recorded",
+    ...(userTurn.dependsOn ? { dependsOn: userTurn.dependsOn } : {}),
+    replySource,
+  });
+  return { turn, replySource };
 }

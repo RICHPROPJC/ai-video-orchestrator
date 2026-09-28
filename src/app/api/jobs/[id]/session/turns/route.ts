@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { readJob } from "@/lib/studio/store";
 import { ownerHeartbeatMs, ownerIsStale } from "@/lib/studio/store";
-import { appendTurn, findUserTurnByRequestId, queueReviseTurn } from "@/lib/studio/pipeline/session";
+import { appendTurn, findUserTurnByRequestId, queueReviseTurn, replyToAskTurn } from "@/lib/studio/pipeline/session";
+import { loadConfig } from "@/lib/studio/config";
+import { jobDir } from "@/lib/studio/paths";
 
 export const runtime = "nodejs";
 
@@ -52,8 +54,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // 段）讀佢採納（revise hint 帶 user text→責任席修訂→manifest 新 revision
   // →completeAdoptedTurns 回寫 adopted）；runtime 觸發照舊 produce 邊界。
   if (intent === "revise") queueReviseTurn(id, turn.turnId);
+  // §P33 A3 ask reply consumer：ask 唔再淨 recorded——生 assistant 文字回覆
+  // （細席 flash 級；fail 落 job-facts fallback，replySource 具名）。config
+  // 缺（boards_model_missing 等）唔殺會話：ask turn 已落盤，回覆缺席具名。
+  if (intent === "ask") {
+    try {
+      const cfg = loadConfig();
+      const { turn: reply, replySource } = await replyToAskTurn(id, job, turn, {
+        model: cfg.crew.boardsModel ?? (() => { throw new Error("boards_model_missing"); })(),
+        crew: cfg.crew,
+        receiptDir: jobDir(id),
+        fallbackModel: cfg.crew.secondFallback,
+      });
+      return NextResponse.json({ turnId: turn.turnId, at: turn.at, status: "recorded", intent,
+        reply: { turnId: reply.turnId, at: reply.at, text: reply.text, replySource } });
+    } catch (err) {
+      return NextResponse.json({ turnId: turn.turnId, at: turn.at, status: "recorded", intent,
+        reply: { error: `ask_reply_unavailable:${(err as Error).message}` } });
+    }
+  }
   return NextResponse.json({ turnId: turn.turnId, at: turn.at, status: "recorded", intent,
-    ...(intent === "revise"
-      ? { queued: "已入採納佇列（job.pendingReviseTurns）——pipeline 下一輪 owner 安全點採納；未有 owner 時等 resume/下一 run" }
-      : { note: "ask 回覆：recorded（文字回覆 consumer 屬後續）" }) });
+    queued: "已入採納佇列（job.pendingReviseTurns）——pipeline 下一輪 owner 安全點採納；未有 owner 時等 resume/下一 run" });
 }
