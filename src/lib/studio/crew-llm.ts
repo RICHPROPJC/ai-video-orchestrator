@@ -59,6 +59,9 @@ export type CrewReceipt = {
   /** deterministic repairs the desk made before zod — one `repair: field saw x became y` per coercion */
   repairs: string[];
   elapsed_ms: number;
+  /** R10 §5（0928）：逐 call token 實數（provider usage；本地席同樣回填）——
+   *  計費 cap（160 calls/400k token 總閘）收據層點算真源 */
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 };
 
 export function resolveCrewEndpoint(crew: CrewConfig): string {
@@ -351,6 +354,8 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
     }
     const json = (await res.json()) as {
       choices?: { message?: { content?: string; reasoning_content?: string } }[];
+      // R10 §5：usage 捕捉——receipt 逐 call 記 token 實數（計費 cap 收據層）
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
     };
     const message = json.choices?.[0]?.message;
     const content = message?.content ?? "";
@@ -398,6 +403,7 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
       errors,
       repairs,
       elapsed_ms: Date.now() - started,
+      ...(json.usage ? { usage: json.usage } : {}),
     };
     seq += 1;
     const file = path.join(opts.receiptDir, `${opts.seat}.${opts.unit}.${seq}.json`);
