@@ -343,6 +343,26 @@ export async function ensureCastOnce(opts: {
         throw new Error(`rig ${item.id} failed on CUDA_VISIBLE_DEVICES=${SF3D_GPU}:\n${lines.join("\n") || raw.slice(-800)}`);
       }
       fs.renameSync(riggedTmp, item.rigged);
+      // Chau 0929 令：SkinTokens rig receipt 要對到本次實際源 mesh＋輸出 rig
+      // （bake consumer 對照）——SF3D 成功/灰模通過唔等於 rig 已驗。落機讀
+      // receipt：源/輸出 sha 齊，consumer（blockout bake）讀 glb 有得對。
+      try {
+        const { createHash } = await import("node:crypto");
+        const sha = (p: string) => createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+        fs.writeFileSync(
+          path.join(path.dirname(item.rigged), "rig-receipt.json"),
+          JSON.stringify({
+            tool: "slatecrew.skintokens_rig",
+            ts: new Date().toISOString(),
+            srcMesh: item.mesh,
+            srcMeshSha: sha(item.mesh),
+            riggedGlb: item.rigged,
+            riggedSha: sha(item.rigged),
+            bin: SKINTOKENS_BIN,
+            models: SKINTOKENS_MODELS,
+          }, null, 2) + "\n",
+        );
+      } catch { /* receipt 唔寫唔阻 rig；下游對唔到 sha 就 named 未驗 */ }
       rigs[item.id] = item.rigged;
     }
   } catch (error) {
