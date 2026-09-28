@@ -915,6 +915,17 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       ...cut.filter((id) => !inManifest.has(id)).map((id) => ({ id, shots: [id] })),
     ].sort((a, b) => cut.indexOf(a.shots[0]!) - cut.indexOf(b.shots[0]!));
     const muxed: string[] = [];
+    // §29-3（B2 #3）實際剪接收據：每段 source（H3 產出檔＋sha256＋實際 in/out）
+    // ＋destination（concat 序實際 in/out）＋covered shotIds；callsheetDigest＝
+    // 採用 cut 版本。整段使用明示 wholeFile＋實際尾點（ffprobe 實測，唔由檔名/
+    // 故事時長猜——§29 原文）；blocked 段唔入收據（events 已具名）。
+    const editReceipts: {
+      id: string; shots: string[];
+      source: { file: string; sha256: string; wholeFile: true; inOut: [number, number | null] };
+      destination: { inOut: [number, number | null] };
+      wav: string;
+    }[] = [];
+    let destCursor = 0;
     for (const t of muxTargets) {
       const mp4 = shotVideos.find((v) => path.basename(v, ".mp4") === t.id)
         ?? path.join(motionDir, `${t.id}.mp4`);
@@ -939,8 +950,29 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       if (marked?.frames) await padH3Wav(wav, clockWav, marked.frames);
       const out = path.join(motionDir, `${t.id}.muxed.mp4`);
       await ffmpeg(muxArgs(mp4, clockWav, out));
+      // §29-3：實際時長 ffprobe（probe 唔到＝null 明示，唔捏造）；dest in/out
+      // 按已 mux 段實際累計（concat 序）。
+      const dur = await mediaSeconds(out).catch(() => null);
+      editReceipts.push({
+        id: t.id,
+        shots: t.shots,
+        source: {
+          file: path.basename(mp4),
+          sha256: createHash("sha256").update(fs.readFileSync(mp4)).digest("hex"),
+          wholeFile: true,
+          inOut: [0, dur],
+        },
+        destination: { inOut: [Number(destCursor.toFixed(3)), dur === null ? null : Number((destCursor + dur).toFixed(3))] },
+        wav: path.basename(clockWav),
+      });
+      if (dur !== null) destCursor += dur;
       muxed.push(out);
     }
+    fs.writeFileSync(jobFile(jobId, "delivery", "edit-receipts.json"), JSON.stringify({
+      callsheetDigest: ctx.callsheetDigest ?? null,
+      cutOrder: cut,
+      segments: editReceipts,
+    }, null, 2));
     const muxList = jobFile(jobId, "motion", "mux-list.txt");
     fs.writeFileSync(muxList, muxed.map((v) => `file '${v.replaceAll("'", "'\\''")}'`).join("\n"));
     const pictureLock = jobFile(jobId, "delivery", "picture-lock.mp4");
