@@ -671,7 +671,10 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   }
 
   let castRigs: Record<string, string> = {};
-  if (!input.dryRun && ctx.locked!.characters.length > 0) {
+  // Chau 0928 標準流程澄清：ensureCastOnce 係**整集**素材窗口（人物＋道具＋
+  // 場景件）——唔淨 characters gate（chars=0 但 props/場景在都要行）；唔逐鏡
+  // 遇缺件 rig 一個——全集一次 batch。
+  if (!input.dryRun && (ctx.locked!.characters.length > 0 || ctx.locked!.shots.some((s) => s.props?.length) || sceneBoards.length > 0)) {
     const assetsDir = path.join(jobDir(jobId), "assets");
     const propMark = path.join(assetsDir, "props.pinned.json");
     const plateDiff = diffPropPlates(assetsDir, propMark, [...new Set(ctx.locked!.shots.flatMap((s) => (s.props ?? []).map((p) => p.name)))]);
@@ -692,7 +695,24 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       const row = plateDiff.resolved.find((item) => item.assetId === propAssetId(name));
       return { name, file: got.file, rig: got.rig, deform: "rigid" as const, meshAliasId: row?.aliasFrom };
     });
-    const items = assertStoryPlatesReady({ characters, props }).map((item) => {
+    // Chau 0928 澄清：場景/terrain 件（lookdev cells）入同一 batch——
+    // cast-mesh docstring 設計本含 scene（差集：caller 之前淨傳 characters+
+    // props）。deform rigid（建築/傢俬按類型 N/A 唔 rig）；冇 manifest/壞
+    // 檔照既有路（world 段歷史 canonical 消費），唔靜靚當齊。
+    const sceneCells: { id: string; file: string }[] = [];
+    for (const board of sceneBoards) {
+      const slug = board.era.trim().replace(/[\s/\\]+/g, "-");
+      const lookFile = path.join(assetsDir, "scenes", `${slug}.lookdev.json`);
+      if (!fs.existsSync(lookFile)) continue;
+      try {
+        const look = JSON.parse(fs.readFileSync(lookFile, "utf8")) as { cells?: string[] };
+        for (const cell of look.cells ?? []) {
+          if (cell && fs.existsSync(cell)) sceneCells.push({ id: `${slug}::${(cell.split("/").pop() ?? "").replace(/\.png$/, "")}`, file: cell });
+        }
+      } catch { /* 壞 manifest＝唔入 batch（world 段照舊消費歷史 canonical） */ }
+    }
+const items = [
+      ...assertStoryPlatesReady({ characters, props }).map((item) => {
       const row = [...characters, ...props].find((entry) => ("id" in entry ? entry.id : entry.name) === item.id);
       return {
         ...item,
@@ -700,7 +720,10 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         deform: row?.deform,
         meshAliasId: row && "meshAliasId" in row ? row.meshAliasId : undefined,
       };
-    });
+    }),
+      // 場景件（rigid）：id 帶 slug::cell 前綴——castRigs key 唔撞 characters/props
+      ...sceneCells.map((c) => ({ id: c.id, file: c.file, rig: undefined, deform: "rigid" as const, meshAliasId: undefined })),
+    ];
     castRigs = await ensureCastOnce({
       characters: ctx.locked!.characters,
       items,
