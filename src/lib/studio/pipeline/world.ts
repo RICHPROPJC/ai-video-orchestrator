@@ -695,21 +695,42 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       const row = plateDiff.resolved.find((item) => item.assetId === propAssetId(name));
       return { name, file: got.file, rig: got.rig, deform: "rigid" as const, meshAliasId: row?.aliasFrom };
     });
-    // Chau 0928 澄清：場景/terrain 件（lookdev cells）入同一 batch——
-    // cast-mesh docstring 設計本含 scene（差集：caller 之前淨傳 characters+
-    // props）。deform rigid（建築/傢俬按類型 N/A 唔 rig）；冇 manifest/壞
-    // 檔照既有路（world 段歷史 canonical 消費），唔靜靚當齊。
+    // R15-1（root 0928 親讀差集①）：場景件 readiness gate——**required-driven**
+    // （每 era×type 一 cell＝本集明確清單），唔係「manifest exists 就當齊」：
+    // 缺 manifest/壞 JSON/缺 cell/缺檔＝**具名缺件**（收集齊先一個 gate 判），
+    // 缺件回所屬素材席＋唔開 rig 窗口（fail-loud）——歷史 canonical 唔因
+    // missing 默認可用（要行 batch 內 reusableCanonical hash 對照先算）。
+    // deform 合同：character=rig；prop 按既有類型；scene/terrain cell＝
+    // 靜態佈景款（rigid）——未知類型具名列 unknown 唔冒充 N/A。
     const sceneCells: { id: string; file: string }[] = [];
+    const sceneMissing: string[] = [];
     for (const board of sceneBoards) {
       const slug = board.era.trim().replace(/[\s/\\]+/g, "-");
       const lookFile = path.join(assetsDir, "scenes", `${slug}.lookdev.json`);
-      if (!fs.existsSync(lookFile)) continue;
+      if (!fs.existsSync(lookFile)) {
+        sceneMissing.push(`${board.era}: lookdev manifest 缺（要 ensureSceneBoard 出齊 ${board.types.length} 款 cells）`);
+        continue;
+      }
+      let look: { cells?: string[] };
       try {
-        const look = JSON.parse(fs.readFileSync(lookFile, "utf8")) as { cells?: string[] };
-        for (const cell of look.cells ?? []) {
-          if (cell && fs.existsSync(cell)) sceneCells.push({ id: `${slug}::${(cell.split("/").pop() ?? "").replace(/\.png$/, "")}`, file: cell });
-        }
-      } catch { /* 壞 manifest＝唔入 batch（world 段照舊消費歷史 canonical） */ }
+        look = JSON.parse(fs.readFileSync(lookFile, "utf8")) as { cells?: string[] };
+      } catch (e) {
+        sceneMissing.push(`${board.era}: lookdev manifest 壞（${(e as Error).message.slice(0, 80)}）`);
+        continue;
+      }
+      const cells = look.cells ?? [];
+      for (const type of board.types) {
+        const want = cells.find((c) => c.endsWith(`${slug}.${type}.png`) || c.includes(`${slug}.${type}`));
+        if (!want) { sceneMissing.push(`${board.era}: cell「${type}」缺（manifest 有 ${cells.length} cells）`); continue; }
+        if (!fs.existsSync(want)) { sceneMissing.push(`${board.era}: cell「${type}」檔在盤缺（${want}）`); continue; }
+        sceneCells.push({ id: `${slug}::${type}`, file: want });
+      }
+    }
+    if (sceneMissing.length) {
+      emit(jobId, { agent: "producer", level: "warn",
+        message: `整集素材未齊（場景件 ${sceneMissing.length} 缺）：${sceneMissing.join("；")}——回素材席補齊先開 rig 窗口`,
+        data: { stage: "asset-readiness", missing: sceneMissing } });
+      throw new Error(`scene_assets_not_ready: ${sceneMissing.join("；")}——整集未齊唔開 rig 窗口（回所屬素材席補件）`);
     }
 const items = [
       ...assertStoryPlatesReady({ characters, props }).map((item) => {
@@ -787,6 +808,10 @@ const items = [
     }
     for (const [id, glb] of Object.entries(castRigs)) {
       if (pieces.some((p) => p.id === id)) continue;
+      // R15-②：`slug::type` id＝lookdev cell 件（asset-board purpose:
+      // "blender-lookdev"——款式/視角参考，唔係擺位件）——唔盲擺入 world
+      //（mesh batch 備用；擺位件=characters/props/location canonical 照舊）
+      if (id.includes("::")) continue;
       const evidence = sizes[id] ?? {};
       const named = ctx.locked!.shots.flatMap((s) => s.props ?? []).find((p) => p.name === id);
       pieces.push({
