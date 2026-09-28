@@ -580,6 +580,13 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   let condOut: [string, number] = ["cond_cs", 0];
   // 寫咗 positions 就釘鍵格，有冇走位片都釘。冇走位片、冇 positions 先用兩端 still。
   const keyform = !fl2vaRoute && (Boolean(positions) || variant === "bkf" || variant === "c" || (variant === "a" && !hasVideo1));
+  // Sol 0926 裁決 E＋R11：refs 同 KF 入同一 conditioning entry 行 loaded
+  // H3KeyframeInject（live object_info start/end 兩針；磁碟 0916 版有 mid_image
+  // 三針但 serve 0830 未重載——R11 差集列明）。injectable＝首尾兩針＋Video1；
+  // R11-2 兩-pass pass2 重建（kf_inject_2@1344）同用此判定。
+  const injectMarks = positions.split(/[,，]/).map((p) => p.trim()).filter(Boolean);
+  const injectable = Boolean(positions) && hasVideo1 && Boolean(opts.kfEndName)
+    && injectMarks.length === 2 && injectMarks[0] === "0%" && injectMarks[1] === "100%";
   if (keyform) {
     if (!opts.kfStartName) throw new Error("keyframes require kfStartName");
     const injectMarks = positions.split(/[,，]/).map((p) => p.trim()).filter(Boolean);
@@ -589,8 +596,6 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     // loaded H3KeyframeInject（object_info 只有 start/end，唔假設 disk
     // mid_image 已載入）。任意位置＋refs 嘅同 entry 合流係 TODO：行返
     // H3Keyframes 舊路，唔立互斥禁令。
-    const injectable = Boolean(positions) && hasVideo1 && Boolean(opts.kfEndName)
-      && injectMarks.length === 2 && injectMarks[0] === "0%" && injectMarks[1] === "100%";
     if (injectable) {
       g.kf_start_in = { class_type: "LoadImage", inputs: { image: opts.kfStartName } };
       g.kf_end_in = { class_type: "LoadImage", inputs: { image: opts.kfEndName! } };
@@ -696,14 +701,49 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   let decodeSrc: [string, number] = ["samp_a", 0];
   let audioDecodeSrc: [string, number] = ["samp_a", 0];
   if (opts.nativeUpscale && twoPass) {
-    // §P34/R6（0928）README 兩-pass（PDD hi-res fix，golden＝pdd_acc_t2v_
-    // latent_upscale.json）：AVLatentUpscaleBy ×1.5（video half per-frame
-    // resize＋patch-grid snap；audio passes through——core LatentUpscale 處理
-    // 唔到 H3 nested AV latent）→ PDDAccScheduler denoise 0.25 partial-denoise
-    // refine（round(8*0.25)=淨重跑 last 2 trained blocks＝resume sigma 0.8，
-    // stay on trained grid——唔用 Apply sigmas：嗰個係全長）。video 出 refine；
-    // audio 出 pass1（README：refine 唔掂 audio）。scheduler nfe 同 Apply
-    // partition（"8"）對齊。
+    // §P34/R6→R9→R11（0928）兩-pass（PDD hi-res fix）：AVLatentUpscaleBy ×1.5
+    // →PDDAccScheduler denoise 0.25 refine（last 2 trained blocks）。video 出
+    // refine；audio 出 pass1。
+    // R11-2 空間適配（node1 源碼排清）：PackedLayout keyframes「sharing the
+    // target spatial grid」（comfy/ldm/minimax/model.py:304-317）——KF latent
+    // 網格必須＝generation latent（無內部 resize）；refs 自帶 grid（尺寸獨立）。
+    // 即 pass2（1344×768）要重建 KF conditioning 到 1344；refs conditioning
+    // 沿用（latent 尺寸獨立）。最小實現＝pass2 專屬 Inject(1344)＋同素材，
+    // cond 鏈 pass2 版，samp_refine 行 guider_2。
+    if (keyform && !injectable) {
+      throw new Error("h3_route_blocked: 兩-pass＋H3Keyframes 路未定義（KF 任意%路嘅 pass2 重建要 H3Keyframes 1344 版——列 R11 差集，未接）");
+    }
+    if (twoPass && injectable) {
+      // pass2 專屬 Inject（1344）：同 start/end 素材（sha 同）、width/height＝1344
+      // （KF latent encode 對齊 refine generation grid）；refs conditioning 沿用
+      // pass1 r2v entry（refs latent 尺寸獨立自帶 grid）——R11「保留同素材
+      // sha/positions/refs 語義」
+      g.kf_inject_2 = {
+        class_type: "H3KeyframeInject",
+        inputs: {
+          conditioning: ["r2v", 0],
+          vae: ["vvae", 0],
+          start_image: ["kf_start_in", 0],
+          end_image: ["kf_end_in", 0],
+          width: 1344,
+          height: 768,
+          length: opts.frames,
+        },
+      };
+      g.cond_evict_2 = {
+        class_type: "H3FreeTextEncoder",
+        inputs: { conditioning: ["kf_inject_2", 0], clip: ["clip", 0] },
+      };
+      g.cond_cs_2 = {
+        class_type: "H3ConditionStrength",
+        inputs: {
+          conditioning: ["cond_evict_2", 0],
+          visual_strength: opts.visualStrength ?? COND_VISUAL,
+          audio_strength: COND_AUDIO,
+        },
+      };
+      g.guider_2 = { class_type: "BasicGuider", inputs: { model: modelOut, conditioning: ["cond_cs_2", 0] } };
+    }
     g.upscale_av = {
       class_type: "MiniMaxH3AVLatentUpscaleBy",
       inputs: { samples: ["samp_a", 0], upscale_method: "bislerp", scale_by: 1.5 },
@@ -713,7 +753,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       class_type: "SamplerCustomAdvanced",
       inputs: {
         noise: ["noise_a", 0],
-        guider: ["guider_a", 0],
+        guider: injectable ? ["guider_2", 0] : ["guider_a", 0],
         sampler: ["sampler_sel", 0],
         sigmas: ["sched_refine", 0],
         latent_image: ["upscale_av", 0],

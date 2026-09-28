@@ -447,6 +447,10 @@ export type JobRecord = {
   callsheetRepairEpisode?: { attempts: number } | null;
   /** root R2 修③（0928）：現行採用 callsheet digest（callsheet.json 落盤時寫）——session turn dependsOn 對比真源；未有 callsheet＝undefined。 */
   callsheetDigest?: string;
+  /** root R11-4（0928）：ask reply 雲端硬預算（跨 asks 持久累計）——calls=雲端
+   *  LLM call 實數；tokens=provider usage 加總（usage 缺失時 tokenCounted=false
+   * ＝唔聲稱 token cap 已執行，淨 call 數閘有效）。超閘＝唔再 call（fallback）。 */
+  askUsage?: { calls: number; tokens: number; tokenCounted: boolean };
   /** §P33 A3（0928）：待採納 revise turn 佇列（sessions.jsonl turnId）——pipeline owner 安全點讀 */
   pendingReviseTurns?: string[];
   retries: { stills: number; voice: number; motion: number };

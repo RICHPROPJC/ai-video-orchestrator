@@ -238,6 +238,22 @@ const ASK_REPLY_CHARTER = `你係製作台（SlateCrew）嘅會話回覆席。�
 
 const askReplySchema = z.object({ reply: z.string().min(4) });
 
+/** root R11-4（0928）：ask 雲端硬預算常數——超即唔再 call（誠實 fallback）。
+ *  calls 閘任何情況有效；token 閘淨 provider usage 有回填先計（tokenCounted）。 */
+export const ASK_BUDGET = { maxCalls: 16, maxTokens: 40_000 } as const;
+
+/** 讀 receipts 檔 usage 加總（chatJsonSeat 回傳檔 paths；usage 缺失回 null） */
+function sumReceiptUsage(receiptFiles: string[]): { tokens: number; anyUsage: boolean } {
+  let tokens = 0; let anyUsage = false;
+  for (const f of receiptFiles) {
+    try {
+      const r = JSON.parse(fs.readFileSync(f, "utf8")) as { usage?: { total_tokens?: number } };
+      if (r.usage?.total_tokens !== undefined) { tokens += r.usage.total_tokens; anyUsage = true; }
+    } catch { /* 壞檔＝唔計（calls 閘兜底） */ }
+  }
+  return { tokens, anyUsage };
+}
+
 export async function replyToAskTurn(
   jobId: string,
   job: { status?: string; progress?: number; currentAgent?: string; error?: string | null; callsheetDigest?: string; outputs?: Record<string, unknown> },
@@ -256,6 +272,20 @@ export async function replyToAskTurn(
   const recent = readSession(jobId).turns.slice(-6).map((t) => ({ role: t.role, text: t.text.slice(0, 300) }));
   let text: string;
   let replySource: "seat" | "job-facts-fallback" = "job-facts-fallback";
+  // R11-4 前置硬閘：跨 asks 累計（job.askUsage）超 calls/token 即唔 call
+  const { mutateJob } = require("../store") as typeof import("../store");
+  try {
+    const used = readJobBudget(jobId);
+    if (used.calls >= ASK_BUDGET.maxCalls || (used.tokenCounted && used.tokens >= ASK_BUDGET.maxTokens)) {
+      text = `（ask 雲端預算用盡——唔再 call 模型；如實現況）job ${facts.status}${facts.currentAgent ? `，當前席位 ${facts.currentAgent}` : ""}。你嘅問題已記錄（turn ${userTurn.turnId}）；預算：${used.calls}/${ASK_BUDGET.maxCalls} calls${used.tokenCounted ? `、${used.tokens}/${ASK_BUDGET.maxTokens} tokens` : "（token 無回填——淨 call 閘生效）"}。`;
+      const turn0 = appendTurn(jobId, {
+        requestId: `${userTurn.requestId}:reply`, role: "assistant", text, status: "recorded",
+        ...(userTurn.dependsOn ? { dependsOn: userTurn.dependsOn } : {}),
+        replySource: "job-facts-fallback",
+      });
+      return { turn: turn0, replySource: "job-facts-fallback" };
+    }
+  } catch { /* 讀 budget 失敗＝保守照 call（calls 閘喺後置對賬補） */ }
   try {
     const pass = await chatJsonSeat({
       seat: "producer",
@@ -270,6 +300,18 @@ export async function replyToAskTurn(
     });
     text = pass.value.reply;
     replySource = "seat";
+    // R11-4 後置對賬：receipts usage 加總落 job（跨 asks 累計）
+    try {
+      const summed = sumReceiptUsage(pass.receipts.map((f) => path.join(io.receiptDir, f)));
+      const prev = readJobBudget(jobId);
+      mutateJob(jobId, (j) => {
+        j.askUsage = {
+          calls: prev.calls + pass.receipts.length,
+          tokens: prev.tokens + summed.tokens,
+          tokenCounted: prev.tokenCounted || summed.anyUsage,
+        };
+      });
+    } catch { /* 對賬失敗＝calls 閘下次前置照讀舊值（保守） */ }
   } catch {
     // LLM 唔係 ask 回覆嘅硬依賴——fail 落誠實現況組裝（唔扮答到）
     text = `（回覆席暫時唔在場——如實現況）job ${facts.status}${facts.currentAgent ? `，當前席位 ${facts.currentAgent}` : ""}${typeof facts.progress === "number" ? `，進度 ${facts.progress}%` : ""}${facts.error ? `；最後錯誤：${facts.error}` : ""}。你嘅問題已記錄（turn ${userTurn.turnId}）；要改嘢請清楚講出修改要求，用「要求修改」重交。`;
@@ -283,4 +325,11 @@ export async function replyToAskTurn(
     replySource,
   });
   return { turn, replySource };
+}
+
+/** R11-4：讀 job.askUsage（缺欄＝零用過） */
+function readJobBudget(jobId: string): { calls: number; tokens: number; tokenCounted: boolean } {
+  const { readJob } = require("../store") as typeof import("../store");
+  const j = readJob(jobId);
+  return j?.askUsage ?? { calls: 0, tokens: 0, tokenCounted: false };
 }
