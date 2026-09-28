@@ -585,8 +585,14 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   // 三針但 serve 0830 未重載——R11 差集列明）。injectable＝首尾兩針＋Video1；
   // R11-2 兩-pass pass2 重建（kf_inject_2@1344）同用此判定。
   const injectMarks = positions.split(/[,，]/).map((p) => p.trim()).filter(Boolean);
-  const injectable = Boolean(positions) && hasVideo1 && Boolean(opts.kfEndName)
-    && injectMarks.length === 2 && injectMarks[0] === "0%" && injectMarks[1] === "100%";
+  // R12：三針接線——0/100 兩針（live 版）或 0/<mid%>/100 三針（磁碟 0916 三針
+  // 版＋patch mid_position 重載後生效）。mid 位置淨三針版支援（磁碟版固定
+  // ~50%；patch 後 mid_position 參數化）——單一可移動 mid＝三針能力，唔係
+  // 任意數量 anchors（>3 marks 照 H3Keyframes 獨立 entry 路）。
+  const twoPin = injectMarks.length === 2 && injectMarks[0] === "0%" && injectMarks[1] === "100%";
+  const threePin = injectMarks.length === 3 && injectMarks[0] === "0%" && injectMarks[2] === "100%"
+    && /^(?:\d+(?:\.\d+)?)%$/.test(injectMarks[1]!) && injectMarks[1] !== "0%" && injectMarks[1] !== "100%";
+  const injectable = Boolean(positions) && hasVideo1 && Boolean(opts.kfEndName) && (twoPin || threePin);
   if (keyform) {
     if (!opts.kfStartName) throw new Error("keyframes require kfStartName");
     const injectMarks = positions.split(/[,，]/).map((p) => p.trim()).filter(Boolean);
@@ -599,6 +605,12 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     if (injectable) {
       g.kf_start_in = { class_type: "LoadImage", inputs: { image: opts.kfStartName } };
       g.kf_end_in = { class_type: "LoadImage", inputs: { image: opts.kfEndName! } };
+      // R12 三針接線：mid 圖＝kfExtra[0]（0/<mid%>/100 序）；mid_position＝
+      // marks[1] 百分比（套 patch-drafts mid_position 參數版重載後生效——
+      // 未套時 live object_info 拒，fail-loud）
+      if (threePin && opts.kfExtraNames?.length) {
+        g.kf_mid_in = { class_type: "LoadImage", inputs: { image: opts.kfExtraNames[0] } };
+      }
       g.kf_inject = {
         class_type: "H3KeyframeInject",
         inputs: {
@@ -609,6 +621,10 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
           vae: ["vvae", 0],
           start_image: ["kf_start_in", 0],
           end_image: ["kf_end_in", 0],
+          ...(threePin && g.kf_mid_in ? {
+            mid_image: ["kf_mid_in", 0],
+            mid_position: Number.parseFloat(injectMarks[1]!.replace("%", "")) / 100,
+          } : {}),
           width: passW,
           height: passH,
           length: opts.frames,
@@ -713,7 +729,39 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     if (keyform && !injectable) {
       throw new Error("h3_route_blocked: 兩-pass＋H3Keyframes 路未定義（KF 任意%路嘅 pass2 重建要 H3Keyframes 1344 版——列 R11 差集，未接）");
     }
-    if (twoPass && injectable) {
+    if (twoPass && fl2vaRoute) {
+      // R12-2：FL highres 端點 cond 重建（actual consumer：I2V node width/
+      // height 一次過決定 KF encode＋latent 尺寸——pass1 896 版對 1344 refine
+      // latent 唔對齊，要 i2v_2@1344 重建；同素材 first/last 語義保留；
+      // i2v_2 嘅 latent output 唔用——latent 行 upscale_av）
+      g.i2v_2 = {
+        class_type: "MiniMaxH3ImageToVideo",
+        inputs: {
+          clip: ["clip", 0],
+          vae: ["vvae", 0],
+          prompt: ["split", 0],
+          width: 1344,
+          height: 768,
+          length: opts.frames,
+          ...(opts.kfStartName ? { first_frame: ["kf_start_in", 0] } : {}),
+          ...(opts.kfEndName ? { last_frame: ["kf_end_in", 0] } : {}),
+        },
+      };
+      g.cond_evict_2 = {
+        class_type: "H3FreeTextEncoder",
+        inputs: { conditioning: ["i2v_2", 0], clip: ["clip", 0] },
+      };
+      g.cond_cs_2 = {
+        class_type: "H3ConditionStrength",
+        inputs: {
+          conditioning: ["cond_evict_2", 0],
+          visual_strength: opts.visualStrength ?? COND_VISUAL,
+          audio_strength: COND_AUDIO,
+        },
+      };
+      g.guider_2 = { class_type: "BasicGuider", inputs: { model: modelOut, conditioning: ["cond_cs_2", 0] } };
+    }
+    if (twoPass && !fl2vaRoute && injectable) {
       // pass2 專屬 Inject（1344）：同 start/end 素材（sha 同）、width/height＝1344
       // （KF latent encode 對齊 refine generation grid）；refs conditioning 沿用
       // pass1 r2v entry（refs latent 尺寸獨立自帶 grid）——R11「保留同素材
@@ -725,6 +773,10 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
           vae: ["vvae", 0],
           start_image: ["kf_start_in", 0],
           end_image: ["kf_end_in", 0],
+          ...(threePin && g.kf_mid_in ? {
+            mid_image: ["kf_mid_in", 0],
+            mid_position: Number.parseFloat(injectMarks[1]!.replace("%", "")) / 100,
+          } : {}),
           width: 1344,
           height: 768,
           length: opts.frames,
@@ -753,7 +805,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       class_type: "SamplerCustomAdvanced",
       inputs: {
         noise: ["noise_a", 0],
-        guider: injectable ? ["guider_2", 0] : ["guider_a", 0],
+        guider: (fl2vaRoute || injectable) ? ["guider_2", 0] : ["guider_a", 0],
         sampler: ["sampler_sel", 0],
         sigmas: ["sched_refine", 0],
         latent_image: ["upscale_av", 0],

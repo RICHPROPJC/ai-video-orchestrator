@@ -72,7 +72,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         model: cfg.crew.boardsModel ?? (() => { throw new Error("boards_model_missing"); })(),
         crew: cfg.crew,
         receiptDir: jobDir(id),
-        fallbackModel: cfg.crew.secondFallback,
+        // R12：ask 撤 fallback（qwen38＝本地 GPU，D1 零 GPU 段禁用；ask 唯一
+        // glm-5.3-flash 雲端，budget 原子 reserve 只管雲端 call）
       });
       return NextResponse.json({ turnId: turn.turnId, at: turn.at, status: "recorded", intent,
         reply: { turnId: reply.turnId, at: reply.at, text: reply.text, replySource } });

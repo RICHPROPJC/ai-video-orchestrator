@@ -238,20 +238,24 @@ const ASK_REPLY_CHARTER = `你係製作台（SlateCrew）嘅會話回覆席。�
 
 const askReplySchema = z.object({ reply: z.string().min(4) });
 
-/** root R11-4（0928）：ask 雲端硬預算常數——超即唔再 call（誠實 fallback）。
- *  calls 閘任何情況有效；token 閘淨 provider usage 有回填先計（tokenCounted）。 */
-export const ASK_BUDGET = { maxCalls: 16, maxTokens: 40_000 } as const;
+/** root R11-4→R12（0928）：ask 雲端硬預算——**淨 calls 硬 cap**（原子
+ *  reserve：每次 HTTP 發出前鎖內 check-and-increment，失敗/junk/429/
+ *  fallback 轉換全部預先 reserve，准入失敗＝唔 call fail-closed）。
+ *  token 硬 cap 宣稱已撤（provider 無最大 token 保證；usage 淨觀測——
+ *  withUsage/withoutUsage 分開記，唔用 anyUsage OR 掩蓋缺失）。 */
+export const ASK_BUDGET = { maxCalls: 16 } as const;
 
-/** 讀 receipts 檔 usage 加總（chatJsonSeat 回傳檔 paths；usage 缺失回 null） */
-function sumReceiptUsage(receiptFiles: string[]): { tokens: number; anyUsage: boolean } {
-  let tokens = 0; let anyUsage = false;
+/** 讀 receipts 檔 usage 統計（R12：有/缺分開計——唔 anyUsage OR 掩蓋缺失） */
+function sumReceiptUsage(receiptFiles: string[]): { tokens: number; withUsage: number; withoutUsage: number } {
+  let tokens = 0; let withUsage = 0; let withoutUsage = 0;
   for (const f of receiptFiles) {
     try {
       const r = JSON.parse(fs.readFileSync(f, "utf8")) as { usage?: { total_tokens?: number } };
-      if (r.usage?.total_tokens !== undefined) { tokens += r.usage.total_tokens; anyUsage = true; }
-    } catch { /* 壞檔＝唔計（calls 閘兜底） */ }
+      if (r.usage?.total_tokens !== undefined) { tokens += r.usage.total_tokens; withUsage += 1; }
+      else withoutUsage += 1;
+    } catch { withoutUsage += 1; /* 壞檔＝缺（觀測面照計） */ }
   }
-  return { tokens, anyUsage };
+  return { tokens, withUsage, withoutUsage };
 }
 
 export async function replyToAskTurn(
@@ -272,20 +276,20 @@ export async function replyToAskTurn(
   const recent = readSession(jobId).turns.slice(-6).map((t) => ({ role: t.role, text: t.text.slice(0, 300) }));
   let text: string;
   let replySource: "seat" | "job-facts-fallback" = "job-facts-fallback";
-  // R11-4 前置硬閘：跨 asks 累計（job.askUsage）超 calls/token 即唔 call
-  const { mutateJob } = require("../store") as typeof import("../store");
-  try {
-    const used = readJobBudget(jobId);
-    if (used.calls >= ASK_BUDGET.maxCalls || (used.tokenCounted && used.tokens >= ASK_BUDGET.maxTokens)) {
-      text = `（ask 雲端預算用盡——唔再 call 模型；如實現況）job ${facts.status}${facts.currentAgent ? `，當前席位 ${facts.currentAgent}` : ""}。你嘅問題已記錄（turn ${userTurn.turnId}）；預算：${used.calls}/${ASK_BUDGET.maxCalls} calls${used.tokenCounted ? `、${used.tokens}/${ASK_BUDGET.maxTokens} tokens` : "（token 無回填——淨 call 閘生效）"}。`;
-      const turn0 = appendTurn(jobId, {
-        requestId: `${userTurn.requestId}:reply`, role: "assistant", text, status: "recorded",
-        ...(userTurn.dependsOn ? { dependsOn: userTurn.dependsOn } : {}),
-        replySource: "job-facts-fallback",
-      });
-      return { turn: turn0, replySource: "job-facts-fallback" };
-    }
-  } catch { /* 讀 budget 失敗＝保守照 call（calls 閘喺後置對賬補） */ }
+  // R12 硬準入：onBeforeCall＝鎖內原子 reserve（check-and-increment 同步做，
+  // 跨 asks 持久；每次 HTTP 發出前必經——retry/junk/429/fallback 全計；准入
+  // 失敗（超額或鎖失敗）＝throw→下面 catch＝唔 call（fail-closed，fallback
+  // 文字照實）。qwen38 本地 GPU fallback 已撤（ask 唯一 glm-5.3-flash 雲端）。
+  const reserveAskCall = (): void => {
+    const { mutateJob } = require("../store") as typeof import("../store");
+    mutateJob(jobId, (j) => {
+      const cur = j.askUsage ?? { calls: 0, tokens: 0, withUsage: 0, withoutUsage: 0 };
+      if (cur.calls >= ASK_BUDGET.maxCalls) {
+        throw new Error(`ask_budget_exhausted: ${cur.calls}/${ASK_BUDGET.maxCalls} calls 已 reserve——唔再發 HTTP`);
+      }
+      j.askUsage = { ...cur, calls: cur.calls + 1 };
+    });
+  };
   try {
     const pass = await chatJsonSeat({
       seat: "producer",
@@ -293,26 +297,39 @@ export async function replyToAskTurn(
       model: io.model,
       crew: io.crew,
       receiptDir: io.receiptDir,
-      ...(io.fallbackModel ? { fallbackModel: io.fallbackModel } : {}),
+      onBeforeCall: reserveAskCall,
       system: ASK_REPLY_CHARTER,
       user: JSON.stringify({ job: facts, session_recent: recent, user_question: userTurn.text }),
       schema: askReplySchema,
     });
     text = pass.value.reply;
     replySource = "seat";
-    // R11-4 後置對賬：receipts usage 加總落 job（跨 asks 累計）
+    // R12 後置觀測對賬（鎖內 disk-latest）：usage 有/缺分開計（唔 OR 掩蓋）；
+    // token 淨觀測——硬 cap 宣稱已撤
     try {
       const summed = sumReceiptUsage(pass.receipts.map((f) => path.join(io.receiptDir, f)));
-      const prev = readJobBudget(jobId);
+      const { mutateJob } = require("../store") as typeof import("../store");
       mutateJob(jobId, (j) => {
+        const cur = j.askUsage ?? { calls: 0, tokens: 0, withUsage: 0, withoutUsage: 0 };
         j.askUsage = {
-          calls: prev.calls + pass.receipts.length,
-          tokens: prev.tokens + summed.tokens,
-          tokenCounted: prev.tokenCounted || summed.anyUsage,
+          ...cur,
+          tokens: cur.tokens + summed.tokens,
+          withUsage: cur.withUsage + summed.withUsage,
+          withoutUsage: cur.withoutUsage + summed.withoutUsage,
         };
       });
-    } catch { /* 對賬失敗＝calls 閘下次前置照讀舊值（保守） */ }
-  } catch {
+    } catch { /* 觀測對賬失敗＝calls 閘不受影響（reserve 已計） */ }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith("ask_budget_exhausted")) {
+      const used = readJobBudget(jobId);
+      text = `（ask 雲端預算用盡——唔再發模型 call；如實現況）job ${facts.status}${facts.currentAgent ? `，當前席位 ${facts.currentAgent}` : ""}。你嘅問題已記錄（turn ${userTurn.turnId}）；預算：${used.calls}/${ASK_BUDGET.maxCalls} calls 已用（usage 觀測：${used.withUsage} 有回填/${used.withoutUsage} 缺）。`;
+      const turnB = appendTurn(jobId, {
+        requestId: `${userTurn.requestId}:reply`, role: "assistant", text, status: "recorded",
+        ...(userTurn.dependsOn ? { dependsOn: userTurn.dependsOn } : {}),
+        replySource: "job-facts-fallback",
+      });
+      return { turn: turnB, replySource: "job-facts-fallback" };
+    }
     // LLM 唔係 ask 回覆嘅硬依賴——fail 落誠實現況組裝（唔扮答到）
     text = `（回覆席暫時唔在場——如實現況）job ${facts.status}${facts.currentAgent ? `，當前席位 ${facts.currentAgent}` : ""}${typeof facts.progress === "number" ? `，進度 ${facts.progress}%` : ""}${facts.error ? `；最後錯誤：${facts.error}` : ""}。你嘅問題已記錄（turn ${userTurn.turnId}）；要改嘢請清楚講出修改要求，用「要求修改」重交。`;
   }
@@ -327,9 +344,9 @@ export async function replyToAskTurn(
   return { turn, replySource };
 }
 
-/** R11-4：讀 job.askUsage（缺欄＝零用過） */
-function readJobBudget(jobId: string): { calls: number; tokens: number; tokenCounted: boolean } {
+/** R12：讀 job.askUsage（缺欄＝零用過） */
+function readJobBudget(jobId: string): { calls: number; tokens: number; withUsage: number; withoutUsage: number } {
   const { readJob } = require("../store") as typeof import("../store");
   const j = readJob(jobId);
-  return j?.askUsage ?? { calls: 0, tokens: 0, tokenCounted: false };
+  return j?.askUsage ?? { calls: 0, tokens: 0, withUsage: 0, withoutUsage: 0 };
 }

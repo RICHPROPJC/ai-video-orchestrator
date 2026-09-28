@@ -224,6 +224,10 @@ export type ChatJsonOpts<T> = {
    * SchemaMismatchError escapes (reason schema_mismatch, attempts unburned). */
   schemaJunkCeiling?: number;
   fetchImpl?: typeof fetch;
+  /** R12（0928）：每次 HTTP 發出前 call（primary/fallback/retry/junk 補 call
+   *  全部行到）——throw＝該次唔發（caller 做原子 budget reserve：發出前
+   *  check-and-increment，失敗 attempt 都已計）。 */
+  onBeforeCall?: () => void;
   /** test clock: receives every backoff wait instead of really sleeping */
   sleepImpl?: (ms: number) => Promise<void>;
   /** Nex only: none=fast pass · medium|high=深判斷。Default none（見 nexReasoningEffort）。 */
@@ -301,6 +305,7 @@ export async function chatJson<T>(opts: ChatJsonOpts<T>): Promise<ChatJsonResult
   let throttled = 0;
   const postChat = async (headers: Record<string, string>, body: Record<string, unknown>) => {
     for (;;) {
+      opts.onBeforeCall?.();
       const res = await doFetch(`${endpoint}/v1/chat/completions`, {
         method: "POST",
         headers,
@@ -469,5 +474,5 @@ export async function chatJsonSeat<T>(
     const out = await chatJson(opts);
     return { ...out, fellBack: false };
   }
-  return chatJsonWithFallback({ ...opts, fallbackModel });
+  return chatJsonWithFallback({ ...opts, fallbackModel }); // onBeforeCall 隨 opts 貫穿 primary/fallback 每次 HTTP
 }
