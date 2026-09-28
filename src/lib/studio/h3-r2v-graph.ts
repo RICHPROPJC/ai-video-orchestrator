@@ -82,7 +82,7 @@ export type H3GraphModels = {
   videoVae: string;
   audioVae: string;
   ref2va: string;
-  fl2va: string;
+  fl2va: string | null; // P34 P0：null＝未採用（A-form 孤 loader 已刪；真路由 P1 批二）
   turboLora: string;
 };
 
@@ -355,8 +355,11 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     clip: { class_type: "H3ClipLoaderAny", inputs: { clip_name: m.textEncoder, type: m.encoderType } },
     vvae: { class_type: "VAELoader", inputs: { vae_name: m.videoVae } },
     avae: { class_type: "VAELoader", inputs: { vae_name: m.audioVae } },
+    // P34 P0（0928）：fl2va 孤 loader 刪——本 route 構造過 fl2va→fbc→solattn
+    // →lora_b→sigma_lora_b 但零 consumer（r2v/sampler 全食 sigma_lora_a），
+    // 「定義 loader＝已用 FL2VA」係假宣稱。FL2VA 真正 consumer＝P1 批二
+    // typed route（各自 patch 後 model 可達 SaveVideo）先返。
     ref2va: { class_type: "H3ModelLoaderAny", inputs: { model_name: m.ref2va } },
-    fl2va: { class_type: "H3ModelLoaderAny", inputs: { model_name: m.fl2va } },
     split: { class_type: "H3EpisodeSplit", inputs: { script: opts.script, bindings: opts.bindings } },
   };
   // model chain per loader: turbo-4 road keeps the accel patch
@@ -365,7 +368,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   // FBC/SolAttn entirely — the patch is hard-locked to the 4-step schedule
   // and crashes structurally off it (tensor 17428≠17418).
   const turbo4 = opts.steps === 4;
-  for (const [tag, loader] of [["lora_a", "ref2va"], ["lora_b", "fl2va"]] as const) {
+  for (const [tag, loader] of [["lora_a", "ref2va"]] as const) { // P34 P0：fl2va 鏈隨孤 loader 刪
     if (turbo4) {
       g[`fbc_${loader}`] = {
         class_type: "H3FirstBlockCache",

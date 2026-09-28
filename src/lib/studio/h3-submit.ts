@@ -140,7 +140,9 @@ function modelsFromConfig(): H3GraphModels {
     videoVae: m.videoVae,
     audioVae: m.audioVae,
     ref2va: m.checkpoint,
-    fl2va: m.fl2va,
+    // P34 P0：A-form fl2va 孤 loader 已刪（零 consumer）——receipt 記「未採用」，
+    // 唔再報 loader 名冒充已消費；FL2VA 真路由＝P1 批二。
+    fl2va: null,
     turboLora: m.turboLora,
   };
 }
