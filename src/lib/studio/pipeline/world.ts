@@ -64,11 +64,11 @@ async function raster(svg: string, outFile: string) {
 /** R19 裁決④（0929）：0927 bake log 重建表（motion/adopted-0927.json，
  *  provenance＝events 0927 blockout bake speak 逐鏡固化）——舊 sceneStamp
  *  fingerprint 公式唔同版時嘅實質依賴（bvh/bake）對帳源。 */
-function bakeAdoptLogOf(jobId: string): Record<string, { bvh: string; bake: { start: number; len: number; step: number } }> | null {
+function bakeAdoptLogOf(jobId: string): Record<string, { bvh: string; bake: { start: number; len: number; step: number; auto_anchor?: boolean } }> | null {
   try {
     const f = path.join(jobDir(jobId), "motion", "adopted-0927.json");
     if (!fs.existsSync(f)) return null;
-    const raw = JSON.parse(fs.readFileSync(f, "utf8")) as { shots?: Record<string, { bvh: string; bake: { start: number; len: number; step: number } }> };
+    const raw = JSON.parse(fs.readFileSync(f, "utf8")) as { shots?: Record<string, { bvh: string; bake: { start: number; len: number; step: number; auto_anchor?: boolean } }> };
     return raw.shots ?? null;
   } catch {
     return null;
@@ -986,7 +986,14 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       // （bvh/bake）一致＝無差異，照 kept 唔重 bake；kept 後 stamp 重寫做新
       // 公式（以後純 setKey 比對）。
       const logged = bakeAdoptLogOf(jobId)?.[shot.id];
-      if (logged && logged.bvh === selDep.bvh && JSON.stringify(logged.bake) === JSON.stringify(selDep.bake)) {
+      const bakeEq =
+        logged &&
+        selDep.bake &&
+        logged.bake.start === selDep.bake.start &&
+        logged.bake.len === selDep.bake.len &&
+        logged.bake.step === selDep.bake.step &&
+        (logged.bake.auto_anchor ?? true) === (selDep.bake.auto_anchor ?? true);
+      if (logged && bakeEq && logged.bvh === selDep.bvh) {
         kept = true;
         keptVia = "0927-bake-log";
       }
