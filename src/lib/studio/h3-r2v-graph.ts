@@ -459,15 +459,13 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     // loader→SigmaShift(12/3)→PDDAccApply——**零 LoraStack**（README：distills
     // don't stack，Remove turbo 等 LoRA）；sigmas 由 Apply 嘅 sigmas output 出
     // （PDDAccScheduler 係 standalone partial-denoise 場合，唔係呢度）。
-    // 檔缺守衛（root 相撞裁決）：ref2va 款 combo 名磁碟缺；hybrid trunk
-    // （fl2va+ref2va block merge）配 fl2va 檔＝README off-label 路（fully
-    // applies＋warning informational）——config 指 fl2va 檔＋fl2va/hybrid
-    // UNET 時守衛唔擋（trunk 配對由 partition_check 把關）。
+    // root R7 檔缺守衛撤回（0928 磁碟複核推翻舊判斷）：node1 models/pdd_acc/
+    // 實況兩款齊——MiniMax-H3-Ref2VA-Acc-8Step.safetensors（0907 original
+    // 1.37GB）＋ minimax_h3_fl2va_pdd_acc_8step_comfyui.safetensors（0928
+    // comfyui 轉換款 1.66GB）。「淨 fl2va 款」係 P36 誤判。磁碟存在性唔喺
+    // graph builder 寫死判（遠端磁碟、時刻會變）——交 ComfyUI queue 驗證層
+    // （missing input 實證會拒，唔燒 GPU）＋收據層寫實際 pdd_file 供對賬。
     const pddFile = opts.models.pddAccFile ?? "MiniMax-H3-Ref2VA-Acc-8Step.safetensors";
-    const refPairMissing = pddFile.startsWith("MiniMax-H3-Ref2VA");
-    if (refPairMissing) {
-      throw new Error("h3_route_blocked: pdd-8step ref2va patch 檔磁碟缺（node1 models/pdd_acc/ 實核淨 fl2va 款；combo 註冊≠檔在）；補 Ref2VA 檔、或 config.pddAccFile 指 fl2va 款配 fl2va/hybrid UNET（README off-label 路由 partition_check 把關）");
-    }
     g.sigma_pdd = {
       class_type: "MiniMaxH3SigmaShift",
       inputs: { model: ["ref2va", 0], shift_video: SIGMA_VIDEO, shift_audio: SIGMA_AUDIO },
