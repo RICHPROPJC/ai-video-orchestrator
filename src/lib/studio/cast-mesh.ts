@@ -317,11 +317,14 @@ export async function ensureCastOnce(opts: {
   if (!fs.existsSync(SKINTOKENS_BIN)) throw new Error(`skintokens-cli missing: ${SKINTOKENS_BIN}`);
   if (!fs.existsSync(SKINTOKENS_MODELS)) throw new Error(`skintokens models missing: ${SKINTOKENS_MODELS}`);
   // Chau 0928 rule：SkinTokens 窗口 stop 兩 unit 齊（sf3d-fa2.service＋glm-ocr.service，
-  // 共 GPU2）——唔准淨停 SF3D；rig 完 :345-346 兩個 start 返（失敗都拉返）。
-  await systemctlUser(run, "stop", SF3D_UNIT);
-  await systemctlUser(run, "stop", GLM_OCR_UNIT);
+  // 共 GPU2）——唔准淨停 SF3D；rig 完兩個 start 返（失敗都拉返）。
+  // GPT-6 final confirmation 修正：成段 stop→rig 納入復原保護——第二個 stop
+  // 拋都要拉返已停嗰個；兩個 start 各自嘗試（一個失敗唔阻止另一個）；
+  // 原錯＋復原錯合併回報，唔靜靚食。
   let rigErr: Error | undefined;
   try {
+    await systemctlUser(run, "stop", SF3D_UNIT);
+    await systemctlUser(run, "stop", GLM_OCR_UNIT);
     await waitGpu2ForRig(run);
     for (const item of pending) {
       const riggedTmp = `${item.rigged}.part`;
@@ -345,13 +348,21 @@ export async function ensureCastOnce(opts: {
   } catch (error) {
     rigErr = error instanceof Error ? error : new Error(String(error));
   }
-  try {
-    await systemctlUser(run, "start", SF3D_UNIT);
-    await systemctlUser(run, "start", GLM_OCR_UNIT);
-  } catch (error) {
-    const startErr = error instanceof Error ? error.message : String(error);
-    throw new Error(rigErr ? `${rigErr.message}；SF3D 未拉返起：${startErr}` : startErr);
+  // 兩個 start 各自嘗試（start 冪等——stop 失敗嗰個 start 返同樣安全）
+  const startErrs: string[] = [];
+  for (const unit of [SF3D_UNIT, GLM_OCR_UNIT]) {
+    try {
+      await systemctlUser(run, "start", unit);
+    } catch (error) {
+      startErrs.push(`${unit} 未拉返起：${error instanceof Error ? error.message : String(error)}`);
+    }
   }
-  if (rigErr) throw rigErr;
+  if (rigErr || startErrs.length) {
+    const parts = [
+      rigErr?.message,
+      startErrs.length ? startErrs.join("；") : undefined,
+    ].filter(Boolean);
+    throw new Error(parts.join("；"));
+  }
   return rigs;
 }
