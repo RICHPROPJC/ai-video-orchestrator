@@ -82,6 +82,7 @@ export function SessionPanel({ jobId }: { jobId: string }) {
         return (await r.json()) as {
           turnId: string;
           status: string;
+          queued?: string;
           reply?: string;
           blockedReason?: string;
           adoption?: { adoptedRef: string; revision: string; affectedScope: string };
@@ -92,6 +93,7 @@ export function SessionPanel({ jobId }: { jobId: string }) {
         setFailedReq("");
         setNote(
           `${STATUS_NOTE[res.status] ?? res.status}` +
+            (res.queued ? ` · ${res.queued}` : "") +
             (res.adoption ? ` · 採納 ${res.adoption.adoptedRef}@r${res.adoption.revision}（${res.adoption.affectedScope}）` : "") +
             (res.blockedReason ? ` · ${res.blockedReason}` : "") +
             (res.reply ? "" : " —— 未有回覆文字（等 consumer）"),
@@ -123,6 +125,7 @@ export function SessionPanel({ jobId }: { jobId: string }) {
           {st.turns.map((t) => (
             <p key={t.turnId} className={t.role === "user" ? "text-foreground" : "text-muted-foreground"}>
               <span className="font-mono text-[10px] opacity-70">
+                {t.at ? `${t.at.slice(11, 16)} ` : ""}
                 {t.role === "user" ? "你" : "答"} · {STATUS_NOTE[t.status] ?? t.status}
                 {t.adoptedRef ? ` · ${t.adoptedRef}` : ""}
                 {t.blockedReason ? ` · ${t.blockedReason}` : ""}
