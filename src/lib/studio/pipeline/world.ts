@@ -174,10 +174,14 @@ export async function worldStage(ctx: Ctx): Promise<void> {
             delete sel.needs_human;
           }
         }
-        // 合併：spec 無差異嘅鏡保留 adopted row（無差異唔重揀）；變咗/新鏡用 fresh
+        // 合併：spec 無差異嘅鏡保留 adopted row（無差異唔重揀）；變咗/新鏡用
+        // fresh——用 changedShots 集合（含 --motion-pick 指定鏡），唔好用淨
+        // specChanged（R20i 實證：漏呢個 union 令 override 咗嘅 fresh row 被
+        // adopted 舊 row 蓋返，override 靜靜失效）。
         const freshById = new Map(fresh.map((r) => [r.shot, r]));
+        const changedSet = new Set(changedShots.map((s) => s.id));
         const sels = selShots.map((s) =>
-          adopted && !specChanged(s) ? adopted.find((r) => r.shot === s.id)! : freshById.get(s.id)!,
+          adopted && !changedSet.has(s.id) ? adopted.find((r) => r.shot === s.id)! : freshById.get(s.id)!,
         );
         writeSelections(motionDir, sels, {
           job: jobId,
