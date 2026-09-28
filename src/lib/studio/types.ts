@@ -308,6 +308,10 @@ export type AudioEvent = {
   text: string;
   startSec: number;
   endSec: number;
+  /** G1 批二（0928）：per-utterance 主 key——beat.utteranceIds 引用 typed
+   *  utterance 時，事件身份＝utteranceId（一句跨多 beat＝窗口首尾引用 beat
+   *  播出鏡，多對多）；legacy 字串路無此欄。 */
+  utteranceId?: string;
 };
 
 export type CallSheet = {

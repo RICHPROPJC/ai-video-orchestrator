@@ -615,6 +615,9 @@ export function planDivergence(
  *  警告，唔靜靜食）。唔改窗口——窗口＝callsheet，改佢係修訂輪嘅事。 */
 export type AudioTimelineRow = {
   beatId: string;
+  /** G1 批二（0928）：per-utterance 主 key（beat.utteranceIds 引用鏈行
+   *  per-utterance 事件路時帶；legacy 字串路無） */
+  utteranceId?: string;
   speaker?: string;
   text: string;
   window: { startSec: number; endSec: number; sec: number };
@@ -634,7 +637,7 @@ export type AudioTimelineRow = {
 };
 
 export async function audioTimelineRows(
-  events: { beatId: string; speaker?: string; text: string; startSec: number; endSec: number }[],
+  events: { beatId: string; utteranceId?: string; speaker?: string; text: string; startSec: number; endSec: number }[],
   takes: { beatId: string; file: string }[],
   wavSecOf: (file: string) => Promise<number>,
   /** 裁決 0928 D（SEAT-AUDIT-DECISION §3）：導演 dialogueClock placements
@@ -656,6 +659,7 @@ export async function audioTimelineRows(
     const windowSec = ev.endSec - ev.startSec;
     rows.push({
       beatId: ev.beatId,
+      ...(ev.utteranceId ? { utteranceId: ev.utteranceId } : {}),
       ...(ev.speaker ? { speaker: ev.speaker } : {}),
       text: ev.text,
       window: { startSec: ev.startSec, endSec: ev.endSec, sec: Number(windowSec.toFixed(3)) },

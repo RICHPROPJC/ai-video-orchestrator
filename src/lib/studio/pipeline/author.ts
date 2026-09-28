@@ -3,8 +3,19 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { emit, readJob } from "../store";
 import { loadCallSheet } from "../writer";
+import { utteranceBeatCoverage } from "../boards-expand";
 import { runWriter } from "../seat-writer";
-import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreativeManifest, updateCreativeManifest, dialogueSignalsOf, evaluateScriptAgainstPlan, contractGapsOf } from "../creative";
+import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreativeManifest, updateCreativeManifest, dialogueSignalsOf, evaluateScriptAgainstPlan, contractGapsOf, generateUtteranceCandidates } from "../creative";
+
+/** G1 批二（0928）：編劇 script.md 候選表 → typed utterance 落位清單
+ *  （id＝候選 frozen key U01…＝candidateIdx+1，綁 mdSha——同一 script.md
+ *  bytes 永遠同編號）。beats 席 packet 帶呢份；beat.utteranceIds 引用；
+ *  deriveAudioEvents 行 per-utterance 事件路。 */
+const utteranceListOf = (scriptMd: string): { utteranceId: string; rawText: string }[] =>
+  generateUtteranceCandidates(scriptMd).candidates.map((c, i) => ({
+    utteranceId: `U${String(i + 1).padStart(2, "0")}`,
+    rawText: c.rawText,
+  }));
 import type { DirectorSkeleton } from "../seat-boards";
 import { runBoards } from "../seat-boards";
 import { jobDir, jobFile, seatsDir } from "../paths";
@@ -206,6 +217,9 @@ async function authorCallSheet(
   // 裁決 0928 A：編劇對白＋導演聲畫落點抽出分支（runWriter beats packet 食）
   let scriptDialogueLines: string[] | undefined;
   let directorPlacements: { word: string; startSec?: number; endSec?: number; onImage?: string }[] | undefined;
+  // G1 批二：typed utterance 落位清單（候選 frozen key）——creative 段或
+  // resume 磁碟重建；MV/非故事流冇＝undefined（beats 走 legacy 字串路）
+  let typedUtteranceList: { utteranceId: string; rawText: string }[] | undefined;
   const skeletonOf = (plan: {
     vision?: unknown; rhythmMap?: { beatId: string; label?: string; job?: string; rhythm?: string; deletionLoss?: string }[];
     shots?: { shotId: string; startSec?: number; endSec?: number; purpose?: string; audienceEye?: string; cutReason?: string; dialogue?: string; frame?: string }[];
@@ -300,6 +314,9 @@ async function authorCallSheet(
         { crew: cfg.crew, model: cfg.crew.directorModel ?? "", receiptDir, fallbackModel: cfg.crew.secondFallback },
       );
       scriptDialogueLines = dialogueSignalsOf(script).map((d) => d.line);
+      // G1 批二：候選表 frozen 清單（beats 引用空間）——resume 由磁碟 script.md
+      // 同一 mdSha 重建（下面 else 分支）
+      typedUtteranceList = utteranceListOf(script.script_md);
       fs.writeFileSync(path.join(creativeDir, "script.md"), script.script_md);
       fs.writeFileSync(path.join(creativeDir, "script.json"), JSON.stringify(script, null, 2));
       // §6：script dependsOn plan（上游 sha），同 plan 同鏈
@@ -398,6 +415,9 @@ async function authorCallSheet(
 ${plan.treatment}`;
     }
   } else {
+    // G1 批二：resume 由磁碟 script.md 重建候選清單（同 mdSha 同編號）
+    const scriptMdDisk = path.join(creativeDir, "script.md");
+    if (fs.existsSync(scriptMdDisk)) typedUtteranceList = utteranceListOf(fs.readFileSync(scriptMdDisk, "utf8"));
     const planOnDisk = JSON.parse(fs.readFileSync(path.join(creativeDir, "director-plan.json"), "utf8")) as Parameters<typeof skeletonOf>[0] & { treatment?: string; dialogueClock?: { placements?: { word: string; startSec?: number; endSec?: number; onImage?: string }[] } };
     treatment = planOnDisk.treatment;
     directorSkeleton = skeletonOf(planOnDisk);
@@ -420,7 +440,10 @@ ${plan.treatment}`;
       ...(scriptDialogueLines?.length
         ? { scriptDialogue: scriptDialogueLines.map((line) => ({ line })) }
         : {}),
+      // G1 批二：beats 引用空間（charter 教落位）
+      ...(typedUtteranceList?.length ? { utterances: typedUtteranceList } : {}),
       ...(directorPlacements?.length ? { directorPlacements } : {}),
+      ...(typedUtteranceList?.length ? { utterances: typedUtteranceList } : {}),
       targetSec,
       language: input.language,
       castRoster: readCastRoster(input.castRosterPath),
@@ -438,6 +461,16 @@ ${plan.treatment}`;
     rangesFor(targetSec),
   );
 
+  // G1 批二驗收：漏引用／懸空引用＝miss 回 writer 落位（§28-6 責任分流）
+  if (typedUtteranceList?.length) {
+    const cov = utteranceBeatCoverage(writer.script, typedUtteranceList);
+    if (cov.missing.length || cov.dangling.length) {
+      emit(jobId, { agent: "producer", level: "warn",
+        message: `utterance 落位 miss：${cov.missing.length} 句冇 beat 引用、${cov.dangling.length} 個懸空引用——回 writer 補位`,
+        data: { stage: "utterance-coverage", missing: cov.missing, dangling: cov.dangling } });
+      await io.speak("producer", `utterance 落位：${cov.missing.length} 句冇 beat 引用、${cov.dangling.length} 個懸空——事件時間線照 legacy 字串路兜住，回 writer 補位。`, "warn");
+    }
+  }
   await io.think("boards");
   await io.speak("boards", `拆鏡。${cfg.crew.boardsModel} · ${writer.script.outline.scenes.length} 場。`);
   const boards = await runBoards(

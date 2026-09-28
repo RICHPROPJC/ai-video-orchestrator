@@ -218,7 +218,7 @@ export type DirectorSkeleton = {
 /** §25 A（0928）：sheet 時長責任修訂額度——attempts 由 caller（author）讀 job
  *  持久 episode 傳入；onAttempt 每輪回報令 caller 即刻 patch job（resume／換
  *  模型唔各自刷新額度）。max 上限由 caller 定（裁決：首輪候選後最多兩輪）。 */
-type BoardsOptions = { script: Script; targetSec: number; aspect?: CallSheet["aspect"]; writer: { model: string; receipts: string[] }; draftOnly?: boolean; directorSkeleton?: DirectorSkeleton; sheetRepair?: { attempts: number; max: number; onAttempt?: (attempts: number) => void } };
+type BoardsOptions = { script: Script; targetSec: number; aspect?: CallSheet["aspect"]; writer: { model: string; receipts: string[] }; draftOnly?: boolean; directorSkeleton?: DirectorSkeleton; sheetRepair?: { attempts: number; max: number; onAttempt?: (attempts: number) => void }; utterances?: { utteranceId: string; rawText: string; speakerId?: string; unresolvedSpeaker?: string }[] };
 type BoardsIo = SeatIo & { boardLane?: BoardLane; boardsDir?: string };
 export function runBoards(opts: { render: BoardsVisualOptions }): ReturnType<typeof renderBoards>;
 export function runBoards(opts: BoardsOptions, io: BoardsIo): Promise<BoardsResult>;
@@ -308,7 +308,7 @@ export async function runBoards(
   // 時長爆／不足唔係淨 throw：同一 evaluator 計爆場差額→帶具名 gap 返 boards
   // 修訂（有界，episode 由 caller 持久化）；耗盡先具名 throw 阻下游。
   const buildSheet = () => {
-    const expanded = expandBoards({ script, boards, targetSec: opts.targetSec, aspect: opts.aspect });
+    const expanded = expandBoards({ script, boards, targetSec: opts.targetSec, aspect: opts.aspect, ...(opts.utterances?.length ? { utterances: opts.utterances } : {}) });
     assertSheetGates(expanded, { script, targetSec: opts.targetSec, declaredOutlineSec: declared });
     return expanded;
   };

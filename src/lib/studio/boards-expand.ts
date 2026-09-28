@@ -24,7 +24,11 @@ function audioCoverShots(beatId: string, shots: { beatIds: string[]; audioBeats?
 
 /** 聲音事件時間線（成片共同時間線，cut order 累計秒）。窗口＝首尾播出鏡夾
  *  住嘅區間（assertSheetGates 驗連續＋夠講）。 */
-export function deriveAudioEvents(script: Script, shots: Shot[]): AudioEvent[] {
+export function deriveAudioEvents(
+  script: Script,
+  shots: Shot[],
+  utterances?: { utteranceId: string; rawText: string; speakerId?: string; unresolvedSpeaker?: string }[],
+): AudioEvent[] {
   const beatById = new Map<string, Beat>();
   for (const scene of script.scenes) for (const beat of scene.beats) beatById.set(beat.id, beat);
   const carrier = shots.map((s) => ({ beatIds: s.beatIds ?? (s.beatId ? [s.beatId] : []), audioBeats: s.audioBeats }));
@@ -36,7 +40,35 @@ export function deriveAudioEvents(script: Script, shots: Shot[]): AudioEvent[] {
     return w;
   });
   const events: AudioEvent[] = [];
+  // G1 批二（0928）：beat.utteranceIds 引用鏈——per-utterance 主 key
+  // （utteranceId＋speaker＋rawText；窗口＝引用 beats 播出鏡聯集嘅首尾，
+  // 一句跨多 beat＝同 id 多 beat 多對多）。有鏈嘅 beat 唔再由 dialogue
+  // 字串獨立重建事件（字串淨係顯示兼容）；legacy（無鏈）照下行字串路。
+  const uttById = new Map((utterances ?? []).map((u) => [u.utteranceId, u]));
+  const refsByUid = new Map<string, { beat: Beat; cover: number[] }[]>();
+  for (const beat of beatById.values()) {
+    for (const uid of beat.utteranceIds ?? []) {
+      refsByUid.set(uid, [...(refsByUid.get(uid) ?? []), { beat, cover: audioCoverShots(beat.id, carrier) }]);
+    }
+  }
+  for (const [uid, refs] of refsByUid) {
+    const u = uttById.get(uid);
+    if (!u) continue; // 懸空引用——utteranceBeatCoverage 具名（唔靜靜跳）
+    const coverIdx = [...new Set(refs.flatMap((r) => r.cover))].sort((a, b) => a - b);
+    if (coverIdx.length === 0) continue; // 引用 beat 未有鏡播——assertSheetGates 報
+    const first = windowOf[coverIdx[0]!]!;
+    const last = windowOf[coverIdx[coverIdx.length - 1]!]!;
+    events.push({
+      beatId: refs[0]!.beat.id,
+      utteranceId: uid,
+      speaker: u.speakerId ?? u.unresolvedSpeaker ?? "",
+      text: u.rawText,
+      startSec: Number(first.start.toFixed(3)),
+      endSec: Number(last.end.toFixed(3)),
+    });
+  }
   for (const [beatId, beat] of beatById) {
+    if (beat.utteranceIds?.length) continue; // 有引用鏈——per-utterance 路已建事件
     const text = beat.dialogue?.trim() ?? "";
     if (!text) continue;
     const cover = audioCoverShots(beatId, carrier);
@@ -47,6 +79,30 @@ export function deriveAudioEvents(script: Script, shots: Shot[]): AudioEvent[] {
   }
   events.sort((a, b) => a.startSec - b.startSec || a.endSec - b.endSec);
   return events;
+}
+
+/** G1 批二驗收：每個 typed utterance ≥1 個 beat 引用；beat 引用嘅 id 須存在
+ *  於 utterances。漏引用（missing）／懸空引用（dangling）＝miss——caller emit
+ *  回 writer/編劇落位（§28-6 責任分流），唔機械 FAIL。 */
+export function utteranceBeatCoverage(
+  script: Script,
+  utterances: { utteranceId: string; rawText: string }[],
+): { missing: { utteranceId: string; rawText: string }[]; dangling: { beatId: string; utteranceId: string }[] } {
+  const known = new Set(utterances.map((u) => u.utteranceId));
+  const refCount = new Map<string, number>();
+  const dangling: { beatId: string; utteranceId: string }[] = [];
+  for (const scene of script.scenes) {
+    for (const beat of scene.beats) {
+      for (const uid of beat.utteranceIds ?? []) {
+        refCount.set(uid, (refCount.get(uid) ?? 0) + 1);
+        if (!known.has(uid)) dangling.push({ beatId: beat.id, utteranceId: uid });
+      }
+    }
+  }
+  const missing = utterances
+    .filter((u) => (refCount.get(u.utteranceId) ?? 0) === 0)
+    .map((u) => ({ utteranceId: u.utteranceId, rawText: u.rawText }));
+  return { missing, dangling };
 }
 
 /** 每鏡「播出」嘅對白（derived 顯示欄，餵 prose quote／QC／markdown）：本鏡
@@ -90,6 +146,9 @@ export function expandBoards(opts: {
   boards: BoardsScene[];
   targetSec: number;
   aspect?: CallSheet["aspect"];
+  /** G1 批二：typed utterance 清單（候選表 frozen 編號）——beat.utteranceIds
+   *  引用鏈行 per-utterance 事件路；缺＝legacy 字串路照行。 */
+  utterances?: { utteranceId: string; rawText: string; speakerId?: string; unresolvedSpeaker?: string }[];
 }): CallSheet {
   const { outline } = opts.script;
   const heightById = new Map(outline.characters.map((c) => [c.id, c.heightM]));
@@ -149,7 +208,7 @@ export function expandBoards(opts: {
   }
   // 聲音／畫面分離（DIALOGUE_RULE_PROVENANCE_0927）：事件時間線＋每鏡衍生
   // 對白欄（舊消費者：h3-prose quote、QC expected、markdown 照讀不誤）。
-  const audioEvents = deriveAudioEvents(opts.script, shots);
+  const audioEvents = deriveAudioEvents(opts.script, shots, opts.utterances);
   {
     let t = 0;
     for (const shot of shots) {

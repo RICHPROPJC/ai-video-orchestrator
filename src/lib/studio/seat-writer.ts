@@ -28,6 +28,11 @@ export type WriterPacket = {
   language?: "auto" | "zh-Hant" | "zh-Hans" | "yue" | "en";
   castRoster: string[];
   constraints?: string[];
+  /** G1 批二（0928）：typed utterance 落位引用——beats 席收編劇 script.md
+   *  候選集清單（utteranceId＝候選表 frozen 編號 U01…），beat.utteranceIds
+   *  引用（一句跨多 beat＝同 id 多 beat；一 beat 多句＝多 id）。漏引用＝
+   *  coverage miss 回落位（§28-6 責任分流）；legacy 路冇清單照 dialogue 字串。 */
+  utterances?: { utteranceId: string; rawText: string; speakerId?: string; unresolvedSpeaker?: string }[];
 };
 
 export type SeatDoc = { id: string; text: string; shotId?: string };
@@ -211,6 +216,7 @@ export async function runWriter(packet: WriterPacket, io: SeatIo, ranges?: Scrip
       crew: io.crew,
       system: WRITER_BEATS_CHARTER,
       user: JSON.stringify({
+      ...(packet.utterances?.length ? { utterances: packet.utterances } : {}),
         scene,
         // 裁決 0928 A：beats 席齊料（之前淨 outline 殼）——原 brief、全片
         // 導演 treatment、編劇已寫對白、本場導演聲畫落點（全片時間軸）。

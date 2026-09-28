@@ -225,6 +225,11 @@ const beatShape = z.object({
   dialogue: omittable(z.string().min(1)),
   speaker: omittable(z.string().min(1).max(12)),
   emotion: omittable(z.string().min(1).max(20)),
+  // G1 批二（0928）：typed utterance 落位引用——beat 列出講緊邊啲 utteranceId
+  // （一句跨多 beat＝同 id 出現多 beat；一 beat 多句＝多 id）。有引用鏈嘅 beat
+  // 唔再由 dialogue 字串獨立重建事件（顯示欄照留）；漏引用＝coverage miss 回
+  // writer 落位（§28-6 責任分流）。
+  utteranceIds: omittable(z.array(z.string().min(1)).min(1)),
 });
 
 /** 非阻塞診斷：邊啲 action 冇詞表覆蓋嘅動詞。只供觀測（seat warn＋收據），
