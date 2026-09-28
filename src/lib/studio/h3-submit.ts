@@ -159,9 +159,9 @@ function modelsFromConfig(): H3GraphModels {
     videoVae: m.videoVae,
     audioVae: m.audioVae,
     ref2va: m.checkpoint,
-    // P34 P0：A-form fl2va 孤 loader 已刪（零 consumer）——receipt 記「未採用」，
-    // 唔再報 loader 名冒充已消費；FL2VA 真路由＝P1 批二。
-    fl2va: null,
+    // R8（0928）：fl2va route 已接線（graph i2v 分支）——config 真值入 graph
+    // （fl2va route loader 消費）；非 fl2va route 唔起 loader（收據照實）
+    fl2va: m.fl2va ?? null,
     turboLora: m.turboLora,
     pddAccFile: m.pddAccFile,
   };
@@ -305,16 +305,10 @@ export async function submitH3Shot(opts: {
   // §P34 批二：typed route 解析——未接線 route 具名 blocked throw（graph 唔
   // 構造、唔降級、唔 fallback；同 request 指定 route 而能力缺＝blocked）
   const route = opts.route ?? resolveRoute({ variant, steps, multishot: opts.multishot, chain: opts.chain }).route;
-  if (route.kind === "fl2va") {
-    // root R7 改正（0928 node1 源碼親讀）：舊斷言「FL2VA model 無可達
-    // SaveVideo consumer」唔成立——MiniMaxH3ImageToVideo（ComfyUI 核心
-    // comfy_extras/nodes_minimax_h3.py:101）係 conditioning+AV latent 產生器
-    // （outputs Conditioning/Latent；docstring 明文 t2va and fl2va），同 r2v
-    // 同構；model chain 由 loader→sigma→guider 標準下游餵。真差集＝graph
-    // builder i2v 分支（fl2va UNET loader＋I2V node 造 cond/latent——P34
-    // 批二 source 可做，唔需要 node pack 改動/adapter）。
-    throw new Error("h3_route_blocked: fl2va route i2v 分支未接線（graph builder 批二 source 待落——I2V node 已證可達，唔係 node pack 缺）；要求 fl2va 唔會 fallback 去 ref2va");
-  }
+  // R8（0928）：fl2va route 已接線——graph i2v 分支（MiniMaxH3ImageToVideo
+  // 造 cond+AV latent，node1 源碼證同構 r2va；fl2va UNET loader 行同款
+  // turbo/sigma 鏈）。Video1/timing wav 唔支援＝graph 側具名 throw（真差異
+  // 唔 fallback ref2va）。
   if (route.kind === "mixed") {
     throw new Error("h3_route_blocked: mixed route 部署未核——兩 base 同次採用無合法接法（P34 map #4；refs+KF 共存≠model 混用）；capability gap 具名，唔用二選一結案");
   }

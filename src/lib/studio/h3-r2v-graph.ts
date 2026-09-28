@@ -402,15 +402,19 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       `a-form requires kfStartName: no Video 1 asset means still-to-video — H3Keyframes anchors 0% on the U1.5 still`,
     );
   }
+  // R8：fl2va route＝I2V 路（MiniMaxH3ImageToVideo 造 cond+latent；冇
+  // ref_videos/ref_audios——Video1/timing wav 唔支援＝真差異 throw 具名，
+  // 唔靜靚跳過；KF 走 I2V first/last_frame 內建）
+  const fl2vaRoute = opts.route?.kind === "fl2va";
   const g: ComfyGraph = {
     clip: { class_type: "H3ClipLoaderAny", inputs: { clip_name: m.textEncoder, type: m.encoderType } },
     vvae: { class_type: "VAELoader", inputs: { vae_name: m.videoVae } },
     avae: { class_type: "VAELoader", inputs: { vae_name: m.audioVae } },
-    // P34 P0（0928）：fl2va 孤 loader 刪——本 route 構造過 fl2va→fbc→solattn
-    // →lora_b→sigma_lora_b 但零 consumer（r2v/sampler 全食 sigma_lora_a），
-    // 「定義 loader＝已用 FL2VA」係假宣稱。FL2VA 真正 consumer＝P1 批二
-    // typed route（各自 patch 後 model 可達 SaveVideo）先返。
     ref2va: { class_type: "H3ModelLoaderAny", inputs: { model_name: m.ref2va } },
+    // R8（0928）：fl2va route 真 loader——I2V node（ComfyUI 核心，源碼證
+    // conditioning+latent 產生器同構 r2v）造 cond/latent，model chain 由呢度
+    // 起行同款 turbo/sigma 鏈。非 fl2va route 冇 consumer 唔建（P34 P0 紀律）。
+    ...(fl2vaRoute ? { fl2va: { class_type: "H3ModelLoaderAny", inputs: { model_name: m.fl2va ?? (() => { throw new Error("h3_route_blocked: fl2va route 要 config.motion.fl2va（fl2va UNET 檔名）——而家 null"); })() } } } : {}),
     split: { class_type: "H3EpisodeSplit", inputs: { script: opts.script, bindings: opts.bindings } },
   };
   // model chain per loader: turbo-4 road keeps the accel patch
@@ -419,7 +423,10 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   // FBC/SolAttn entirely — the patch is hard-locked to the 4-step schedule
   // and crashes structurally off it (tensor 17428≠17418).
   const turbo4 = opts.steps === 4;
-  for (const [tag, loader] of [["lora_a", "ref2va"]] as const) { // P34 P0：fl2va 鏈隨孤 loader 刪
+  if (fl2vaRoute && hasVideo1) {
+    throw new Error("h3_route_blocked: fl2va route 唔支援 Video1 走位片（MiniMaxH3ImageToVideo 冇 ref_videos 輸入——fl2va 本身 not trained with reference rows）；要 Video1 用 ref2va route");
+  }
+  for (const [tag, loader] of [["lora_a", fl2vaRoute ? "fl2va" : "ref2va"]] as const) {
     if (turbo4) {
       g[`fbc_${loader}`] = {
         class_type: "H3FirstBlockCache",
@@ -485,11 +492,15 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   }
   const modelOut = pdd8 ? (["pdd_apply", 0] as [string, number]) : modelA;
   // voice: LoadAudio -> H3ReferenceAudio -> ref_audios.ref_audio_0
+  // R8：fl2va route 冇 ref_audios 位——voice node 唔起（孤 node＝反「定義
+  // 即已用」紀律；timing/voice 參考唔消費，收據照實）
+  if (!fl2vaRoute) {
   g.voice_in = { class_type: "LoadAudio", inputs: { audio: opts.wavName } };
   g.voice_guard = {
     class_type: "H3ReferenceAudio",
     inputs: { audio: ["voice_in", 0], max_seconds: VOICE_MAX_SECONDS },
   };
+  }
   if (variant === "a" && hasVideo1) {
     g.blender_vid = {
       class_type: "VHS_LoadVideo",
@@ -520,16 +531,38 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       r2vInputs["ref_audios.ref_audio_1"] = ["timing_guard", 0];
     }
   }
-  const refImageNames = [...(opts.refImageNames ?? []), ...(variant === "a" ? opts.uiPhotoNames ?? [] : [])];
+  const refImageNames = !fl2vaRoute
+    ? [...(opts.refImageNames ?? []), ...(variant === "a" ? opts.uiPhotoNames ?? [] : [])]
+    : [];
   for (const [i, name] of refImageNames.entries()) {
     const nodeId = `ref_img_${i}`;
     g[nodeId] = { class_type: "LoadImage", inputs: { image: name } };
     r2vInputs[`ref_images.ref_image_${i}`] = [nodeId, 0];
   }
-  g.r2v = { class_type: "MiniMaxH3ReferenceToVideo", inputs: r2vInputs };
+  if (fl2vaRoute) {
+    // R8：fl2va I2V——KF 走 node 內建 first/last_frame（resize 由 node 做：
+    // first=stretch anchor、last=center cover-crop，源碼 nodes_minimax_h3.py
+    // :131-140）；音訊/timing refs 冇位接（收據照實）
+    if (opts.kfStartName) g.kf_start_in = { class_type: "LoadImage", inputs: { image: opts.kfStartName } };
+    if (opts.kfEndName) g.kf_end_in = { class_type: "LoadImage", inputs: { image: opts.kfEndName } };
+    g.i2v = {
+      class_type: "MiniMaxH3ImageToVideo",
+      inputs: {
+        clip: ["clip", 0],
+        vae: ["vvae", 0],
+        prompt: ["split", 0],
+        width: passW,
+        height: passH,
+        length: opts.frames,
+        ...(opts.kfStartName ? { first_frame: ["kf_start_in", 0] } : {}),
+        ...(opts.kfEndName ? { last_frame: ["kf_end_in", 0] } : {}),
+      },
+    };
+  }
+  if (!fl2vaRoute) g.r2v = { class_type: "MiniMaxH3ReferenceToVideo", inputs: r2vInputs };
   g.cond_evict = {
     class_type: "H3FreeTextEncoder",
-    inputs: { conditioning: ["r2v", 0], clip: ["clip", 0] },
+    inputs: { conditioning: fl2vaRoute ? ["i2v", 0] : ["r2v", 0], clip: ["clip", 0] },
   };
   g.cond_cs = {
     class_type: "H3ConditionStrength",
@@ -541,7 +574,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   };
   let condOut: [string, number] = ["cond_cs", 0];
   // 寫咗 positions 就釘鍵格，有冇走位片都釘。冇走位片、冇 positions 先用兩端 still。
-  const keyform = Boolean(positions) || variant === "bkf" || variant === "c" || (variant === "a" && !hasVideo1);
+  const keyform = !fl2vaRoute && (Boolean(positions) || variant === "bkf" || variant === "c" || (variant === "a" && !hasVideo1));
   if (keyform) {
     if (!opts.kfStartName) throw new Error("keyframes require kfStartName");
     const injectMarks = positions.split(/[,，]/).map((p) => p.trim()).filter(Boolean);
@@ -650,7 +683,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       guider: ["guider_a", 0],
       sampler: ["sampler_sel", 0],
       sigmas: sigmasSrc,
-      latent_image: ["r2v", 1],
+      latent_image: fl2vaRoute ? ["i2v", 1] : ["r2v", 1],
     },
   };
   let decodeSrc: [string, number] = ["samp_a", 0];
