@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { emit, readJob } from "../store";
 import { loadCallSheet } from "../writer";
 import { runWriter } from "../seat-writer";
-import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreativeManifest, updateCreativeManifest, unplacedDialogueOf, declaredDialogueOf, dialogueSignalsOf, planDivergence } from "../creative";
+import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreativeManifest, updateCreativeManifest, dialogueSignalsOf, evaluateScriptAgainstPlan, contractGapsOf } from "../creative";
 import type { DirectorSkeleton } from "../seat-boards";
 import { runBoards } from "../seat-boards";
 import { jobDir, jobFile, seatsDir } from "../paths";
@@ -253,22 +253,15 @@ async function authorCallSheet(
       // 明報新增元素）＝鏡表過期——回導演出一輪修訂版（一輪收口，唔遞迴）。
       // 修訂版三件套重寫＝manifest revision 遞增（SCOPE §6）。
       {
-        // 對白事件對齊（唔用字數閾值）：來源渠道＝dialogueAdded／verbatimKept／
-        // md 引號（全長）；歸一化子串雙向比對＋事件計數（同字多次講要逐個落點）
-        const unplaced = unplacedDialogueOf(script, plan);
-        // 聲明欄提示（明報新/指定台詞→要有落點；唔入消耗池——v2 雙計事故修正）
-        const declared = declaredDialogueOf(script).filter(
-          (d) => !unplacedDialogueOf({ script_md: script.script_md }, { dialogueClock: plan.dialogueClock })
-            .some((u) => u.line.replace(/[。]/g, "") === d.replace(/[。]/g, "")),
-        );
-        // 非對白渠道（C 統籌 0927：敲檯類動作／接觸／時間改動都令鏡表失效）：
-        // 時間覆蓋空洞＋動作動詞差集（VISIBLE_ACTION_VERBS 語義詞表）＋產品接觸缺席
-        const div = planDivergence(script, plan);
-        if (unplaced.length > 0 || script.newElements.length > 0 || declared.length > 0
-          || div.timeGaps.length > 0 || div.actionNews.length > 0 || div.contactNews.length > 0) {
+        // §23 B：六類訊號同一 evaluate(script, adoptedPlan)——修觸發、hint、
+        // 修後驗收三邊同一份結果（每類來源/範圍/嚴重度見 evaluateScriptAgainstPlan）。
+        const ev = evaluateScriptAgainstPlan(script, plan);
+        const anySignal = ev.unplaced.length > 0 || ev.declaredMissing.length > 0 || ev.newElements.length > 0
+          || ev.timeGaps.length > 0 || ev.actionNews.length > 0 || ev.contactNews.length > 0;
+        if (anySignal) {
           await io.speak(
             "producer",
-            `修訂迴路：編劇版有 ${unplaced.length} 句台詞冇導演落點${div.actionNews.length ? `＋新動作 ${div.actionNews.length} 項` : ""}${div.contactNews.length ? `＋新接觸 ${div.contactNews.length} 項` : ""}${div.timeGaps.length ? `＋時間冇對應鏡 ${div.timeGaps.length} 段` : ""}${script.newElements.length ? `＋新增元素 ${script.newElements.length} 項` : ""}——回導演修訂鏡表一輪。`,
+            `修訂迴路：編劇版有 ${ev.unplaced.length} 句台詞冇導演落點${ev.actionNews.length ? `＋新動作 ${ev.actionNews.length} 項` : ""}${ev.contactNews.length ? `＋新接觸 ${ev.contactNews.length} 項` : ""}${ev.timeGaps.length ? `＋時間冇對應鏡 ${ev.timeGaps.length} 段` : ""}${ev.newElements.length ? `＋新增元素 ${ev.newElements.length} 項` : ""}——回導演修訂鏡表一輪。`,
           );
           const revised = await runDirector(
             { brief: input.brief, targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) },
@@ -281,15 +274,15 @@ async function authorCallSheet(
             {
               scriptMd: script.script_md,
               previousPlan: plan,
-              // V2b（PLAN-v2 0928）§7.2：revise.hint——實際缺口清單帶返同一
-              // 責任席（之前簽名有 hint 但 caller 冇傳，修訂輪盲修）
+              // §23 B：typed hint——完整差異原文＋newElements 內容（撤 slice
+              // 200/300/400 截斷，遺失必要資料）；診斷類標明啟發式交導演逐項裁
               hint: [
-                ...(unplaced.length ? [`冇落點台詞 ${unplaced.length} 句：${unplaced.map((u) => u.line).join("／").slice(0, 400)}`] : []),
-                ...(declared.length ? [`聲明欄台詞要有落點：${declared.join("／").slice(0, 200)}`] : []),
-                ...(div.timeGaps.length ? [`時間冇對應鏡 ${div.timeGaps.length} 段：${div.timeGaps.join("；").slice(0, 400)}`] : []),
-                ...(div.actionNews.length ? [`新動作差集 ${div.actionNews.length} 項：${div.actionNews.join("；").slice(0, 300)}`] : []),
-                ...(div.contactNews.length ? [`新產品接觸 ${div.contactNews.length} 項：${div.contactNews.join("；").slice(0, 300)}`] : []),
-                ...(script.newElements.length ? [`編劇明報新增元素 ${script.newElements.length} 項要有鏡`] : []),
+                ...(ev.unplaced.length ? [`【必要契約】冇落點台詞 ${ev.unplaced.length} 句：${ev.unplaced.map((u) => u.line).join("／")}`] : []),
+                ...(ev.declaredMissing.length ? [`【必要契約】聲明台詞正文缺席（宣稱保留/新增但正文冇）：${ev.declaredMissing.join("／")}`] : []),
+                ...(ev.newElements.length ? [`【變更紀錄】編劇明報新增元素 ${ev.newElements.length} 項——每項要採納到鏡表、或有來源嘅拒絕並同步修改劇本、或明示未解（唔可以清空紀錄過閘，拒絕唔可改用戶硬要求）：${ev.newElements.map((n) => `${n.what}（${n.why}）`).join("；")}`] : []),
+                ...(ev.timeGaps.length ? [`【啟發式診斷·交你逐項裁】時間冇對應鏡 ${ev.timeGaps.length} 段（合法一段跨數鏡；誤報請講明理由同相關鏡引用）：${ev.timeGaps.join("；")}`] : []),
+                ...(ev.actionNews.length ? [`【啟發式診斷·交你逐項裁】新動作差集（同義動作／聽者鏡可覆蓋＝誤報請講明理由）：${ev.actionNews.join("；")}`] : []),
+                ...(ev.contactNews.length ? [`【啟發式診斷·交你逐項裁】新產品接觸（聲橋／畫外可覆蓋＝誤報請講明理由）：${ev.contactNews.join("；")}`] : []),
               ].join("；"),
             },
           );
@@ -298,18 +291,30 @@ async function authorCallSheet(
           updateCreativeManifest(creativeDir, input.brief, { file: "script.json", dependsOn: rewritten.planSha });
           plan = revised;
           directorSkeleton = skeletonOf(revised);
-          // 裁決 0928 C（SEAT-AUDIT-DECISION §3）：revise 後驗真收口——第二次
-          // unplaced 對照（之前 revise 完冇人驗）。重有 unplaced＝差距列明回
-          // 責任席線（導演 revise 咗一輪都收唔到）——fail loud 保存已試修法，
-          // 唔遞迴唔硬收。
-          const unplacedAfter = unplacedDialogueOf(script, revised);
-          if (unplacedAfter.length) {
+          // §23 B：修後驗收同一 evaluate——淨必要契約（unplaced＋假聲明）未解
+          // 先 throw；newElements＝變更紀錄 emit 要採納/有據拒絕/明示未解；
+          // 診斷類唔機械 FAIL（交導演逐項裁）。保存修前後結果（revision 由
+          // manifest 記）；未通過候選唔標已採用成功。
+          const after = evaluateScriptAgainstPlan(script, revised);
+          const contractGaps = contractGapsOf(after);
+          if (contractGaps.length) {
             emit(jobId, {
               agent: "producer", level: "warn",
-              message: `revise 後仍有 ${unplacedAfter.length} 句冇落點：${unplacedAfter.map((u) => u.line).join("／").slice(0, 300)}`,
-              data: { stage: "revise-verify", unplaced: unplacedAfter.map((u) => u.line) },
+              message: `revise 後必要契約仍缺 ${contractGaps.length} 項：${contractGaps.join("／")}`,
+              data: { stage: "revise-verify", before: contractGapsOf(ev), after: contractGaps },
             });
-            throw new Error(`revise_unclosed: ${unplacedAfter.length} 句對白 revise 一輪後仍冇導演落點（${unplacedAfter.map((u) => u.line).join("；").slice(0, 300)}）——差距已列明，回導演席帶同片 history 修訂`);
+            throw new Error(`revise_unclosed: 必要契約 revise 一輪後仍未解 ${contractGaps.length} 項（${contractGaps.join("；")}）——差距已列明，回導演席帶同片 history 修訂`);
+          }
+          if (after.newElements.length || after.timeGaps.length || after.actionNews.length || after.contactNews.length) {
+            emit(jobId, {
+              agent: "producer", level: "warn",
+              message: `revise 後非契約訊號仍在（變更紀錄 ${after.newElements.length} 項未採納核對／診斷 ${after.timeGaps.length + after.actionNews.length + after.contactNews.length} 項待導演逐項裁）——唔機械 FAIL，明示未解`,
+              data: {
+                stage: "revise-verify-noncontract",
+                newElements: after.newElements,
+                diagnostics: { timeGaps: after.timeGaps, actionNews: after.actionNews, contactNews: after.contactNews },
+              },
+            });
           }
         }
       }

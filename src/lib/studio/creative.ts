@@ -434,13 +434,13 @@ export function compileDirectorPlan(raw: unknown): { plan: DirectorPlan; receipt
 /** 短 brief → {intent, treatment, director plan}。seat 層用寬鬆 schema（形狀
  *  唔觸發重試——形狀摩擦由 compiler 等價映射消化）；canonical 閘（時間軸／
  *  覆蓋／總長）由 compiler 後 parse 把關。miss＝真缺語義，fail-loud 列明。 */
-/** 對白訊號（revise 觸發）：三個可追溯來源渠道，長短不限——字數閾值係
- *  魔術數字（C 統籌 0927 指正：一句可以好長、可跨鏡、同字可以講多次）。
- *  ① segments[].dialogueAdded＝編劇明報新台詞（結構化聲明，最強來源）
- *  ② dialogue_verbatim_kept＝明報保留嘅指定台詞
- *  ③ script_md 引號提取＝兜底渠道（冇長度上限；敘述引述唔用字數分——
- *     寧可誤觸一輪修訂（revise charter 有「保留啱嘅嘢」保護），唔准漏）
- *  唔去重：同一句講兩次＝兩個聲音事件（計數語義喺 unplacedDialogueOf）。 */
+/** 對白訊號（revise 觸發）：播出計數真源＝script_md 正文（表演描述引號提取），
+ *  長短不限——字數閾值係魔術數字（C 統籌 0927：一句可以好長、可跨鏡、同字
+ *  可以講多次）。§23 C 修正reader說法：現行只有呢一個消耗渠道；舊註釋講嘅
+ *  ①segments[].dialogueAdded／②dialogue_verbatim_kept 係聲明欄，早已 void
+ *  唔入消耗池（v2 雙計事故）——聲明驗證走 declaredDialogueOf／verbatim watch
+ *  另路，唔係本函數渠道。唔去重：同一句講兩次＝兩個聲音事件（計數語義喺
+ *  unplacedDialogueOf 共享消耗核心）。 */
 export type DialogueSignal = { line: string; source: "dialogueAdded" | "verbatimKept" | "quotedMd" };
 
 export function dialogueSignalsOf(script: {
@@ -503,7 +503,27 @@ export function declaredDialogueOf(script: {
   return [...new Set(out)];
 }
 
-const normDialogue = (x: string) => x.replace(/[。．，,、！!？?…；;\s「」『』“”"']/g, "");
+/** §23 C：共享 normalizer——author（unplaced/declared/verbatim）同 world
+ *  （audioTimelineRows placement 對照）同一套歸一化。空歸一化文本一律長度 0，
+ *  消耗側明確拒（includes("")）永遠 true 嘅假過閘。 */
+export const normDialogue = (x: string) => x.replace(/[。．，,、！!？?…；;\s「」『』“”"']/g, "");
+
+/** §23 C：消耗式 matcher 核心——兩階段 adapter（純文字消耗／聲畫帶時間）共用。
+ * 規則：同句多次各自配對（pool 淨一份）；一個 placement 唔可重用（claim 即
+ * splice）；空歸一化唔過閘（norm 長度 0 嘅 word 唔入 pool，直接搵唔到）。
+ * 雙向包含：「凍。」對「凍」✓；長句 placement 對部分提取✓。 */
+export function claimPlacementOnce(
+  pool: { word: string }[],
+  line: string,
+): number {
+  const n = normDialogue(line);
+  if (n.length === 0) return -1;
+  return pool.findIndex((p) => {
+    const w = normDialogue(p.word);
+    if (w.length === 0) return false;
+    return n.includes(w) || w.includes(n);
+  });
+}
 
 /** 有落點＝任何 placement 嘅歸一化文本同本句互相包含（「凍。」對「凍」✓；
  *  長句 placement 對部分提取✓）。同字多次講＝事件計數：本句出現次數多過
@@ -548,26 +568,41 @@ export function planDivergence(
     if (!window || !perf) continue;
     const [t0, t1] = window;
     const len = Math.max(0.01, t1 - t0);
+    // §23 B：時間覆蓋按採用區間與全部相關鏡聯合判定（merge intervals），
+    // 唔以單鏡最大重疊逼一段一鏡——合法一段跨數鏡。
     const overlapped = axis
-      .map((sh) => ({ sh, ov: Math.min(t1, sh.endSec) - Math.max(t0, sh.startSec) }))
-      .filter((x) => x.ov > 0)
-      .sort((a, b) => b.ov - a.ov);
-    const best = overlapped[0];
-    if (!best || best.ov < len * 0.5) {
-      timeGaps.push(`第${i + 1}段 ${seg.timeEstimate} 冇對應導演鏡（最大重疊 ${best ? best.ov.toFixed(1) : "0"}s / 段長 ${len.toFixed(1)}s）`);
+      .map((sh) => ({ sh, s: Math.max(t0, sh.startSec), e: Math.min(t1, sh.endSec) }))
+      .filter((x) => x.e > x.s)
+      .sort((a, b) => a.s - b.s);
+    let covered = 0;
+    let curS = Number.NEGATIVE_INFINITY;
+    let curE = Number.NEGATIVE_INFINITY;
+    for (const w of overlapped) {
+      if (w.s > curE) {
+        if (curE > curS) covered += curE - curS;
+        curS = w.s; curE = w.e;
+      } else if (w.e > curE) curE = w.e;
+    }
+    if (curE > curS) covered += curE - curS;
+    if (overlapped.length === 0 || covered < len * 0.5) {
+      timeGaps.push(`第${i + 1}段 ${seg.timeEstimate} 冇對應導演鏡（相關鏡聯合覆蓋 ${covered.toFixed(1)}s / 段長 ${len.toFixed(1)}s）`);
       continue;
     }
-    const lensText = [best.sh.action, best.sh.purpose, best.sh.frame].filter(Boolean).join(" ");
+    // §23 B：動作/接觸差集對全部相關鏡文本（唔淨最大重疊嗰個）——同屬啟發式
+    // 診斷，交導演逐項裁（同義動作／聽者鏡可以覆蓋＝誤報要理由）。
+    const allLensText = overlapped
+      .map((w) => [w.sh.action, w.sh.purpose, w.sh.frame].filter(Boolean).join(" "))
+      .filter(Boolean).join(" ");
     // 差集全記（唔揀第一個就 break——「手指敲」揀中「指」會漏「敲」）。char 級
     // 詞表粒度：複詞切片（手指→指）都會入差集——呢啲係「段有鏡冇」嘅表演
     // 細節訊號，觸發 revise 冪等一輪，寧多一輪唔漏事件（C 統籌語義）。
-    const newVerbs = [...VISIBLE_ACTION_VERBS].filter((v) => perf.includes(v) && !lensText.includes(v));
+    const newVerbs = [...VISIBLE_ACTION_VERBS].filter((v) => perf.includes(v) && !allLensText.includes(v));
     if (newVerbs.length) {
       actionNews.push(`第${i + 1}段（${seg.timeEstimate}）新動作差集：${[...new Set(newVerbs)].join("、")}`);
     }
     for (const key of productKeys) {
-      if (perf.includes(key) && !lensText.includes(key)) {
-        contactNews.push(`第${i + 1}段（${seg.timeEstimate}）產品接觸「${key}」——對應鏡文本缺席`);
+      if (perf.includes(key) && !allLensText.includes(key)) {
+        contactNews.push(`第${i + 1}段（${seg.timeEstimate}）產品接觸「${key}」——相關鏡文本缺席`);
         break;
       }
     }
@@ -609,8 +644,12 @@ export async function audioTimelineRows(
   placements?: { word?: string; startSec?: number; endSec?: number; onImage?: string }[],
 ): Promise<AudioTimelineRow[]> {
   const rows: AudioTimelineRow[] = [];
-  // §8.4：消耗式配對——同句重複講時逐個 placement 淨認領一次（唔會全部撞第一落點）
-  const placementPool = (placements ?? []).map((pl) => ({ pl, used: false }));
+  // §8.4＋§23 C：消耗式配對——共享 claimPlacementOnce 核心（author/world 同一
+  // 套歸一化＋消耗＋空歸一化拒）；audio adapter 保留原 placement 物件攞時間/
+  // onImage。splice ≡ used flag（消耗語義同一）。
+  const placementPool = (placements ?? [])
+    .filter((pl) => normDialogue(String(pl.word ?? "")).length > 0)
+    .map((pl) => ({ word: String(pl.word ?? ""), pl }));
   for (const ev of events) {
     const take = takes.find((t) => t.beatId === ev.beatId);
     const actual = take ? await wavSecOf(take.file).catch(() => null) : null;
@@ -631,16 +670,9 @@ export async function audioTimelineRows(
       ...(placements === undefined && !events.some((e2) => e2.text.trim())
         ? { placement: "na" as const, note: "片冇對白且導演冇交 dialogueClock（流程唔要求落點＝N/A）" }
         : (() => {
-            const norm = (x: string) => x.replace(/[。．，,、！!？?…；;\s「」『』"']/g, "");
-            const e = norm(ev.text);
-            const at = placementPool.findIndex((slot) => {
-              if (slot.used) return false;
-              const n = norm(String(slot.pl.word ?? ""));
-              return n.length > 0 && (e.includes(n) || n.includes(e));
-            });
+            const at = claimPlacementOnce(placementPool, ev.text);
             if (at < 0) return { placement: "missing" as const, note: "導演冇呢句嘅落點（聲畫對位缺口——回導演席）" };
-            placementPool[at]!.used = true;
-            const hit = placementPool[at]!.pl;
+            const hit = placementPool.splice(at, 1)[0]!.pl;
             // §8.4：0→0 placeholder（未排時間）唔算 matched——標 unresolved
             if ((hit.endSec ?? 0) <= (hit.startSec ?? 0) + 1e-9) {
               return { placement: "unresolved" as const, note: "落點 0→0 placeholder（導演未排時間）——唔冒充已排" };
@@ -662,24 +694,64 @@ export function unplacedDialogueOf(
   script: Parameters<typeof dialogueSignalsOf>[0],
   plan: { dialogueClock?: { placements?: { word?: string }[] } },
 ): DialogueSignal[] {
-  const normWord = (plan.dialogueClock?.placements ?? [])
-    .map((p) => normDialogue(String(p.word ?? "")))
-    .filter((w) => w.length > 0);
   const signals = dialogueSignalsOf(script).filter((sig) => normDialogue(sig.line).length > 0);
-  const matches = (line: string) => {
-    const n = normDialogue(line);
-    return normWord.filter((w) => n.includes(w) || w.includes(n));
-  };
-  // 每個 placement 淨係認領一次：第一次出現消耗佢，第二次出現要另一個落點
-  const pool = [...normWord];
+  // §23 C：改行共享消耗式核心（行為等價：消耗／雙向包含／空歸一化拒）
+  const pool = (plan.dialogueClock?.placements ?? [])
+    .filter((p) => normDialogue(String(p.word ?? "")).length > 0)
+    .map((p) => ({ word: String(p.word ?? "") }));
   const unplaced: DialogueSignal[] = [];
   for (const sig of signals) {
-    const n = normDialogue(sig.line);
-    const at = pool.findIndex((w) => n.includes(w) || w.includes(n));
+    const at = claimPlacementOnce(pool, sig.line);
     if (at >= 0) pool.splice(at, 1);
     else unplaced.push(sig);
   }
   return unplaced;
+}
+
+/** §23 B：六類訊號同一 evaluate(script, adoptedPlan)——修觸發、typed hint、
+ *  修後驗收三邊食同一份結果，每類有來源/範圍/嚴重度：
+ *  - unplaced＋declaredMissing＝必要契約（revise 後未解唔准宣稱收口）
+ *  - newElements＝變更紀錄（修完仍可合法非空；每項要採納/有據拒絕/明示未解）
+ *  - timeGaps/actionNews/contactNews＝啟發式診斷（交導演逐項裁，唔機械 FAIL）
+ *  declared 校正：聲明句正文 presence 有＝宣稱成立（落點由正文 unplaced 管，
+ *  唔另算一次 utterance）；正文冇＝假聲明（必要契約）。不因聲明存在就觸發。 */
+export type PlanScriptEvaluation = {
+  unplaced: DialogueSignal[];
+  declaredMissing: string[];
+  newElements: { what: string; why: string }[];
+  timeGaps: string[];
+  actionNews: string[];
+  contactNews: string[];
+};
+
+export function evaluateScriptAgainstPlan(
+  script: {
+    script_md?: string;
+    dialogue_verbatim_kept?: string[];
+    segments?: { timeEstimate?: string; performance?: string; dialogueAdded?: string }[];
+    newElements?: { what: string; why: string }[];
+  },
+  plan: { dialogueClock?: { placements?: { word?: string }[] } } & Parameters<typeof planDivergence>[1],
+): PlanScriptEvaluation {
+  const unplaced = unplacedDialogueOf(script, plan);
+  const declaredMissing = declaredDialogueOf(script).filter(
+    (d) => normCountOf(String(script.script_md ?? ""), d) === 0,
+  );
+  const div = planDivergence(script, plan);
+  return {
+    unplaced,
+    declaredMissing,
+    newElements: (script.newElements ?? []).map((n) => ({ what: String(n.what), why: String(n.why) })),
+    ...div,
+  };
+}
+
+/** §23 B 分級 helper：必要契約缺口（驗收 throw 線）——unplaced＋假聲明。 */
+export function contractGapsOf(ev: PlanScriptEvaluation): string[] {
+  return [
+    ...ev.unplaced.map((u) => `劇本句冇落點：${u.line}`),
+    ...ev.declaredMissing.map((d) => `聲明台詞正文缺席（宣稱保留/新增但正文冇）：${d}`),
+  ];
 }
 
 export async function runDirector(
@@ -824,8 +896,39 @@ export const PlaywrightScriptSchema = z.object({
 
 export type PlaywrightScript = z.infer<typeof PlaywrightScriptSchema>;
 
-/** 編劇 compiler（同導演 compiler 精神：命名等價、內容零改寫、缺語義先報） */
-export function compilePlaywrightScript(raw: unknown): { script: PlaywrightScript; receipt: string[]; misses: string[] } {
+/** §23 watch-verbatim：brief 指定台詞提取（引號句＝用戶原話，同 PLAYWRIGHT_
+ *  CHARTER「引號內係指定台詞」同一慣例）。驗收真源——編劇自報
+ *  dialogue_verbatim_kept 陣列唔係證據。brief 冇引號＝N/A（合法）；新增台詞／
+ *  擴寫合法，引號以外嘅 brief 文字唔鎖死。同句兩個引號＝需要次數 2。 */
+export function designatedLinesOf(brief: string): string[] {
+  const out: string[] = [];
+  const re = /[「『“]([^」』”]+)[」』”]/g;
+  for (const m of brief.matchAll(re)) {
+    const line = (m[1] ?? "").trim();
+    if (line) out.push(line);
+  }
+  return out;
+}
+
+/** 歸一化出現次數（verbatim watch 用：norm presence 證「保留到」，但唔標
+ *  「逐字保留」——標點歸一化配對唔可證逐字，§23 分工明言）。 */
+function normCountOf(haystack: string, needle: string): number {
+  const h = normDialogue(haystack);
+  const n = normDialogue(needle);
+  if (!n) return 0;
+  let count = 0;
+  for (let at = h.indexOf(n); at >= 0; at = h.indexOf(n, at + n.length)) count += 1;
+  return count;
+}
+
+/** 編劇 compiler（同導演 compiler 精神：命名等價、內容零改寫、缺語義先報）。
+ *  §23 watch-verbatim：designatedLines（brief 引號指定台詞）傳入時，對實際
+ *  script_md 正文查保留＋需要次數；缺口入 misses——行既有 gap-retry 同一有界
+ *  預算，唔另開迴路。 */
+export function compilePlaywrightScript(
+  raw: unknown,
+  opts?: { designatedLines?: string[] },
+): { script: PlaywrightScript; receipt: string[]; misses: string[] } {
   const receipt: string[] = [];
   const misses: string[] = [];
   const src = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -868,6 +971,17 @@ export function compilePlaywrightScript(raw: unknown): { script: PlaywrightScrip
     ].filter(Boolean).join("\n\n");
     receipt.push("script_md ← 由 segments/arc/soundDesignMasterNotes 組裝（全部原文，淨加結構標題）");
   }
+  // §23 watch-verbatim：指定台詞對實際正文驗保留＋需要次數（自報陣列唔係證據）。
+  // 歸一化 presence 證「保留到」，唔標逐字；缺口入 misses 行既有 gap-retry。
+  const designated = opts?.designatedLines ?? [];
+  for (const d of designated) {
+    const need = designated.filter((x) => x === d).length;
+    const have = normCountOf(scriptMdFinal, d);
+    if (have < need) {
+      misses.push(`指定台詞保留不足（brief 指定 ${need} 次，正文歸一化對到 ${have} 次）：${d}`);
+    }
+  }
+  if (designated.length) receipt.push(`verbatim watch：brief 指定 ${designated.length} 句對正文驗保留（歸一化 presence＋次數）`);
   // §19：撤字數質素 verdict——非空已由組裝/zod；完整性歸責任席
   const script = PlaywrightScriptSchema.parse({
     ...(typeof pick("title", "meta") === "string" ? { title: String(pick("title", "meta")) } : {}),
@@ -913,7 +1027,9 @@ export async function runPlaywright(
     receiptDir: io.receiptDir,
   });
   fs.writeFileSync(path.join(io.receiptDir, "creative.playwright.raw.json"), JSON.stringify(pass.value, null, 2));
-  let compiled = compilePlaywrightScript(pass.value);
+  // §23 watch-verbatim：指定台詞來源＝brief 原文（引號句）；無引號＝N/A
+  const designated = designatedLinesOf(packet.brief);
+  let compiled = compilePlaywrightScript(pass.value, { designatedLines: designated });
   // V2b（PLAN-v2 0928）§7.2：gap-retry 補位迴路（照 runDirector 6e39c66 範式）
   // ——canonical 閘 miss＝帶住「缺咗乜」返去同一個方案補一次，唔准編（code
   // 唔填空）；兩次都缺先 fail loud。最近 8 單 SC-0927 有 2 單死呢個閘
@@ -937,7 +1053,7 @@ export async function runPlaywright(
       receiptDir: io.receiptDir,
     });
     fs.writeFileSync(path.join(io.receiptDir, "creative.playwright.gap-retry.raw.json"), JSON.stringify(retryPass.value, null, 2));
-    const again = compilePlaywrightScript(retryPass.value);
+    const again = compilePlaywrightScript(retryPass.value, { designatedLines: designated });
     compiled = { script: again.script, receipt: [...compiled.receipt, ...again.receipt, `playwright gap-retry after ${compiled.misses.length} misses`], misses: again.misses };
   }
   const { script, receipt, misses } = compiled;
