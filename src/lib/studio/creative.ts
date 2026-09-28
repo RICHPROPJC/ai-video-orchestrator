@@ -1127,6 +1127,27 @@ export function reconcileUtterances(
   return { issues, candidates };
 }
 
+/** R19（0929）：segments[].speaker 註解形態剝離——「unresolved：名（註解）」
+ *  取括號前＋冒號後可辨名（≤24）；原文全程留 miss，零靜靜改寫；剝唔出可辨
+ *  名＝null（drop 欄，對帳閘列明）。 */
+function normalizeSegmentSpeaker(raw: string, misses: string[]): string | null {
+  const t = raw.trim();
+  if (t.length <= 24) return t;
+  const beforeParen = t.replace(/[（(].*$/s, "").trim();
+  const afterColon = beforeParen.includes("：")
+    ? (beforeParen.split("：").pop() ?? "").trim()
+    : beforeParen.includes(":")
+      ? (beforeParen.split(":").pop() ?? "").trim()
+      : beforeParen;
+  const name = afterColon || beforeParen;
+  if (name && name.length <= 24) {
+    misses.push(`segments[].speaker 註解塞錯欄——原文「${t}」→採用「${name}」（原文留此 miss）`);
+    return name;
+  }
+  misses.push(`segments[].speaker 超長（${t.length} 字）剝唔出可辨名——drop 欄，原文「${t.slice(0, 40)}」`);
+  return null;
+}
+
 /** 編劇 compiler（同導演 compiler 精神：命名等價、內容零改寫、缺語義先報）。
  *  §28/§30 G1 批一：typed utterances＋quoteRulings（模型採納）對正文候選集
  *  雙向對賬；dialogueLocks（user/task 採用契約）驗鎖義務——plan 漏鎖＝缺口
@@ -1157,7 +1178,16 @@ export function compilePlaywrightScript(
       ...(typeof (s.sound ?? s.audio) === "string" ? { sound: String(s.sound ?? s.audio) } : {}),
       ...(typeof (s.audienceEffect ?? s.audience ?? s.effect) === "string" ? { audienceEffect: String(s.audienceEffect ?? s.audience ?? s.effect) } : {}),
       ...(typeof (s.dialogueAdded ?? s.newDialogue) === "string" ? { dialogueAdded: String(s.dialogueAdded ?? s.newDialogue) } : {}),
-      ...(typeof (s.speaker ?? s.speakerId) === "string" ? { speaker: String(s.speaker ?? s.speakerId) } : {}),
+      ...(typeof (s.speaker ?? s.speakerId) === "string"
+        ? (() => {
+            // R19（0929）：speaker 語義＝castRoster 名/VO（max 24）。模型塞
+            // 「unresolved：名（註解）」形態會喺 :1196 嚴 parse 炸 job——呢度
+            // 剝註解取可辨名，原文落 miss（零靜靜改寫）；剝唔出＝drop 欄報
+            // miss，對帳閘（dialogue⇔speaker 成對）自然列明。
+            const n = normalizeSegmentSpeaker(String(s.speaker ?? s.speakerId), misses);
+            return n ? { speaker: n } : {};
+          })()
+        : {}),
     };
   });
   const verbatim = pick("dialogue_verbatim_kept", "dialogueVerbatim", "keptVerbatim");
