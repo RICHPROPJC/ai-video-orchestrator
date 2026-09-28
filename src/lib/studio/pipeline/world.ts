@@ -29,6 +29,7 @@ import {
   bakeSelectionFrames,
   buildCmuIndex,
   buildShortlist,
+  bvhActivityWindow,
   decideSelection,
   legalCandidates,
   parseCombatSweepRanking,
@@ -169,6 +170,17 @@ export async function worldStage(ctx: Ctx): Promise<void> {
             );
             if (!cand) throw new Error(`--motion-pick ${sel.shot}=${code}：唔係 shortlist 候選（可用 code C##／id／bvh；shortlist 前列見 selection.attempt.json）`);
             sel.bvh = cand.bvh;
+            // R20 裁決②：override 蓋咗 bvh 之後 bake/segment 要對新 clip 重計
+            // （decideSelection 嘅活動段係用佢自己揀嘅 clip 算——override 換咗
+            // clip 而沿用舊 bake.start 會由企定段開場，等於冇兌現 segment-aware）
+            const win = bvhActivityWindow(cand.bvh);
+            if (win) {
+              sel.bake = { ...sel.bake, start: win.startF };
+              sel.segment = win;
+            } else {
+              sel.bake = { ...sel.bake, start: 1 };
+              delete sel.segment;
+            }
             sel.tie_break = `human pick ${cand.id}`;
             sel.decisionSource = "human-override";
             delete sel.needs_human;
