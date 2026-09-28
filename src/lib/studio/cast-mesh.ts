@@ -262,7 +262,9 @@ export async function ensureCastOnce(opts: {
   items: { id: string; file: string; rig?: string; deform?: CastDeform; meshAliasId?: string }[];
   meshRoot: string;
   endpoint: string;
-  /** SkinTokens stops SF3D. Production leaves this off until a resource owner opens the window. */
+  /** Chau 0928 rule（remember）：SkinTokens rig 窗口＝systemctl stop **glm-ocr 同 sf3d 兩個齊**
+   *  （兩者共 GPU2），唔准淨停 sf3d——完事 兩個都 start 返。Production leaves this off
+   *  until a resource owner opens the window. */
   allowGpuHandoff?: boolean;
   runCmd?: typeof runCommand;
 }): Promise<Record<string, string>> {
@@ -310,10 +312,12 @@ export async function ensureCastOnce(opts: {
   }
   if (pending.length === 0) return rigs;
   if (!opts.allowGpuHandoff) {
-    throw new Error(`gpu_handoff_required: ${pending.map((item) => item.id).join("、")} 要 SkinTokens，未有資源窗口，唔停 SF3D`);
+    throw new Error(`gpu_handoff_required: ${pending.map((item) => item.id).join("、")} 要 SkinTokens，未有資源窗口，唔停 glm-ocr＋SF3D`);
   }
   if (!fs.existsSync(SKINTOKENS_BIN)) throw new Error(`skintokens-cli missing: ${SKINTOKENS_BIN}`);
   if (!fs.existsSync(SKINTOKENS_MODELS)) throw new Error(`skintokens models missing: ${SKINTOKENS_MODELS}`);
+  // Chau 0928 rule：SkinTokens 窗口 stop 兩 unit 齊（sf3d-fa2.service＋glm-ocr.service，
+  // 共 GPU2）——唔准淨停 SF3D；rig 完 :345-346 兩個 start 返（失敗都拉返）。
   await systemctlUser(run, "stop", SF3D_UNIT);
   await systemctlUser(run, "stop", GLM_OCR_UNIT);
   let rigErr: Error | undefined;
