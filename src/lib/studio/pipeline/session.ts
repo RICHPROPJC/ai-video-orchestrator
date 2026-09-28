@@ -106,6 +106,23 @@ export function queueReviseTurn(jobId: string, turnId: string): void {
   });
 }
 
+/** root R3 修③（0928）：採納基準 digest 同源 helper——兩側共用「當下磁碟
+ *  callsheet.json 全文 sheetDigest」（route dependsOn 綁值＝author 採納輪
+ *  對比值，同公式同來源）；冇 callsheet／壞 callsheet＝null（首創採納合法；
+ *  綁真值而嚟 null＝採納基礎消失，唔當 same）。job.callsheetDigest 欄
+ *  （world 段寫）維持 mux 契約用途，唔係呢條鏈真源。 */
+export function currentCallsheetDigest(jobId: string): string | null {
+  const file = path.join(jobDir(jobId), "callsheet.json");
+  if (!fs.existsSync(file)) return null;
+  try {
+    const { loadCallSheet } = require("../writer") as typeof import("../writer");
+    const { sheetDigest } = require("../seat-boards") as typeof import("../seat-boards");
+    return sheetDigest(loadCallSheet(file));
+  } catch {
+    return null; // 壞 callsheet（parse fail）＝來源唔可信，唔硬造 digest
+  }
+}
+
 export function reviseTurnTextsOf(jobId: string, callsheetDigest: string | null | undefined): { adopt: { turnId: string; text: string }[]; stale: { turnId: string; reason: string }[] } {
   const session = readSession(jobId);
   const adopt: { turnId: string; text: string }[] = [];
@@ -115,8 +132,16 @@ export function reviseTurnTextsOf(jobId: string, callsheetDigest: string | null 
   for (const turnId of pending) {
     const t = session.turns.find((x) => x.turnId === turnId);
     if (!t) { stale.push({ turnId, reason: "turn 唔喺 sessions.jsonl（數據源斷）" }); continue; }
-    if (t.dependsOn?.callsheetDigest && callsheetDigest && t.dependsOn.callsheetDigest !== callsheetDigest) {
-      stale.push({ turnId, reason: `stale：turn 綁 digest ${t.dependsOn.callsheetDigest.slice(0, 12)} 對本輪 ${callsheetDigest.slice(0, 12)} 唔夾——重交修訂唔靜靚食` });
+    const turnDigest = t.dependsOn?.callsheetDigest ?? null;
+    const nowDigest = callsheetDigest ?? null;
+    // root R3 修③：兩邊都非 null 先可比（同源同公式）；綁真值而家冇/壞
+    // callsheet＝採納基礎消失（唔當 same 靜靜採納）；兩邊 null＝首創採納合法。
+    if (turnDigest !== null && nowDigest === null) {
+      stale.push({ turnId, reason: `stale：turn 綁 digest ${turnDigest.slice(0, 12)} 但磁碟 callsheet 唔在／壞——採納基礎消失，重交` });
+      continue;
+    }
+    if (turnDigest !== null && nowDigest !== null && turnDigest !== nowDigest) {
+      stale.push({ turnId, reason: `stale：turn 綁 digest ${turnDigest.slice(0, 12)} 對本輪 ${nowDigest.slice(0, 12)} 唔夾——重交修訂唔靜靚食` });
       continue;
     }
     adopt.push({ turnId, text: t.text });

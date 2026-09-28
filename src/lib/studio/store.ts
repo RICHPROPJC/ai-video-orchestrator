@@ -133,33 +133,63 @@ export function writeJob(job: JobRecord, owner?: JobOwner) {
   fs.renameSync(tmp, file);
 }
 
-/** root R2 修④（0928）：job.json 跨進程 read-modify-write 安全——O_EXCL 檔鎖
- *  spin（stale 鎖 10s 搶）＋鎖內 read→mutate→write。API route（Next 進程）
- *  同 producer（pipeline）併發改 job 欄（pendingReviseTurns 等）唔再互吞。
- *  fn 就地 mutate 傳入 job；owner guard 照 writeJob 語義（可選）。 */
+/** root R2 修④＋R3 修④（0928）：job.json 跨進程 read-modify-write 序列化
+ *  ——O_EXCL 檔鎖＋ownership token（鎖檔內容＝「pid-ts-nonce」）。規則：
+ *  ①release 核 token 係自己先剷（被接管後唔剷新 holder 鎖）；②live holder
+ *  （pid 仲在生）唔按 mtime 擅搶——淨 pid 已死／鎖壞先可以用 rename 原子
+ *  搶（多 contender 同時 rename 只得一個成功）；③等鎖 3s timeout fail-loud
+ *  （具名 holder pid）。呢個係序列化，唔係 CAS（冇 revision 比較）。 */
 export function mutateJob<T>(id: string, fn: (job: JobRecord) => T, owner?: JobOwner): T {
   ensureDir(jobDir(id));
   const lock = path.join(jobDir(id), ".job.lock");
-  const acquire = (): boolean => {
+  const myToken = `${process.pid}-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
+  const writeLock = () => fs.writeFileSync(lock, myToken, { flag: "wx" });
+  const holderOf = (): { pid: number | null } => {
     try {
-      fs.closeSync(fs.openSync(lock, "wx"));
-      return true;
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "EEXIST") {
-        try {
-          if (Date.now() - fs.statSync(lock).mtimeMs > 10_000) {
-            fs.rmSync(lock, { force: true });
-            return acquire();
-          }
-        } catch { /* stat 失敗（啱啱被放）＝下輪 spin */ }
-        return false;
-      }
-      throw e;
+      const tok = fs.readFileSync(lock, "utf8").trim();
+      const pid = Number.parseInt(tok.split("-")[0] ?? "", 10);
+      return Number.isFinite(pid) && pid > 0 ? { pid } : { pid: null };
+    } catch {
+      return { pid: null };
     }
   };
+  const holderAlive = (): boolean => {
+    const { pid } = holderOf();
+    if (pid === null) return false; // 壞鎖/舊格式＝冇在生證據
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false; // pid 已死（holder 進程釘咗，鎖係孤兒）
+    }
+  };
+  // 原子搶：rename 走舊鎖＝獨得所有權證據（同 batch contender rename 失敗）
+  const tryTakeover = (): boolean => {
+    const taken = `${lock}.takeover-${myToken}`;
+    try {
+      fs.renameSync(lock, taken);
+    } catch {
+      return false;
+    }
+    try { fs.rmSync(taken, { force: true }); } catch { /* 收尾失敗唔阻得手 */ }
+    return true;
+  };
+  let locked = false;
   const deadline = Date.now() + 3_000;
-  while (!acquire()) {
-    if (Date.now() > deadline) throw new Error(`job_lock_timeout: ${id} job 鎖 3s 內取唔到（另一寫入者長期持有？）`);
+  while (!locked) {
+    try {
+      writeLock();
+      locked = true;
+      break;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+    }
+    const holder = holderOf().pid;
+    if (holder !== null && !holderAlive() && tryTakeover()) {
+      try { writeLock(); locked = true; } catch { /* 同 batch contender 搶先——重試 */ }
+      continue;
+    }
+    if (Date.now() > deadline) throw new Error(`job_lock_timeout: ${id} job 鎖 3s 內取唔到（holder pid ${holder ?? "?"}${holder !== null && holderAlive() ? " live 中" : " 爭搶中"}）`);
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);
   }
   try {
@@ -169,7 +199,10 @@ export function mutateJob<T>(id: string, fn: (job: JobRecord) => T, owner?: JobO
     writeJob(job, owner);
     return value;
   } finally {
-    try { fs.rmSync(lock, { force: true }); } catch { /* 已被搶＝唔剷人哋鎖 */ }
+    // release 核 ownership：token 唔夾＝鎖已被接管，剷嘅唔係自己嗰把——唔郁
+    try {
+      if (fs.readFileSync(lock, "utf8").trim() === myToken) fs.rmSync(lock, { force: true });
+    } catch { /* 鎖檔已唔在＝已釋放 */ }
   }
 }
 
@@ -238,23 +271,27 @@ export function emit(id: string, event: Omit<JobEvent, "ts"> & { ts?: string }) 
     // V3（PLAN-v2 0928）§9.1：blocked 彙總——data.blocked upsert、同 shot
     // pass verdict 清返（per-shot blocked 唔再只係一閃即過嘅 event，job.json
     // 有可恢復狀態俾 UI／resume 查）。
+    // root R3 修①（0928）：行 mutateJob（鎖內 disk 最新做底）——同 route 側
+    // queue 寫入並發時 blockedShots 匯總唔互吞。
     const d = (event.data ?? null) as { blocked?: unknown; shot?: unknown; verdict?: unknown; stage?: unknown } | null;
     if (d && typeof d.shot === "string") {
-      if (typeof d.blocked === "string") {
-        const stage = typeof d.stage === "string" ? d.stage : undefined;
-        const row = { shot: d.shot, stage, reason: d.blocked, ts: full.ts };
-        // §10.2：upsert 身份＝shot+stage——同鏡另一 stage 嘅未解原因唔被抹。
-        const rest = (job.blockedShots ?? []).filter((b) => !(b.shot === row.shot && b.stage === stage));
-        job.blockedShots = [...rest, row];
-      } else if (d.verdict === "pass") {
-        // §9②：同 stage pass 先清同 stage block——placement-gap（audio-placement）
-        // 唔會被 stills pass 意外清走；跨 stage 解鎖由 gap 自身重算清。
-        job.blockedShots = (job.blockedShots ?? []).filter(
-          (b) => !(b.shot === d.shot && typeof d.stage === "string" && b.stage === d.stage),
-        );
-      }
+      const shotId = d.shot;
+      mutateJob(id, (j) => {
+        if (typeof d.blocked === "string") {
+          const stage = typeof d.stage === "string" ? d.stage : undefined;
+          const row = { shot: shotId, stage, reason: d.blocked, ts: full.ts };
+          // §10.2：upsert 身份＝shot+stage——同鏡另一 stage 嘅未解原因唔被抹。
+          const rest = (j.blockedShots ?? []).filter((b) => !(b.shot === row.shot && b.stage === stage));
+          j.blockedShots = [...rest, row];
+        } else if (d.verdict === "pass") {
+          // §9②：同 stage pass 先清同 stage block——placement-gap（audio-placement）
+          // 唔會被 stills pass 意外清走；跨 stage 解鎖由 gap 自身重算清。
+          j.blockedShots = (j.blockedShots ?? []).filter(
+            (b) => !(b.shot === shotId && typeof d.stage === "string" && b.stage === d.stage),
+          );
+        }
+      });
     }
-    writeJob(job);
   }
   touchOwner(id); // V2a heartbeat：有 event 流＝owner 仲生猛
   for (const fn of listeners.get(id) ?? []) fn(full);

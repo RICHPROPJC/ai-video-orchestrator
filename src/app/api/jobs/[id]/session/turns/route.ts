@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJob } from "@/lib/studio/store";
 import { ownerHeartbeatMs, ownerIsStale } from "@/lib/studio/store";
-import { appendTurn, findUserTurnByRequestId, queueReviseTurn, replyToAskTurn } from "@/lib/studio/pipeline/session";
+import { appendTurn, findUserTurnByRequestId, queueReviseTurn, replyToAskTurn, currentCallsheetDigest } from "@/lib/studio/pipeline/session";
 import { loadConfig } from "@/lib/studio/config";
 import { jobDir } from "@/lib/studio/paths";
 
@@ -33,13 +33,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const ms = ownerHeartbeatMs(id);
   const ownerActive = ms !== null && !ownerIsStale(id);
+  // root R3 修③（0928）：dependsOn 綁值同源——currentCallsheetDigest（當下
+  // 磁碟 callsheet 全文），同 author 採納輪同一真源（唔用 job.callsheetDigest
+  // 欄：嗰個係 world 時凍結，KF 後續回填兩側唔再對得齊）。
+  const digestNow = currentCallsheetDigest(id);
   if (intent === "revise" && ownerActive) {
     // §33-8：有活躍 owner 時修改 turn 持久排隊，綁觀察到嘅 source revision
     const turn = appendTurn(id, {
       requestId: body.requestId, role: "user", text: body.text,
       status: "queued-behind-owner",
-      dependsOn: { callsheetDigest: (job as { callsheetDigest?: string }).callsheetDigest ?? null },
-      blockedReason: `活躍執行者（heartbeat ${ms}ms 前）——turn 已持久排隊，owner 安全點採納（A4 consumer 未接：狀態如實，唔顯示執行中）`,
+      dependsOn: { callsheetDigest: digestNow },
+      blockedReason: `活躍執行者（heartbeat ${ms}ms 前）——turn 已持久排隊，owner 安全點採納（A4 consumer 已接：frozen 快照採納，狀態如實）`,
     });
     queueReviseTurn(id, turn.turnId); // root 競態修①：owner 都要入 queue——owner 過咗 author 段嘅 turn 由下一 run 撿
     return NextResponse.json({ turnId: turn.turnId, at: turn.at, status: "queued-behind-owner", dependsOn: turn.dependsOn });
@@ -48,7 +52,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const turn = appendTurn(id, {
     requestId: body.requestId, role: "user", text: body.text,
     status: "recorded",
-    dependsOn: { callsheetDigest: (job as { callsheetDigest?: string }).callsheetDigest ?? null },
+    dependsOn: { callsheetDigest: digestNow },
   });
   // §P33 A3（0928）：revise turn 入 job 佇列——pipeline owner 安全點（author
   // 段）讀佢採納（revise hint 帶 user text→責任席修訂→manifest 新 revision

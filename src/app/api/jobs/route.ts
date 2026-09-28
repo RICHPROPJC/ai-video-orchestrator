@@ -5,7 +5,7 @@ import { blockersForGate, formatFleet, gateReady, probeFleet } from "@/lib/studi
 import { jobFile } from "@/lib/studio/paths";
 import { runPipeline } from "@/lib/studio/pipeline";
 import { createSlate, fleetGateOf, resumeSlate, type ResumePatch } from "@/lib/studio/open-produce";
-import { listJobs, ownerHeartbeatMs, ownerIsStale, readJob, writeJob } from "@/lib/studio/store";
+import { listJobs, ownerHeartbeatMs, ownerIsStale, readJob, writeJob, mutateJob } from "@/lib/studio/store";
 import type { ProduceInput } from "@/lib/studio/types";
 
 export const runtime = "nodejs";
@@ -142,8 +142,11 @@ export async function POST(req: Request) {
   let live = opened.input;
   if (voiceClonePath) {
     live = { ...opened.input, voiceClonePath };
-    const job = readJob(opened.id);
-    if (job) writeJob({ ...job, input: live });
+    // root R3 修①（0928）：read-modify-write 行 mutateJob（鎖內 disk 最新做
+    // 底）——同 producer patch／route queue 同一寫入協定，唔互吞。
+    mutateJob(opened.id, (job) => {
+      job.input = live;
+    });
   }
 
   void runPipeline(opened.id, live);

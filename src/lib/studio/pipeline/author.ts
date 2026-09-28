@@ -18,8 +18,7 @@ import { gapEvent, gapMessage, storyboardZeroGap } from "../capability-gap";
 import type { AgentId, CallSheet, ProduceInput } from "../types";
 import type { SlateConfig } from "../config";
 import { GAP_BUDGET, SHEET_REPAIR_BUDGET, patch, type Ctx } from "./shared";
-import { reviseTurnTextsOf, completeAdoptedTurns } from "./session";
-import { sheetDigest } from "../seat-boards";
+import { reviseTurnTextsOf, completeAdoptedTurns, currentCallsheetDigest } from "./session";
 
 /** Speaking parts must be castable, so the roster is read from a data file the
  *  operator points at — never from a list living in src. */
@@ -52,14 +51,27 @@ async function authorCallSheet(
   // §13.2：額度真源＝job 持久 soundRepairEpisode（author 攔截遞增；行內 loop／
   // resume 共用；row attempts 淺 mirror）。唔用文字身份——改台詞唔重置。
   const diskJob = readJob(jobId);
-  // root R2 修②③（0928）：frozen batch＋真 digest——採納快照喺任何模型
-  // call 之前落一次（digest＝磁碟現行 callsheet.json 計出嘅 sheetDigest，
-  // 唔靠 job 欄位有冇寫）；模型後 complete 用同一快照——快照後入隊嘅後到
-  // turn 唔會混入本輪 adopt 集合（filter processed 救唔到錯集合嘅問題喺
-  // 呢度斷源）。
-  const digestOnDisk = fs.existsSync(existing) ? sheetDigest(loadCallSheet(existing)) : null;
+  // root R2 修②③＋R3 修③（0928）：frozen batch＋同源 digest——採納快照喺
+  // 任何模型 call 之前落一次；digest 兩側共用 currentCallsheetDigest（當下
+  // 磁碟 callsheet 全文 sheetDigest——route dependsOn 綁值同一真源，KF 後續
+  // 回填兩側一齊計，唔再有 job 欄 vs 重算唔同源）。模型後 complete 用同一
+  // 快照——快照後入隊嘅後到 turn 唔會混入本輪 adopt 集合。
+  const digestOnDisk = currentCallsheetDigest(jobId);
   const frozenQueue = reviseTurnTextsOf(jobId, digestOnDisk);
   const pendingAdopt = frozenQueue.adopt;
+  // root R3 修②（0928）：唔行修訂輪嘅路徑一律明確收口（唔靜默失聯）——
+  // adopt 全標 blocked（具名原因）＋stale 照回寫；收口後凍結集合清空，
+  // 下游（creativeFresh／reviseForGaps／resume fall-through／plan 落盤收口）
+  // 見空自然唔再觸發。
+  const settleQueue = (reasonForAdopt: (t: { turnId: string; text: string }) => string): void => {
+    if (!frozenQueue.adopt.length && !frozenQueue.stale.length) return;
+    completeAdoptedTurns(jobId, [], [
+      ...frozenQueue.adopt.map((t) => ({ turnId: t.turnId, reason: reasonForAdopt(t) })),
+      ...frozenQueue.stale,
+    ]);
+    frozenQueue.adopt.length = 0;
+    frozenQueue.stale.length = 0;
+  };
   const epAttempts = diskJob?.soundRepairEpisode?.attempts ?? 0;
   if (placementGaps.length && epAttempts < GAP_BUDGET) {
     const nextAttempts = epAttempts + 1;
@@ -74,6 +86,15 @@ async function authorCallSheet(
   // 耗盡唔攔截唔進修訂（inline loop guard 保護唔到先行嘅 authorStage/resume），
   // gaps/blocked 留底收尾 verdict。
   const canRevise = placementGaps.length > 0 && epAttempts < GAP_BUDGET;
+  // root R3 修②：stale-only（adopt 空）唔叫導演——立即回寫 blocked；budget
+  // exhausted（gaps＋額度耗盡）＝採納輪唔會行，pending 明確 blocked 具名
+  // （唔繞 budget、唔靜默失聯）。
+  if (placementGaps.length > 0 && epAttempts >= GAP_BUDGET) {
+    settleQueue((t) => `sound_repair_budget_exhausted：修訂額度 ${GAP_BUDGET} 輪耗盡——本輪唔行採納（turn ${t.turnId} 留底，額度重置／人手處理後重交）`);
+  } else if (!pendingAdopt.length && frozenQueue.stale.length) {
+    completeAdoptedTurns(jobId, [], frozenQueue.stale);
+    frozenQueue.stale.length = 0;
+  }
   // §15.1b：額度攔實際模型入口——耗盡＋gaps 存在，唔可以令 creativeFresh
   // 路重開創作繞過額度：有既有 callsheet（有效舊採用）照食＋gaps 留底收尾
   // blocked；冇（缺舊產物）＝具名 throw，唔盲生成。合法新外部採用要明示
@@ -168,6 +189,9 @@ async function authorCallSheet(
   }
   if (input.callSheetPath) {
     const sheet = loadCallSheet(input.callSheetPath);
+    // root R3 修②：plug 顯式外來 callsheet——對話修訂鏈唔接管呢輪，pending
+    // 明確 blocked 具名（唔靜默失聯）。
+    settleQueue((t) => `callsheet-plug-override：外來 callsheet 顯式載入——對話修訂鏈唔接管呢輪（turn ${t.turnId}），重交或改用內部修訂路`);
     await io.speak("producer", `callsheet plug 載入：${sheet.shots.length} 鏡。`);
     return sheet;
   }
