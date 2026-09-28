@@ -17,6 +17,9 @@ export type SlateConfig = {
     checkpoint: string;
     fl2va: string;
     turboLora: string;
+    /** §P34 P1（0928 node1 object_info 實核部署）：PDD Acc patch 檔——Ref2VA
+     *  base 用 MiniMax-H3-Ref2VA-Acc-8Step（nfe 8＝trained block size 4） */
+    pddAccFile: string;
     textEncoder: string;
     videoVae: string;
     audioVae: string;
@@ -80,6 +83,7 @@ const DEFAULTS: SlateConfig = {
     comfyUrl: "http://100.127.176.64:8188",
     checkpoint: "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
     fl2va: "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+    pddAccFile: "MiniMax-H3-Ref2VA-Acc-8Step.safetensors",
     turboLora: "minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
     textEncoder: "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
     videoVae: "minimax_h3_video_vae_fp16.safetensors",

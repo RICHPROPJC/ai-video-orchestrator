@@ -84,6 +84,8 @@ export type H3GraphModels = {
   ref2va: string;
   fl2va: string | null; // P34 P0：null＝未採用（A-form 孤 loader 已刪；真路由 P1 批二）
   turboLora: string;
+  /** §P34 P1：PDD Acc patch 檔（ref2va 8-step；node1 部署實核） */
+  pddAccFile?: string;
 };
 
 export type H3GraphVariant = "a" | "b" | "bkf" | "c";
@@ -428,6 +430,27 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
     };
   }
   const modelA = ["sigma_lora_a", 0];
+  // §P34 P1（node1 object_info 實核 0928）：pdd-8step route＝ref2va lora 鏈尾
+  // 落 MiniMaxH3PDDAccApply（pdd_file=Ref2VA-Acc-8Step；nfe 8＝trained block
+  // size 4；partition_check=error——fl2va/ref2va 同 key set 錯配 silently
+  // wrong，呢個閘係防錯配唔係合流）；scheduler 配套 PDDAccScheduler（同
+  // nfe——on_off_grid 語義：sigma 唔喺 trained boundary 就 error）。
+  const pdd8 = opts.route?.kind === "pdd-8step";
+  if (pdd8) {
+    g.pdd_apply = {
+      class_type: "MiniMaxH3PDDAccApply",
+      inputs: {
+        model: ["sigma_lora_a", 0],
+        pdd_file: opts.models.pddAccFile ?? "MiniMax-H3-Ref2VA-Acc-8Step.safetensors",
+        nfe: "8",
+        lora_strength: 1.0,
+        head_strength: 1.0,
+        on_off_grid: "error",
+        partition_check: "error",
+      },
+    };
+  }
+  const modelOut = pdd8 ? (["pdd_apply", 0] as [string, number]) : modelA;
   // voice: LoadAudio -> H3ReferenceAudio -> ref_audios.ref_audio_0
   g.voice_in = { class_type: "LoadAudio", inputs: { audio: opts.wavName } };
   g.voice_guard = {
@@ -580,10 +603,12 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   g.noise_a = { class_type: "RandomNoise", inputs: { noise_seed: opts.seed } };
   g.sampler_sel = { class_type: "KSamplerSelect", inputs: { sampler_name: SAMPLER } };
   g.sched_a = {
-    class_type: "BasicScheduler",
-    inputs: { model: modelA, scheduler: SCHEDULER, steps: opts.steps, denoise: 1.0 },
+    class_type: pdd8 ? "MiniMaxH3PDDAccScheduler" : "BasicScheduler",
+    inputs: pdd8
+      ? { nfe: "8", denoise: 1.0 }
+      : { model: modelA, scheduler: SCHEDULER, steps: opts.steps, denoise: 1.0 },
   };
-  g.guider_a = { class_type: "BasicGuider", inputs: { model: modelA, conditioning: condOut } };
+  g.guider_a = { class_type: "BasicGuider", inputs: { model: modelOut, conditioning: condOut } };
   g.samp_a = {
     class_type: "SamplerCustomAdvanced",
     inputs: {

@@ -152,6 +152,7 @@ function modelsFromConfig(): H3GraphModels {
     // 唔再報 loader 名冒充已消費；FL2VA 真路由＝P1 批二。
     fl2va: null,
     turboLora: m.turboLora,
+    pddAccFile: m.pddAccFile,
   };
 }
 
@@ -297,9 +298,8 @@ export async function submitH3Shot(opts: {
   if (route.kind === "mixed") {
     throw new Error("h3_route_blocked: mixed route 部署未核——兩 base 同次採用無合法接法（P34 map #4；refs+KF 共存≠model 混用）；capability gap 具名，唔用二選一結案");
   }
-  if (route.kind === "pdd-8step") {
-    throw new Error("h3_route_blocked: pdd-8step route 未接線——MiniMaxH3PDDAccApply source 零接線（P34 map #6）；8-step PDD 唔退 20-step 裸模型、唔靜換 4-step");
-  }
+  // pdd-8step 已接線（§P34 P1：node1 object_info 實核——Apply/Scheduler/
+  // Warmup＋Ref2VA-Acc-8Step 檔部署齊；nfe 8＝trained block size 4）
   const seed = cfg.motion.seed;
   const tag = opts.dryRun ? "dryrun" : crypto.randomUUID().replaceAll("-", "").slice(0, 8);
 
@@ -349,6 +349,7 @@ export async function submitH3Shot(opts: {
     kfExtra: string[];
   }) =>
     buildH3Graph({
+      route,
       script: promptText,
       bindings,
       frames,
