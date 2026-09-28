@@ -21,7 +21,10 @@ export const VISIBLE_ACTION_VERBS =
   "站坐跪躺臥蹲企走跑行轉停退追拉推扯拖拽抓握提拎揹背扛抬舉伸縮放擱掛遞收拋扔擲撿拾掉按壓押指點畫寫塗擦抹掃洗倒灑撒撕拍打踢踏踩跳跌撲滾爬滑衝撞倚靠挨扶摟抱攬揮搖望看望瞧瞄盯聽聞嗅咬嚼吞喝飲扭擰咳嘆笑喊叫唱講哭戴脫著解鬆綁鎖扣"
   // SC-CREATIVE-OS-0927 P0：表情/現象動詞補覆蓋（瞇眼冤案類別）——診斷用，
   // 唔再阻塞 schema。冷凝水滑落（brief 主體事件）由 滑/滴/淌 覆蓋。
-  + "瞇捽震顫抖凝閃漾冒滾沸噴濺沁透融淌滴敲叩篤";
+  + "瞇捽震顫抖凝閃漾冒滾沸噴濺沁透融淌滴敲叩篤"
+  // WSY6 r5 靜態清單記錄欠字（0927 記低、0928 Pi 卡補）：灌/升/散/漬/開口
+  // ——照詞表「curated, extensible by card」設計原地補。
+  + "灌升散漬開口";
 export function hasVisibleActionVerb(action: string): boolean {
   return [...VISIBLE_ACTION_VERBS].some((v) => action.includes(v));
 }
