@@ -636,6 +636,67 @@ export type AudioTimelineRow = {
   onImageCheck?: { word: string; seenInCoverShots: boolean }[];
 };
 
+/** G1 批四（0928）：凍結映射檔形狀——author 採納輪 resolver 一處配對，
+ *  兩側（author 診斷/world 對照）同結果讀用；帶 digest 驗依賴（resume 讀檔
+ *  重驗，唔靠記憶體 ctx；輸入唔夾＝stale）。唔建持久 pool／全局 used 旗標
+ *  ——凍結映射＝採納快照，唔係可變 pool。 */
+export type UtterancePlacementMap = {
+  utterancesDigest: string;
+  callsheetDigest: string;
+  revision: string;
+  generatedAt: string;
+  pairs: { utteranceId: string; placementIdx: number; norm: string }[];
+  unmatchedUtterances: { utteranceId: string; rawText: string }[];
+  unmatchedPlacements: number[];
+  ambiguous: { norm: string; utteranceIds: string[]; placementIdxs: number[] }[];
+};
+
+/** G1 批四：純函數 resolver——utteranceId↔placementIdx 配對（normDialogue
+ *  同一套歸一化）。同字歧義（同 norm 多 utterance或多 placement）＝具名
+ *  ambiguous 唔亂配（唔靠遍歷順序）；配唔到＝unmatched 具名。legacy 文字
+ *  matcher 只產生候選/歧義診斷，唔繞過 typed 配對。 */
+export function resolveUtterancePlacements(
+  utterances: { utteranceId: string; rawText: string }[],
+  placements: { word?: string; startSec?: number; endSec?: number; onImage?: string }[],
+): { pairs: { utteranceId: string; placementIdx: number; norm: string }[]; unmatchedUtterances: { utteranceId: string; rawText: string }[]; unmatchedPlacements: number[]; ambiguous: { norm: string; utteranceIds: string[]; placementIdxs: number[] }[] } {
+  const uttByNorm = new Map<string, string[]>();
+  for (const u of utterances) {
+    const n = normDialogue(u.rawText);
+    uttByNorm.set(n, [...(uttByNorm.get(n) ?? []), u.utteranceId]);
+  }
+  const plByNorm = new Map<string, number[]>();
+  placements.forEach((pl, i) => {
+    const n = normDialogue(String(pl.word ?? ""));
+    if (!n.length) return; // 空歸一化唔過閘（claimPlacementOnce 同款）
+    plByNorm.set(n, [...(plByNorm.get(n) ?? []), i]);
+  });
+  const pairs: { utteranceId: string; placementIdx: number; norm: string }[] = [];
+  const unmatchedUtterances: { utteranceId: string; rawText: string }[] = [];
+  const unmatchedPlacements: number[] = [];
+  const ambiguous: { norm: string; utteranceIds: string[]; placementIdxs: number[] }[] = [];
+  const usedUtts = new Set<string>();
+  const usedPls = new Set<number>();
+  for (const [norm, uids] of uttByNorm) {
+    const pidxs = plByNorm.get(norm) ?? [];
+    if (uids.length > 1 || pidxs.length > 1) {
+      if (uids.length === pidxs.length) {
+        // 同數多對多：序配（同一 norm 嘅重複句按出現序一對一——norm 內次序
+        // 由 caller 清單序定，唔靠遍歷意外）——仍然記 ambiguous 供審
+        uids.forEach((uid, k) => { pairs.push({ utteranceId: uid, placementIdx: pidxs[k]!, norm }); usedUtts.add(uid); usedPls.add(pidxs[k]!); });
+      }
+      ambiguous.push({ norm, utteranceIds: uids, placementIdxs: pidxs });
+      if (uids.length === pidxs.length) continue;
+    }
+    if (uids.length === 1 && pidxs.length === 1) {
+      pairs.push({ utteranceId: uids[0]!, placementIdx: pidxs[0]!, norm });
+      usedUtts.add(uids[0]!); usedPls.add(pidxs[0]!);
+    }
+  }
+  for (const u of utterances) if (!usedUtts.has(u.utteranceId)) unmatchedUtterances.push(u);
+  placements.forEach((_, i) => { if (!usedPls.has(i)) unmatchedPlacements.push(i); });
+  return { pairs, unmatchedUtterances, unmatchedPlacements, ambiguous };
+}
+
 export async function audioTimelineRows(
   events: { beatId: string; utteranceId?: string; speaker?: string; text: string; startSec: number; endSec: number }[],
   takes: { beatId: string; file: string }[],
@@ -645,6 +706,10 @@ export async function audioTimelineRows(
    *  偏離幾多；0→0 placeholder 唔冒充已排。缺/偏離＝note 落 row（consumer
    *  決定點處理）。 */
   placements?: { word?: string; startSec?: number; endSec?: number; onImage?: string }[],
+  /** G1 批四：凍結映射（author 採納輪 resolver 結果）——typed event（有
+   *  utteranceId）行 ID 直配：有映射→matched（時間/onImage 由映射 placement
+   *  攞）；冇映射→missing 具名（唔落 pool 亂配）。legacy event 照 pool。 */
+  frozenPairs?: Map<string, { word?: string; startSec?: number; endSec?: number; onImage?: string }>,
 ): Promise<AudioTimelineRow[]> {
   const rows: AudioTimelineRow[] = [];
   // §8.4＋§23 C：消耗式配對——共享 claimPlacementOnce 核心（author/world 同一
@@ -673,7 +738,24 @@ export async function audioTimelineRows(
       ...(take ? {} : { note: "take 缺（事件冇鏡覆蓋？plugVoiceEvents 應已 throw）" }),
       ...(placements === undefined && !events.some((e2) => e2.text.trim())
         ? { placement: "na" as const, note: "片冇對白且導演冇交 dialogueClock（流程唔要求落點＝N/A）" }
-        : (() => {
+        : frozenPairs && ev.utteranceId
+          ? (() => {
+              // G1 批四 typed 路：凍結映射 ID 直配（唔經 pool——同字歧義已喺
+              // author 採納輪 resolver 裁定）；冇映射＝missing 具名
+              const hit = frozenPairs.get(ev.utteranceId);
+              if (!hit) return { placement: "missing" as const, note: "凍結映射冇呢個 utterance（author 採納輪未配到——回責任席）" };
+              if ((hit.endSec ?? 0) <= (hit.startSec ?? 0) + 1e-9) {
+                return { placement: "unresolved" as const, note: "落點 0→0 placeholder（導演未排時間）——唔冒充已排" };
+              }
+              const drift = (hit.startSec ?? 0) - ev.startSec;
+              return {
+                placement: "matched" as const,
+                ...(hit.onImage ? { onImage: hit.onImage } : {}),
+                ...(drift !== 0 ? { placementDriftSec: Number(drift.toFixed(3)) } : {}),
+                ...(Math.abs(drift) > 1 ? { note: `落點偏離導演安排 ${drift.toFixed(1)}s（誤差接受度留採用方案判斷）` } : {}),
+              };
+            })()
+          : (() => {
             const at = claimPlacementOnce(placementPool, ev.text);
             if (at < 0) return { placement: "missing" as const, note: "導演冇呢句嘅落點（聲畫對位缺口——回導演席）" };
             const hit = placementPool.splice(at, 1)[0]!.pl;

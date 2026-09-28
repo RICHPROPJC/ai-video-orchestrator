@@ -21,7 +21,7 @@ import { ensurePropBoard, ensureSceneBoard } from "../asset-board";
 import { diffPropPlates, nextPropBoardSeq, propAssetId, writePropPinManifest } from "../prop-plate-index";
 import { assertStoryPlatesReady, ensureCastOnce } from "../cast-mesh";
 import { pinQcAccepted } from "../photo-qc";
-import { audioTimelineRows } from "../creative";
+import { audioTimelineRows, type UtterancePlacementMap } from "../creative";
 import { blockoutPlugGap, gapEvent, gapMessage, motionNeedsHumanGap } from "../capability-gap";
 import {
   DECIDER_DEFAULTS,
@@ -298,6 +298,27 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   // DIALOGUE_RULE_PROVENANCE_0927：有聲音事件時間線（新 callsheet）行事件
   // 路徑——一句一條連續 take、逐鏡切片；舊 plug callsheet（冇 audioEvents）
   // 照行每鏡一句舊路，位元組行為不變。
+  // G1 批四：讀 author 採納輪凍結映射（creative/utterance-placements.json）
+  // ——digest 驗（utterancesDigest 對 ctx.utteranceProvenance＋callsheetDigest
+  // 對本輪 locked）；唔夾＝stale emit 照 legacy pool（唔靜靜退）。
+  let frozenPairs: Map<string, { word?: string; startSec?: number; endSec?: number; onImage?: string }> | undefined;
+  if (ctx.utteranceProvenance && ctx.locked!.directorPlacements?.length) {
+    const frozenFile = jobFile(jobId, "creative", "utterance-placements.json");
+    if (fs.existsSync(frozenFile)) {
+      try {
+        const frozen = JSON.parse(fs.readFileSync(frozenFile, "utf8")) as UtterancePlacementMap;
+        const digestOk = frozen.utterancesDigest === ctx.utteranceProvenance.utterancesDigest
+          && frozen.callsheetDigest === sheetDigest(ctx.locked!);
+        if (digestOk) {
+          frozenPairs = new Map(frozen.pairs.map((pair) => [pair.utteranceId, ctx.locked!.directorPlacements![pair.placementIdx] ?? { word: pair.norm }]));
+        } else {
+          emit(jobId, { agent: "producer", level: "warn",
+            message: "utterance 凍結映射 stale（utterancesDigest/callsheetDigest 唔夾）——聲畫對照呢輪行 legacy pool 配對（同字歧義無 ID 保護）",
+            data: { stage: "utterance-placements", frozenUtterancesDigest: frozen.utterancesDigest, frozenCallsheetDigest: frozen.callsheetDigest.slice(0, 12) } });
+        }
+      } catch { /* 壞檔＝照 legacy pool（凍結映射係 ID 保護路，唔係硬依賴） */ }
+    }
+  }
   const eventTakes = ctx.locked!.audioEvents?.length
     ? (await plugVoiceEvents({
         boards: ctx.continuity!.boards,
@@ -312,7 +333,7 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   // overflow 警告，唔靜靜食）。落 creative/audio-timeline.json 俾 producer/
   // 下游讀實際時鐘，唔改窗口（窗口＝callsheet，要改係修訂輪嘅事）。
   if (eventTakes && ctx.locked!.audioEvents) {
-    const rows = await audioTimelineRows(ctx.locked!.audioEvents, eventTakes.takes, wavSeconds, ctx.locked!.directorPlacements);
+    const rows = await audioTimelineRows(ctx.locked!.audioEvents, eventTakes.takes, wavSeconds, ctx.locked!.directorPlacements, frozenPairs);
     // 裁決 0928 D：聲畫對位缺口回責任席線——missing placement 逐句 emit
     // （唔阻行：收據落 events；revise_unclosed 已喺上游 fail-loud 把關）
     // §8.1：coverage 收據改用實際音訊切片（plugVoiceEvents slices）——

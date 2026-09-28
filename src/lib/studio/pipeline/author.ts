@@ -4,8 +4,9 @@ import { createHash } from "node:crypto";
 import { emit, readJob } from "../store";
 import { loadCallSheet } from "../writer";
 import { utteranceBeatCoverage } from "../boards-expand";
+import { sheetDigest } from "../seat-boards";
 import { runWriter } from "../seat-writer";
-import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreativeManifest, updateCreativeManifest, dialogueSignalsOf, evaluateScriptAgainstPlan, contractGapsOf, generateUtteranceCandidates } from "../creative";
+import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreativeManifest, updateCreativeManifest, dialogueSignalsOf, evaluateScriptAgainstPlan, contractGapsOf, generateUtteranceCandidates, resolveUtterancePlacements, type UtterancePlacementMap } from "../creative";
 
 /** G1 批二（0928）：編劇 script.md 候選表 → typed utterance 落位清單
  *  （id＝候選 frozen key U01…＝candidateIdx+1，綁 mdSha——同一 script.md
@@ -565,6 +566,28 @@ export async function authorStage(ctx: Ctx): Promise<void> {
   const sheet = await authorCallSheet(jobId, input, cfg, { speak, think }, (p) => {
     ctx.utteranceProvenance = p;
   });
+  // G1 批四：resolver 一處配對＋凍結映射落盤（author 採納輪；world 讀同一
+  // 檔＋驗 digest——兩側同結果，唔建持久 pool／全局 used 旗標）。同字歧義／
+  // 未配到＝具名（ambiguous/unmatched）——唔靠遍歷順序。
+  if (ctx.utteranceProvenance?.list.length) {
+    const prov = ctx.utteranceProvenance;
+    const placements = (sheet as { directorPlacements?: { word?: string; startSec?: number; endSec?: number; onImage?: string }[] }).directorPlacements ?? [];
+    const r = resolveUtterancePlacements(prov.list, placements);
+    const frozen: UtterancePlacementMap = {
+      utterancesDigest: prov.utterancesDigest,
+      callsheetDigest: sheetDigest(sheet),
+      revision: prov.planSha,
+      generatedAt: new Date().toISOString(),
+      ...r,
+    };
+    fs.writeFileSync(jobFile(jobId, "creative", "utterance-placements.json"), JSON.stringify(frozen, null, 2));
+    if (r.ambiguous.length || r.unmatchedUtterances.length) {
+      emit(jobId, { agent: "producer", level: "warn",
+        message: `utterance 落點配對：${r.pairs.length} 對；${r.unmatchedUtterances.length} 句未配到落點、${r.ambiguous.length} 組同字歧義（已記檔）`,
+        data: { stage: "utterance-placements", pairs: r.pairs.length, unmatched: r.unmatchedUtterances, ambiguous: r.ambiguous } });
+      await speak("producer", `utterance 落點：${r.pairs.length} 對凍結入 creative/utterance-placements.json；${r.unmatchedUtterances.length} 句未配到（回導演席補 dialogueClock）。`, "warn");
+    }
+  }
   fs.writeFileSync(jobFile(jobId, "callsheet.json"), JSON.stringify(sheet, null, 2));
   ctx.job = patch(ctx.job, {
     callSheet: sheet,
