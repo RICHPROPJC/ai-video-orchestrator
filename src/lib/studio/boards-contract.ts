@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BEAT_ID_RE, CHARACTER_ID_RE, SCENE_ID_RE, dialogueSeconds, omittable, type Beat } from "./script-contract";
+import { BEAT_ID_RE, CHARACTER_ID_RE, SCENE_ID_RE, dialogueSeconds, omittable, parseDurationTolerance, type Beat } from "./script-contract";
 import { isRoomNoun, isSystemDisplayProp, isSystemDisplayScreenForbid, negativePoison } from "./keyframe-prompt";
 import { shotSecMax, shotSecMin } from "./frame-grid";
 
@@ -12,7 +12,12 @@ const CAST_PER_SHOT_MAX = 3; // 基建：Blender slot L/C/R 三位
 
 /** Each scene is held to its own share of the slate's clock; the shares are
  *  normalised before they get here, so holding every scene holds the film. */
-export const SCENE_BUDGET_TOLERANCE = 9; // 0927：budget band 唔再束縛（時鐘係真源），值放到唔約束
+/** §25 B（0928）：撤魔數 9（0927「放到唔約束」令場閘＝budget×10 完全冇牙
+ *  ——BOUP SC05 12.2s 對 budget 5s 過場閘、callsheet 先爆嘅實證）。同源
+ *  parseDurationTolerance（唔複製新 percent 標準）＝「規劃超額警報／修訂
+ *  入場」語義：超 band 拒收觸發 gap-retry 教學，唔係最終交貨許可，更唔係
+ *  所有場景永遠±呢個值嘅創作法。 */
+export const SCENE_BUDGET_TOLERANCE = parseDurationTolerance();
 
 /** The b5/b6 narrow-slot vocabularies, exported so the boards desk's pre-send
  *  self-check (padBoardDurations) repairs against the same enums zod gates. */

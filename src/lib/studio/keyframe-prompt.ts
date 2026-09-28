@@ -130,8 +130,11 @@ export function textRetryUser(shot: Shot, failReasons: string[]): string {
   });
 }
 
+/** §25（0928）：textRetrySchema 無 non-test consumer（§23 D 已撤 pipeline 入口）
+ *  ——死路記 inactive，唔復活 caller。自述 thinking 400 slice/max 同族撤除
+ *  （§25 只准撤自述 cap，唔藉此改 action 60 等另一契約）。 */
 export const textRetrySchema = z.object({
-  thinking: z.preprocess((v) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 400) : "改一句"), z.string().min(1).max(400)),
+  thinking: z.preprocess((v) => (typeof v === "string" && v.trim() ? v.trim() : "改一句"), z.string().min(1)),
   action: z.preprocess((v) => (typeof v === "string" ? v.trim().slice(0, 60) : v), z.string().min(1).max(60)),
 });
 
@@ -230,7 +233,7 @@ export function sceneRetryUser(shot: Shot, failReasons: string[]): string {
  *  by sceneRetryNormalize first; location must be a room noun; negatives stay
  *  behind the T29 poison gate. Shared by the pipeline call and the tests. */
 export const sceneRetrySchema = z.object({
-  thinking: z.string().min(1).max(400),
+  thinking: z.string().min(1), // §25 同族：自述欄 cap 撤，資源歸 token 層
   location: z.string().min(1).max(60),
   angle: omittable(z.enum(["eye", "high", "low"])),
   negatives: omittable(z.array(z.string().min(1).max(12)).min(1).max(6)),

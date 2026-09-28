@@ -167,32 +167,13 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
     return { ...shot, cast, props, durationSec: Math.max(durationSec, floor) };
   });
   if (typeof budgetSec === "number" && budgetSec > 0) {
-    const lo = budgetSec * (1 - SCENE_BUDGET_TOLERANCE);
     const hi = budgetSec * (1 + SCENE_BUDGET_TOLERANCE);
     const sum = shots.reduce((a, s) => a + (s.durationSec as number), 0);
+    // §25 B（0928）：撤「為貼 band 從尾鏡 while 機械扣秒」——程式只做不改語義
+    // 的格式處理，改時間＝改故事節奏，返責任席（場閘超 band 拒收→gap-retry
+    // 教學）。呢度淨留超額警報收據，唔郁任何 durationSec。
     if (sum > hi) {
-      // the 07JZ SC06 grave: cutting exactly sum - hi let tenth() round the
-      // cut shot back up (7 − 0.05 → 7), so the sum stayed 49.1 against a true
-      // hi of 49.05 (45 × 1.09) and zod's `runtime > hi` killed the scene.
-      // The lift leaves 0.05 under lo; the cut leaves the same 0.05 over hi
-      // and keeps cutting while the live sum still overshoots.
-      const liveSum = () => shots.reduce((a, s) => a + (s.durationSec as number), 0);
-      while (liveSum() > hi) {
-        const sumBefore = liveSum();
-        let extra = sumBefore - hi + 0.05;
-        for (let k = shots.length - 1; k >= 0 && extra > 0; k -= 1) {
-          const shot = shots[k]!;
-          const floor = TEXT_SHOT_SEC_MIN; // PROVENANCE_0927：時鐘唔鎖單鏡，鏡長可切到 H3 最短
-          const room = (shot.durationSec as number) - floor;
-          if (room <= 0) continue;
-          const cut = Math.min(room, extra);
-          const before = shot.durationSec as number;
-          shot.durationSec = tenth(before - cut);
-          extra -= cut;
-          repair(`repair: shots[${k}].durationSec saw ${before} became ${shot.durationSec} (sum cut toward band ${lo.toFixed(1)}–${hi.toFixed(1)})`);
-        }
-        if (liveSum() >= sumBefore) break; // nothing cuttable moved; zod reports the miss
-      }
+      repair(`repair: scene sum ${sum.toFixed(1)}s 超 band 上限 ${hi.toFixed(1)}s（budget ${budgetSec.toFixed(1)}s）——唔機械扣秒，交場閘拒收觸發修訂`);
     }
   }
   return { ...obj, shots };
@@ -305,8 +286,11 @@ export async function runBoards(
     io.index?.({ id: `boards:${scene.id}`, text: pass.value.shots.map((s) => s.action).join(" ") });
   }
 
-  const expanded = expandBoards({ script, boards, targetSec: declared, aspect: opts.aspect });
-  assertSheetGates(expanded, { script, targetSec: declared });
+  // §25 B（0928）：callsheet 閘基準＝brief 硬時長（opts.targetSec 用戶目標）；
+  // outline 分配合計（declared）具名分開傳入——唔靜靜用聲明合計替換用戶目標
+  //（BOUP 實證：brief 26s vs outline 26.33s 兩個數冇人分開報）。
+  const expanded = expandBoards({ script, boards, targetSec: opts.targetSec, aspect: opts.aspect });
+  assertSheetGates(expanded, { script, targetSec: opts.targetSec, declaredOutlineSec: declared });
   if (!opts.draftOnly) {
     receipts.push(...markPass(["boards", "global"], io.playbookDir, io.drama));
   }

@@ -147,7 +147,7 @@ export const worldSchema = z.object({
 });
 
 const outlineShape = z.object({
-  thinking: z.string().min(1).max(600),
+  thinking: z.string().min(1), // §25 同族（0928）：自述欄無物理 consumer 字元閘，資源歸 token 層
   title: z.string().min(1).max(40),
   logline: z.string().min(1).max(200),
   mood: z.string().min(1).max(80),
@@ -233,7 +233,7 @@ export function actionVerbGaps(actions: string[]): string[] {
 const sceneBeatsShape = (min: number) =>
   z.object({
     sceneId: z.string().regex(SCENE_ID_RE),
-    thinking: z.string().min(1).max(600),
+    thinking: z.string().min(1), // §25 同族（0928）：自述欄無物理 consumer 字元閘，資源歸 token 層
     beats: z.array(beatShape).min(min),
   });
 

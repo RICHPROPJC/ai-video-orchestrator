@@ -232,13 +232,18 @@ export function expandBoards(opts: {
 }
 
 /** Sheet-level gates the per-scene schema cannot see. Throwing here means the
- *  seats have to go again; it never edits the sheet into range. */
-export function assertSheetGates(sheet: CallSheet, opts: { script: Script; targetSec: number }): void {
+ *  seats have to go again; it never edits the sheet into range.
+ *  §25 B（0928）：閘基準＝targetSec（brief 硬時長／用戶目標）；declaredOutlineSec
+ *  （outline 分配合計）具名分開——兩個數唔同時錯誤訊息並列，唔靜靜合併。 */
+export function assertSheetGates(sheet: CallSheet, opts: { script: Script; targetSec: number; declaredOutlineSec?: number }): void {
   const sum = sheet.shots.reduce((a, s) => a + s.durationSec, 0);
   const lo = opts.targetSec * (1 - DURATION_TOLERANCE);
   const hi = opts.targetSec * (1 + DURATION_TOLERANCE);
   if (sum < lo || sum > hi) {
-    throw new Error(`callsheet runs ${sum.toFixed(1)}s; the slate wants ${opts.targetSec}s (allowed ${lo.toFixed(0)}–${hi.toFixed(0)}s)`);
+    const declared = opts.declaredOutlineSec !== undefined && Math.abs(opts.declaredOutlineSec - opts.targetSec) > 1e-6
+      ? `；outline 分配合計 ${opts.declaredOutlineSec.toFixed(1)}s（聲明值，另計）`
+      : "";
+    throw new Error(`callsheet runs ${sum.toFixed(1)}s; brief 硬時長 ${opts.targetSec}s (allowed ${lo.toFixed(0)}–${hi.toFixed(0)}s)${declared}`);
   }
   const covered = new Set(sheet.shots.flatMap((s) => s.beatIds ?? [s.beatId])); // P1 多對多覆蓋
   for (const scene of opts.script.scenes) {
