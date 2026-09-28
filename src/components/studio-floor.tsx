@@ -107,6 +107,8 @@ export function StudioFloor({
   const [logFilter, setLogFilter] = useState<"tail" | "key" | "all">("tail");
   /** P33：手機左抽屜（同一個項目列表；入口常駐 header，唔藏頁底）。 */
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /** Chau 0928 追加：側欄可收埋——唔係死嘅左欄；收埋後工作區全闊（幼 rail 掣展開）。 */
+  const [railOpen, setRailOpen] = useState(true);
 
   const probeNow = useCallback(() => {
     setProbingFleet(true);
@@ -259,13 +261,27 @@ export function StudioFloor({
         </div>
       ) : null}
 
-      <main className="mx-auto grid max-w-[1400px] gap-4 px-4 py-6 md:px-8 lg:grid-cols-[340px_minmax(0,1fr)]">
+      <main
+        className={cn(
+          "mx-auto grid max-w-[1400px] gap-4 px-4 py-6 md:px-8",
+          railOpen ? "lg:grid-cols-[340px_minmax(0,1fr)]" : "lg:grid-cols-[2.5rem_minmax(0,1fr)]",
+        )}
+      >
         {/* Chau 0928（臃腫回報）：版面分返層——左邊淨係項目列表，右邊項目表。
             開新 slate／機隊 rack 收 details，唔再成欄霸住。 */}
-        <section className="order-2 w-full space-y-3 lg:order-1">
+        <section className={cn("order-2 lg:order-1", railOpen ? "hidden space-y-3 lg:block" : "hidden w-full flex-col items-center pt-3 lg:flex")}>
+          {railOpen ? (
+            <>
           <Card>
-            <CardHeader className="border-b">
+            <CardHeader className="flex flex-row items-center justify-between border-b">
               <CardTitle>項目</CardTitle>
+              <button
+                type="button"
+                className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                onClick={() => setRailOpen(false)}
+              >
+                « 收埋
+              </button>
             </CardHeader>
             {/* P33：左列表＝主要入口；列表自己捲（max-h），顯示狀態／進度／阻塞原因＋續做。 */}
             <CardContent className="max-h-[70vh] overflow-y-auto">
@@ -458,6 +474,17 @@ export function StudioFloor({
           </Card>
             </div>
           </details>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="w-full rounded border border-border py-3 text-xs text-muted-foreground hover:border-primary hover:text-primary"
+              onClick={() => setRailOpen(true)}
+              aria-label="展開項目列表"
+            >
+              »<span className="ml-1">項目</span>
+            </button>
+          )}
         </section>
 
         <section className="order-1 min-w-0 space-y-4 lg:order-2">
