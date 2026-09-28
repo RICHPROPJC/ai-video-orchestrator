@@ -94,18 +94,19 @@ export function SessionPanel({ jobId }: { jobId: string }) {
         setText("");
         setFailedReq("");
         const replyNote = !res.reply
-          ? " —— 未有回覆文字（等 consumer）"
+          ? " —— 回覆未生成"
           : "error" in res.reply
-            ? ` —— ask 回覆未有：${res.reply.error}`
+            ? ` —— 回覆未有：${res.reply.error}`
             : "";
         const replyText = res.reply && !("error" in res.reply) ? res.reply.text : "";
+        const replyTag = res.reply && !("error" in res.reply) && res.reply.replySource === "job-facts-fallback" ? "（狀態摘要——模型回覆未取得）" : "";
         setNote(
           `${STATUS_NOTE[res.status] ?? res.status}` +
             (res.queued ? ` · ${res.queued}` : "") +
             (res.adoption ? ` · 採納 ${res.adoption.adoptedRef}@r${res.adoption.revision}（${res.adoption.affectedScope}）` : "") +
             (res.blockedReason ? ` · ${res.blockedReason}` : "") +
             replyNote +
-            (replyText ? `｜答：${replyText}${res.reply && !("error" in res.reply) && res.reply.replySource === "job-facts-fallback" ? "（自動回覆）" : ""}` : ""),
+            (replyText ? `｜答：${replyText}${replyTag}` : ""),
         );
         reload();
       })
@@ -135,7 +136,7 @@ export function SessionPanel({ jobId }: { jobId: string }) {
             <p key={t.turnId} className={t.role === "user" ? "text-foreground" : "text-muted-foreground"}>
               <span className="font-mono text-[10px] opacity-70">
                 {t.at ? `${t.at.slice(11, 16)} ` : ""}
-                {t.role === "user" ? "你" : `答${t.replySource === "job-facts-fallback" ? "（自動回覆）" : t.replySource === "seat" ? "（席）" : ""}`} · {STATUS_NOTE[t.status] ?? t.status}
+                {t.role === "user" ? "你" : `答${t.replySource === "job-facts-fallback" ? "（狀態摘要——模型回覆未取得）" : t.replySource === "seat" ? "（席答）" : ""}`} · {STATUS_NOTE[t.status] ?? t.status}
                 {t.adoptedRef ? ` · ${t.adoptedRef}` : ""}
                 {t.blockedReason ? ` · ${t.blockedReason}` : ""}
               </span>
@@ -153,7 +154,7 @@ export function SessionPanel({ jobId }: { jobId: string }) {
           aria-label="意圖"
         >
           <option value="ask">問（淨答）</option>
-          <option value="revise">改（入修訂流程）</option>
+          <option value="revise">改（要求修改）</option>
         </select>
         <input
           value={text}
