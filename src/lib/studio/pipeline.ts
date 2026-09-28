@@ -89,7 +89,7 @@ import {
   shotsForScene,
   hopGeometrySheet,
   describeFloor,
-  type Ctx, setActiveOwner, depStampOf, GAP_BUDGET } from "./pipeline/shared";
+  type Ctx, setActiveOwner, depStampOf, GAP_BUDGET, stableJson } from "./pipeline/shared";
 export {
   anglePortraitsFor,
   uncutIdentityFiles,
@@ -921,11 +921,11 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // 故事時長猜——§29 原文）；blocked 段唔入收據（events 已具名）。
     const editReceipts: {
       id: string; shots: string[];
-      source: { file: string; sha256: string; wholeFile: true; inOut: [number, number | null] };
-      destination: { inOut: [number, number | null] };
+      source: { file: string; sha256: string; muxMode: string; sourceDurSec: number | null; muxedDurSec: number | null; inOut: [number, number | null]; note: string };
+      destination: { inOut: [number | null, number | null] };
       wav: string;
     }[] = [];
-    let destCursor = 0;
+    let destCursor: number | null = 0;
     for (const t of muxTargets) {
       const mp4 = shotVideos.find((v) => path.basename(v, ".mp4") === t.id)
         ?? path.join(motionDir, `${t.id}.mp4`);
@@ -950,33 +950,50 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       if (marked?.frames) await padH3Wav(wav, clockWav, marked.frames);
       const out = path.join(motionDir, `${t.id}.muxed.mp4`);
       await ffmpeg(muxArgs(mp4, clockWav, out));
-      // §29-3：實際時長 ffprobe（probe 唔到＝null 明示，唔捏造）；dest in/out
-      // 按已 mux 段實際累計（concat 序）。
-      const dur = await mediaSeconds(out).catch(() => null);
+      // §29-3（GPT-6 review 修正 0928）：source in/out 用 source 檔本身實測時長
+      // （唔係 muxed 檔）；muxArgs 用 -shortest＝實際使用終點 ≤ muxed 實測時長
+      // （聲軌短會截）——報晒兩個實測值＋muxMode 明示，唔固定聲稱整片使用；
+      // probe 唔到＝null 明示，dest 累計遇 null 傳導到後段全部 null（前段未知
+      // 就後段位置都未知，唔猜）。
+      const srcDur = await mediaSeconds(mp4).catch(() => null);
+      const muxedDur = await mediaSeconds(out).catch(() => null);
+      const destIn = destCursor === null ? null : Number(destCursor.toFixed(3));
+      const destOut = destCursor === null || muxedDur === null
+        ? null
+        : Number((destCursor + muxedDur).toFixed(3));
       editReceipts.push({
         id: t.id,
         shots: t.shots,
         source: {
           file: path.basename(mp4),
           sha256: createHash("sha256").update(fs.readFileSync(mp4)).digest("hex"),
-          wholeFile: true,
-          inOut: [0, dur],
+          muxMode: "ffmpeg-shortest",
+          sourceDurSec: srcDur,
+          muxedDurSec: muxedDur,
+          inOut: [0, srcDur],
+          note: "-shortest 下實際使用終點 ≤ muxedDurSec（聲軌較短會截）；精確 trim 點要剪接層明示，唔由本收據猜",
         },
-        destination: { inOut: [Number(destCursor.toFixed(3)), dur === null ? null : Number((destCursor + dur).toFixed(3))] },
+        destination: { inOut: [destIn, destOut] },
         wav: path.basename(clockWav),
       });
-      if (dur !== null) destCursor += dur;
+      destCursor = destCursor === null || muxedDur === null ? null : destCursor + muxedDur;
       muxed.push(out);
     }
-    fs.writeFileSync(jobFile(jobId, "delivery", "edit-receipts.json"), JSON.stringify({
-      callsheetDigest: ctx.callsheetDigest ?? null,
-      cutOrder: cut,
-      segments: editReceipts,
-    }, null, 2));
     const muxList = jobFile(jobId, "motion", "mux-list.txt");
     fs.writeFileSync(muxList, muxed.map((v) => `file '${v.replaceAll("'", "'\\''")}'`).join("\n"));
     const pictureLock = jobFile(jobId, "delivery", "picture-lock.mp4");
     await ffmpeg(concatCopyArgs(muxList, pictureLock));
+    // §29-3（review 修正）：edit-receipts 喺 concat 成功後先寫（concat throw＝
+    // 零收據＝「concat 未完成」與「實際交付」天然分開）；頂層綁真 cut digest
+    // （cutOrder＋段組成 stableJson——唔用 callsheetDigest 冒充 cut 內容版本）
+    // ＋交付路徑明示。
+    fs.writeFileSync(jobFile(jobId, "delivery", "edit-receipts.json"), JSON.stringify({
+      cutDigest: stableJson({ cutOrder: cut, segments: editReceipts.map((r) => ({ id: r.id, shots: r.shots, wav: r.wav })) }).slice(0, 16),
+      callsheetDigest: ctx.callsheetDigest ?? null,
+      cutOrder: cut,
+      delivery: { pictureLock: "delivery/picture-lock.mp4", outcome: "concat-delivered" },
+      segments: editReceipts,
+    }, null, 2));
 
     const markGeometry = localPictureQc({
       stills: ctx.stills,
