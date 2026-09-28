@@ -442,19 +442,28 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   // nfe——on_off_grid 語義：sigma 唔喺 trained boundary 就 error）。
   const pdd8 = opts.route?.kind === "pdd-8step";
   if (pdd8) {
-    // §P36 root 相撞裁決（0928 磁碟核）：object_info combo 係靜態註冊≠檔在。
-    // node1 models/pdd_acc/ 淨 fl2va 款——Ref2VA-Acc-8Step 磁碟缺；fl2va 檔
-    // 落 ref2va UNET＝partition_check「applies cleanly, renders silently
-    // wrong」＝唔可以攝位。ref2va base 上 PDD-8step 而家冇合法 patch 檔
-    // →blocked（檔補返改 config.pddAccFile 即通）。
-    if ((opts.models.pddAccFile ?? "MiniMax-H3-Ref2VA-Acc-8Step.safetensors").startsWith("MiniMax-H3-Ref2VA")) {
-      throw new Error("h3_route_blocked: pdd-8step ref2va patch 檔磁碟缺（node1 models/pdd_acc/ 實核 0928 淨 fl2va 款；combo 註冊≠檔在）；fl2va 檔錯配 ref2va UNET 會 silently wrong 唔可用——補 Ref2VA-Acc-8Step 檔後經 config.pddAccFile 解鎖");
+    // §P36 README 實讀（0928，golden pdd_acc_t2v_basic.json 對返）：PDD 路＝
+    // loader→SigmaShift(12/3)→PDDAccApply——**零 LoraStack**（README：distills
+    // don't stack，Remove turbo 等 LoRA）；sigmas 由 Apply 嘅 sigmas output 出
+    // （PDDAccScheduler 係 standalone partial-denoise 場合，唔係呢度）。
+    // 檔缺守衛（root 相撞裁決）：ref2va 款 combo 名磁碟缺；hybrid trunk
+    // （fl2va+ref2va block merge）配 fl2va 檔＝README off-label 路（fully
+    // applies＋warning informational）——config 指 fl2va 檔＋fl2va/hybrid
+    // UNET 時守衛唔擋（trunk 配對由 partition_check 把關）。
+    const pddFile = opts.models.pddAccFile ?? "MiniMax-H3-Ref2VA-Acc-8Step.safetensors";
+    const refPairMissing = pddFile.startsWith("MiniMax-H3-Ref2VA");
+    if (refPairMissing) {
+      throw new Error("h3_route_blocked: pdd-8step ref2va patch 檔磁碟缺（node1 models/pdd_acc/ 實核淨 fl2va 款；combo 註冊≠檔在）；補 Ref2VA 檔、或 config.pddAccFile 指 fl2va 款配 fl2va/hybrid UNET（README off-label 路由 partition_check 把關）");
     }
+    g.sigma_pdd = {
+      class_type: "MiniMaxH3SigmaShift",
+      inputs: { model: ["ref2va", 0], shift_video: SIGMA_VIDEO, shift_audio: SIGMA_AUDIO },
+    };
     g.pdd_apply = {
       class_type: "MiniMaxH3PDDAccApply",
       inputs: {
-        model: ["sigma_lora_a", 0],
-        pdd_file: opts.models.pddAccFile ?? "MiniMax-H3-Ref2VA-Acc-8Step.safetensors",
+        model: ["sigma_pdd", 0],
+        pdd_file: pddFile,
         nfe: "8",
         lora_strength: 1.0,
         head_strength: 1.0,
@@ -616,11 +625,12 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   g.noise_a = { class_type: "RandomNoise", inputs: { noise_seed: opts.seed } };
   g.sampler_sel = { class_type: "KSamplerSelect", inputs: { sampler_name: SAMPLER } };
   g.sched_a = {
-    class_type: pdd8 ? "MiniMaxH3PDDAccScheduler" : "BasicScheduler",
-    inputs: pdd8
-      ? { nfe: "8", denoise: 1.0 }
-      : { model: modelA, scheduler: SCHEDULER, steps: opts.steps, denoise: 1.0 },
+    class_type: "BasicScheduler",
+    inputs: { model: modelA, scheduler: SCHEDULER, steps: opts.steps, denoise: 1.0 },
   };
+  // §P36 README：PDD 路 sigmas＝Apply 嘅 sigmas output（trained boundaries），
+  // 唔另駁 scheduler
+  const sigmasSrc: [string, number] = pdd8 ? ["pdd_apply", 1] : ["sched_a", 0];
   g.guider_a = { class_type: "BasicGuider", inputs: { model: modelOut, conditioning: condOut } };
   g.samp_a = {
     class_type: "SamplerCustomAdvanced",
@@ -628,7 +638,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       noise: ["noise_a", 0],
       guider: ["guider_a", 0],
       sampler: ["sampler_sel", 0],
-      sigmas: ["sched_a", 0],
+      sigmas: sigmasSrc,
       latent_image: ["r2v", 1],
     },
   };
@@ -642,7 +652,7 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
         learned_model: "h3_clean_latent_upscaler_film_epoch200.safetensors",
         model: modelOut,
         noise: ["noise_a", 0],
-        sigmas: ["sched_a", 0],
+        sigmas: sigmasSrc,
         audio_denoise: 0.0,
         noise_resample: "independent",
       },
