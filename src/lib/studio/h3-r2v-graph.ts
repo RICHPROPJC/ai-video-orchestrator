@@ -442,6 +442,14 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   // nfe——on_off_grid 語義：sigma 唔喺 trained boundary 就 error）。
   const pdd8 = opts.route?.kind === "pdd-8step";
   if (pdd8) {
+    // §P36 root 相撞裁決（0928 磁碟核）：object_info combo 係靜態註冊≠檔在。
+    // node1 models/pdd_acc/ 淨 fl2va 款——Ref2VA-Acc-8Step 磁碟缺；fl2va 檔
+    // 落 ref2va UNET＝partition_check「applies cleanly, renders silently
+    // wrong」＝唔可以攝位。ref2va base 上 PDD-8step 而家冇合法 patch 檔
+    // →blocked（檔補返改 config.pddAccFile 即通）。
+    if ((opts.models.pddAccFile ?? "MiniMax-H3-Ref2VA-Acc-8Step.safetensors").startsWith("MiniMax-H3-Ref2VA")) {
+      throw new Error("h3_route_blocked: pdd-8step ref2va patch 檔磁碟缺（node1 models/pdd_acc/ 實核 0928 淨 fl2va 款；combo 註冊≠檔在）；fl2va 檔錯配 ref2va UNET 會 silently wrong 唔可用——補 Ref2VA-Acc-8Step 檔後經 config.pddAccFile 解鎖");
+    }
     g.pdd_apply = {
       class_type: "MiniMaxH3PDDAccApply",
       inputs: {
