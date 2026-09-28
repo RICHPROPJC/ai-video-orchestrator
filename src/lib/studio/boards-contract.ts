@@ -130,7 +130,11 @@ const boardShotShape = z.object({
 
 const boardsSceneShape = z.object({
   sceneId: z.string().regex(SCENE_ID_RE),
-  thinking: z.string().min(1).max(400),
+  // §19 同族補掃（BOUP r3 實證 0928）：thinking 係內容欄（模型自述思路），
+  // 400 字 cap＝拆剩漏網——SC01-07 每場 attempt 1 全死「Too big: <=400」再
+  // 重試（多一輪 LLM call＋抖時）。原地拆 cap：min(1) 保留（非空），總輸出
+  // 資源由 crew-llm aggregate token 層承接（同 creative.ts word/dialogue 先例）。
+  thinking: z.string().min(1),
   shots: z.array(boardShotShape).min(1),
   /** §12 優先2：聲畫採用判斷（生成前計劃語義）——導演 dialoguePlacements/
    *  onImage 點喺本場畫面落地。每條：placement 指認→落鏡→安排＋理由；
