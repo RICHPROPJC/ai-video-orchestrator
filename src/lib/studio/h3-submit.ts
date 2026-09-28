@@ -23,6 +23,10 @@ export type H3SubmitReceipt = {
   keyframes?: { positions: string; fusion: "same-entry" | "conditioning-combined" | "keyframes-only" };
   /** §P34 P1：native latent 升階實況（未開＝冇欄；開＝節點+learned model） */
   nativeUpscale?: { node: "MiniMaxH3LatentUpscaleCombined"; learnedModel: string };
+  /** §P34 §5 收據分層：planned＝dry-run（graph 構造齊零執行）；executed＝
+   *  live poll 完有 output。graph-connected 由 graph 欄完整 JSON 本身證；
+   *  QC 屬下游另有收據——本欄唔冒充 QC PASS。 */
+  executionPhase: "planned" | "executed";
   /** §5b form of a variant-a submit: "c" = Video 1 present (zero keyframes,
    *  ref_image_0 = angle portrait); "a" = still-to-video keyframes lane;
    *  "ms" = standalone multishot (MULTISHOT_WIRE_0921). null on the b/bkf/c
@@ -445,6 +449,7 @@ export async function submitH3Shot(opts: {
     });
     const receipt: H3SubmitReceipt = {
       dry_run: true,
+      executionPhase: "planned",
       shot: opts.shot ?? null,
       graph_variant: variant,
       route: { ...route, derived: opts.route ? false : true },
@@ -587,6 +592,7 @@ export async function submitH3Shot(opts: {
   const outputMedia = await ffprobeMedia(opts.outMp4);
   const receipt: H3SubmitReceipt = {
     dry_run: false,
+    executionPhase: "executed",
     shot: opts.shot ?? null,
     graph_variant: variant,
     route: { ...route, derived: opts.route ? false : true },
