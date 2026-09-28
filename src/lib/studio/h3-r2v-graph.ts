@@ -409,14 +409,14 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   // route 加 base 參數——FL-PDD8＝fl2va base＋PDD Apply fl2va 款同一 recipe。
   const fl2vaBase = opts.route?.kind === "fl2va" || (opts.route?.kind === "pdd-8step" && (opts.route as { base?: string }).base === "fl2va");
   const fl2vaRoute = fl2vaBase; // I2V cond/latent 路條件（R8 命名維持）
+  const pdd8Route = opts.route?.kind === "pdd-8step"; // R9：PDD 零 LoraStack（README）
   const g: ComfyGraph = {
     clip: { class_type: "H3ClipLoaderAny", inputs: { clip_name: m.textEncoder, type: m.encoderType } },
     vvae: { class_type: "VAELoader", inputs: { vae_name: m.videoVae } },
     avae: { class_type: "VAELoader", inputs: { vae_name: m.audioVae } },
-    ref2va: { class_type: "H3ModelLoaderAny", inputs: { model_name: m.ref2va } },
-    // R8（0928）：fl2va route 真 loader——I2V node（ComfyUI 核心，源碼證
-    // conditioning+latent 產生器同構 r2v）造 cond/latent，model chain 由呢度
-    // 起行同款 turbo/sigma 鏈。非 fl2va route 冇 consumer 唔建（P34 P0 紀律）。
+    // R9 孤 node 清理：ref2va loader 淨非 fl2vaBase 起（fl2vaBase 冇 consumer）；
+    // fl2va loader 淨 fl2vaBase 起——「定義 loader＝已用」紀律兩邊一致。
+    ...(!fl2vaBase ? { ref2va: { class_type: "H3ModelLoaderAny", inputs: { model_name: m.ref2va } } } : {}),
     ...(fl2vaRoute ? { fl2va: { class_type: "H3ModelLoaderAny", inputs: { model_name: m.fl2va ?? (() => { throw new Error("h3_route_blocked: fl2va route 要 config.motion.fl2va（fl2va UNET 檔名）——而家 null"); })() } } } : {}),
     split: { class_type: "H3EpisodeSplit", inputs: { script: opts.script, bindings: opts.bindings } },
   };
@@ -429,6 +429,8 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   if (fl2vaRoute && hasVideo1) {
     throw new Error("h3_route_blocked: fl2va route 唔支援 Video1 走位片（MiniMaxH3ImageToVideo 冇 ref_videos 輸入——fl2va 本身 not trained with reference rows）；要 Video1 用 ref2va route");
   }
+  // R9：PDD 路零 LoraStack（README distills don't stack）——turbo 鏈淨非 pdd8
+  if (!pdd8Route)
   for (const [tag, loader] of [["lora_a", fl2vaRoute ? "fl2va" : "ref2va"]] as const) {
     if (turbo4) {
       g[`fbc_${loader}`] = {
@@ -671,7 +673,9 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
   }
   g.noise_a = { class_type: "RandomNoise", inputs: { noise_seed: opts.seed } };
   g.sampler_sel = { class_type: "KSamplerSelect", inputs: { sampler_name: SAMPLER } };
-  g.sched_a = {
+  // R9：PDD 路 sigmas＝Apply output（下行 sigmasSrc）——BasicScheduler 唔起
+  //（pdd8 冇 lora 鏈，sched_a 引 sigma_lora_a 會係壞引用俾 ComfyUI 拒）
+  if (!pdd8Route) g.sched_a = {
     class_type: "BasicScheduler",
     inputs: { model: modelA, scheduler: SCHEDULER, steps: opts.steps, denoise: 1.0 },
   };
