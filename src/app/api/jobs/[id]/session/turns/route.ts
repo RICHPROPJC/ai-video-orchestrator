@@ -39,6 +39,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       dependsOn: { callsheetDigest: (job as { callsheetDigest?: string }).callsheetDigest ?? null },
       blockedReason: `活躍執行者（heartbeat ${ms}ms 前）——turn 已持久排隊，owner 安全點採納（A4 consumer 未接：狀態如實，唔顯示執行中）`,
     });
+    queueReviseTurn(id, turn.turnId); // root 競態修①：owner 都要入 queue——owner 過咗 author 段嘅 turn 由下一 run 撿
     return NextResponse.json({ turnId: turn.turnId, at: turn.at, status: "queued-behind-owner", dependsOn: turn.dependsOn });
   }
 

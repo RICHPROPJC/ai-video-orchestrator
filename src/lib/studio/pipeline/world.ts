@@ -408,13 +408,10 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     }, null, 2));
     // §9⑥：本輪凍結 expected revision（mux 三比用；行內回修重寫收據時更新）
     ctx.callsheetDigest = sheetDigest(ctx.locked!);
-    // §P33 A4（0928）：world 安全點——callsheetDigest 凍結後核對佇列 revise
-    // turn 綁嘅 digest（唔夾＝stale 具名 blocked；呢層唔採納——採納喺 author
-    // 修訂輪，呢度淨標 stale 唔俾舊 turn 靜靚食）
-    {
-      const { stale } = reviseTurnTextsOf(jobId, ctx.callsheetDigest ?? null);
-      if (stale.length) completeAdoptedTurns(jobId, [], stale);
-    }
+    // §P33 A4（root 競態修②撤 blanket-block）：owner 過 author 段後入隊嘅正當
+    // turn 綁舊 digest＝會被誤標 blocked。stale 判斷留 author 採納輪（該輪
+    // 有本輪修訂語境）；呢度淨留 diagnostic emit 唔改 turn 狀態。
+    void reviseTurnTextsOf; void completeAdoptedTurns;
     const overs = rows.filter((r) => r.overflowSec);
     if (overs.length) {
       await speak("voice", `音軌回填：${overs.length} 句 take 長過事件窗口（${overs.map((o) => `${o.beatId}+${o.overflowSec}s`).join("、")}）——切片會截尾，見 creative/audio-timeline.json。`, "warn");
@@ -455,13 +452,10 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       events: [],
     }, null, 2));
     ctx.callsheetDigest = sheetDigest(ctx.locked!);
-    // §P33 A4（0928）：world 安全點——callsheetDigest 凍結後核對佇列 revise
-    // turn 綁嘅 digest（唔夾＝stale 具名 blocked；呢層唔採納——採納喺 author
-    // 修訂輪，呢度淨標 stale 唔俾舊 turn 靜靚食）
-    {
-      const { stale } = reviseTurnTextsOf(jobId, ctx.callsheetDigest ?? null);
-      if (stale.length) completeAdoptedTurns(jobId, [], stale);
-    }
+    // §P33 A4（root 競態修②撤 blanket-block）：owner 過 author 段後入隊嘅正當
+    // turn 綁舊 digest＝會被誤標 blocked。stale 判斷留 author 採納輪（該輪
+    // 有本輪修訂語境）；呢度淨留 diagnostic emit 唔改 turn 狀態。
+    void reviseTurnTextsOf; void completeAdoptedTurns;
   }
   const plugged = eventTakes ? eventTakes.perShot : await plugShotWavs({
         boards: ctx.continuity!.boards,

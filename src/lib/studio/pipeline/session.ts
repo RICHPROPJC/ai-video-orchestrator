@@ -55,8 +55,13 @@ export function readSession(jobId: string): SlateSession {
         /* 壞行跳過——jsonl append 單行原子，壞行＝歷史證據問題唔靜靚剷 */
       }
     }
-    if (turns.length) createdAt = turns[0]!.at;
-    return { sessionId, jobId, createdAt, turns };
+    // root 競態修④（並行寫入）：status 更新以 append 補償行表達（同一
+    // turnId 多行＝last-wins）——讀側 dedupe；歷史行原樣保留（證據不覆寫）
+    const byId = new Map<string, SessionTurn>();
+    for (const t of turns) byId.set(t.turnId, t);
+    const dedup = [...byId.values()];
+    if (dedup.length) createdAt = dedup.find((t) => t.role === "user")?.at ?? dedup[0]!.at;
+    return { sessionId, jobId, createdAt, turns: dedup };
   }
   // 舊 job 無聊天：照開 session（identity 持久）＋missingHistory 具名
   return { sessionId, jobId, createdAt, turns, missingHistory: "no-prior-chat" };
@@ -114,17 +119,21 @@ export function reviseTurnTextsOf(jobId: string, callsheetDigest: string | null 
 }
 
 export function completeAdoptedTurns(jobId: string, adopted: { turnId: string; adoptedRef: string; revision: string; affectedScope: string }[], staleOut: { turnId: string; reason: string }[]): void {
+  // root 競態修③④：①status 更新＝append 補償行（readSession last-wins），
+  // 唔重寫全檔——同時併行 append 嘅新 turn 唔會被吞，歷史行原樣保留；
+  // ②清 queue 淨清本輪處理嘅 turnId——採納快照之後先入隊嘅後到 turn
+  // 保留落下一輪（凍結批次），唔 blanket 清空。
   const session = readSession(jobId);
-  const file = sessionFile(jobId);
-  const lines = session.turns.map((t) => {
+  const comp: string[] = [];
+  for (const t of session.turns) {
     const hit = adopted.find((a) => a.turnId === t.turnId);
-    if (hit) return JSON.stringify({ ...t, status: "adopted" as const, adoption: { adoptedRef: hit.adoptedRef, revision: hit.revision, affectedScope: hit.affectedScope } });
+    if (hit) comp.push(JSON.stringify({ ...t, status: "adopted" as const, adoption: { adoptedRef: hit.adoptedRef, revision: hit.revision, affectedScope: hit.affectedScope } }));
     const st = staleOut.find((a) => a.turnId === t.turnId);
-    if (st) return JSON.stringify({ ...t, status: "blocked" as const, blockedReason: st.reason });
-    return JSON.stringify(t);
-  });
-  fs.writeFileSync(file, lines.join("\n") + "\n");
+    if (st) comp.push(JSON.stringify({ ...t, status: "blocked" as const, blockedReason: st.reason }));
+  }
+  if (comp.length) fs.appendFileSync(sessionFile(jobId), comp.join("\n") + "\n");
   const { readJob, writeJob } = require("../store") as typeof import("../store");
   const job = readJob(jobId);
-  if (job) writeJob({ ...job, pendingReviseTurns: [] });
+  const processed = [...adopted.map((a) => a.turnId), ...staleOut.map((a) => a.turnId)];
+  if (job) writeJob({ ...job, pendingReviseTurns: (job.pendingReviseTurns ?? []).filter((id) => !processed.includes(id)) });
 }
