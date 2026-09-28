@@ -11,11 +11,20 @@ import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreat
  *  （id＝候選 frozen key U01…＝candidateIdx+1，綁 mdSha——同一 script.md
  *  bytes 永遠同編號）。beats 席 packet 帶呢份；beat.utteranceIds 引用；
  *  deriveAudioEvents 行 per-utterance 事件路。 */
-const utteranceListOf = (scriptMd: string): { utteranceId: string; rawText: string }[] =>
-  generateUtteranceCandidates(scriptMd).candidates.map((c, i) => ({
-    utteranceId: `U${String(i + 1).padStart(2, "0")}`,
-    rawText: c.rawText,
-  }));
+const utteranceListOf = (scriptMd: string): { mdSha: string; list: { utteranceId: string; rawText: string }[] } => {
+  const cand = generateUtteranceCandidates(scriptMd);
+  return {
+    mdSha: cand.mdSha,
+    list: cand.candidates.map((c, i) => ({
+      utteranceId: `U${String(i + 1).padStart(2, "0")}`,
+      rawText: c.rawText,
+    })),
+  };
+};
+/** G1 批三：utterancesDigest＝sha256(stableJson(list))——§32 律：digest 用
+ *  hash 唔用 JSON 前綴 slice。 */
+const utterancesDigestOf = (list: { utteranceId: string; rawText: string }[]): string =>
+  createHash("sha256").update(stableJson(list)).digest("hex").slice(0, 16);
 import type { DirectorSkeleton } from "../seat-boards";
 import { runBoards } from "../seat-boards";
 import { jobDir, jobFile, seatsDir } from "../paths";
@@ -28,7 +37,7 @@ import { open, packetLine, seal } from "../dispatch";
 import { gapEvent, gapMessage, storyboardZeroGap } from "../capability-gap";
 import type { AgentId, CallSheet, ProduceInput } from "../types";
 import type { SlateConfig } from "../config";
-import { GAP_BUDGET, SHEET_REPAIR_BUDGET, patch, type Ctx } from "./shared";
+import { GAP_BUDGET, SHEET_REPAIR_BUDGET, patch, type Ctx, stableJson } from "./shared";
 import { reviseTurnTextsOf, completeAdoptedTurns, currentCallsheetDigestState } from "./session";
 
 /** Speaking parts must be castable, so the roster is read from a data file the
@@ -53,6 +62,8 @@ async function authorCallSheet(
   input: ProduceInput,
   cfg: SlateConfig,
   io: SeatVoice,
+  /** G1 批三：utterance 版本收據回報（authorStage 寫 ctx——world 落盤用） */
+  onUtteranceProvenance?: (p: { scriptMdSha: string; planSha: string; utterancesDigest: string; list: { utteranceId: string; rawText: string }[] }) => void,
 ): Promise<CallSheet> {
   const existing = path.join(jobDir(jobId), "callsheet.json");
   // §7②（0928）：回修路徑——placementGaps 有積留＝唔照食 callsheet，帶差距
@@ -220,6 +231,8 @@ async function authorCallSheet(
   // G1 批二：typed utterance 落位清單（候選 frozen key）——creative 段或
   // resume 磁碟重建；MV/非故事流冇＝undefined（beats 走 legacy 字串路）
   let typedUtteranceList: { utteranceId: string; rawText: string }[] | undefined;
+  // G1 批三：版本收據三元（list 本身入 ctx.utteranceProvenance 由 world 收）
+  let typedUtteranceProvenance: { scriptMdSha: string; planSha: string; utterancesDigest: string } | undefined;
   const skeletonOf = (plan: {
     vision?: unknown; rhythmMap?: { beatId: string; label?: string; job?: string; rhythm?: string; deletionLoss?: string }[];
     shots?: { shotId: string; startSec?: number; endSec?: number; purpose?: string; audienceEye?: string; cutReason?: string; dialogue?: string; frame?: string }[];
@@ -314,9 +327,12 @@ async function authorCallSheet(
         { crew: cfg.crew, model: cfg.crew.directorModel ?? "", receiptDir, fallbackModel: cfg.crew.secondFallback },
       );
       scriptDialogueLines = dialogueSignalsOf(script).map((d) => d.line);
-      // G1 批二：候選表 frozen 清單（beats 引用空間）——resume 由磁碟 script.md
-      // 同一 mdSha 重建（下面 else 分支）
-      typedUtteranceList = utteranceListOf(script.script_md);
+      // G1 批二＋批三：候選表 frozen 清單（beats 引用空間）＋版本收據
+      // （scriptMdSha 綁 bytes；planSha＝本輪 director plan；utterancesDigest
+      // ＝stableJson hash——world 落盤 dependsOn 四元用）
+      const candNow = utteranceListOf(script.script_md);
+      typedUtteranceList = candNow.list;
+      typedUtteranceProvenance = { scriptMdSha: candNow.mdSha, planSha: planSha.slice(0, 16), utterancesDigest: utterancesDigestOf(candNow.list) };
       fs.writeFileSync(path.join(creativeDir, "script.md"), script.script_md);
       fs.writeFileSync(path.join(creativeDir, "script.json"), JSON.stringify(script, null, 2));
       // §6：script dependsOn plan（上游 sha），同 plan 同鏈
@@ -415,9 +431,21 @@ async function authorCallSheet(
 ${plan.treatment}`;
     }
   } else {
-    // G1 批二：resume 由磁碟 script.md 重建候選清單（同 mdSha 同編號）
+    // G1 批二＋批三：resume 由磁碟 script.md 重建候選清單（同 mdSha 同編號）
+    // ＋版本收據（planSha＝manifest entries director-plan.json sha——已載入
+    // 來源，唔讀磁碟最新 manifest；缺 entry＝source-unknown 具名）
     const scriptMdDisk = path.join(creativeDir, "script.md");
-    if (fs.existsSync(scriptMdDisk)) typedUtteranceList = utteranceListOf(fs.readFileSync(scriptMdDisk, "utf8"));
+    if (fs.existsSync(scriptMdDisk)) {
+      const candDisk = utteranceListOf(fs.readFileSync(scriptMdDisk, "utf8"));
+      typedUtteranceList = candDisk.list;
+      const manHere2 = readCreativeManifest(creativeDir);
+      const planEntry = manHere2?.entries?.find((e) => e.file === "director-plan.json");
+      typedUtteranceProvenance = {
+        scriptMdSha: candDisk.mdSha,
+        planSha: planEntry?.sha256?.slice(0, 16) ?? "source-unknown",
+        utterancesDigest: utterancesDigestOf(candDisk.list),
+      };
+    }
     const planOnDisk = JSON.parse(fs.readFileSync(path.join(creativeDir, "director-plan.json"), "utf8")) as Parameters<typeof skeletonOf>[0] & { treatment?: string; dialogueClock?: { placements?: { word: string; startSec?: number; endSec?: number; onImage?: string }[] } };
     treatment = planOnDisk.treatment;
     directorSkeleton = skeletonOf(planOnDisk);
@@ -504,6 +532,10 @@ ${plan.treatment}`;
       drama: input.drama,
     },
   );
+  // G1 批三：收口回報（creative/resume 兩路組好嘅版本收據）
+  if (typedUtteranceProvenance && typedUtteranceList?.length) {
+    onUtteranceProvenance?.({ ...typedUtteranceProvenance, list: typedUtteranceList });
+  }
   // 裁決 0928 D：導演聲畫落點隨 callsheet 落 world 段（audioTimeline 對照）
   return { ...boards.sheet, ...(directorPlacements?.length ? { directorPlacements } : {}) };
 }
@@ -529,7 +561,10 @@ export async function authorStage(ctx: Ctx): Promise<void> {
     "producer",
     `收 brief。開呢份 slate 嘅信封。舊 project 唔入袋。${input.drama ? `劇目 ${input.drama}${input.episode ? `・${input.episode}` : ""}。` : ""}`,
   );
-  const sheet = await authorCallSheet(jobId, input, cfg, { speak, think });
+  // G1 批三：utterance 版本收據入 ctx（world 段 audio-timeline dependsOn 四元）
+  const sheet = await authorCallSheet(jobId, input, cfg, { speak, think }, (p) => {
+    ctx.utteranceProvenance = p;
+  });
   fs.writeFileSync(jobFile(jobId, "callsheet.json"), JSON.stringify(sheet, null, 2));
   ctx.job = patch(ctx.job, {
     callSheet: sheet,

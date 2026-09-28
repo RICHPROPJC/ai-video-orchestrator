@@ -403,7 +403,18 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       // §7③：採用 revision 收據——呢份 timeline 由邊個 callsheet 生出嚟
       // （cut/mix/mux 同源對照用；revision 唔一致唔可以混做最終交付）
       callsheetDigest: sheetDigest(ctx.locked!),
-      note: "實際音軌時長回填（共同時間線）；take 一次生成逐鏡切片，呢度係事件層時鐘",
+      // G1 批三：utterance 採納鏈版本收據（author caller 載入嘅來源——
+      // scriptMdSha/planSha/utterancesDigest；resume 消費者對唔到＝具名 stale，
+      // 唔可以混做最終交付）。lineage：額度真源 job soundRepairEpisode（唔用
+      // 文字身份）——utterance 重新編號唔重開 repair 額度已天然成立。
+      ...(ctx.utteranceProvenance ? {
+        utteranceDependsOn: {
+          scriptMdSha: ctx.utteranceProvenance.scriptMdSha,
+          planSha: ctx.utteranceProvenance.planSha,
+          utterancesDigest: ctx.utteranceProvenance.utterancesDigest,
+        },
+      } : {}),
+      note: "實際音軌時長回填（共同時間線）；take 一次生成逐鏈切片，呢度係事件層時鐘",
       events: rows,
     }, null, 2));
     // §9⑥：本輪凍結 expected revision（mux 三比用；行內回修重寫收據時更新）
@@ -452,6 +463,13 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     fs.writeFileSync(jobFile(jobId, "creative", "audio-timeline.json"), JSON.stringify({
       generatedAt: new Date().toISOString(),
       callsheetDigest: sheetDigest(ctx.locked!),
+      ...(ctx.utteranceProvenance ? {
+        utteranceDependsOn: {
+          scriptMdSha: ctx.utteranceProvenance.scriptMdSha,
+          planSha: ctx.utteranceProvenance.planSha,
+          utterancesDigest: ctx.utteranceProvenance.utterancesDigest,
+        },
+      } : {}),
       note: "本 callsheet 冇 audioEvents（無對白／外來音訊時間線）——聲音時間線 N/A 收據；前輪聲畫 gap 已清（§11①）",
       events: [],
     }, null, 2));

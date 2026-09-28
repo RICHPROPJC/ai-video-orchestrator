@@ -45,6 +45,15 @@ export type Ctx = {
   plugged?: PluggedShotWav[];
   wavByShot: Map<string, string>;
   h3WavByShot: Map<string, string>;
+  /** G1 批三（0928）：utterance 採納鏈版本收據——author 段構造（caller 載入
+   *  嘅來源，唔讀磁碟最新 manifest）；world 段 audio-timeline.json 落盤
+   *  dependsOn 四元（resume 消費者對唔到＝具名 stale）。 */
+  utteranceProvenance?: {
+    scriptMdSha: string;
+    planSha: string;
+    utterancesDigest: string;
+    list: { utteranceId: string; rawText: string }[];
+  };
   gapDelivered: Map<string, number>;
   cutPlan?: CutPlan;
   spineWav?: string;
