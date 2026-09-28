@@ -162,19 +162,30 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         // 唔係主流程唯一恢復路（主流程＝席位 decision→採納→resume）。
         if (input.motionPicks) {
           for (const sel of fresh) {
-            const code = input.motionPicks[sel.shot];
-            if (!code) continue;
+            const rawPick = input.motionPicks[sel.shot];
+            if (!rawPick) continue;
+            // R21 裁決③（0929）：clip@startF 窗口語法——Mo 姿勢驗證推薦嘅 source
+            // 區段直接入 bake.start（「按已採納持有/接觸/位置及 source 區段驗」
+            // 機讀落位）；@ 缺席照活動段偵測。
+            const atIdx = rawPick.lastIndexOf("@");
+            const code = atIdx > 0 ? rawPick.slice(0, atIdx) : rawPick;
+            const pickStartF = atIdx > 0 ? Number.parseInt(rawPick.slice(atIdx + 1), 10) : NaN;
             // R20（0929）：三態匹配——code（C##）／id（14_05）／bvh（014/14_05[.bvh]）
             const cand = shortlist.candidates.find(
               (c) => c.code === code || c.id === code || c.bvh === code || c.bvh === `${code}.bvh`,
             );
-            if (!cand) throw new Error(`--motion-pick ${sel.shot}=${code}：唔係 shortlist 候選（可用 code C##／id／bvh；shortlist 前列見 selection.attempt.json）`);
+            if (!cand) throw new Error(`--motion-pick ${sel.shot}=${rawPick}：唔係 shortlist 候選（可用 code C##／id／bvh；shortlist 前列見 selection.attempt.json）`);
             sel.bvh = cand.bvh;
             // R20 裁決②：override 蓋咗 bvh 之後 bake/segment 要對新 clip 重計
             // （decideSelection 嘅活動段係用佢自己揀嘅 clip 算——override 換咗
             // clip 而沿用舊 bake.start 會由企定段開場，等於冇兌現 segment-aware）
             const win = bvhActivityWindow(cand.bvh);
-            if (win) {
+            if (Number.isFinite(pickStartF) && pickStartF > 0) {
+              // R21：人手指定窗優先（活動段偵測係工程估計級——P85 閾對慢 clip
+              // 唔敏感，13_09 三飲用週期偵測 null 實證）
+              sel.bake = { ...sel.bake, start: pickStartF };
+              sel.segment = { startF: pickStartF, endF: pickStartF + sel.bake.len - 1, startSec: Number(((pickStartF - 1) / 120).toFixed(2)), endSec: Number(((pickStartF - 1 + sel.bake.len) / 120).toFixed(2)), method: `pick-window@${pickStartF}（Mo 姿勢驗證窗；activity-detect ${win ? `f${win.startF}-${win.endF}` : "null"} 對照）` };
+            } else if (win) {
               sel.bake = { ...sel.bake, start: win.startF };
               sel.segment = win;
             } else {
