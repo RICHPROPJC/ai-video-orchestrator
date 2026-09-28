@@ -294,19 +294,20 @@ export function buildH3Graph(opts: BuildH3GraphOpts): ComfyGraph {
       `graph_size_invalid: ${width}x${height} — H3 canvas needs two /32 ints in 32–4096 (node1 object_info step 32)`,
     );
   }
-  // §P34/R6（0928）README 兩-pass：pdd8＋nativeUpscale＝PDD hi-res fix——pass1
-  // render 喺 final÷1.5（864×480→576×320，兩個 /32 對齊），AVLatentUpscaleBy
-  // ×1.5 返 final（node snap patch grid）。final÷1.5 非 /32 整數＝具名拒（9:16
-  // 544÷1.5 唔整——兩-pass 未支援）；chain（multishot）同兩-pass 未定義組合同拒。
+  // §P34/R6→R9（0928）README 兩-pass 尺寸鏈修正：864×480×1.5＝1296×720 非
+  // /32 合法；README golden 係 pass1 896×512 →×1.5→ model-native 1344×768。
+  // twoPass 交付鎖死呢條鏈（pass canvas 896×512；final 1344×768＝實際交付
+  // 尺寸，收據照實列——唔拿 label 當 720p）；opts 明示 width/height 淨接受
+  // 896×512（pass1 語義）；chain（multishot）同兩-pass 未定義組合同拒。
   const twoPass = Boolean(opts.route?.kind === "pdd-8step" && opts.nativeUpscale);
   if (twoPass && opts.chain) {
     throw new Error("h3_route_blocked: pdd-8step native upscale 兩-pass 同 chain（multishot）未定義組合——named unsupported");
   }
-  if (twoPass && (width % 48 !== 0 || height % 48 !== 0)) {
-    throw new Error(`h3_native_upscale_size_invalid: 兩-pass pass1＝final÷1.5 要 /32 對齊（final ${width}x${height}÷1.5＝${width / 1.5}x${height / 1.5} 唔整數）——呢個尺寸未支援，具名拒`);
+  if (twoPass && opts.width !== undefined && (opts.width !== 896 || opts.height !== 512)) {
+    throw new Error(`h3_native_upscale_size_invalid: 兩-pass尺寸鏈鎖定 pass1 896×512→×1.5→1344×768（README golden）；opts ${width}x${height} 唔接受——要自訂用非 two-pass 路或者 896×512`);
   }
-  const passW = twoPass ? Math.round(width / 1.5) : width;
-  const passH = twoPass ? Math.round(height / 1.5) : height;
+  const passW = twoPass ? 896 : width;
+  const passH = twoPass ? 512 : height;
   // 鍵格同參考片可以一齊入。冇寫百分比就同時塞鍵格檔同走位片，先拒。
   // 灰模片只入 ref_videos，唔當鍵格。
   const hasVideo1 = Boolean(opts.blockoutName);

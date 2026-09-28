@@ -26,7 +26,7 @@ export type H3SubmitReceipt = {
    *  兩-pass（AVLatentUpscaleBy ×1.5＋PDDAccScheduler partial-denoise refine，
    *  audio 出 pass1）；其他路＝learned 款（trained-grid refine 只對 PDD 成立）。 */
   nativeUpscale?:
-    | { variant: "two-pass-av-pdd-refine"; upscaleNode: "MiniMaxH3AVLatentUpscaleBy"; scaleBy: number; refineScheduler: "MiniMaxH3PDDAccScheduler"; denoise: number; nfe: string; pass1: { width: number; height: number } }
+    | { variant: "two-pass-av-pdd-refine"; upscaleNode: "MiniMaxH3AVLatentUpscaleBy"; scaleBy: number; refineScheduler: "MiniMaxH3PDDAccScheduler"; denoise: number; nfe: string; pass1: { width: number; height: number }; final: { width: number; height: number } }
     | { variant: "learned"; node: "MiniMaxH3LatentUpscaleCombined"; learnedModel: string };
   /** §P34 §5 收據分層：planned＝dry-run（graph 構造齊零執行）；executed＝
    *  live poll 完有 output。graph-connected 由 graph 欄完整 JSON 本身證；
@@ -461,7 +461,7 @@ export async function submitH3Shot(opts: {
       route: { ...route, derived: opts.route ? false : true },
     ...(opts.nativeUpscale
       ? (route.kind === "pdd-8step"
-        ? { nativeUpscale: { variant: "two-pass-av-pdd-refine" as const, upscaleNode: "MiniMaxH3AVLatentUpscaleBy" as const, scaleBy: 1.5, refineScheduler: "MiniMaxH3PDDAccScheduler" as const, denoise: 0.25, nfe: "8", pass1: (() => { const sz = h3SizeForAspect(opts.aspect); return { width: Math.round(sz.width / 1.5), height: Math.round(sz.height / 1.5) }; })() } }
+        ? { nativeUpscale: { variant: "two-pass-av-pdd-refine" as const, upscaleNode: "MiniMaxH3AVLatentUpscaleBy" as const, scaleBy: 1.5, refineScheduler: "MiniMaxH3PDDAccScheduler" as const, denoise: 0.25, nfe: "8", pass1: { width: 896, height: 512 }, final: { width: 1344, height: 768 } } }
         : { nativeUpscale: { variant: "learned" as const, node: "MiniMaxH3LatentUpscaleCombined" as const, learnedModel: "h3_clean_latent_upscaler_film_epoch200.safetensors" } })
       : {}),
       ...(opts.keyframePositions?.trim() ? { keyframes: {
@@ -608,7 +608,7 @@ export async function submitH3Shot(opts: {
     route: { ...route, derived: opts.route ? false : true },
     ...(opts.nativeUpscale
       ? (route.kind === "pdd-8step"
-        ? { nativeUpscale: { variant: "two-pass-av-pdd-refine" as const, upscaleNode: "MiniMaxH3AVLatentUpscaleBy" as const, scaleBy: 1.5, refineScheduler: "MiniMaxH3PDDAccScheduler" as const, denoise: 0.25, nfe: "8", pass1: (() => { const sz = h3SizeForAspect(opts.aspect); return { width: Math.round(sz.width / 1.5), height: Math.round(sz.height / 1.5) }; })() } }
+        ? { nativeUpscale: { variant: "two-pass-av-pdd-refine" as const, upscaleNode: "MiniMaxH3AVLatentUpscaleBy" as const, scaleBy: 1.5, refineScheduler: "MiniMaxH3PDDAccScheduler" as const, denoise: 0.25, nfe: "8", pass1: { width: 896, height: 512 }, final: { width: 1344, height: 768 } } }
         : { nativeUpscale: { variant: "learned" as const, node: "MiniMaxH3LatentUpscaleCombined" as const, learnedModel: "h3_clean_latent_upscaler_film_epoch200.safetensors" } })
       : {}),
     ...(opts.keyframePositions?.trim() ? { keyframes: {
