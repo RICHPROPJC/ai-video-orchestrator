@@ -915,13 +915,14 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
       ...cut.filter((id) => !inManifest.has(id)).map((id) => ({ id, shots: [id] })),
     ].sort((a, b) => cut.indexOf(a.shots[0]!) - cut.indexOf(b.shots[0]!));
     const muxed: string[] = [];
+    const blockedCauses = new Map<string, string>();
     // §29-3（B2 #3）實際剪接收據：每段 source（H3 產出檔＋sha256＋實際 in/out）
     // ＋destination（concat 序實際 in/out）＋covered shotIds；callsheetDigest＝
     // 採用 cut 版本。整段使用明示 wholeFile＋實際尾點（ffprobe 實測，唔由檔名/
     // 故事時長猜——§29 原文）；blocked 段唔入收據（events 已具名）。
     const editReceipts: {
       id: string; shots: string[];
-      source: { file: string; sha256: string; muxMode: string; sourceDurSec: number | null; sourceConsumedInOut: "unknown"; note: string; h3SubmitRefs: string[] };
+      source: { file: string; sha256: string; muxMode: string; sourceDurSec: number | null; sourceConsumedInOut: "unknown"; note: string; h3SubmitRefs: { shot: string; file?: string; promptId?: string | null; outputSha256?: string | null; missing?: string; unparsable?: boolean }[] };
       muxedOutput: { file: string; sha256: string; durationSec: number | null };
       wav: { file: string; sha256: string };
       destination: { inOut: [number | null, number | null]; basis: string; note: string };
@@ -940,6 +941,8 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           message: `${!fs.existsSync(mp4) ? `cut ${t.id} missing from motion` : `${t.id} wav 缺`}——呢段 blocked，繼續其他段`,
           data: { stage: "mux", blocked: !fs.existsSync(mp4) ? `motion-missing:${t.id}` : `wav-missing:${t.id}` },
         });
+        // §32-2：omitted 對帳消費同份結構化 cause（唔硬寫兩個可能理由字串）
+        blockedCauses.set(t.id, !fs.existsSync(mp4) ? `motion-missing:${t.id}` : `wav-missing:${t.id}`);
         continue;
       }
       const wav = t.shots.length === 1
@@ -970,7 +973,16 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
           sourceDurSec: srcDur,
           sourceConsumedInOut: "unknown",
           note: "-shortest 下實際使用終點由聲軌決定（≤ muxedDurSec）；來源消費區間未證＝unknown，容器 duration 只係探測參考",
-          h3SubmitRefs: t.shots.map((id) => `motion/${id}.h3_submit.json`),
+          h3SubmitRefs: t.shots.map((id) => {
+            const sf = path.join(motionDir, `${id}.h3_submit.json`);
+            if (!fs.existsSync(sf)) return { shot: id, missing: "h3_submit receipt 不存在（named-missing，唔猜路徑）" };
+            try {
+              const r = JSON.parse(fs.readFileSync(sf, "utf8")) as { prompt_id?: string | null; output?: { sha256?: string } };
+              return { shot: id, file: `motion/${id}.h3_submit.json`, promptId: r.prompt_id ?? null, outputSha256: r.output?.sha256 ?? null };
+            } catch {
+              return { shot: id, file: `motion/${id}.h3_submit.json`, unparsable: true };
+            }
+          }),
         },
         muxedOutput: {
           file: path.basename(out),
@@ -1001,7 +1013,7 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     const omittedFromConcat = muxTargets.filter((t) => !includedIds.has(t.id)).map((t) => ({
       id: t.id,
       shots: t.shots,
-      reason: `blocked（events stage=mux 已具名：motion-missing/wav-missing ${t.id}）`,
+      cause: blockedCauses.get(t.id) ?? "unknown（skip 分支冇記錄——數據源斷，唔猜）",
     }));
     const muxList = jobFile(jobId, "motion", "mux-list.txt");
     fs.writeFileSync(muxList, muxed.map((v) => `file '${v.replaceAll("'", "'\\''")}'`).join("\n"));
@@ -1012,7 +1024,12 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     // （cutOrder＋段組成 stableJson——唔用 callsheetDigest 冒充 cut 內容版本）
     // ＋交付路徑明示。
     fs.writeFileSync(jobFile(jobId, "delivery", "edit-receipts.json"), JSON.stringify({
-      cutDigest: stableJson({ cutOrder: cut, segments: editReceipts.map((r) => ({ id: r.id, shots: r.shots })) }).slice(0, 16),
+      // §32-1：真 sha256（stableJson 淨係排序序列化——直接 slice 前 16 字＝JSON
+      // 前綴碰撞，唔係 digest）；canonical payload＝cutOrder＋段組成
+      cutDigest: createHash("sha256").update(stableJson({ cutOrder: cut, segments: editReceipts.map((r) => ({ id: r.id, shots: r.shots })) })).digest("hex").slice(0, 16),
+      // §32-4：run 識別——resume 舊 receipt 由 UI 憑呢啲欄位判 current（檔案
+      // 存在唔自動＝採納；本 run 蓋寫＝新證據取代舊，歷史在 events/git）
+      run: { jobId, callsheetDigest: ctx.callsheetDigest ?? null, writtenAt: new Date().toISOString() },
       callsheetDigest: ctx.callsheetDigest ?? null,
       cutOrder: cut,
       delivery: {

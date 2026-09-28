@@ -66,6 +66,10 @@ export type ProduceInput = {
   resume?: boolean;
   /** names the writer may cast speaking parts from (data file, never in src) */
   castRosterPath?: string;
+  /** §30-1/§31-2 G1（0928）：user/task 採用鎖——caller 明示（原始來源＋全文/
+   *  詞級範圍）；plan 漏鎖＝缺口唔解鎖；無鎖合法。舊 brief 引號∩plan 交集
+   *  方式已退役。 */
+  dialogueLocks?: { rawText: string; scope: "full-line" | "word-level"; source: string }[];
   /** load this callsheet JSON instead of letting the seats author one */
   callSheetPath?: string;
   /** H3 graph shape: default A = official path (Video 1 motion-only + H3Keyframes

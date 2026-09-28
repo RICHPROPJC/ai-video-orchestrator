@@ -240,8 +240,9 @@ async function authorCallSheet(
           ], targetSec,
           // 裁決 0928 B：講者綁定——roster 隨 packet 入編劇席（speaker 欄對應）
           castRoster: readCastRoster(input.castRosterPath),
-        // §25 verbatim：採納契約（plan placements）隨 packet 入編劇席
-        directorPlacements: plan.dialogueClock?.placements },
+        // §30-1/§31-2 G1：鎖義務＝user/task 採用契約（caller 明示）——舊 plan
+        // placement 交集方式已退役；無鎖合法
+        ...(input.dialogueLocks?.length ? { dialogueLocks: input.dialogueLocks } : {}) },
         { crew: cfg.crew, model: cfg.crew.directorModel ?? "", receiptDir, fallbackModel: cfg.crew.secondFallback },
       );
       scriptDialogueLines = dialogueSignalsOf(script).map((d) => d.line);

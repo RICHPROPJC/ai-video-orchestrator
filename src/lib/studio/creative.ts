@@ -862,6 +862,8 @@ export const PLAYWRIGHT_CHARTER = [
   "- 引號（「」『』“”）內嘅字係指定台詞，逐字保留喺佢哋嘅位置，一個字都唔好改、唔好刪、唔好搬去第二個位置；引號以外嘅對白先係你嘅創作空間，加嘅嘢講明「新增」。",
   "",
   "工程欄位：segments[] 每段 {timeEstimate（例如 0-3s 標『估計』）, performance, sound, audienceEffect, dialogueAdded?, speaker?}；有對白嘅段盡量標 speaker（castRoster 內角色名；畫外聲/旁白標 VO）——講者係聲畫分工嘅一半；結構機器會對，你嘅本事花喺上面五點。",
+  "",
+  "台詞身份採納（utterances，機器對帳用）：正文寫完後，交 utterances[] 逐項 {utteranceId（U01 起）, rawText（逐字）, speakerId（castRoster 內名；未解決就 unresolvedSpeaker:true）, source[{candidateIdx, segment, range:{start,end}, rawText}]}——packet 會帶候選表（你正文每個引號句一個 candidateIdx＋字元區間）；每個候選要麼採納為 utterance（source 指返佢個 idx＋range），要麼交 quoteRulings[{candidateIdx, kind:'non-performance', reason}]（旁述／物件文字／聲效／台詞清單引用）。一句分多段嚟源＝同一 utterance 多個 source；複合引號（例如「凍、甜、而家」）係一句定三次定清單，由你判——拆開就每項帶 splitOf{parentCandidateIdx, fragmentIndex, parentRange}。無引號嘅演出句（旁白）都可以自報 source range。漏咗候選未裁定＝機器閘會列明返你補。",
 ].join("\n");
 
 const playwrightSegment = z.object({
@@ -888,6 +890,10 @@ export const PlaywrightScriptSchema = z.object({
   // compiler miss fail（唔以佔位正文當成功）。
   segments: z.array(playwrightSegment),
   dialogue_verbatim_kept: z.array(z.string()),
+  /** §28 G1 批一：typed 採納（utteranceId/rawText/speaker/source range——
+   *  shape 由 reconcileUtterances 逐項驗，zod 淨保陣列形）＋非演出裁定 */
+  utterances: z.array(z.unknown()).optional(),
+  quoteRulings: z.array(z.unknown()).optional(),
   newElements: z.array(z.object({ what: z.string().max(80), why: z.string().max(160) })).default([]),
   /** 導演內容欄（等價映射保留原名） */
   arc: z.string().optional(),
@@ -903,47 +909,144 @@ export const PlaywrightScriptSchema = z.object({
 
 export type PlaywrightScript = z.infer<typeof PlaywrightScriptSchema>;
 
-/** §25 verbatim 收口（0928）：指定台詞契約＝「brief 引號句（用戶指定）∩
- *  導演 plan 已採納 placement word」——引號淨係聲稱，採納先係契約；引號句
- *  精確匹配 word（norm 相等）先鎖，複合列舉引號（「凍、甜、而家」）唔係逐
- *  句指定唔鎖死（§25「不能所有引號鎖死」）。required＝plan 同 word placement
- *  數（導演採納講幾多次就驗幾多次）。無 placements＝合法 N/A；自報
- *  dialogue_verbatim_kept 唔係證據。 */
-export type DesignatedLine = { word: string; required: number };
+// ════ §28/§30/§31 G1 批一（0928）：typed utterance 身份鏈 ════
+// 舊 designatedLinesOf（brief 引號∩plan placement 交集）＝§26 否決方式，
+// §30-1 令退役——鎖義務改 user/task 採用契約（packet.dialogueLocks）。
 
-export function designatedLinesOf(
-  plan: { dialogueClock?: { placements?: { word?: string }[] } } | undefined,
-  brief: string,
-): DesignatedLine[] {
-  const placements = (plan?.dialogueClock?.placements ?? [])
-    .map((p) => String(p.word ?? "").trim())
-    .filter((w) => w.length > 0);
-  if (!placements.length) return [];
-  const briefQuotes: string[] = [];
+/** 字元半開區間 [start, end)——sourceRef 精確定位單位（§30-2） */
+export type UtteranceRange = { start: number; end: number };
+
+/** 候選引用：candidateIdx 綁 frozen mdSha＋extractor 版本，完整候選集生成
+ *  時固定編號（唔 filter 先再編）；range/rawText 核對由 compiler 做。 */
+export type CandidateRef = {
+  candidateIdx: number;
+  segment: number;
+  range: UtteranceRange;
+  rawText: string;
+};
+
+/** 採納後嘅實際發聲身份。occurrence＝一次實際發聲（唔係字串計數/placement
+ *  slot 數/beat 數）。source 可多片段（連續一句分多來源仍同一 utterance，
+ *  唔多生 take——§30-4）；splitOf 記複合拆出（parent＋有序片段，唔係子串
+ *  includes 假過）。speaker 用聲音 roster 穩定 ID；UNRESOLVED＝狀態唔冒充
+ *  角色名（§30-6）。 */
+export type TypedUtterance = {
+  utteranceId: string;
+  rawText: string;
+  speakerId?: string;
+  unresolvedSpeaker?: true;
+  source: CandidateRef[];
+  splitOf?: { parentCandidateIdx: number; fragmentIndex: number; parentRange: UtteranceRange };
+};
+
+/** 非演出裁定：只分類候選來源（§30-3），唔豁免已有鎖義務（§30-1）。 */
+export type QuoteRuling = { candidateIdx: number; kind: "non-performance"; reason: string };
+
+/** 候選集（compiler 對實際 bytes 構造——mdSha 唔信模型自算，§30-2）。
+ *  完整候選＝全部引號句＋無引號演出段由模型 typed 自報（sourceRef 唔限引號，
+ *  §30-3）；舊 dialogueSignalsOf 啟發式排除改為 skipped 具名可追查。 */
+export type UtteranceCandidates = {
+  mdSha: string;
+  extractorVersion: string;
+  candidates: { candidateIdx: number; segment: number; range: UtteranceRange; rawText: string }[];
+  skipped: { range: UtteranceRange; reason: string }[];
+};
+
+export const UTTERANCE_EXTRACTOR_VERSION = "g1-candidates-v1";
+
+/** user/task 採用鎖（§30-1）：caller 明示——原始來源＋全文/詞級範圍＋義務
+ *  身份驗收；plan 漏項＝缺口唔解鎖；無鎖合法（[]）。 */
+export type DialogueLock = { rawText: string; scope: "full-line" | "word-level"; source: string };
+
+/** 候選提取：全部引號句入 candidates（完整集順序編號，固定）；舊啟發式
+ *  （聲：欄／自報段）唔再靜靚排除——變 skipped 具名 reason。 */
+export function generateUtteranceCandidates(scriptMd: string): UtteranceCandidates {
+  const mdSha = createHash("sha256").update(scriptMd, "utf8").digest("hex").slice(0, 16);
+  const candidates: UtteranceCandidates["candidates"] = [];
+  const skipped: UtteranceCandidates["skipped"] = [];
+  // 分段序＝【…】段標順（冇段標＝0）
+  const segOf = (idx: number): number => {
+    const head = scriptMd.slice(0, idx);
+    const marks = [...head.matchAll(/【/g)];
+    return marks.length;
+  };
   const re = /[「『“]([^」』”]+)[」』”]/g;
-  for (const m of brief.matchAll(re)) {
-    const line = (m[1] ?? "").trim();
-    if (line) briefQuotes.push(line);
+  for (const m of scriptMd.matchAll(re)) {
+    const inner = m[1] ?? "";
+    const range = { start: m.index + (m[0]!.length - inner.length - 1), end: m.index + m[0]!.length - 1 };
+    const head = scriptMd.slice(Math.max(0, m.index - 60), m.index);
+    const segAt = head.lastIndexOf("【");
+    const soundAt = Math.max(head.lastIndexOf("聲："), head.lastIndexOf("聲:"), head.lastIndexOf("觀眾："), head.lastIndexOf("觀眾:"));
+    if (soundAt > segAt) {
+      skipped.push({ range, reason: "聲音設計/觀眾效應欄位內引號（非演出台詞候選——如屬演出請模型 typed 自報非引號 source）" });
+      continue;
+    }
+    candidates.push({ candidateIdx: candidates.length, segment: segOf(m.index), range, rawText: scriptMd.slice(range.start + 1, range.end) });
   }
-  const out: DesignatedLine[] = [];
-  for (const word of [...new Set(placements)]) {
-    const designated = briefQuotes.some((q) => normDialogue(q) === normDialogue(word));
-    if (!designated) continue;
-    out.push({ word, required: placements.filter((w) => w === word).length });
+  return { mdSha, extractorVersion: UTTERANCE_EXTRACTOR_VERSION, candidates, skipped };
+}
+
+/** 雙向對帳（§28-3＋§30）：typed↔正文候選＋鎖義務。miss 入既有 compiler
+ *  misses/gap-retry 同一預算（§30-5 帶 frozen 候選表返補位）。 */
+export function reconcileUtterances(
+  scriptMd: string,
+  typed: TypedUtterance[] | undefined,
+  rulings: QuoteRuling[] | undefined,
+  locks: DialogueLock[] | undefined,
+): { issues: string[]; candidates: UtteranceCandidates } {
+  const issues: string[] = [];
+  const candidates = generateUtteranceCandidates(scriptMd);
+  const byIdx = new Map(candidates.candidates.map((c) => [c.candidateIdx, c]));
+  // 新式 required 分界由採納契約決定（§30-6）：caller 帶 locks（採用契約要求
+  // typed）時，缺 utterances＝missing 唔自動退 legacy。
+  if (locks?.length && !typed?.length) {
+    issues.push(`採用契約要求 typed utterances（${locks.length} 鎖在身）但模型冇交 utterances——missing，唔自動退 legacy`);
   }
-  return out;
+  const adopted = new Set<number>();
+  for (const [i, u] of (typed ?? []).entries()) {
+    if (!u.utteranceId) issues.push(`utterances[${i}] 冇 utteranceId`);
+    if (!u.speakerId && !u.unresolvedSpeaker) issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} 冇 speaker（speakerId 或 unresolvedSpeaker 二揀一）`);
+    if (u.unresolvedSpeaker) issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} speaker UNRESOLVED——狀態具名，回責任席（唔入 TTS）`);
+    for (const ref of u.source ?? []) {
+      const c = byIdx.get(ref.candidateIdx);
+      if (!c) { issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} source candidateIdx=${ref.candidateIdx} 唔喺候選集（本版 ${candidates.candidates.length} 個——舊版候選表配新正文＝失效）`); continue; }
+      adopted.add(ref.candidateIdx);
+      if (c.rawText !== ref.rawText) issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} source rawText 同候選 #${ref.candidateIdx} 唔符（核對精確 range，唔用 includes 假過）`);
+    }
+    if (u.splitOf) {
+      const parent = byIdx.get(u.splitOf.parentCandidateIdx);
+      if (!parent) issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} splitOf parent #${u.splitOf.parentCandidateIdx} 唔喺候選集`);
+      else adopted.add(u.splitOf.parentCandidateIdx);
+    }
+    if (!u.source?.length && !u.splitOf) issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} 冇 source（非引號演出段要自報 sourceRef range）`);
+  }
+  for (const r of rulings ?? []) adopted.add(r.candidateIdx);
+  for (const c of candidates.candidates) {
+    if (!adopted.has(c.candidateIdx)) issues.push(`候選 #${c.candidateIdx}（段${c.segment}「${c.rawText.slice(0, 24)}」）未裁定——要採納為 utterance 或 quoteRulings 具名非演出`);
+  }
+  // 鎖義務：rawText 精確（full-line）／詞級範圍（word-level＝鎖詞喺某 utterance
+  // rawText 內逐字存在）——plan 漏鎖唔解鎖（§30-1）
+  for (const lock of locks ?? []) {
+    const ok = lock.scope === "full-line"
+      ? (typed ?? []).some((u) => u.rawText === lock.rawText)
+      : (typed ?? []).some((u) => u.rawText.includes(lock.rawText));
+    if (!ok) issues.push(`鎖「${lock.rawText.slice(0, 24)}」（${lock.scope}，來源 ${lock.source}）冇採納 utterance 逐字對上——plan 漏鎖＝缺口，唔解鎖`);
+  }
+  return { issues, candidates };
 }
 
 /** 編劇 compiler（同導演 compiler 精神：命名等價、內容零改寫、缺語義先報）。
- *  §23 watch-verbatim：designatedLines（brief 引號指定台詞）傳入時，對實際
- *  script_md 正文查保留＋需要次數；缺口入 misses——行既有 gap-retry 同一有界
- *  預算，唔另開迴路。 */
+ *  §28/§30 G1 批一：typed utterances＋quoteRulings（模型採納）對正文候選集
+ *  雙向對賬；dialogueLocks（user/task 採用契約）驗鎖義務——plan 漏鎖＝缺口
+ *  唔解鎖。缺口入 misses 行既有 gap-retry 同一有界預算（retry 帶 frozen 候選
+ *  表返補採納——§30-5），唔另開迴路。 */
 export function compilePlaywrightScript(
   raw: unknown,
-  opts?: { designatedLines?: DesignatedLine[] },
-): { script: PlaywrightScript; receipt: string[]; misses: string[] } {
+  opts?: { dialogueLocks?: DialogueLock[] },
+): { script: PlaywrightScript; receipt: string[]; misses: string[]; candidates?: UtteranceCandidates } {
   const receipt: string[] = [];
   const misses: string[] = [];
+  let candidatesOut: UtteranceCandidates | undefined;
   const src = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const a = (src.answer && typeof src.answer === "object" ? src.answer : src) as Record<string, unknown>;
   if (a !== src) receipt.push("unwrap: answer → 頂層");
@@ -984,20 +1087,18 @@ export function compilePlaywrightScript(
     ].filter(Boolean).join("\n\n");
     receipt.push("script_md ← 由 segments/arc/soundDesignMasterNotes 組裝（全部原文，淨加結構標題）");
   }
-  // §25 verbatim 收口：驗收對象＝實際台詞實體（dialogueSignalsOf 演出句——
-  // 已過濾聲：欄／自報段，唔會命中說明／舞台註記）；raw text includes 計次數
-  // （逐字鎖定驗收——norm 只用於落點匹配，唔取代逐字）。required＝plan 採納
-  // placement 數。缺口入 misses 行既有 gap-retry 同一預算。
-  const designated = opts?.designatedLines ?? [];
-  if (designated.length) {
-    const utterances = dialogueSignalsOf({ script_md: scriptMdFinal }).map((u) => u.line);
-    for (const d of designated) {
-      const have = utterances.filter((line) => line.includes(d.word)).length;
-      if (have < d.required) {
-        misses.push(`指定台詞保留不足（導演採納 ${d.required} 次，實際台詞實體 ${have} 次）：${d.word}`);
-      }
-    }
-    receipt.push(`verbatim watch：採納指定 ${designated.length} 句對實際台詞實體驗保留（raw text＋required 次數）`);
+  // §28/§30 G1 批一：typed utterances 雙向對賬（候選集由 compiler 對實際
+  // bytes 構造——mdSha 唔信模型自算；候選/裁定/鎖義務缺口全部入 misses 行
+  // 既有 gap-retry；caller 可帶候選表入 retry packet 俾模型補採納）。
+  const typedRaw = pick("utterances", "typedUtterances") as unknown;
+  const rulingsRaw = pick("quoteRulings", "quote_rulings") as unknown;
+  const typed = Array.isArray(typedRaw) ? (typedRaw as TypedUtterance[]) : undefined;
+  const rulings = Array.isArray(rulingsRaw) ? (rulingsRaw as QuoteRuling[]) : undefined;
+  if (typed || rulings || opts?.dialogueLocks?.length) {
+    const { issues, candidates } = reconcileUtterances(scriptMdFinal, typed, rulings, opts?.dialogueLocks);
+    misses.push(...issues);
+    candidatesOut = candidates;
+    receipt.push(`G1 typed utterances：候選 ${candidates.candidates.length}＋skipped ${candidates.skipped.length}（mdSha ${candidates.mdSha}·${candidates.extractorVersion}）；採納 ${typed?.length ?? 0}＋裁定 ${rulings?.length ?? 0}${opts?.dialogueLocks?.length ? `＋鎖 ${opts.dialogueLocks.length}` : ""}`);
   }
   // §19：撤字數質素 verdict——非空已由組裝/zod；完整性歸責任席
   const script = PlaywrightScriptSchema.parse({
@@ -1011,17 +1112,19 @@ export function compilePlaywrightScript(
     script_md: scriptMdFinal || "（待補）",
     ...(segments.length ? { segments } : { segments: [{ timeEstimate: "", performance: "" }] }),
     dialogue_verbatim_kept: Array.isArray(verbatim) ? verbatim.map(String) : [],
+    ...(Array.isArray(typedRaw) ? { utterances: typedRaw } : {}),
+    ...(Array.isArray(rulingsRaw) ? { quoteRulings: rulingsRaw } : {}),
     ...(Array.isArray(pick("newElements", "added")) ? { newElements: pick("newElements", "added") as unknown[] } : {}),
     ...(typeof pick("arc", "storyArc") === "string" ? { arc: String(pick("arc", "storyArc")) } : {}),
     ...(typeof pick("dialoguePolicy") === "string" ? { dialoguePolicy: String(pick("dialoguePolicy")) } : {}),
     ...(typeof pick("soundDesignMasterNotes", "soundDesign") === "string" ? { soundDesignMasterNotes: String(pick("soundDesignMasterNotes", "soundDesign")) } : {}),
   });
-  return { script, receipt, misses };
+  return { script, receipt, misses, ...(candidatesOut ? { candidates: candidatesOut } : {}) };
 }
 
 /** 編劇席：treatment→可演劇本。glm-5.3 同腦（創作整合分開明示）。 */
 export async function runPlaywright(
-  packet: { brief: string; treatment: string; assets: string[]; targetSec: number; castRoster?: string[]; directorPlacements?: { word?: string }[] },
+  packet: { brief: string; treatment: string; assets: string[]; targetSec: number; castRoster?: string[]; dialogueLocks?: DialogueLock[] },
   io: { crew: CrewConfig; model: string; receiptDir: string; fallbackModel?: string },
 ): Promise<PlaywrightScript & { compileReceipt: string[] }> {
   const loose = z.object({}).passthrough();
@@ -1044,12 +1147,9 @@ export async function runPlaywright(
     receiptDir: io.receiptDir,
   });
   fs.writeFileSync(path.join(io.receiptDir, "creative.playwright.raw.json"), JSON.stringify(pass.value, null, 2));
-  // §25 verbatim：契約源＝導演採納 placements∩brief 引號（精確匹配）；無採納＝N/A
-  const designated = designatedLinesOf(
-    packet.directorPlacements?.length ? { dialogueClock: { placements: packet.directorPlacements } } : undefined,
-    packet.brief,
-  );
-  let compiled = compilePlaywrightScript(pass.value, { designatedLines: designated });
+  // §30-1/§31-2：舊「採納∩brief 引號」交集＝§26 否決方式已退役——鎖義務改
+  // user/task 採用契約（packet.dialogueLocks，caller 明示）；無鎖合法。
+  let compiled = compilePlaywrightScript(pass.value, { dialogueLocks: packet.dialogueLocks });
   // V2b（PLAN-v2 0928）§7.2：gap-retry 補位迴路（照 runDirector 6e39c66 範式）
   // ——canonical 閘 miss＝帶住「缺咗乜」返去同一個方案補一次，唔准編（code
   // 唔填空）；兩次都缺先 fail loud。最近 8 單 SC-0927 有 2 單死呢個閘
@@ -1059,7 +1159,8 @@ export async function runPlaywright(
       ...JSON.parse(user),
       "之前交咗嘅方案": pass.value,
       "機器閘 miss 清單": compiled.misses,
-      "補位要求": "照返你之前交咗嘅同一個劇本，只補齊 miss 清單指明嘅欄位（characterState／script_md 正文／segments 逐段表演）。唔好由零重作，唔好改已經啱嘅嘢。",
+      "補位要求": "照返你之前交咗嘅同一個劇本，只補齊 miss 清單指明嘅欄位（characterState／script_md 正文／segments 逐段表演；utterances 採納缺口＝對返下方候選表逐項採納或裁定）。唔好由零重作，唔好改已經啱嘅嘢。",
+      ...(compiled.candidates ? { "候選表（frozen：mdSha＋extractor 版本綁上一版正文，正文一改即失效）": compiled.candidates } : {}),
     });
     const retryPass = await chatJsonSeat<Record<string, unknown>>({
       seat: "creative",
@@ -1073,7 +1174,7 @@ export async function runPlaywright(
       receiptDir: io.receiptDir,
     });
     fs.writeFileSync(path.join(io.receiptDir, "creative.playwright.gap-retry.raw.json"), JSON.stringify(retryPass.value, null, 2));
-    const again = compilePlaywrightScript(retryPass.value, { designatedLines: designated });
+    const again = compilePlaywrightScript(retryPass.value, { dialogueLocks: packet.dialogueLocks });
     compiled = { script: again.script, receipt: [...compiled.receipt, ...again.receipt, `playwright gap-retry after ${compiled.misses.length} misses`], misses: again.misses };
   }
   const { script, receipt, misses } = compiled;
