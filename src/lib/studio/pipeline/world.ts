@@ -539,7 +539,14 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     if (h3) s.h3_clock_s = Math.round((await wavSeconds(h3)) * 1e4) / 1e4;
   }
   // §7③：cut plan 採用 revision 收據（同 audio-timeline 同源對照）
-  fs.writeFileSync(cutPlanFile, JSON.stringify({ ...cutPlanOnDisk, callsheetDigest: sheetDigest(ctx.locked!) }, null, 2));
+  // B2 spec #1（UI worker 0928）：顯式 revision/updatedAt——UI cache key＋「來源
+  // 更新過」過期提示；revision 同 callsheetDigest 同源（sheet sha），唔另造真源。
+  fs.writeFileSync(cutPlanFile, JSON.stringify({
+    ...cutPlanOnDisk,
+    callsheetDigest: sheetDigest(ctx.locked!),
+    revision: sheetDigest(ctx.locked!),
+    updatedAt: new Date().toISOString(),
+  }, null, 2));
   const timed: CallSheet = ctx.locked!;
   ctx.timed = timed;
 
