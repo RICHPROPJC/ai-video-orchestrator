@@ -15,6 +15,12 @@ export type H3SubmitReceipt = {
   graph_variant: H3GraphVariant;
   /** §P34 批二：實際採用 route（derived=true＝由 variant/multishot 推導，非任務決策採納） */
   route: H3RouteRecipe & { derived: boolean };
+  /** §P34 批二（§3 收據誠實）：KF 合流實況——same-entry＝0/100 兩針行
+   *  H3KeyframeInject 同一 conditioning entry（Sol E 真合流）；
+   *  conditioning-combined＝任意 positions＋refs 行 ConditioningCombine
+   *  並列（部署 H3KeyframeInject object_info 淨 start/end——任意位置同
+   *  entry 合流部署未有，並列≠合流，唔冒充）；keyframes-only＝冇 refs。 */
+  keyframes?: { positions: string; fusion: "same-entry" | "conditioning-combined" | "keyframes-only" };
   /** §5b form of a variant-a submit: "c" = Video 1 present (zero keyframes,
    *  ref_image_0 = angle portrait); "a" = still-to-video keyframes lane;
    *  "ms" = standalone multishot (MULTISHOT_WIRE_0921). null on the b/bkf/c
@@ -436,6 +442,15 @@ export async function submitH3Shot(opts: {
       shot: opts.shot ?? null,
       graph_variant: variant,
       route: { ...route, derived: opts.route ? false : true },
+      ...(opts.keyframePositions?.trim() ? { keyframes: {
+        positions: opts.keyframePositions,
+        fusion: (Boolean(opts.blockoutMp4) && Boolean(opts.kfEnd)
+          && opts.keyframePositions.split(/[,，]/).map((x) => x.trim()).filter(Boolean).length === 2
+          && opts.keyframePositions.split(/[,，]/).map((x) => x.trim()).filter(Boolean)[0] === "0%"
+          && opts.keyframePositions.split(/[,，]/).map((x) => x.trim()).filter(Boolean)[1] === "100%")
+          ? ("same-entry" as const)
+          : (opts.refImageFiles?.length || opts.blockoutMp4 ? ("conditioning-combined" as const) : ("keyframes-only" as const)),
+      } } : {}),
       motion_form: motionForm,
       server: cfg.motion.comfyUrl,
       prompt: promptText,
@@ -568,6 +583,15 @@ export async function submitH3Shot(opts: {
     shot: opts.shot ?? null,
     graph_variant: variant,
     route: { ...route, derived: opts.route ? false : true },
+    ...(opts.keyframePositions?.trim() ? { keyframes: {
+      positions: opts.keyframePositions,
+      fusion: (Boolean(opts.blockoutMp4) && Boolean(opts.kfEnd)
+        && opts.keyframePositions.split(/[,，]/).map((x) => x.trim()).filter(Boolean).length === 2
+        && opts.keyframePositions.split(/[,，]/).map((x) => x.trim()).filter(Boolean)[0] === "0%"
+        && opts.keyframePositions.split(/[,，]/).map((x) => x.trim()).filter(Boolean)[1] === "100%")
+        ? ("same-entry" as const)
+        : (opts.refImageFiles?.length || opts.blockoutMp4 ? ("conditioning-combined" as const) : ("keyframes-only" as const)),
+    } } : {}),
     motion_form: motionForm,
     server: cfg.motion.comfyUrl,
     prompt: promptText,
