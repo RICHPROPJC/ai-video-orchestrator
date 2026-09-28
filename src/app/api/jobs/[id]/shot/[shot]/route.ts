@@ -59,7 +59,18 @@ export async function GET(
     call,
     world: world?.pieces ?? [],
     files: {
-      still: exists(path.join(dir, "stills", `${shot}.png`)),
+      // B4 舊帳（UI worker 0928 audit）：淨檢 `{shot}.png` 令 kf 抽樣後綴形
+      // （`SH01.kf-00.png` 等）計 False——擴到 `{shot}.kf-*.png` 前綴判斷。
+      still: exists(path.join(dir, "stills", `${shot}.png`))
+        || (() => {
+          const sdir = path.join(dir, "stills");
+          if (!exists(sdir)) return false;
+          try {
+            return fs.readdirSync(sdir).some((f) => f.startsWith(`${shot}.kf-`) && f.endsWith(".png"));
+          } catch {
+            return false;
+          }
+        })(),
       blockout: exists(path.join(dir, "blockout", `${shot}.mp4`)),
     },
     h3: submit ? {
