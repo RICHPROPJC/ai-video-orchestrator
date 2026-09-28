@@ -71,9 +71,14 @@ export type H3SubmitReceipt = {
     ms_voice: string | null;
     ms_start: string | null;
   };
-  output?: { filename: string; subfolder?: string; bytes: number; sha256?: string };
+  output?: { filename: string; subfolder?: string; bytes: number; sha256?: string;
+    /** §29-1：實際 media metadata（8d28247 起；probe 缺欄＝欄位唔寫）。
+     *  durationSec＝容器時長；fps＝所選 video 流平均；frameCount＝probe 報值
+     *  ——不足以推斷內部缺幀/PTS 空段（§29-2 界線）。 */
+    media?: { durationSec?: number; fps?: number; frameCount?: number } };
   /** Local files this receipt was built from. Absent on older receipts. */
-  sources?: { role: string; path: string; sha256: string }[];
+  sources?: { role: string; path: string; sha256: string;
+    media?: { durationSec?: number; fps?: number; frameCount?: number } }[];
   graph: unknown;
 };
 
@@ -91,13 +96,16 @@ function sourceOf(role: string, file?: string | null): { role: string; path: str
  *  唔捏造）；本地 ffprobe JSON，唔引入 pipeline 層依賴。 */
 async function ffprobeMedia(file: string): Promise<{ durationSec?: number; fps?: number; frameCount?: number }> {
   const { execFile } = await import("node:child_process");
+  // §29-2：probe 有界超時（10s）——出錯/超時＝具名缺資料交回 receipt，唔無期限等
   const json = await new Promise<string>((resolve, reject) => {
-    execFile("ffprobe", ["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", file], { maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
+    execFile("ffprobe", ["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", file], { maxBuffer: 8 * 1024 * 1024, timeout: 10_000 }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
   }).catch(() => "");
   if (!json) return {};
   try {
-    const d = JSON.parse(json) as { format?: { duration?: string }; streams?: { avg_frame_rate?: string; nb_frames?: string }[] };
-    const st = d.streams?.[0];
+    // §29-2：codec_type 揀實際 video 流（streams[0] 唔保證 video）；冇 video 流
+    // （靜圖/音源）＝唔報 fps/frameCount 冒充影片時基，淨報容器 duration
+    const d = JSON.parse(json) as { format?: { duration?: string }; streams?: { codec_type?: string; avg_frame_rate?: string; nb_frames?: string; time_base?: string }[] };
+    const st = d.streams?.find((s) => s.codec_type === "video");
     const dur = d.format?.duration !== undefined ? Number(d.format.duration) : undefined;
     const fr = st?.avg_frame_rate;
     const fps = fr && /^\d+\/\d+$/.test(fr) && !fr.startsWith("0/") ? Number(fr.split("/")[0]) / Number(fr.split("/")[1]) : undefined;

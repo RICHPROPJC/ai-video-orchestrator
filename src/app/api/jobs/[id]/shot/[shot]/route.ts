@@ -39,9 +39,9 @@ export async function GET(
     motion_form?: string;
     keyframe_positions?: string;
     prompt_id?: string | null;
-    sources?: { role: string; path: string; sha256: string }[];
+    sources?: { role: string; path: string; sha256: string; media?: { durationSec?: number; fps?: number; frameCount?: number } }[];
     uploads?: { blockout?: string | null; kf_start?: string | null; kf_end?: string | null; ref_images?: string[] };
-    output?: { filename?: string; sha256?: string };
+    output?: { filename?: string; sha256?: string; media?: { durationSec?: number; fps?: number; frameCount?: number } };
   } : null;
   const qcFile = path.join(dir, "motion", `${shot}.video_qc.json`);
   const qc = exists(qcFile) ? JSON.parse(fs.readFileSync(qcFile, "utf8")) as {
@@ -83,6 +83,8 @@ export async function GET(
       refImages: submit.uploads?.ref_images ?? [],
       sources: submit.sources ?? [],
       outputSha: submit.output?.sha256 ?? null,
+      // §29-1：output.media 透傳（runtime 已帶、型別已宣告；舊 receipt 缺欄=null→UI named-missing）
+      outputMedia: submit.output?.media ?? null,
       sameRunKeyframeAndVideo: Boolean(submit.uploads?.blockout && submit.uploads?.kf_start && submit.sources?.length),
     } : null,
     qc: qc ? {
