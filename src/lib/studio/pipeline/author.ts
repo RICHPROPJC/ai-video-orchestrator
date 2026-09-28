@@ -19,6 +19,7 @@ import type { AgentId, CallSheet, ProduceInput } from "../types";
 import type { SlateConfig } from "../config";
 import { GAP_BUDGET, SHEET_REPAIR_BUDGET, patch, type Ctx } from "./shared";
 import { reviseTurnTextsOf, completeAdoptedTurns } from "./session";
+import { sheetDigest } from "../seat-boards";
 
 /** Speaking parts must be castable, so the roster is read from a data file the
  *  operator points at — never from a list living in src. */
@@ -51,6 +52,14 @@ async function authorCallSheet(
   // §13.2：額度真源＝job 持久 soundRepairEpisode（author 攔截遞增；行內 loop／
   // resume 共用；row attempts 淺 mirror）。唔用文字身份——改台詞唔重置。
   const diskJob = readJob(jobId);
+  // root R2 修②③（0928）：frozen batch＋真 digest——採納快照喺任何模型
+  // call 之前落一次（digest＝磁碟現行 callsheet.json 計出嘅 sheetDigest，
+  // 唔靠 job 欄位有冇寫）；模型後 complete 用同一快照——快照後入隊嘅後到
+  // turn 唔會混入本輪 adopt 集合（filter processed 救唔到錯集合嘅問題喺
+  // 呢度斷源）。
+  const digestOnDisk = fs.existsSync(existing) ? sheetDigest(loadCallSheet(existing)) : null;
+  const frozenQueue = reviseTurnTextsOf(jobId, digestOnDisk);
+  const pendingAdopt = frozenQueue.adopt;
   const epAttempts = diskJob?.soundRepairEpisode?.attempts ?? 0;
   if (placementGaps.length && epAttempts < GAP_BUDGET) {
     const nextAttempts = epAttempts + 1;
@@ -145,6 +154,11 @@ async function authorCallSheet(
           `resume 拒絕：creative 手上有檔同 manifest sha 唔夾（${drifted.map((d) => d.file).join("、")}）——內容被改過，callsheet 唔准照食，重行創作鏈對齊。`,
           "warn",
         );
+      } else if (pendingAdopt.length) {
+        // root R2 修①（0928）：resume 照食場景嘅 pending consumer——有待採納
+        // 修訂 turn 唔照食，fall through 落修訂輪（creativeFresh 因 pending 轉
+        // false→reviseForGaps 帶 turn 內容返導演席；採納喺 plan 落盤收口）。
+        await io.speak("producer", `resume：${pendingAdopt.length} 條對話修訂待採納——唔照食 callsheet，返導演席修訂輪。`, "warn");
       } else {
         const sheet = loadCallSheet(existing);
         await io.speak("producer", `resume：照返 callsheet.json（${sheet.shots.length} 鏡），唔重開檯。`);
@@ -182,10 +196,12 @@ async function authorCallSheet(
   const manHere = readCreativeManifest(creativeDir);
   // §7②：placementGaps 積留＝creative 唔算 fresh（強制行 revise 輪帶差距
   //  返導演席）；修訂後新 plan 落盤，下游 callsheet/world 重算。
-  const creativeFresh = fs.existsSync(planOnDiskFile) && (!manHere || manHere.briefSha === briefSha(input.brief)) && !placementGaps.length;
+  const creativeFresh = fs.existsSync(planOnDiskFile) && (!manHere || manHere.briefSha === briefSha(input.brief)) && !placementGaps.length && !pendingAdopt.length;
   if (!creativeFresh) {
     // §7②：gaps 情況＝revise 輪（帶磁碟上嘅 plan＋script＋差距 hint 返導演席）
-    const reviseForGaps = canRevise && fs.existsSync(planOnDiskFile)
+    // root R2 修①：pending 係獨立修訂觸發（唔使 gaps 在場）；hint 帶 frozen
+    // 快照 turn 原文（模型前快照，唔讀 live queue）。
+    const reviseForGaps = (canRevise || pendingAdopt.length > 0) && fs.existsSync(planOnDiskFile)
       ? {
           previousPlan: JSON.parse(fs.readFileSync(planOnDiskFile, "utf8")) as unknown,
           scriptMd: fs.existsSync(path.join(creativeDir, "script.md"))
@@ -202,6 +218,7 @@ async function authorCallSheet(
               : {};
             const notes = (sheetNow.onImageAdoptions ?? []).map((a) => `${a.placement}→${a.shotIds.join("/")}：${a.plan}（理由：${a.reason}）`);
             return [
+              ...(pendingAdopt.length ? pendingAdopt.map((t) => `【用戶對話修訂請求 ${t.turnId}】${t.text}`) : []),
               missing.length ? `聲畫對位缺口（world audioTimeline 對照）：${missing.map((g) => g.text).join("；")}——補返呢啲句子嘅 dialogueClock 落點` : "",
               adoptions.length ? `boards 席聲畫採用矛盾（placement/onImage 落地打交）：${adoptions.map((g) => g.text).join("；")}——重新協調 placement 同鏡面安排，唔可以靠加一句 placement 字串消掉語義矛盾` : "",
               adoptions.length && notes.length ? `boards 現行採用明細：${notes.join("；")}` : "",
@@ -210,7 +227,12 @@ async function authorCallSheet(
         }
       : undefined;
     let plan = await runDirector(
-      { brief: input.brief, targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) },
+      { brief: pendingAdopt.length && !reviseForGaps
+          // root R2 修①：首創路（冇 previousPlan 可帶）——turn 原文入 brief；
+          // revise 輪（reviseForGaps）已喺 hint 帶，唔重複。
+          ? `${input.brief}\n\n【用戶對話修訂請求（採納落本輪創作）】\n${pendingAdopt.map((t) => `- ${t.text}`).join("\n")}`
+          : input.brief,
+        targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) },
       {
         crew: cfg.crew,
         model: cfg.crew.directorModel ?? (() => { throw new Error("director_model_missing: 導演席要明示 directorModel——創作整合唔借 writer 嘅平腦（SC-CREATIVE-OS-0927 分開明示）"); })(),
@@ -227,6 +249,13 @@ async function authorCallSheet(
     );
     treatment = plan.treatment;
     directorSkeleton = skeletonOf(plan);
+    // root R2 修①②（0928）：pending 採納唯一收口——plan 落盤即用 frozen 快照
+    // 回寫（adopted@planSha＝採納輪證據；stale 具名 blocked）。快照後入隊嘅
+    // turn 自然留下一輪（complete 淨清快照內 turnId）。revise 迴路（下方
+    // runPlaywright 後）唔再讀 queue／唔再二次 complete——單一收口。
+    if (frozenQueue.adopt.length || frozenQueue.stale.length) {
+      completeAdoptedTurns(jobId, frozenQueue.adopt.map((t) => ({ turnId: t.turnId, adoptedRef: "creative/director-plan.json", revision: written.planSha.slice(0, 12), affectedScope: "creative：導演修訂輪（含用戶對話請求）" })), frozenQueue.stale);
+    }
     // 裁決 0928 A：編劇劇本要傳得出分支（runWriter packet 食佢嘅對白）
 
     // BRIEF_TO_SCRIPT：故事流（flow 提劇本/故事/敘事）→ 編劇席正式 callsite
@@ -281,11 +310,9 @@ async function authorCallSheet(
               // §23 B：typed hint——完整差異原文＋newElements 內容（撤 slice
               // 200/300/400 截斷，遺失必要資料）；診斷類標明啟發式交導演逐項裁
               hint: [
-                // §P33 A3/A4（0928）：owner 安全點——採納佇列 revise turn（digest
-                // 核對；stale 具名）帶入修訂 hint；完成後回寫 adopted。
-                ...(reviseTurnTextsOf(jobId, undefined).adopt.length
-                  ? reviseTurnTextsOf(jobId, undefined).adopt.map((t) => `【用戶對話修訂請求 ${t.turnId}】${t.text}`)
-                  : []),
+                // root R2 修②（0928）：撤模型前 live queue 讀（兩次 call）——
+                // pending 採納已喺 plan 落盤收口（frozen 快照）；呢度淨 script
+                // 對 plan 差異訊號。
                 ...(ev.unplaced.length ? [`【必要契約】冇落點台詞 ${ev.unplaced.length} 句：${ev.unplaced.map((u) => u.line).join("／")}`] : []),
                 ...(ev.declaredMissing.length ? [`【必要契約】聲明台詞正文缺席（宣稱保留/新增但正文冇）：${ev.declaredMissing.join("／")}`] : []),
                 ...(ev.newElements.length ? [`【變更紀錄】編劇明報新增元素 ${ev.newElements.length} 項——每項要採納到鏡表、或有來源嘅拒絕並同步修改劇本、或明示未解（唔可以清空紀錄過閘，拒絕唔可改用戶硬要求）：${ev.newElements.map((n) => `${n.what}（${n.why}）`).join("；")}`] : []),
@@ -296,14 +323,8 @@ async function authorCallSheet(
             },
           );
           const rewritten = writeCreativeArtifacts(jobId, creativeDir, input.brief, revised, { targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) });
-          // §P33 A3：修訂採納完成——回寫 turn adopted（manifest revision 做
-          // adoptedRef；affectedScope＝creative 修訂範圍）
-          {
-            const { adopt, stale } = reviseTurnTextsOf(jobId, undefined);
-            if (adopt.length || stale.length) {
-              completeAdoptedTurns(jobId, adopt.map((t) => ({ turnId: t.turnId, adoptedRef: "creative/director-plan.json", revision: rewritten.planSha.slice(0, 12), affectedScope: "creative：director plan 修訂輪（含用戶對話請求）" })), stale);
-            }
-          }
+          // root R2 修②（0928）：撤模型後 live queue 讀＋二次 complete——採納
+          // 已喺 plan 首次落盤收口（frozen 快照）；呢度唔再讀 queue。
           updateCreativeManifest(creativeDir, input.brief, { file: "script.md", dependsOn: rewritten.planSha });
           updateCreativeManifest(creativeDir, input.brief, { file: "script.json", dependsOn: rewritten.planSha });
           plan = revised;

@@ -98,11 +98,12 @@ export function appendTurn(jobId: string, turn: Omit<SessionTurn, "turnId" | "se
  *  唔夾＝stale 具名；修訂完成後 completeAdoptedTurns 回寫 adopted＋adoption。
  *  runtime 觸發照舊 produce 邊界——本鏈淨接線，唔自行開 LLM。 */
 export function queueReviseTurn(jobId: string, turnId: string): void {
-  const { readJob, writeJob } = require("../store") as typeof import("../store");
-  const job = readJob(jobId);
-  if (!job) return;
-  const next = [...new Set([...(job.pendingReviseTurns ?? []), turnId])];
-  writeJob({ ...job, pendingReviseTurns: next });
+  // root R2 修④：行 mutateJob（檔鎖＋CAS 語義）——route 同 producer 併發改
+  // pendingReviseTurns 唔互吞；取代裸 readJob→writeJob 整檔。
+  const { mutateJob } = require("../store") as typeof import("../store");
+  mutateJob(jobId, (job) => {
+    job.pendingReviseTurns = [...new Set([...(job.pendingReviseTurns ?? []), turnId])];
+  });
 }
 
 export function reviseTurnTextsOf(jobId: string, callsheetDigest: string | null | undefined): { adopt: { turnId: string; text: string }[]; stale: { turnId: string; reason: string }[] } {
@@ -137,10 +138,13 @@ export function completeAdoptedTurns(jobId: string, adopted: { turnId: string; a
     if (st) comp.push(JSON.stringify({ ...t, status: "blocked" as const, blockedReason: st.reason }));
   }
   if (comp.length) fs.appendFileSync(sessionFile(jobId), comp.join("\n") + "\n");
-  const { readJob, writeJob } = require("../store") as typeof import("../store");
-  const job = readJob(jobId);
+  // root R2 修④：清 queue 行 mutateJob（檔鎖）——同 route 側 queueReviseTurn
+  // 併發唔互吞（producer complete 同時 route 新 turn 入隊）。
+  const { mutateJob } = require("../store") as typeof import("../store");
   const processed = [...adopted.map((a) => a.turnId), ...staleOut.map((a) => a.turnId)];
-  if (job) writeJob({ ...job, pendingReviseTurns: (job.pendingReviseTurns ?? []).filter((id) => !processed.includes(id)) });
+  mutateJob(jobId, (job) => {
+    job.pendingReviseTurns = (job.pendingReviseTurns ?? []).filter((id) => !processed.includes(id));
+  });
 }
 
 /** §P33 A3 ask reply consumer（0928）：ask turn 唔再淨 recorded——生文字回覆
@@ -151,7 +155,7 @@ export function completeAdoptedTurns(jobId: string, adopted: { turnId: string; a
 const ASK_REPLY_CHARTER = `你係製作台（SlateCrew）嘅會話回覆席。用戶喺同一條片（job）嘅持久 session 問問題，你負責文字回覆。
 規則：
 1. 只根據提供嘅 job facts 同 session 近況作答；facts 冇嘅嘢就話「我呢度冇資料」，唔好作。
-2. 唔好扮任何嘢已經執行：你唔會改 plan、唔會觸發 produce、唔會開 generation。用戶想改嘢→叫佢交 intent=revise（嗰條路先入採納佇列）。
+2. 唔好扮任何嘢已經執行：你唔會改 plan、唔會觸發 produce、唔會開 generation。用戶想改嘢→叫佢清楚講出要改咩，用「要求修改」重交（嗰條路先入採納佇列）；唔好向用戶露出內部參數／實作字眼。
 3. 語言跟用戶問題嘅語言（用戶中文你中文，英文你英文）。
 4. 一至三句答完，直接有用，唔兜圈。`;
 
@@ -191,7 +195,7 @@ export async function replyToAskTurn(
     replySource = "seat";
   } catch {
     // LLM 唔係 ask 回覆嘅硬依賴——fail 落誠實現況組裝（唔扮答到）
-    text = `（回覆席暫時唔在場——如實現況）job ${facts.status}${facts.currentAgent ? `，當前席位 ${facts.currentAgent}` : ""}${typeof facts.progress === "number" ? `，進度 ${facts.progress}%` : ""}${facts.error ? `；最後錯誤：${facts.error}` : ""}。你嘅問題已記錄（turn ${userTurn.turnId}）；要改嘢請用 intent=revise 重交。`;
+    text = `（回覆席暫時唔在場——如實現況）job ${facts.status}${facts.currentAgent ? `，當前席位 ${facts.currentAgent}` : ""}${typeof facts.progress === "number" ? `，進度 ${facts.progress}%` : ""}${facts.error ? `；最後錯誤：${facts.error}` : ""}。你嘅問題已記錄（turn ${userTurn.turnId}）；要改嘢請清楚講出修改要求，用「要求修改」重交。`;
   }
   const turn = appendTurn(jobId, {
     requestId: `${userTurn.requestId}:reply`,

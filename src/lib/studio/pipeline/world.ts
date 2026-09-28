@@ -408,6 +408,10 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     }, null, 2));
     // §9⑥：本輪凍結 expected revision（mux 三比用；行內回修重寫收據時更新）
     ctx.callsheetDigest = sheetDigest(ctx.locked!);
+    // root R2 修③（0928）：digest 落 job（session turn dependsOn 對比真源）。
+    // stills/KF 回填改 callsheet 內容唔重寫呢欄——KF positions 唔係 turn 採納
+    // 基礎嘅語義變更（stale 判斷以聲畫結構版為準）。
+    ctx.job = patch(ctx.job, { callsheetDigest: ctx.callsheetDigest });
     // §P33 A4（root 競態修②撤 blanket-block）：owner 過 author 段後入隊嘅正當
     // turn 綁舊 digest＝會被誤標 blocked。stale 判斷留 author 採納輪（該輪
     // 有本輪修訂語境）；呢度淨留 diagnostic emit 唔改 turn 狀態。
@@ -452,6 +456,8 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       events: [],
     }, null, 2));
     ctx.callsheetDigest = sheetDigest(ctx.locked!);
+    // root R2 修③（0928）：同上——digest 落 job（turn dependsOn 真源）
+    ctx.job = patch(ctx.job, { callsheetDigest: ctx.callsheetDigest });
     // §P33 A4（root 競態修②撤 blanket-block）：owner 過 author 段後入隊嘅正當
     // turn 綁舊 digest＝會被誤標 blocked。stale 判斷留 author 採納輪（該輪
     // 有本輪修訂語境）；呢度淨留 diagnostic emit 唔改 turn 狀態。

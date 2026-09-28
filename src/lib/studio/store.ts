@@ -125,7 +125,52 @@ export function writeJob(job: JobRecord, owner?: JobOwner) {
   }
   ensureDir(jobDir(job.id));
   job.updatedAt = new Date().toISOString();
-  fs.writeFileSync(path.join(jobDir(job.id), "job.json"), JSON.stringify(job, null, 2));
+  // root R2 修④（0928）：tmp+rename 原子替換——寫一半冚檔（並發讀者／斷電）
+  // 唔會見到半份 JSON。
+  const file = path.join(jobDir(job.id), "job.json");
+  const tmp = `${file}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(job, null, 2));
+  fs.renameSync(tmp, file);
+}
+
+/** root R2 修④（0928）：job.json 跨進程 read-modify-write 安全——O_EXCL 檔鎖
+ *  spin（stale 鎖 10s 搶）＋鎖內 read→mutate→write。API route（Next 進程）
+ *  同 producer（pipeline）併發改 job 欄（pendingReviseTurns 等）唔再互吞。
+ *  fn 就地 mutate 傳入 job；owner guard 照 writeJob 語義（可選）。 */
+export function mutateJob<T>(id: string, fn: (job: JobRecord) => T, owner?: JobOwner): T {
+  ensureDir(jobDir(id));
+  const lock = path.join(jobDir(id), ".job.lock");
+  const acquire = (): boolean => {
+    try {
+      fs.closeSync(fs.openSync(lock, "wx"));
+      return true;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "EEXIST") {
+        try {
+          if (Date.now() - fs.statSync(lock).mtimeMs > 10_000) {
+            fs.rmSync(lock, { force: true });
+            return acquire();
+          }
+        } catch { /* stat 失敗（啱啱被放）＝下輪 spin */ }
+        return false;
+      }
+      throw e;
+    }
+  };
+  const deadline = Date.now() + 3_000;
+  while (!acquire()) {
+    if (Date.now() > deadline) throw new Error(`job_lock_timeout: ${id} job 鎖 3s 內取唔到（另一寫入者長期持有？）`);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);
+  }
+  try {
+    const job = readJob(id);
+    if (!job) throw new Error(`unknown-slate:${id}（mutateJob：讀時 job 已消失）`);
+    const value = fn(job);
+    writeJob(job, owner);
+    return value;
+  } finally {
+    try { fs.rmSync(lock, { force: true }); } catch { /* 已被搶＝唔剷人哋鎖 */ }
+  }
 }
 
 export function listJobs(): JobRecord[] {
