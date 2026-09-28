@@ -210,6 +210,8 @@ export function StudioFloor({
   }, [events.length]);
 
   const running = job?.status === "running" || job?.status === "queued";
+  /** R19-R21：分鏡模式（text-only auto-adopt 提示）——types 未有欄位，cast 讀。 */
+  const storyboardMode = (job?.outputs as { storyboardMode?: string } | undefined)?.storyboardMode;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -507,6 +509,9 @@ export function StudioFloor({
                   <p className="mt-1 text-xs text-muted-foreground">
                     進度 {job.progress}% · 鏡頭 {job.callSheet?.shots.length ?? 0} · 分鏡 {job.callSheet?.storyboard?.length ?? 0} · 靜畫 {job.outputs.stills.length} · 灰片 {job.outputs.blockout.length} · H3 已交 {submittedShotCount(events)}
                   </p>
+                ) : null}
+                {storyboardMode ? (
+                  <p className="mt-1 text-[10px] text-amber-300/90">分鏡模式：{storyboardMode}</p>
                 ) : null}
                 {job?.status === "boarded" ? (
                   <p className="mt-1 text-xs text-destructive">自己停喺文字表，冇下一席接手。算失敗。</p>

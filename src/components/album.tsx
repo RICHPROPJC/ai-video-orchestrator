@@ -74,6 +74,46 @@ function useShotInspects(jobId: string, shotIds: string[]) {
   return map;
 }
 
+/** motion selection（motion/selection.json，R19-R21）——每鏡揀嘅 mocap 段；
+ *  segment/candidateEvidence 新欄 optional（舊 job 冇），有先顯示。 */
+type MotionSel = {
+  shot: string;
+  bvh?: string;
+  conf?: number;
+  decisionSource?: string;
+  reason?: string;
+  tie_break?: string;
+  flags?: string[];
+  segment?: { startF?: number; endF?: number; startSec?: number; endSec?: number; method?: string };
+  candidateEvidence?: unknown;
+};
+
+/** decisionSource 人話翻譯——原文照 passthrough 俾進階用戶睇。 */
+const MOTION_SOURCE_NOTE: Record<string, string> = {
+  "seat-decision:--motion-pick": "席揀（--motion-pick）",
+  "seat-tiebreak:stable-id-order": "平手·按穩定 ID 序",
+  "seat-decided:unobserved-tie": "平手·未觀測分勝",
+  "human-override": "人手覆核揀",
+};
+
+function useMotionSelection(jobId: string): Record<string, MotionSel> {
+  const [map, setMap] = useState<Record<string, MotionSel>>({});
+  useEffect(() => {
+    if (!jobId) return;
+    let stop = false;
+    void fetch(media(jobId, "motion/selection.json"), { cache: "no-store" })
+      .then(async (r) => (r.ok ? ((await r.json()) as { shots?: MotionSel[] }) : null))
+      .then((d) => {
+        if (!stop && d?.shots?.length) setMap(Object.fromEntries(d.shots.map((s) => [s.shot, s])));
+      })
+      .catch(() => undefined);
+    return () => {
+      stop = true;
+    };
+  }, [jobId]);
+  return map;
+}
+
 /** 收據＋sheet → 呢鏡嘅 positions／KF rels／釘位。 */
 function shotPins(inspect: { data: ShotInspect | null } | undefined, shot: Shot) {
   const positions = inspect?.data?.h3?.keyframePositions || inspect?.data?.call?.keyframePositions || shot.keyframePositions || "";
@@ -223,6 +263,8 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
 
   const shotIds = useMemo(() => shots.map((s) => s.id), [shots]);
   const inspects = useShotInspects(job?.id ?? "", shotIds);
+  /** R19-R21：每鏡 motion selection（decisionSource／採納段／平手證據）。 */
+  const motionSel = useMotionSelection(job?.id ?? "");
   /** H3 出片 rel（SH01.mp4 等）——三方對照同 span 卡都用。 */
   const motionByShot = useMemo(() => {
     const m = new Map<string, string>();
@@ -430,6 +472,7 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
                         shot={shot}
                         motionRel={motionByShot.get(shot.id)}
                         inspect={inspects[shot.id]}
+                        motionSel={motionSel[shot.id]}
                       />
                     ))}
                 </div>
@@ -1390,6 +1433,7 @@ function AxisRow({
   motionRel,
   inspect,
   highlight,
+  motionSel,
 }: {
   jobId: string;
   shot: Shot;
@@ -1397,6 +1441,8 @@ function AxisRow({
   inspect?: { data: ShotInspect | null; err: string };
   /** 撞過上線鏡號＝highlight 呢鏈（Chau 0928：畫布全景攤晒，撞號跳去）。 */
   highlight?: boolean;
+  /** R19-R21 motion selection：decisionSource／採納段／平手證據（optional）。 */
+  motionSel?: MotionSel;
 }) {
   const data = inspect?.data ?? null;
   const err = inspect?.err ?? "";
@@ -1483,6 +1529,34 @@ function AxisRow({
         {motionRel ? (
           <SeekVideo src={media(jobId, motionRel)} pct={selPct} label="H3 出片（同一刻）" />
         ) : null}
+      </div>
+      {/* R19-R21：motion 揀段——decisionSource 人話＋採納段＋理由＋平手證據（optional 欄有先出）。 */}
+      <div className="rounded border border-border/70 px-2 py-1 text-[10px] text-muted-foreground">
+        {motionSel ? (
+          <>
+            <p>
+              motion 揀段：{MOTION_SOURCE_NOTE[motionSel.decisionSource ?? ""] ?? motionSel.decisionSource ?? "—"}
+              {motionSel.bvh ? ` · ${motionSel.bvh}` : ""}
+              {motionSel.segment
+                ? ` · 採納段 ${motionSel.segment.startSec ?? "?"}–${motionSel.segment.endSec ?? "?"}s（${motionSel.segment.method ?? "?"}）`
+                : ""}
+              {typeof motionSel.conf === "number" ? ` · conf ${motionSel.conf.toFixed(2)}` : ""}
+            </p>
+            {motionSel.reason ? <p className="mt-0.5">理由：{motionSel.reason}</p> : null}
+            {motionSel.tie_break ? <p>平手處理：{motionSel.tie_break}</p> : null}
+            {motionSel.flags?.length ? <p>旗標：{motionSel.flags.join("；")}</p> : null}
+            {motionSel.candidateEvidence != null ? (
+              <details className="mt-0.5">
+                <summary className="cursor-pointer">平手候選各維觀測</summary>
+                <pre className="mt-0.5 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[9px]">
+                  {JSON.stringify(motionSel.candidateEvidence, null, 1)}
+                </pre>
+              </details>
+            ) : null}
+          </>
+        ) : (
+          <p>motion selection 未落盤（motion/selection.json）</p>
+        )}
       </div>
       {redo ? (
         <div className="rounded border border-amber-700/50 bg-amber-950/20 p-2">
