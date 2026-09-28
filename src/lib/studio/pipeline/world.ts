@@ -720,11 +720,41 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         const cell = (look.cells ?? []).find((c) => path.basename(c) === want);
         if (!cell) { sceneMissing.push(`${sb.era}: cell「${type}」缺（exact ${want} 對唔到 manifest）`); continue; }
         if (!fs.existsSync(cell)) { sceneMissing.push(`${sb.era}: cell 檔在盤缺（${cell}）`); continue; }
+        // R17-①（root 0928）：收據完整驗——照 photo-qc pinQcAccepted 規則
+        //（tool=slatecrew.photo_qc＋status GREEN＋blind 完整＋require 非空）
+        // ＋**sha256 重算對當前 PNG**（同路徑換圖＝stale）＋require 契約比對
+        //（people 0/grey_blocks true/**tool==type**——舊 require 收據具名退回）。
         const qcFile = cell.replace(/\.png$/, ".photo_qc.json");
-        let qcStatus = "unknown";
-        try { qcStatus = String((JSON.parse(fs.readFileSync(qcFile, "utf8")) as { status?: string }).status ?? "unknown"); } catch { qcStatus = "missing"; }
-        if (qcStatus !== "GREEN") { sceneMissing.push(`${sb.era}: cell「${type}」QC 未 GREEN（${qcStatus}——missing/unknown≠GREEN）`); continue; }
+        let qcNote = "";
+        try {
+          const qc = JSON.parse(fs.readFileSync(qcFile, "utf8")) as {
+            tool?: string; status?: string; sha256?: string; require?: Record<string, unknown>; blind?: unknown; part_b?: unknown;
+          };
+          if (qc.tool !== "slatecrew.photo_qc" || qc.status !== "GREEN") qcNote = `status=${qc.status ?? "?"}`;
+          else if ("part_b" in qc || typeof qc.blind !== "string") qcNote = "收據不完整（part_b/blind）";
+          else if (!qc.require || Object.keys(qc.require).length === 0) qcNote = "require 空";
+          else if (qc.require.people_count !== 0 || qc.require.grey_blocks !== true || qc.require.tool !== type) qcNote = `require 契約唔對本集（收據 ${JSON.stringify(qc.require).slice(0, 60)} vs 期望 people0/grey/「${type}」）`;
+          else {
+            const digest = createHash("sha256").update(fs.readFileSync(cell)).digest("hex");
+            if (qc.sha256 !== digest) qcNote = "stale（sha256 對唔到當前 PNG——同路徑換過圖）";
+          }
+        } catch { qcNote = "收據缺/壞"; }
+        if (qcNote) { sceneMissing.push(`${sb.era}: cell「${type}」QC 未過（${qcNote}）——退回素材席重驗`); continue; }
       }
+    }
+    // R17-③（root 0928）：buildings→上場 props coverage 可追溯映射——每
+    // building type 對 callsheet props（名對到＝上場：行 props plate→SF3D→
+    // rigid 正途已由 items 消費；對唔到＝lookdev 款式参考唔上場）——emit
+    // traceable 表，唔 comment 聲稱就算消費。
+    const propNameSet = new Set(ctx.locked!.shots.flatMap((s) => s.props ?? []).map((pp) => pp.name));
+    const coverage = sceneBoards.flatMap((sb) => sb.types.map((type) => ({
+      era: sb.era, type,
+      disposition: propNameSet.has(type) ? ("staged" as const) : ("lookdev-only" as const),
+    })));
+    if (coverage.length) {
+      emit(jobId, { agent: "producer", level: "info",
+        message: `buildings coverage：${coverage.filter((c) => c.disposition === "staged").length} 型上場（props 正途消費）、${coverage.filter((c) => c.disposition === "lookdev-only").length} 型 lookdev 参考（唔上場）`,
+        data: { stage: "scene-coverage", coverage } });
     }
     if (sceneMissing.length) {
       emit(jobId, { agent: "producer", level: "warn",

@@ -794,11 +794,12 @@ export async function ensureSceneBoard(opts: {
     const file = cutFile.replace(/\.cut\.png$/, ".png");
     await lane.rembg(cutFile, file);
     cells.push(file);
-    // R16-③（root 0928）：cell QC 接 source——通用 photo_qc（require 按 lookdev
-    // 面：零人＋**白模合法**（grey_blocks:true）＋location=era）；收據同路徑
-    // .photo_qc.json（readiness gate 同源驗 GREEN；missing/unknown≠GREEN）。
+    // R16-③→R17-②（root 0928）：cell QC 接 source——require 由**採納當集
+    // era+type+用途**形成閉式期望：零人＋**白模合法**（grey_blocks:true＝
+    // lookdev 用途判斷，唔放寬上場 KF）＋**tool=type**（款式內容必須在圖——
+    // era 係年代唔係場所，撤亂塞 location）；收據同路徑 .photo_qc.json。
     const qcFile = file.replace(/\.png$/, ".photo_qc.json");
-    await runPhotoQc(file, qcFile, { people_count: 0, grey_blocks: true, location: opts.era });
+    await runPhotoQc(file, qcFile, { people_count: 0, grey_blocks: true, tool: type });
     opts.onEvent?.(`建築格 ${opts.era}${type} rembg＋QC 後入 Blender look-dev 參考`, { file, cutFile, board, qcFile });
   }
   const manifest = path.join(scenesDir, `${slug(opts.era)}.lookdev.json`);
