@@ -12,6 +12,24 @@ import { type Script } from "./script-contract";
 import type { CallSheet } from "./types";
 import type { SeatIo } from "./seat-writer";
 
+/** §23 watch-場窗：本場相關 placements 計一次，packet 與 validator 同用（純
+ *  helper；idx 仍為全片來源 idx 保跨場聲橋；±1s 政策不變——最終 cut-clock
+ *  對齊留既定驗收）。 */
+function sceneRelevantPlacements(
+  all: { word: string; startSec?: number; endSec?: number }[] | undefined,
+  outline: { id: string; targetSec: number }[],
+  sceneId: string,
+): { word: string; idx: number; startSec?: number; endSec?: number }[] {
+  const i = outline.findIndex((sc) => sc.id === sceneId);
+  if (i < 0) return [];
+  const start = outline.slice(0, i).reduce((a, sc) => a + sc.targetSec, 0);
+  const end = start + (outline[i]?.targetSec ?? 0);
+  return (all ?? [])
+    .map((p, idx) => ({ word: p.word, idx, startSec: p.startSec, endSec: p.endSec }))
+    .filter((p) => (p.endSec ?? 0) >= start - 1 && (p.startSec ?? 0) <= end + 1);
+}
+
+
 export type BoardsResult = { sheet: CallSheet; model: string; receipts: string[] };
 
 type Handoff = Record<string, { slot: string; depth: string; stance: string; props: string[] }>;
@@ -219,6 +237,7 @@ type BoardsOptions = { script: Script; targetSec: number; aspect?: CallSheet["as
 type BoardsIo = SeatIo & { boardLane?: BoardLane; boardsDir?: string };
 export function runBoards(opts: { render: BoardsVisualOptions }): ReturnType<typeof renderBoards>;
 export function runBoards(opts: BoardsOptions, io: BoardsIo): Promise<BoardsResult>;
+
 export async function runBoards(
   opts: BoardsOptions | { render: BoardsVisualOptions },
   io?: BoardsIo,
@@ -263,13 +282,7 @@ export async function runBoards(
             beats: opts.directorSkeleton.beats ?? [],
             shots: (opts.directorSkeleton.shots ?? []).filter((sh) =>
               sh.startSec !== undefined && sh.endSec !== undefined),
-            dialoguePlacements: (opts.directorSkeleton.dialoguePlacements ?? []).map((p, idx) => ({ word: p.word, idx, startSec: p.startSec, endSec: p.endSec }))
-              .filter((p) => {
-                // §15.3：packet 同 validator 同一相關集（時間窗版，見 schema ctx）
-                const sceneStartLocal = script.outline.scenes.slice(0, i).reduce((a, sc) => a + sc.targetSec, 0);
-                const sceneEndLocal = sceneStartLocal + scene.targetSec;
-                return (p.endSec ?? 0) >= sceneStartLocal - 1 && (p.startSec ?? 0) <= sceneEndLocal + 1;
-              }),
+            dialoguePlacements: sceneRelevantPlacements(opts.directorSkeleton.dialoguePlacements, script.outline.scenes, scene.id),
           } } : {}),
         characters: script.outline.characters.map((c) => ({
           id: c.id,
@@ -280,17 +293,7 @@ export async function runBoards(
         })),
         previousSceneHandoff: carried,
       }),
-      schema: boardsSceneSchema({ sceneId: scene.id, beats, characters, budgetSec, scriptBeatIds: script.scenes.flatMap((sc) => sc.beats.map((b) => b.id)), dialoguePlacements: (() => {
-        // §15.3：本場相關＝時間窗重疊（placement 區間 vs 場時間範圍，±1s
-        // 容跨場聲橋接收場——唔可以淨計台詞來源場漏接收畫面責任）＋帶 idx
-        // （occurrence 身份）。packet 同 validator 同集。
-        const all = opts.directorSkeleton?.dialoguePlacements ?? [];
-        const sceneStart = script.outline.scenes.slice(0, i).reduce((a, sc) => a + sc.targetSec, 0);
-        const sceneEnd = sceneStart + scene.targetSec;
-        return all
-          .map((p, idx) => ({ word: p.word, idx, startSec: p.startSec, endSec: p.endSec }))
-          .filter((p) => (p.endSec ?? 0) >= sceneStart - 1 && (p.startSec ?? 0) <= sceneEnd + 1);
-      })() }),
+      schema: boardsSceneSchema({ sceneId: scene.id, beats, characters, budgetSec, scriptBeatIds: script.scenes.flatMap((sc) => sc.beats.map((b) => b.id)), dialoguePlacements: sceneRelevantPlacements(opts.directorSkeleton?.dialoguePlacements, script.outline.scenes, scene.id) }),
       normalize: (raw, note) => padBoardDurations(raw, budgetSec, note),
       receiptDir: io.receiptDir,
       fetchImpl: io.fetchImpl,

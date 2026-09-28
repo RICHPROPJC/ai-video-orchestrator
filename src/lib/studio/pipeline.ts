@@ -38,7 +38,7 @@ import { buildCutPlan, type CutPlan } from "./cut-plan";
 import { checkGate } from "./concat-gate";
 import { writeAnchors } from "./dhash-anchors";
 import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "./blockout";
-import { isLocationFail, keyframeEditPrompt, keyframeRequire, loadBaseCast, needsShotFacts, sceneRetryNormalize, sceneRetrySchema, sceneRetryUser, textMiss, textRetrySchema, textRetryUser } from "./keyframe-prompt";
+import { isLocationFail, keyframeEditPrompt, keyframeRequire, loadBaseCast, needsShotFacts, sceneRetryNormalize, sceneRetrySchema, sceneRetryUser, textMiss } from "./keyframe-prompt";
 import { applyBoardsDecision, forcesRedo, redoFromIndex } from "./shot-redo";
 import { runPeStep } from "./pe-step";
 import { buildProse, buildProsePositive, validateProse, wardrobeClauses, SCRIPT_HEADER } from "./h3-prose";
