@@ -5,7 +5,7 @@ import { blockersForGate, formatFleet, gateReady, probeFleet } from "@/lib/studi
 import { jobFile } from "@/lib/studio/paths";
 import { runPipeline } from "@/lib/studio/pipeline";
 import { createSlate, fleetGateOf, resumeSlate, type ResumePatch } from "@/lib/studio/open-produce";
-import { listJobs, readJob, writeJob } from "@/lib/studio/store";
+import { listJobs, ownerHeartbeatMs, ownerIsStale, readJob, writeJob } from "@/lib/studio/store";
 import type { ProduceInput } from "@/lib/studio/types";
 
 export const runtime = "nodejs";
@@ -108,6 +108,31 @@ export async function POST(req: Request) {
     );
   }
 
+  // SC-UI-SESSION-0928-P33 A1（§33-4）：resume 路徑 active-owner 前置——同 ID
+  // 有活躍執行者→attached 既有 run（零狀態改動、零第二執行），唔靠 runPipeline
+  // acquire 先擋；無效 ID 具名報錯，絕不 fallback new。
+  if (resumeId) {
+    const job = readJob(resumeId);
+    if (!job) {
+      return NextResponse.json({ error: `unknown-slate:${resumeId}`, detail: "呢個 ID 冇 job——resume 絕不 fallback 去新建" }, { status: 404 });
+    }
+    const ms = ownerHeartbeatMs(resumeId);
+    if (ms !== null && !ownerIsStale(resumeId)) {
+      if (wantsRedirect) {
+        const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "127.0.0.1:43127";
+        const proto = req.headers.get("x-forwarded-proto") || "http";
+        return NextResponse.redirect(`${proto}://${host}/?slate=${resumeId}`, 303);
+      }
+      return NextResponse.json({
+        jobId: resumeId,
+        status: "attached",
+        owner: { active: true, heartbeatMsAgo: ms },
+        progress: job.progress ?? null,
+        lastError: job.error ?? null,
+        note: "活躍執行者仲行緊——attached 既有 run（零副作用，冇改 queued、冇起第二執行）",
+      });
+    }
+  }
   const opened = resumeId ? resumeSlate(resumeId, patch) : createSlate(input);
   if ("error" in opened) {
     return NextResponse.json({ error: opened.error }, { status: 400 });
