@@ -742,7 +742,14 @@ export async function runDirector(
     });
     fs.writeFileSync(path.join(io.receiptDir, revise ? "creative.director-plan-revise.gap-retry.raw.json" : "creative.director-plan.gap-retry.raw.json"), JSON.stringify(retryPass.value, null, 2));
     const again = compileDirectorPlan(retryPass.value);
-    compiled = { plan: again.plan, receipt: [...compiled.receipt, ...again.receipt, `director gap-retry after ${compiled.misses.length} misses`], misses: again.misses };
+    // 分裂 A 收口（Explore 掃描 0928）：retry 後驗收同修觸發同一張單——unplaced
+    // 對 retryPass.value 重跑併入 misses（之前淨驗 canonical，retry 品帶未落點
+    // 句照過閘——同一病殘留半修）。
+    const unplacedAfterRetry: string[] = revise
+      ? unplacedDialogueOf({ script_md: revise.scriptMd } as Parameters<typeof dialogueSignalsOf>[0], { dialogueClock: (retryPass.value as { dialogueClock?: { placements?: { word?: string }[] } }).dialogueClock })
+          .map((u) => `劇本句冇落點（plan 零 placement）：${u.line}`)
+      : [];
+    compiled = { plan: again.plan, receipt: [...compiled.receipt, ...again.receipt, `director gap-retry after ${compiled.misses.length} misses`], misses: [...again.misses, ...unplacedAfterRetry] };
   }
   const { plan, receipt, misses } = compiled;
   fs.writeFileSync(path.join(io.receiptDir, revise ? "creative.director-plan-revise.compile.json" : "creative.director-plan.compile.json"), JSON.stringify({ receipt, misses }, null, 2));
