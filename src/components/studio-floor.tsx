@@ -973,7 +973,11 @@ function ProjectGroup({
                   <p className="mt-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">跑緊——撳入去附着既有 run，唔另起執行</p>
                 ) : locked ? (
                   <p className="mt-1 text-[10px] text-muted-foreground">
-                    已交付——去 <a className="text-primary underline" href={`/?slate=${item.id}&tab=lock`}>成片</a> 睇；要修改＝對話修訂（對話 API 未接通，等 A 交 shape）
+                    已交付——去 <a className="text-primary underline" href={`/?slate=${item.id}&tab=lock`}>成片</a> 睇；要修改＝
+                    <a className="text-primary underline" href={`/?slate=${item.id}`}>
+                      入呢個項目用「同呢個項目對話」要求修改
+                    </a>
+                    （送出後照回執狀態顯示——已記錄唔等於已執行）
                   </p>
                 ) : (
                   <ResumeButton jobId={item.id} slate={item.slate} />

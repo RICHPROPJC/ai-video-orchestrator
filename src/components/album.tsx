@@ -316,8 +316,11 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
         key: `char:${c.id}`,
         label: `${c.name}（${c.id}）`,
         srcs: [media(id, `portraits/boards/${c.id}.angles.png`)],
-        note: gc ? `契約 ${gc.contractSha.slice(0, 8)}` : undefined,
-        noteTitle: gc ? `生成契約指紋 ${gc.contractSha} · savedAt ${gc.savedAt ?? "—"}` : undefined,
+        /** ROOT 0929：契約 sha 只證契約，唔冒充 QC 採納；sidecar 冇＝named-missing 照顯示。 */
+        note: gc ? `契約 ${gc.contractSha.slice(0, 8)}` : "契約 sidecar 未有",
+        noteTitle: gc
+          ? `生成契約指紋 ${gc.contractSha} · savedAt ${gc.savedAt ?? "—"}（只證契約；QC 採納另要 photo_qc GREEN＋sha 對返而家嘅 png）`
+          : "未有 gen_contract sidecar（404）——唔代表任何驗收狀態",
       };
     });
   }, [job?.callSheet?.characters, job?.id, genContracts]);
@@ -449,7 +452,7 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
                         {item.label}
                       </span>
                       {item.note ? (
-                        <span className="block truncate bg-emerald-950/40 px-1 pb-0.5 font-mono text-[9px] text-emerald-500/80" title={item.noteTitle ?? item.note}>
+                        <span className="block truncate bg-muted/40 px-1 pb-0.5 font-mono text-[9px] text-muted-foreground" title={item.noteTitle ?? item.note}>
                           {item.note}
                         </span>
                       ) : null}
