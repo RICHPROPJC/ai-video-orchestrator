@@ -15,7 +15,9 @@ export type WorldProjectOverview = {
   updatedAt?: string;
 };
 
-const WORLD_BASE = "/api/world";
+/** crew proxy 原樣透傳（/api/world/<X> → :8791/<X>）；World 淨掛 /api/*——
+ *  所以 base 含埋 /api：實際請求 /api/world/api/projects（0929 probe 200 實證）。 */
+const WORLD_BASE = "/api/world/api";
 
 export function worldApi(rel: string) {
   return `${WORLD_BASE}${rel}`;
