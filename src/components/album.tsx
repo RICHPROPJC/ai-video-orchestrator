@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchH3Plan, keyframeRelPaths, type H3PlanFile } from "@/lib/studio/keyframe-rels";
 import { jobRel, kfSrcs, makePropIdx, pinPercents, propSrcs, slug } from "@/lib/studio/canvas-rels";
 import { useFilmThumbs } from "@/lib/studio/film-thumbs";
+import { useWorldStage, useWorldTask } from "@/lib/studio/world-client";
 import type { JobRecord, Shot } from "@/lib/studio/types";
 import { FeedbackForm } from "@/components/feedback-form";
 
@@ -1373,6 +1374,60 @@ function SpanCard({
 }
 
 
+/** GO-ALBUM：typed World 任務格——binding.shotMap 映射（worldShotId/sceneId/
+ *  cameraId）＋taskId 有值時查 task 真源（state/error 照字/artifacts 有產物
+ *  先顯示產物）。stale 聯動 amber。 */
+function WorldTaskCell({
+  task,
+  stale,
+}: {
+  task: { taskId?: string; taskState?: string; worldShotId?: string; sceneId?: string; cameraId?: string } & Record<string, unknown>;
+  stale?: boolean;
+}) {
+  const detail = useWorldTask(task.taskId);
+  const arts = detail?.artifacts ?? [];
+  return (
+    <details className={`w-full rounded border px-2 py-1 text-[10px] ${stale ? "border-amber-500/60" : "border-border"}`}>
+      <summary className={`cursor-pointer font-mono ${stale ? "text-amber-300" : "text-muted-foreground"}`}>
+        World任務 {task.taskId ?? "?"}·{detail?.state ?? task.taskState ?? "?"}
+        {stale ? "（採納版stale——消費前對帳）" : ""}
+        {detail?.error ? <span className="text-destructive"> ✗ {detail.error.slice(0, 60)}</span> : null}
+        {arts.length ? <span className="text-emerald-500"> · 產物{arts.length}</span> : null}
+      </summary>
+      <div className="mt-1 space-y-0.5 text-muted-foreground">
+        <p className="font-mono text-[9px]">
+          映射 worldShot {task.worldShotId ?? "—"} · scene {task.sceneId ?? "—"} · camera {task.cameraId ?? "—"}
+        </p>
+        {task.taskId ? (
+          detail ? (
+            <>
+              {detail.error ? <p className="text-destructive">失敗原因：{detail.error}</p> : null}
+              {arts.length ? (
+                <ul className="space-y-0.5">
+                  {arts.map((a, i) => (
+                    <li key={a.id ?? i} className="font-mono text-[9px]">
+                      {a.kind ?? "?"} · {a.logicalPath ?? "?"}
+                      {a.sha256 ? ` · sha${a.sha256.slice(0, 8)}…` : ""}
+                      {a.status ? ` · ${a.status}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>未有產物（artifacts 空——task 真源照實）</p>
+              )}
+              {Array.isArray(detail.attempts) ? <p>attempts {detail.attempts.length}</p> : null}
+            </>
+          ) : (
+            <p>task 真源讀緊（/api/world/api/tasks/{task.taskId}）…</p>
+          )
+        ) : (
+          <p>零 taskId——blockout 收尾未提交 typed task（或 job 未行 worldStage）</p>
+        )}
+      </div>
+    </details>
+  );
+}
+
 /** h3_plan 收據三槽（audio/photo/video）——呢鏡 H3 實際掂過嘅 refs，
  *  由舊 H3 tab 搬入畫簿（Chau 0928 重組：一樣嘢一個主場）。 */
 function H3PlanSlots({ jobId, shotId }: { jobId: string; shotId: string }) {
@@ -1623,11 +1678,7 @@ function AxisRow({
           {pins.length} 釘{posUnknown ? "（位置未知）" : positions ? "" : "（平均分推算）"}
         </span>
         <QcBadge qc={qc} />
-        {worldTask ? (
-          <span className={`rounded border px-1.5 py-0.5 font-mono text-[9px] ${worldStale ? "border-amber-500/60 text-amber-300" : "border-border text-muted-foreground"}`} title={`typed World 任務（binding.shotMap）${worldStale ? "——採納版落後 World latest，消費前對帳" : ""}`}>
-            World任務 {worldTask.taskId ?? "?"}·{worldTask.taskState ?? "?"}{worldStale ? "（stale）" : ""}
-          </span>
-        ) : null}
+        {worldTask ? <WorldTaskCell task={worldTask} stale={worldStale} /> : null}
         {err ? <span className="text-destructive">收據載入失敗（{err}）</span> : null}
         {!err && data && !data.h3 ? <span className="rounded bg-amber-900/50 px-1.5 py-0.5 text-amber-300">未做H3</span> : null}
       </div>

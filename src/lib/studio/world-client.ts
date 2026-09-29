@@ -106,6 +106,33 @@ export function useWorldStage(jobId: string | null | undefined): WorldStage | nu
   return st;
 }
 
+/** GO-ALBUM：task 真源（GET /api/tasks/{taskId}，經 crew proxy）——taskState＋
+ *  失敗原因（error 照字）＋artifacts（有產物先顯示產物：logicalPath/sha8/status）。 */
+export type WorldTask = {
+  state?: string;
+  error?: string;
+  artifacts?: { id?: string; kind?: string; logicalPath?: string; sha256?: string; status?: string }[];
+  attempts?: unknown[];
+};
+
+export function useWorldTask(taskId?: string): WorldTask | null {
+  const [t, setT] = useState<WorldTask | null>(null);
+  useEffect(() => {
+    if (!taskId) return;
+    let stop = false;
+    void fetch(worldApi(`/tasks/${taskId}`), { cache: "no-store" })
+      .then(async (r) => (r.ok ? ((await r.json()) as WorldTask) : null))
+      .then((d) => {
+        if (!stop && d) setT(d);
+      })
+      .catch(() => undefined);
+    return () => {
+      stop = true;
+    };
+  }, [taskId]);
+  return t;
+}
+
 /** doc 全形（Pi 0929 授權預寫試點用；parse 寬鬆——World schema 演進欄位照 unknown 食）。 */
 export type WorldProjectDoc = {
   editSeq?: number;
