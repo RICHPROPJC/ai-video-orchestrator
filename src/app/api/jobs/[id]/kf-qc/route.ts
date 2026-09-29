@@ -21,8 +21,14 @@ export async function GET(
   const kf: Record<string, { status: string; board: string; boardSha?: string; attemptBoard?: string }> = {};
   let boards = 0;
   if (fs.existsSync(boardsDir)) {
-    for (const f of fs.readdirSync(boardsDir).sort()) {
-      if (!f.endsWith(".visual.json")) continue;
+    // 方法漂移審計實證（0930）：字母序會令 d92809b5（13:44 真採納）被
+    // fabe4226（11:23 舊版）蓋——board 收據要按 mtime 時序，後完成嘅板先係
+    // destination 嘅現行收據源。
+    const files = fs
+      .readdirSync(boardsDir)
+      .filter((f) => f.endsWith(".visual.json"))
+      .sort((a, b) => fs.statSync(path.join(boardsDir, a)).mtimeMs - fs.statSync(path.join(boardsDir, b)).mtimeMs);
+    for (const f of files) {
       boards += 1;
       let doc: { attempts?: Attempt[] };
       try {
