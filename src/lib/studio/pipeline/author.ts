@@ -228,11 +228,17 @@ async function authorCallSheet(
   // 提案（duration_proposal_due 寫入 creative-intent spec.targetSec），唔用
   // 600（internal 無限時 sentinel）做規格。
   const readProposedTargetSec = (jid: string): number | undefined => {
-    try {
-      const intent = JSON.parse(fs.readFileSync(path.join(jobDir(jid), "creative", "creative-intent.json"), "utf8")) as { spec?: { targetSec?: number }; targetSec?: number };
-      const t = intent.spec?.targetSec ?? intent.targetSec;
-      if (typeof t === "number" && t > 0) return t;
-    } catch { /* 冇 creative-intent（首輪）＝undefined，照舊 */ }
+    // 讀位三層：creative-intent spec/頂層（charter duration_proposal_due 指定
+    // 寫入位）→director-plan spec.targetSec/頂層（Y8KH 實證：導演會將提案寫
+    // 喺 plan 度而唔入 intent spec——r4 輪 spec{} 空＋plan targetSec 12 在場，
+    // 淨讀 intent 令閘跌返 600）。兩處都冇＝undefined（閘鏈 600 sentinel）。
+    for (const f of ["creative-intent.json", "director-plan.json"]) {
+      try {
+        const d = JSON.parse(fs.readFileSync(path.join(jobDir(jid), "creative", f), "utf8")) as { spec?: { targetSec?: number }; targetSec?: number };
+        const t = d.spec?.targetSec ?? d.targetSec;
+        if (typeof t === "number" && t > 0) return t;
+      } catch { /* 檔未生＝跳過下一位 */ }
+    }
     return undefined;
   };
   const targetSec = input.durationSec ?? readProposedTargetSec(jobId) ?? 600;
