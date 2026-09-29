@@ -36,7 +36,18 @@ export async function GET(
   const dir = jobDir(id);
   const sha: Record<string, string> = {};
   const missing: string[] = [];
-  for (const rel of [...(job.outputs.shots ?? []), ...(job.outputs.blockout ?? [])]) {
+  /** Chau 0930 指正：outputs.blockout manifest 淨註冊部分（WSY6 9/14）——碟上
+   *  blockout/ 全部 mp4 照掃（SH05=SH06 喺碟唔喺清單，淨信 manifest 標唔到）。
+   *  outputs.shots（motion）照舊；rel 統一 blockout/<name>。 */
+  const rels = new Set<string>(job.outputs.shots ?? []);
+  try {
+    for (const f of fs.readdirSync(path.join(dir, "blockout"))) {
+      if (f.endsWith(".mp4")) rels.add(`blockout/${f}`);
+    }
+  } catch {
+    /* blockout dir 唔在＝零灰模，照舊 */
+  }
+  for (const rel of rels) {
     const h = sha256Of(path.join(dir, rel));
     if (h) sha[rel] = h;
     else missing.push(rel);

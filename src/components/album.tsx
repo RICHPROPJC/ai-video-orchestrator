@@ -547,6 +547,8 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
                         worldStale={worldStage?.state === "stale"}
                         motionSha={motionByShot.get(shot.id) ? mediaSha.sha[motionByShot.get(shot.id)!] : undefined}
                         motionDupes={motionByShot.get(shot.id) ? mediaSha.dupes[motionByShot.get(shot.id)!] : undefined}
+                        blockoutSha={mediaSha.sha[`blockout/${shot.id}.mp4`]}
+                        blockoutDupes={mediaSha.dupes[`blockout/${shot.id}.mp4`]}
                       />
                     ))}
                 </div>
@@ -1678,6 +1680,8 @@ function AxisRow({
   worldStale,
   motionSha,
   motionDupes,
+  blockoutSha,
+  blockoutDupes,
 }: {
   jobId: string;
   shot: Shot;
@@ -1701,6 +1705,9 @@ function AxisRow({
   motionSha?: string;
   /** 同 sha256 嘅其他產物（翻用——兩位 sha 全值相同先標）。 */
   motionDupes?: string[];
+  /** 灰模 blockout/{id}.mp4 sha256（route 掃碟上全部 mp4，唔淨信 manifest）。 */
+  blockoutSha?: string;
+  blockoutDupes?: string[];
 }) {
   const data = inspect?.data ?? null;
   const err = inspect?.err ?? "";
@@ -1802,7 +1809,16 @@ function AxisRow({
             </p>
           </div>
         ) : (
-          <SeekVideo src={media(jobId, `blockout/${shot.id}.mp4`)} pct={selPct} label="灰模底片（同一刻）" />
+          <div className="space-y-1">
+            <SeekVideo src={media(jobId, `blockout/${shot.id}.mp4`)} pct={selPct} label="灰模底片（同一刻）" />
+            {blockoutDupes?.length ? (
+              <p className="font-mono text-[9px] text-destructive" title={`同 sha256 ${blockoutSha}：${blockoutDupes.join("、")}`}>
+                ⚠同sha翻用：{blockoutDupes.map((d) => d.split("/").pop()?.replace(".mp4", "")).join("、")}（sha {blockoutSha?.slice(0, 8)}）
+              </p>
+            ) : blockoutSha ? (
+              <p className="font-mono text-[9px] text-muted-foreground">灰模 sha {blockoutSha.slice(0, 8)}</p>
+            ) : null}
+          </div>
         )}
         {motionRel ? (
           <SeekVideo src={media(jobId, motionRel)} pct={selPct} label="H3 出片（同一刻）" />
