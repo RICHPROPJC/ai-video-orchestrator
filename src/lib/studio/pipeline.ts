@@ -204,6 +204,16 @@ export async function runPipeline(jobId: string, input: ProduceInput) {
     );
   }
   setActiveOwner(owner);
+  // R22 差4（ROOT 0929 接續令）：run 級 source version 收據——呢個 run 行嘅
+  // git HEAD（Album 五態：舊 attempt vs source fixed vs 同版本實跑對照用）。
+  // git 唔在（部署包）＝缺席照舊，唔阻 run。
+  try {
+    const { execFileSync } = await import("node:child_process");
+    const commit = execFileSync("git", ["rev-parse", "HEAD"]).toString().trim();
+    const commitTs = execFileSync("git", ["show", "-s", "--format=%cI", "HEAD"]).toString().trim();
+    const job0 = readJob(jobId);
+    if (job0) patch(job0, { sourceVersion: { commit, commitTs, recordedAt: new Date().toISOString() } });
+  } catch { /* named 缺席：部署包冇 git */ }
   const cfg = loadConfig();
   // no plug wavs ⇒ voice seat speaks the VO through AuK — the door must be armed up front
   if (!input.wavDir && input.until !== "boards" && !cfg.tts.endpoint.trim()) {

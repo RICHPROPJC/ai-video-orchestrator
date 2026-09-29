@@ -453,6 +453,10 @@ export type JobRecord = {
   callsheetRepairEpisode?: { attempts: number } | null;
   /** root R2 修③（0928）：現行採用 callsheet digest（callsheet.json 落盤時寫）——session turn dependsOn 對比真源；未有 callsheet＝undefined。 */
   callsheetDigest?: string;
+  /** R22 差4（ROOT 0929 接續令）：run 級 source version 收據——runPipeline
+   *  開工時 git HEAD 快照。Album 五態進度（①舊 failed attempt vs ②source
+   *  fixed vs ④同版本實跑）由呢欄對照；git 唔在（部署包）＝缺席照舊。 */
+  sourceVersion?: { commit: string; commitTs: string; recordedAt: string };
   /** root R11-4→R12（0928）：ask reply 雲端硬預算——calls＝**已 reserve** 實數
    *  （每次 HTTP 發出前鎖內原子 check-and-increment，失敗 attempt 也計；準入
    *  失敗＝唔 call fail-closed）。tokens/withUsage/withoutUsage＝**觀測**（provider
