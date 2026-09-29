@@ -110,19 +110,27 @@ function WorldLine() {
 }
 
 /** 離屏 metadata 探片長（唔載畫面淨載長度——對帳：期望 vs 實際；
- *  src 未定（卡未入畫）就唔開 video）。 */
-function useVideoDuration(src?: string): { dur: number; bad: boolean } {
-  const [st, setSt] = useState({ dur: 0, bad: false });
+ *  src 未定（卡未入畫）就唔開 video）。
+ *  ROOT 1046Z：video onerror ≠ 缺檔——HEAD probe 分開「真冇」vs「在碟但瀏覽器解碼失敗」。 */
+function useVideoDuration(src?: string): { dur: number; bad: boolean; decodeFail: boolean } {
+  const [st, setSt] = useState({ dur: 0, bad: false, decodeFail: false });
   useEffect(() => {
     if (!src) return;
     let stop = false;
     const v = document.createElement("video");
     v.preload = "metadata";
     v.onloadedmetadata = () => {
-      if (!stop) setSt({ dur: v.duration || 0, bad: false });
+      if (!stop) setSt({ dur: v.duration || 0, bad: false, decodeFail: false });
     };
     v.onerror = () => {
-      if (!stop) setSt({ dur: 0, bad: true });
+      if (stop) return;
+      void fetch(src, { method: "HEAD" })
+        .then((r) => {
+          if (!stop) setSt({ dur: 0, bad: !r.ok, decodeFail: r.ok });
+        })
+        .catch(() => {
+          if (!stop) setSt({ dur: 0, bad: true, decodeFail: false });
+        });
     };
     v.src = src;
     return () => {
@@ -135,21 +143,33 @@ function useVideoDuration(src?: string): { dur: number; bad: boolean } {
   return st;
 }
 
-/** B1（Sol UI-PLAN）：卡入畫一次過先探——44 卡唔再即刻逐個開 video metadata。 */
+/** B1（Sol UI-PLAN）：卡入畫一次過先探——44 卡唔再即刻逐個開 video metadata。
+ *  ROOT 1046Z 實症：SH03 滾到 7s IO 仍未觸發（網絡零 request）——加兜底
+ *  timer（mount 2.5s 後照樣開工），IO 只係提早，唔係唯一閘。 */
 function useInViewOnce() {
   const ref = useRef<HTMLDivElement | null>(null);
   const [inView, setInView] = useState(false);
   useEffect(() => {
     const el = ref.current;
     if (!el || inView) return;
+    let done = false;
     const io = new IntersectionObserver((entries) => {
-      if (entries.some((x) => x.isIntersecting)) {
-        setInView(true);
-        io.disconnect();
-      }
+      if (entries.some((x) => x.isIntersecting)) mark();
     });
+    const timer = window.setTimeout(mark, 2500);
+    function mark() {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      io.disconnect();
+      setInView(true);
+    }
     io.observe(el);
-    return () => io.disconnect();
+    return () => {
+      done = true;
+      window.clearTimeout(timer);
+      io.disconnect();
+    };
   }, [inView]);
   return { ref, inView };
 }
@@ -174,7 +194,7 @@ function BlockShotCard({
   const pins = useMemo(() => pinPercents(positions, rels.length), [positions, rels.length]);
   const blockoutSrc = studioMedia(jobId, `blockout/${shot.id}.mp4`);
   const { ref: cardRef, inView } = useInViewOnce();
-  const { dur, bad } = useVideoDuration(inView ? blockoutSrc : undefined);
+  const { dur, bad, decodeFail } = useVideoDuration(inView ? blockoutSrc : undefined);
   const frames = useFramesAtPcts(inView && !bad ? blockoutSrc : undefined, dur, pins);
   const expect = shot.durationSec;
   const diff = dur - expect;
@@ -196,6 +216,8 @@ function BlockShotCard({
         <span className="text-muted-foreground">期望 {expect.toFixed(1)}s</span>
         {bad ? (
           <span className="rounded bg-destructive/20 px-1.5 py-0.5 text-destructive">冇灰模——呢鏡對唔到帳</span>
+        ) : decodeFail ? (
+          <span className="rounded bg-amber-900/50 px-1.5 py-0.5 text-amber-300">灰模在碟但瀏覽器解碼失敗（ROOT 1046Z：onerror≠缺檔）</span>
         ) : dur > 0 ? (
           <span className="text-muted-foreground">實際 {dur.toFixed(1)}s</span>
         ) : (
@@ -226,7 +248,7 @@ function BlockShotCard({
                 <img src={frames[i]} alt={`${shot.id} ${p}%`} className="h-14 w-full object-cover" />
               ) : (
                 <span className="flex h-14 items-center justify-center text-[10px] text-muted-foreground">
-                  {bad ? "冇灰模" : dur > 0 ? "抽緊" : "…"}
+                  {bad ? "冇灰模" : decodeFail ? "解碼失敗" : dur > 0 ? "抽緊" : "…"}
                 </span>
               )}
               <span className="absolute bottom-0 right-0 bg-black/70 px-0.5 font-mono text-[8px] text-white">{p}%</span>

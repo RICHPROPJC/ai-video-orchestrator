@@ -142,12 +142,19 @@ function useGenContracts(jobId: string, ids: string[]): Record<string, { contrac
   return map;
 }
 
-/** 收據＋sheet → 呢鏡嘅 positions／KF rels／釘位。 */
+/** 收據＋sheet → 呢鏡嘅 positions／KF rels／釘位。
+ *  ROOT 1046Z：h3_plan＋sheet 兩源都冇 positions 時唔好收得一格 0%——
+ *  磁碟約定 kf-00/kf-01 照顯兩格（posUnknown named，% 唔平均猜）。 */
 function shotPins(inspect: { data: ShotInspect | null } | undefined, shot: Shot) {
   const positions = inspect?.data?.h3?.keyframePositions || inspect?.data?.call?.keyframePositions || shot.keyframePositions || "";
-  const rels = keyframeRelPaths({ id: shot.id, keyframePositions: positions });
+  let rels = keyframeRelPaths({ id: shot.id, keyframePositions: positions });
+  let posUnknown = false;
+  if (!positions && rels.length === 0) {
+    rels = [`stills/${shot.id}.kf-00.png`, `stills/${shot.id}.kf-01.png`];
+    posUnknown = true;
+  }
   const pins = pinPercents(positions, rels.length);
-  return { positions, rels, pins };
+  return { positions, rels, pins, posUnknown };
 }
 
 /** 候選 URL 逐個試（冇目錄 listing API，靠約定名 probe）；全部唔見 → 未交圖格。 */
@@ -205,7 +212,7 @@ function BigImg({ srcs, alt }: { srcs: string[]; alt: string }) {
 function SeekVideo({ src, pct, label }: { src: string; pct: number | null; label?: string }) {
   const vRef = useRef<HTMLVideoElement | null>(null);
   const [dur, setDur] = useState(0);
-  const [bad, setBad] = useState(false);
+  const [st, setSt] = useState<"ok" | "missing" | "decodeFail">("ok");
   useEffect(() => {
     const v = vRef.current;
     if (!v || dur <= 0 || pct == null) return;
@@ -216,10 +223,10 @@ function SeekVideo({ src, pct, label }: { src: string; pct: number | null; label
     }
     v.currentTime = (pct / 100) * dur;
   }, [pct, dur]);
-  if (bad) {
+  if (st === "missing" || st === "decodeFail") {
     return (
       <p className="flex aspect-video items-center justify-center rounded border border-dashed text-xs text-muted-foreground">
-        未有灰片
+        {st === "missing" ? "未有灰片（404）" : "灰片在碟但瀏覽器解碼失敗"}
       </p>
     );
   }
@@ -232,7 +239,12 @@ function SeekVideo({ src, pct, label }: { src: string; pct: number | null; label
         className="w-full rounded border border-border bg-black"
         src={src}
         onLoadedMetadata={(e) => setDur(e.currentTarget.duration || 0)}
-        onError={() => setBad(true)}
+        onError={() => {
+          // ROOT 1046Z：onerror≠缺檔——HEAD probe 分類。
+          void fetch(src, { method: "HEAD" })
+            .then((r) => setSt(r.ok ? "decodeFail" : "missing"))
+            .catch(() => setSt("missing"));
+        }}
       />
       {label ? (
         <p className="font-mono text-[9px] text-muted-foreground">
@@ -712,7 +724,7 @@ function KfPinSeg({
   wPx: number;
 }) {
   const dur = Math.max(seg.duration_s ?? seg.end_s - seg.start_s, 0.1);
-  const { rels, pins } = shotPins(inspect, shot);
+  const { rels, pins, posUnknown } = shotPins(inspect, shot);
   return (
     <div className="relative h-full overflow-hidden border-r border-white/10 last:border-r-0" style={{ width: `${(Math.max(seg.end_s - seg.start_s, 0.1) / Math.max(total, 0.1)) * 100}%` }}>
       {pins.map((p, i) =>
@@ -720,8 +732,8 @@ function KfPinSeg({
           <button
             key={i}
             type="button"
-            title={`${seg.id} KF #${i} · ${p}%`}
-            aria-label={`${seg.id} KF #${i} 喺 ${p}%`}
+            title={`${seg.id} KF #${i}${posUnknown ? "（位置未知——收據缺positions）" : ` · ${p}%`}`}
+            aria-label={`${seg.id} KF #${i}${posUnknown ? "（位置未知）" : ` 喺 ${p}%`}`}
             className={`absolute top-0.5 w-7 -translate-x-1/2 overflow-hidden rounded border bg-black text-center ${
               markedPins?.includes(i) ? "z-10 border-primary ring-1 ring-primary" : "border-amber-700/60 hover:border-primary/60"
             }`}
@@ -733,13 +745,13 @@ function KfPinSeg({
             }}
           >
             <ProbeImg srcs={kfSrcs(jobId, seg.id, rels[i], i)} alt={`${seg.id} ${p}%`} className="h-11 w-full object-cover" missingLabel="？" />
-            <span className="block truncate bg-black/70 font-mono text-[7px] leading-3 text-muted-foreground">{p}%</span>
+            <span className="block truncate bg-black/70 font-mono text-[7px] leading-3 text-muted-foreground">{posUnknown ? "?" : `${p}%`}</span>
           </button>
         ) : (
           <button
             key={i}
             type="button"
-            title={`${seg.id} KF #${i} · ${p}%${rels[i] ? "" : "（未交）"}`}
+            title={`${seg.id} KF #${i}${posUnknown ? "（位置未知）" : ` · ${p}%`}${rels[i] ? "" : "（未交）"}`}
             aria-label={`${seg.id} KF #${i} 喺 ${p}%`}
             className={`absolute inset-y-1 z-10 w-1.5 -translate-x-1/2 rounded-sm ${
               markedPins?.includes(i) ? "bg-primary" : rels[i] ? "bg-amber-400/80 hover:bg-amber-300" : "bg-amber-900/60"
@@ -1491,9 +1503,7 @@ function AxisRow({
 }) {
   const data = inspect?.data ?? null;
   const err = inspect?.err ?? "";
-  const positions = data?.h3?.keyframePositions || data?.call?.keyframePositions || shot.keyframePositions || "";
-  const rels = useMemo(() => keyframeRelPaths({ id: shot.id, keyframePositions: positions }), [shot.id, positions]);
-  const pins = useMemo(() => pinPercents(positions, rels.length), [positions, rels.length]);
+  const { positions, rels, pins, posUnknown } = useMemo(() => shotPins(inspect, shot), [inspect, shot]);
   const [sel, setSel] = useState(0);
   /** 「由呢一刻做新 0%」重整請求——經 FEEDBACK.jsonl 合規渠道報去負責席位。 */
   const [redo, setRedo] = useState<{ idx: number; pct: number } | null>(null);
@@ -1530,7 +1540,7 @@ function AxisRow({
                 missingLabel="未交"
               />
               <span className="block truncate bg-black/70 px-0.5 font-mono text-[8px] leading-4 text-muted-foreground">
-                #{i} {p}%
+                #{i} {posUnknown ? "?" : `${p}%`}
               </span>
             </button>
           ))}
@@ -1545,7 +1555,7 @@ function AxisRow({
       {/* 對照格：KF 圖 ↔ 灰模片 ↔ H3 出片，三邊 seek 同一刻（釘位＝片時間軸）。 */}
       <div className={`grid gap-2 ${motionRel ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
         <div className="space-y-1">
-          <p className="font-mono text-[10px] text-muted-foreground">KF #{selIdx} · {selPct}%</p>
+          <p className="font-mono text-[10px] text-muted-foreground">KF #{selIdx}{posUnknown ? "（位置未知）" : ` · ${selPct}%`}</p>
           <ProbeImg
             srcs={kfSrcs(jobId, shot.id, rels[selIdx], selIdx)}
             alt={`${shot.id} kf ${selIdx}`}
@@ -1612,7 +1622,7 @@ function AxisRow({
             key={`${shot.id}:${redo.idx}`}
             jobId={jobId}
             shotId={shot.id}
-            preset={`【重整】${shot.id} KF #${redo.idx} @ ${redo.pct}%——由呢一刻 cut 返開做新 0% 再 edit：`}
+            preset={`【重整】${shot.id} KF #${redo.idx}${posUnknown ? "（位置未知）" : ` @ ${redo.pct}%`}——由呢一刻 cut 返開做新 0% 再 edit：`}
           />
         </div>
       ) : null}
@@ -1739,13 +1749,15 @@ function PedigreeCard({
   );
 }
 
-/** audio/{shotId}.wav——load 唔到換「未有聲帶」，唔留一個壞 element。 */
+/** audio/{shotId}.wav——onerror≠缺檔（ROOT 1046Z）：HEAD probe 分類
+ *  「未有聲帶（404）」vs「聲帶在碟但解碼失敗」。 */
 function AudioCell({ jobId, shotId }: { jobId: string; shotId: string }) {
-  const [bad, setBad] = useState(false);
-  if (bad) {
+  const src = media(jobId, `audio/${shotId}.wav`);
+  const [st, setSt] = useState<"ok" | "missing" | "decodeFail">("ok");
+  if (st !== "ok") {
     return (
       <p className="flex items-center justify-center rounded border border-dashed p-4 text-muted-foreground">
-        未有聲帶 audio/{shotId}.wav
+        {st === "missing" ? `未有聲帶（404）audio/${shotId}.wav` : `聲帶在碟但解碼失敗 audio/${shotId}.wav`}
       </p>
     );
   }
@@ -1755,8 +1767,12 @@ function AudioCell({ jobId, shotId }: { jobId: string; shotId: string }) {
       controls
       preload="none"
       className="w-full"
-      src={media(jobId, `audio/${shotId}.wav`)}
-      onError={() => setBad(true)}
+      src={src}
+      onError={() => {
+        void fetch(src, { method: "HEAD" })
+          .then((r) => setSt(r.ok ? "decodeFail" : "missing"))
+          .catch(() => setSt("missing"));
+      }}
     />
   );
 }
