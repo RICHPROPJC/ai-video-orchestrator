@@ -669,7 +669,10 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     // R22（ROOT 0929）：editInputs.prompt＝actual submitted board prompt（cell
     // lineage 真源，boards-visual storyboardBoardPrompt＋refNote 原文）；重建版
     // keyframeSheetPrompt 只做 named-missing fallback，唔冒充 actual。
-    const lineagePrimary = cellLineage.get(out);
+    // R22 fix（0929）：cellLineage key＝moment destination（SH01.kf-00.png），
+    // 唔係 out（SH01.png）——三處 lookup 對 primary cell file，named-missing 收口。
+    const primaryCellFile = shotCells.get(shot.id)?.[0] ?? out;
+    const lineagePrimary = cellLineage.get(primaryCellFile);
     if (!lineagePrimary) {
       emit(jobId, { agent: "stills", level: "warn",
         message: `${shot.id} cell-lineage named-missing（board 收據冇 submitted prompt）——editInputs 行 keyframeSheetPrompt fallback`,
@@ -730,7 +733,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     // 收口。actual submitted board prompt 全文＋源板 sha 留 cellLineage/u15
     // 收據追溯；lineage 缺席＝named-missing，行 require 欄位驗收（不降 QC）。
     const qcRequireWithExpectation = (req: QcRequire): QcRequire => {
-      const lineage = cellLineage.get(out);
+      const lineage = cellLineage.get(shotCells.get(shot.id)?.[0] ?? out);
       const primaryBeat = momentsForShot(shot, ctx.stillDir!)[0]?.beat?.trim();
       if (lineage && primaryBeat) {
         return {
@@ -946,7 +949,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       recordCellLineage(madeRetry);
       if (path.resolve(retryMoments[0]!.file) !== path.resolve(png)) fs.copyFileSync(retryMoments[0]!.file, png);
       shot.keyframeFiles = momentsForShot(promptShot, ctx.stillDir!).map((m) => m.file);
-      editInputs.set(shot.id, { ...inputs, prompt: cellLineage.get(png)?.prompt ?? inputs.prompt, refs: [...sheets, ...regate.kept] });
+      editInputs.set(shot.id, { ...inputs, prompt: cellLineage.get(retryMoments[0]!.file)?.prompt ?? inputs.prompt, refs: [...sheets, ...regate.kept] });
       result = await runPhotoQc(png, qcJson, qcRequireWithExpectation(liveRequire), {}, photoQcEyesFromEnv());
       if (result.status === "FAIL") {
         await speak("pictureQc", `${shot.id} 再抽仍然唔啱，同一句故事再出一次，唔改動作。`, "warn");
