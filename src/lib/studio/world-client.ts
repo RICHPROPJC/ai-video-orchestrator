@@ -50,8 +50,6 @@ export function useWorldProjectDoc(projectId: string | null): { doc: WorldProjec
   useEffect(() => {
     if (!projectId) return;
     let stop = false;
-    setDoc(null);
-    setUnreachable(false);
     void fetch(worldApi(`/projects/${projectId}`), { cache: "no-store" })
       .then(async (r) => {
         if (!r.ok) throw new Error(`${r.status}`);
