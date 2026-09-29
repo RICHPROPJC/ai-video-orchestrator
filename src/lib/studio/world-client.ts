@@ -29,8 +29,6 @@ export type WorldProjectOverview = {
 
 /** crew proxy 原樣透傳（/api/world/<X> → :8791/<X>）；World 淨掛 /api/*——
  *  所以 base 含埋 /api：實際請求 /api/world/api/projects（0929 probe 200 實證）。 */
-/** crew proxy 原樣透傳（/api/world/<X> → :8791/<X>）；World 淨掛 /api/*——
- *  所以 base 含埋 /api：實際請求 /api/world/api/projects（0929 probe 200 實證）。 */
 /** per-project tasks 概覽（GET /api/projects/{id}/tasks；state 計數＋error 照字）。 */
 export function useWorldProjectTasks(projectId: string | null): {
   states: Record<string, number>;

@@ -16,6 +16,7 @@ import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, 
 import { ensurePortraits } from "../portraits";
 import { lookupShelf } from "../asset-library";
 import { writeStoryWorld, ensureWorldSizes, type WorldPlan } from "../world-assemble";
+import { submitWorldBlockoutTask } from "../world-tasks";
 import { piecesFromCallSheet, resolveScales, type WorldPiece } from "../world-scale";
 import { ensurePropBoard, ensureSceneBoard } from "../asset-board";
 import { diffPropPlates, nextPropBoardSeq, propAssetId, writePropPinManifest } from "../prop-plate-index";
@@ -100,6 +101,41 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   const { speak, think } = ctx;
   const trace = ctx.trace;
   const motionSelections = ctx.motionSelections;
+  // 刀3（0929 ROOT world-direct）：World 採納凍結——cfg.world.projectId 在場
+  // ＋job 未有 binding 先凍結。GET 外層 editSeq/contentFingerprint 寫
+  // ctx.job.worldBinding＋emit binding-frozen 收據；fetch 唔通＝named
+  // world-bind-unreachable emit 唔殺 job（舊隊照行，接線呢輪缺席）。
+  if (cfg.world?.projectId !== "" && cfg.world?.projectId !== undefined && !ctx.job.worldBinding) {
+    const pid = cfg.world.projectId;
+    try {
+      const r = await fetch(`${cfg.world.base}/api/projects/${pid}`, { cache: "no-store" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = (await r.json()) as { editSeq?: number; contentFingerprint?: string };
+      ctx.job = patch(ctx.job, {
+        worldBinding: {
+          projectId: pid,
+          editSeqAtAdoption: typeof d.editSeq === "number" ? d.editSeq : undefined,
+          contentFingerprintAtAdoption: typeof d.contentFingerprint === "string" ? d.contentFingerprint : undefined,
+          adoptedAt: new Date().toISOString(),
+        },
+      });
+      emit(jobId, {
+        agent: "layout",
+        level: "info",
+        message: `World binding 凍結：${pid} @editSeq ${d.editSeq ?? "?"} fingerprint ${(d.contentFingerprint ?? "?").slice(0, 16)}`,
+        data: { stage: "binding-frozen", projectId: pid, editSeq: d.editSeq, contentFingerprint: d.contentFingerprint },
+      });
+      await speak("layout", `World binding 凍結：${pid} @editSeq ${d.editSeq ?? "?"}。`);
+    } catch (e) {
+      emit(jobId, {
+        agent: "layout",
+        level: "warn",
+        message: `World binding 凍結失敗（${pid}）：GET 唔通——job 照行，World 接線呢輪缺席。`,
+        data: { stage: "world-bind-unreachable", projectId: pid, error: String(e) },
+      });
+      await speak("layout", `World binding 凍結失敗（${pid}）：GET 唔通——World 接線呢輪缺席，隊照行。`, "warn");
+    }
+  }
   {
     const idxFile = path.join(MOTION_LIB_ROOT, "cmu-mocap/cmu-mocap-index-text.txt");
     if (!fs.existsSync(idxFile)) {
@@ -1121,6 +1157,34 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     await extractFrame0(outMp4, f0png, stillFrameFor(shot, frames));
     await assertFiguresVisible(f0png, shot);
     await writeAnchors(outMp4, path.join(blockoutDir, `${shot.id}.anchors.json`));
+    // 刀3（0929 world-direct）：crew blockout 收尾＝同鏡 World typed task 提交
+    // （並行收據——本地鏈唔刪，多角色/走位/POV 能力照舊）。shotMap 有
+    // worldShotId 先 submit（零 mapping＝零 submit，新 brief 揀定 project 後
+    // 先有內容）；原鑰 idempotencyKey 重 POST 回同筆。blocked/
+    // render_not_authorized＝World 開關閉 named 狀態，唔重試到通。
+    const wmap = ctx.job.worldBinding?.shotMap?.[shot.id];
+    if (wmap?.worldShotId && !input.dryRun) {
+      try {
+        const task = await submitWorldBlockoutTask(cfg, ctx.job.worldBinding!, jobId, shot.id, wmap.worldShotId, wmap.sceneId);
+        emit(jobId, {
+          agent: "layout", level: "info",
+          message: `World task 提交：${shot.id}→${wmap.worldShotId} ${task.id} ${task.state ?? "?"}${task.error ? `（${task.error}）` : ""}`,
+          data: { stage: "world-task-submitted", shot: shot.id, taskId: task.id, state: task.state, error: task.error },
+        });
+        ctx.job = patch(ctx.job, {
+          worldBinding: {
+            ...ctx.job.worldBinding!,
+            shotMap: { ...ctx.job.worldBinding!.shotMap, [shot.id]: { ...wmap, taskId: task.id, taskState: task.state } },
+          },
+        });
+      } catch (e) {
+        emit(jobId, {
+          agent: "layout", level: "warn",
+          message: `World task 提交失敗（${shot.id}）：${String(e)}——本地鏈照行。`,
+          data: { stage: "world-task-unreachable", shot: shot.id, error: String(e) },
+        });
+      }
+    }
     blockouts.push(outMp4);
     if (!kept) await speak("layout", `${shot.id} blockout ${frames}f（鎖死鏡長）`);
   }

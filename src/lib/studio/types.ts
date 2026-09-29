@@ -470,6 +470,19 @@ export type JobRecord = {
    *  開工時 git HEAD 快照。Album 五態進度（①舊 failed attempt vs ②source
    *  fixed vs ④同版本實跑）由呢欄對照；git 唔在（部署包）＝缺席照舊。 */
   sourceVersion?: { commit: string; commitTs: string; recordedAt: string };
+  /** 刀3（0929 ROOT world-direct）：World Studio 採納凍結——job 對採納時嘅
+   *  World project 版本錨定。worldStage 開頭 cfg.world.projectId 在場＋job
+   *  未有 binding 先凍結（resume 唔重凍）；fetch 唔通＝named emit 唔殺 job。
+   *  editSeqAtAdoption/contentFingerprintAtAdoption＝凍結時 GET 外層版本；
+   *  shotMap＝crew shotId→World shot/scene/camera 接線（task 提交時填，
+   *  冇 mapping 嘅鏡零 submit——新 brief 揀定 project 後先有內容）。 */
+  worldBinding?: {
+    projectId: string;
+    editSeqAtAdoption?: number;
+    contentFingerprintAtAdoption?: string;
+    adoptedAt: string;
+    shotMap?: Record<string, { worldShotId?: string; sceneId?: string; cameraId?: string; taskId?: string; taskState?: string }>;
+  };
   /** root R11-4→R12（0928）：ask reply 雲端硬預算——calls＝**已 reserve** 實數
    *  （每次 HTTP 發出前鎖內原子 check-and-increment，失敗 attempt 也計；準入
    *  失敗＝唔 call fail-closed）。tokens/withUsage/withoutUsage＝**觀測**（provider

@@ -67,6 +67,10 @@ export type SlateConfig = {
   /** H3 frame grid 17k+5. kMin 3 ≈ 2.3s. Do not clamp every shot up to k=7. */
   h3Grid: { kMin: number; kMax: number };
   ssh: { user: string; motionInputDir: string; stillsRefsDir: string };
+  /** 刀3（0929 ROOT world-direct）：World Studio 3D 執行器接線——SlateCrew
+   *  直接調用（非外面手救）。base=World serve 真源（/api/*）；projectId 空＝
+   *  本 job 未揀定 World project（worldStage 跳過凍結，唔係錯）。 */
+  world: { base: string; projectId: string };
 };
 
 const DEFAULTS: SlateConfig = {
@@ -128,6 +132,7 @@ const DEFAULTS: SlateConfig = {
     motionInputDir: "~/comfy/ComfyUI/input",
     stillsRefsDir: "/home/hojaiv3v/SenseNova-U1/refs",
   },
+  world: { base: "http://127.0.0.1:8791", projectId: "" },
 };
 
 export function configPath() {
@@ -154,6 +159,7 @@ export function loadConfig(): SlateConfig {
     embed: { ...DEFAULTS.embed, ...raw.embed },
     h3Grid: { ...DEFAULTS.h3Grid, ...raw.h3Grid },
     ssh: { ...DEFAULTS.ssh, ...raw.ssh },
+    world: { ...DEFAULTS.world, ...raw.world },
   };
   const h3 = process.env.H3_COMFY_URL?.trim();
   if (h3) merged.motion.comfyUrl = h3;
