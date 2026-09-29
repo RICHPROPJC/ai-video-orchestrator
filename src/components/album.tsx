@@ -114,6 +114,34 @@ function useMotionSelection(jobId: string): Record<string, MotionSel> {
   return map;
 }
 
+/** 生成契約 sidecar（portraits/<characterId>.gen_contract.json，R19-R21）——
+ *  {contractSha, savedAt}；重用條件指紋，有先顯示（404 靜默跳過）。 */
+function useGenContracts(jobId: string, ids: string[]): Record<string, { contractSha: string; savedAt?: string }> {
+  const [map, setMap] = useState<Record<string, { contractSha: string; savedAt?: string }>>({});
+  const key = ids.join(",");
+  useEffect(() => {
+    if (!jobId || !key) return;
+    let stop = false;
+    const list = key.split(",");
+    void Promise.all(
+      list.map((id) =>
+        fetch(media(jobId, `portraits/${id}.gen_contract.json`), { cache: "no-store" })
+          .then(async (r) => (r.ok ? { id, d: (await r.json()) as { contractSha?: string; savedAt?: string } } : { id, d: null }))
+          .catch(() => ({ id, d: null })),
+      ),
+    ).then((rows) => {
+      if (stop) return;
+      const m: Record<string, { contractSha: string; savedAt?: string }> = {};
+      for (const r of rows) if (r.d?.contractSha) m[r.id] = { contractSha: r.d.contractSha, savedAt: r.d.savedAt };
+      setMap(m);
+    });
+    return () => {
+      stop = true;
+    };
+  }, [jobId, key]);
+  return map;
+}
+
 /** 收據＋sheet → 呢鏡嘅 positions／KF rels／釘位。 */
 function shotPins(inspect: { data: ShotInspect | null } | undefined, shot: Shot) {
   const positions = inspect?.data?.h3?.keyframePositions || inspect?.data?.call?.keyframePositions || shot.keyframePositions || "";
@@ -218,6 +246,9 @@ function SeekVideo({ src, pct, label }: { src: string; pct: number | null; label
 
 type View = "skeleton" | "refs" | "h3";
 
+/** refs 庫格 item（note＝契約指紋等附加細字，optional）。 */
+type LibItem = { key: string; label: string; srcs: string[]; note?: string; noteTitle?: string };
+
 const VIEWS: [View, string][] = [
   ["skeleton", "骨架"],
   ["h3", "剪接·H3對齊"],
@@ -275,18 +306,24 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
   }, [job?.outputs.shots]);
 
   /** refs庫三行：角色角度板／道具 assets/NN-*.png／場景 assets/scenes/。 */
-  const libChars = useMemo(
-    () =>
-      (job?.callSheet?.characters ?? []).map((c) => ({
+  const charIds = useMemo(() => (job?.callSheet?.characters ?? []).map((c) => c.id), [job?.callSheet?.characters]);
+  const genContracts = useGenContracts(job?.id ?? "", charIds);
+  const libChars = useMemo<LibItem[]>(() => {
+    const id = job?.id ?? "";
+    return (job?.callSheet?.characters ?? []).map((c) => {
+      const gc = genContracts[c.id];
+      return {
         key: `char:${c.id}`,
         label: `${c.name}（${c.id}）`,
-        srcs: [media(job?.id ?? "", `portraits/boards/${c.id}.angles.png`)],
-      })),
-    [job?.callSheet?.characters, job?.id],
-  );
+        srcs: [media(id, `portraits/boards/${c.id}.angles.png`)],
+        note: gc ? `契約 ${gc.contractSha.slice(0, 8)}` : undefined,
+        noteTitle: gc ? `生成契約指紋 ${gc.contractSha} · savedAt ${gc.savedAt ?? "—"}` : undefined,
+      };
+    });
+  }, [job?.callSheet?.characters, job?.id, genContracts]);
   /** 道具 first-seen 編號（pipeline 全 slate 掃 sheet 原序——唔係 cut order）。 */
   const propIdx = useMemo(() => makePropIdx(job?.callSheet?.shots ?? []), [job?.callSheet?.shots]);
-  const libProps = useMemo(
+  const libProps = useMemo<LibItem[]>(
     () =>
       [...propIdx.entries()].map(([name, i]) => ({
         key: `prop:${name}`,
@@ -295,8 +332,8 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
       })),
     [propIdx, job?.id],
   );
-  const libScenes = useMemo(() => {
-    const out: { key: string; label: string; srcs: string[] }[] = [];
+  const libScenes = useMemo<LibItem[]>(() => {
+    const out: LibItem[] = [];
     const seen = new Set<string>();
     const push = (label: string, base: string) => {
       const srcs = [
@@ -411,6 +448,11 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
                       <span className="block truncate px-1 py-0.5 text-[10px] text-muted-foreground" title={item.label}>
                         {item.label}
                       </span>
+                      {item.note ? (
+                        <span className="block truncate bg-emerald-950/40 px-1 pb-0.5 font-mono text-[9px] text-emerald-500/80" title={item.noteTitle ?? item.note}>
+                          {item.note}
+                        </span>
+                      ) : null}
                     </div>
                   ))}
                 </div>
