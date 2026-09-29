@@ -406,6 +406,24 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     }
   };
   const shotCells = new Map<string, string[]>();
+  // Pi WSY6-R22F-POSTMORTEM-KNIVES-0930 刀B2：零 cast 產品鏡（marks 空＝冇
+  // 角色，主體就係產品）callsheet props 冇鋪時，由 pinned GREEN assets 兜底
+  // 做道具 ref（SH07 props=null→冇樽 ref→三連出杯實證；GREEN 樽 plate/cut
+  // pinned 在場）。上游 producer 層「零 cast 鏡 props 必填」閘列 debt（通用
+  // 修排全片收口後）——呢度係本 job 最細解阻塞兜底，唔係根治。
+  const pinnedGreenAssetIds = (): string[] => {
+    try {
+      const pinned = JSON.parse(fs.readFileSync(path.join(jobDir(jobId), "assets", "props.pinned.json"), "utf8")) as { assets?: { assetId?: string; qcStatus?: string }[] };
+      return (pinned.assets ?? []).filter((a) => a.assetId && a.qcStatus === "GREEN").map((a) => a.assetId!);
+    } catch {
+      return [];
+    }
+  };
+  const propIdsWithNoCastFloor = (shot: Shot): string[] => {
+    const ids = [...new Set((shot.props ?? []).map((pp) => propAssetId(pp.name)))];
+    if (ids.length || shot.marks?.length) return ids;
+    return pinnedGreenAssetIds();
+  };
   const qcFail = (shotId: string) => {
     const qcVerdictJson = path.join(ctx.stillDir!, `${shotId}.photo_qc.json`);
     if (!fs.existsSync(qcVerdictJson)) return false;
@@ -441,7 +459,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     // 靠文字次次作新）。文字留返姿勢同狀態（單右手/開咗蓋）。
     const sheetPropIds = [...new Set(moments.flatMap((m) => {
       const sh = hopStillPlans.find((p) => p.shot.id === m.shotId)!.shot;
-      return (sh.props ?? []).map((pp) => propAssetId(pp.name));
+      return propIdsWithNoCastFloor(sh);
     }))];
     const propRefs = sheetPropIds.length
       ? diffPropPlates(path.join(jobDir(jobId), "assets"), path.join(jobDir(jobId), "assets", "props.pinned.json"), sheetPropIds)
@@ -520,7 +538,13 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       bump = (fs.existsSync(bumpFile) ? Number(fs.readFileSync(bumpFile, "utf8")) || 0 : 0) + 1;
       fs.writeFileSync(bumpFile, String(bump));
     }
-    const made = await runBoards({ render: {
+    // Pi WSY6-R22F-POSTMORTEM-KNIVES-0930 刀A（0927 停法手術漏網補完）：一格
+    // cell 唔 GREEN 唔殺成隊——renderBoards throw 前已寫 receipt（blocked 態），
+    // catch 讀返 GREEN cells 入 lineage；非 GREEN 格嘅鏡 blocked skip 續行其他板。
+    // 同 packet 紀律：blocked 照收據落盤，唔準第三次同 packet 重燒。
+    let made: Parameters<typeof recordCellLineage>[0];
+    try {
+      made = await runBoards({ render: {
       moments,
       boardsDir: path.join(ctx.stillDir!, "boards"),
       name: `keyframes-${String(si + 1).padStart(2, "0")}`,
@@ -541,6 +565,41 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
         }),
       ]),
     } });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/^boards: \d+ cells not GREEN/.test(msg)) throw err;
+      const receiptPath = msg.match(/receipt (\S+)/)?.[1];
+      if (receiptPath) {
+        try {
+          recordCellLineage(JSON.parse(fs.readFileSync(receiptPath, "utf8")) as Parameters<typeof recordCellLineage>[0]);
+        } catch { /* receipt 讀唔到＝lineage 缺席，行 named-missing fallback */ }
+      }
+      // renderBoards 對 GREEN cell 已 copy 落 destination——檔在場分綠/blocked
+      const greenMoments = moments.filter((m) => fs.existsSync(m.file));
+      for (const m of greenMoments) {
+        const list = shotCells.get(m.shotId) ?? [];
+        list.push(m.file);
+        shotCells.set(m.shotId, list);
+      }
+      for (const shotId of new Set(greenMoments.map((m) => m.shotId))) {
+        const shot = hopStillPlans.find((p) => p.shot.id === shotId)?.shot;
+        const group = greenMoments.filter((m) => m.shotId === shotId);
+        if (!shot || shot.keyframePositions?.trim()) continue;
+        if (group.length < 2) continue;
+        shot.keyframePositions = group
+          .map((m, i) => m.at || `${Math.round((i / (group.length - 1)) * 100)}%`)
+          .join(", ");
+      }
+      for (const m of moments.filter((x) => !fs.existsSync(x.file))) {
+        emit(jobId, {
+          agent: "stills", level: "warn",
+          message: `${m.shotId} 板層 cell QC 未 GREEN——呢鏡 blocked，繼續其他鏡`,
+          data: { shot: m.shotId, stage: "stills", blocked: "board-cell-not-green", receipt: receiptPath ?? null },
+        });
+      }
+      await speak("stills", `鍵格板 ${si + 1}：${greenMoments.length}/${moments.length} 格 GREEN，blocked ${moments.length - greenMoments.length} 格照收據續行。`, "warn");
+      continue;
+    }
     recordCellLineage(made);
     for (const m of moments) {
       const list = shotCells.get(m.shotId) ?? [];
@@ -566,7 +625,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
   const propRefsFor = (shotId: string): string[] => {
     const plan0 = hopStillPlans.find((p) => p.shot.id === shotId);
     if (!plan0) return [];
-    const ids0 = [...new Set((plan0.shot.props ?? []).map((pp) => propAssetId(pp.name)))];
+    const ids0 = propIdsWithNoCastFloor(plan0.shot);
     if (!ids0.length) return [];
     const plates = diffPropPlates(path.join(jobDir(jobId), "assets"), path.join(jobDir(jobId), "assets", "props.pinned.json"), ids0)
       .resolved.map((r) => r.file).filter((f) => fs.existsSync(f));

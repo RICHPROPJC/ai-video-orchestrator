@@ -95,15 +95,22 @@ export function momentHoldsProp(beat: string): boolean {
 /** Percents written on the shot are that shot's keyframes, any count.
  *  No written string → the shot is one cell of a shared U1.5 sheet. */
 export function momentsForShot(
-  shot: { id: string; action: string; heading: string; stillPrompt?: string; keyframePositions?: string; size?: string; location?: string; props?: { name: string }[] },
+  shot: { id: string; action: string; heading: string; stillPrompt?: string; keyframePositions?: string; size?: string; location?: string; props?: { name: string }[]; marks?: unknown[] },
   stillDir: string,
 ): SheetMoment[] {
   // R20 裁決①（0929）：每格 moment 附加純 beat 文字（endpoint-state 素材）——
   // QC require 按格驗嗰格嘅完成態（到達/接觸/持有/位置），行進過程由
   // blockout/video 驗，唔把完整 shot 動詞塞每 cell 同一 require。
   const place = shot.location ? `場所${shot.location}，背景就係呢個場所，唔好換成另一個房。` : "";
+  // Pi WSY6-R22F-POSTMORTEM-KNIVES-0930 刀B1：零 cast 鏡（marks 空＝冇角色）
+  // closeup/insert 句唔提人體部位——「只見頭部同手上嘅物件」誘導 U1.5 對
+  // 零人鏡畫手（SH07 三連 FAIL 實證：people_count 0 但三次都有手）。有人
+  // 鏡句照舊。
+  const noCast = !(shot.marks?.length);
   const sizeLine = shot.size === "closeup" || shot.size === "insert"
-    ? "景別特寫，畫面只見頭部同手上嘅物件，唔見全身。"
+    ? noCast
+      ? "景別特寫，主體物件佔滿畫面，唔見任何人物或身體部分。"
+      : "景別特寫，畫面只見頭部同手上嘅物件，唔見全身。"
     : shot.size === "medium"
       ? "景別中景，腰以上半身入畫，見到腰。"
       : shot.size ? `景別${shot.size}。` : "";
