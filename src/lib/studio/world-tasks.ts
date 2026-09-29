@@ -77,39 +77,51 @@ export async function reconcileWorldTask(
   return (await r.json()) as WorldTaskView;
 }
 
-/** 刀4：succeeded task 嘅 blockout_frames 接駁——拉 World 側逐 frame 檔落
- *  本地目錄（contract §4/§6：frames 係目錄，files 路由只回檔——逐檔拉）。
- *  bundle 逐檔清單欄名 named unknown（未見真 task 數據）→probe 版：
- *  ①bundle.artifacts 內 kind=blockout_frames 嘅 logicalPath 當目錄根，
- *  frame_%04d.png 序列逐個 GET files 路由，404 即停（frameCount 上限自
- *  bundle.frameRange.frameCount，冇就 9999 防走火）；②連第一幀都 404＝
- *  回 0（caller named blocked）。真 task 到場後按實際清單欄收緊。 */
+/** 刀4收緊（FROM-WORLD 1001a262 實測）：succeeded task 嘅 blockout_frames
+ *  接駁——幀名照 bundle artifacts[].files[].logicalPath 真源（World 側
+ *  frameFilesNote 明言「唔好猜 frame_0001」——幀號由 frameOrigin 起，實測
+ *  tsk_d570150edbb9 首張 frame_0505.png）。files=null＝路徑不在碟、空 array
+ *  ＝empty 目錄——兩者都唔係完成（named 回 0）。逐檔 GET files 路由落碟＋
+ *  sha256 對賬（對唔到 named，唔照收）。舊 bundle 冇 files 欄＝named 舊格式。 */
 export async function pullWorldBlockoutFrames(
   cfg: SlateConfig,
   projectId: string,
   taskId: string,
   outDir: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<{ frames: number; framesDir?: string; error?: string }> {
+): Promise<{ frames: number; framesDir?: string; error?: string; shaMismatch?: string[] }> {
   const bundle = await readWorldTaskBundle(cfg, taskId);
-  const artifacts = Array.isArray(bundle["artifacts"]) ? (bundle["artifacts"] as { kind?: string; logicalPath?: string }[]) : [];
-  const framesArt = artifacts.find((a) => a.kind === "blockout_frames" && a.logicalPath);
-  if (!framesArt?.logicalPath) return { frames: 0, error: "bundle 無 blockout_frames artifact（named unknown——真 task 數據到場收緊）" };
-  const range = (bundle["frameRange"] ?? {}) as { frameCount?: number };
-  const cap = typeof range.frameCount === "number" && range.frameCount > 0 ? range.frameCount : 9999;
+  const artifacts = Array.isArray(bundle["artifacts"])
+    ? (bundle["artifacts"] as { kind?: string; logicalPath?: string; files?: { logicalPath?: string; sha256?: string; bytes?: number }[] | null }[])
+    : [];
+  const framesArt = artifacts.find((a) => a.kind === "blockout_frames");
+  if (!framesArt) return { frames: 0, error: "bundle 無 blockout_frames artifact" };
+  if (!("files" in framesArt) || framesArt.files === undefined) {
+    return { frames: 0, error: `舊格式 bundle（${framesArt.logicalPath ?? "?"} 冇 files 清單欄——World 側新 source 先有，重跑 task 先有清單）` };
+  }
+  if (framesArt.files === null) return { frames: 0, error: `files=null：路徑 ${framesArt.logicalPath ?? "?"} 不在磁碟（frameFilesNote：唔係完成）` };
+  if (framesArt.files.length === 0) return { frames: 0, error: `empty：目錄 ${framesArt.logicalPath ?? "?"} 存在但零檔（frameFilesNote：唔係完成）` };
   const fs = await import("node:fs");
+  const { createHash } = await import("node:crypto");
   fs.mkdirSync(outDir, { recursive: true });
   let n = 0;
-  for (let i = 1; i <= cap; i++) {
-    const name = `frame_${String(i).padStart(4, "0")}.png`;
-    const r = await fetchImpl(
-      `${cfg.world.base}/api/projects/${projectId}/files/${framesArt.logicalPath}/${name}`,
-      { cache: "no-store" },
-    );
-    if (!r.ok) break;
+  const shaMismatch: string[] = [];
+  for (const f of framesArt.files) {
+    if (!f.logicalPath) continue;
+    const r = await fetchImpl(`${cfg.world.base}/api/projects/${projectId}/files/${f.logicalPath}`, { cache: "no-store" });
+    if (!r.ok) return { frames: n, error: `GET ${f.logicalPath} HTTP ${r.status}（清單話有但拉唔到——named，唔照收）`, shaMismatch };
     const buf = Buffer.from(await r.arrayBuffer());
-    fs.writeFileSync(`${outDir}/${name}`, buf);
+    // 本地重編 frame_%04d（1..N 按清單序）——World 幀名由 frameOrigin 起
+    // （實測 frame_0505 起），唔保證連續由 1；ffmpeg image2 序列讀本地重編版。
+    // sha 對賬照清單做（源真源），本地名純接駁產物零資訊損失。
+    const local = `${outDir}/frame_${String(n + 1).padStart(4, "0")}.png`;
+    fs.writeFileSync(local, buf);
+    if (f.sha256) {
+      const got = createHash("sha256").update(buf).digest("hex");
+      if (got !== f.sha256) shaMismatch.push(`${f.logicalPath}: 清單 ${f.sha256.slice(0, 8)} vs 實收 ${got.slice(0, 8)}`);
+    }
     n++;
   }
-  return n > 0 ? { frames: n, framesDir: outDir } : { frames: 0, error: `files 路由喺 ${framesArt.logicalPath} 下零 frame（404？）` };
+  if (shaMismatch.length) return { frames: n, error: `${shaMismatch.length} 檔 sha256 對唔到（named，唔照收）`, shaMismatch };
+  return { frames: n, framesDir: outDir };
 }
