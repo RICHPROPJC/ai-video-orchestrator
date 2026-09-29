@@ -355,4 +355,20 @@ export function assertSheetGates(sheet: CallSheet, opts: { script: Script; targe
   if (productNoProps.length) {
     throw new Error(`product shots ${productNoProps.map((s) => s.id).join("、")} props 空（subject="product" 但冇道具欄）— 商品展示鏡必須自帶非空 props（商品做 name、heldBy 照 cast），named 缺拒出，回分鏡席補`);
   }
+  // 統籌根因 0930（blockout 同 bytes 真因）：同 beat 重複開鏡——WSY6 實證
+  // SH05=SH06（同 heading 同 2s）、SH07=SH08=SH10（同 heading 同 1.5s），5 鏡
+  // 實質 2 款；blender deterministic 對同款鏡出 byte-identical mp4 係正常
+  // （blockout 如實反映上游重複）。閘＝偵測同 beat+heading+duration 實質重
+  // 複鏡→拒出返分鏡席合併（唔由程式自動 dedupe——內容決定返責任席）。
+  const dupKey = (s: (typeof sheet.shots)[number]) =>
+    `${(s.beatIds ?? (s.beatId ? [s.beatId] : [])).slice().sort().join("+")}|${s.heading}|${s.durationSec.toFixed(2)}`;
+  const dupGroups = new Map<string, string[]>();
+  for (const s of sheet.shots) {
+    const k = dupKey(s);
+    dupGroups.set(k, [...(dupGroups.get(k) ?? []), s.id]);
+  }
+  const dups = [...dupGroups.values()].filter((ids) => ids.length > 1);
+  if (dups.length) {
+    throw new Error(`duplicate shots（同 beat+heading+時長＝實質同一款內容開多個鏡號）：${dups.map((ids) => ids.join("≡")).join("；")} — 回分鏡席合併成單鏡（blockout 會對同款鏡出同 bytes，重複鏡＝觀眾睇到重複畫面）`);
+  }
 }
