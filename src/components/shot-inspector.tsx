@@ -31,6 +31,7 @@ export function ShotInspector({ jobId, shots }: { jobId: string; shots: string[]
   const [shot, setShot] = useState(shots.includes("SH02") ? "SH02" : shots[0] ?? "SH01");
   const [data, setData] = useState<ShotInspect | null>(null);
   const [frame, setFrame] = useState<number | null>(null);
+  const [error, setError] = useState("");
   useEffect(() => {
     let stop = false;
     setError("");

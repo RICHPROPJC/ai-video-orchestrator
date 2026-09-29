@@ -1,7 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  formatH3Plan,
   H3_KEYFRAME_STATIONS,
   H3_LANES,
   H3_SLOT_CAP,
@@ -115,9 +114,6 @@ export function H3PlanCard({
             </ul>
           </div>
         </div>
-        <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted-foreground">
-          {formatH3Plan(plan).join("\n")}
-        </pre>
       </CardContent>
     </Card>
   );
