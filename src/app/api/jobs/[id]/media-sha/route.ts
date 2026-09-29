@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
@@ -6,9 +7,25 @@ import { readJob } from "@/lib/studio/store";
 
 export const runtime = "nodejs";
 
-/** Chau 0930 實症（重做出同前條一模一樣嘅片／翻用當兩鏡）：產物 sha 對帳口——
- *  outputs.shots＋outputs.blockout 每 rel 計 sha256，UI 同 sha 對標紅「翻用」。
- *  檔唔在＝缺席照報（named），唔猜。 */
+/** DECISION-SHA-REUSE（Chau 核實 front=side 同 sha256 11c69122…/3331B）：
+ *  產物檔真 sha256 顯示口——UI 兩個位 sha 相同先標「同 sha 翻用」（精確匹配；
+ *  story-30 七 shot sha 互異，唔可以標互相同片）。module cache（mtime+size
+ *  不變用舊值）防每 poll 重算。檔唔在＝缺席 named。 */
+const cache = new Map<string, { mtimeMs: number; size: number; sha: string }>();
+
+function sha256Of(abs: string): string | null {
+  try {
+    const st = fs.statSync(abs);
+    const hit = cache.get(abs);
+    if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.sha;
+    const h = createHash("sha256").update(fs.readFileSync(abs)).digest("hex");
+    cache.set(abs, { mtimeMs: st.mtimeMs, size: st.size, sha: h });
+    return h;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(
   _req: Request,
   ctx: { params: Promise<{ id: string }> },
@@ -17,21 +34,12 @@ export async function GET(
   const job = readJob(id);
   if (!job) return NextResponse.json({ error: "not found" }, { status: 404 });
   const dir = jobDir(id);
-  const out: Record<string, string> = {};
+  const sha: Record<string, string> = {};
   const missing: string[] = [];
   for (const rel of [...(job.outputs.shots ?? []), ...(job.outputs.blockout ?? [])]) {
-    try {
-      const buf = fs.readFileSync(path.join(dir, rel));
-      let h = 0x811c9dc5;
-      for (const b of buf) {
-        h ^= b;
-        h = Math.imul(h, 0x01000193) >>> 0;
-      }
-      // FNV-1a 32bit＋bytes 長度雙鍵——同 job 幾十檔對翻用夠準夠快；完整 sha256 留收據層。
-      out[rel] = `fnv${h.toString(16).padStart(8, "0")}:${buf.length}`;
-    } catch {
-      missing.push(rel);
-    }
+    const h = sha256Of(path.join(dir, rel));
+    if (h) sha[rel] = h;
+    else missing.push(rel);
   }
-  return NextResponse.json({ sha: out, missing }, { headers: { "cache-control": "no-store" } });
+  return NextResponse.json({ sha, missing }, { headers: { "cache-control": "no-store" } });
 }

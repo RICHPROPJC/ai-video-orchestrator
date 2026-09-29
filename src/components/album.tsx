@@ -1573,8 +1573,8 @@ function useKfCellQc(jobId: string): { kf: Record<string, KfCellQc>; pinned: Rec
   return maps;
 }
 
-/** Chau 0930 實症（重做出同前條一模一樣／翻用當兩鏡）：產物 sha 對帳——
- *  outputs.shots/blockout 每檔 FNV+size 鍵；同鍵＝翻用，UI 紅字標示。 */
+/** DECISION-SHA-REUSE：產物檔真 sha256 對帳——兩個位 sha 全值相同先標
+ *  「同 sha 翻用」（精確匹配；sha 互異絕不標）。 */
 function useMediaSha(jobId: string): { sha: Record<string, string>; dupes: Record<string, string[]> } {
   const [m, setM] = useState<{ sha: Record<string, string>; dupes: Record<string, string[]> }>({ sha: {}, dupes: {} });
   useEffect(() => {
@@ -1697,9 +1697,9 @@ function AxisRow({
   worldTask?: { taskId?: string; taskState?: string } & Record<string, unknown>;
   /** binding 採納版落後 World latest（顯示任務態時要對帳提示）。 */
   worldStale?: boolean;
-  /** motion 產物 FNV+size 鍵（/api/jobs/:id/media-sha）。 */
+  /** motion 產物 sha256（/api/jobs/:id/media-sha）。 */
   motionSha?: string;
-  /** 同鍵嘅其他產物（翻用——Chau 0930 實症：重做零新內容要一眼現形）。 */
+  /** 同 sha256 嘅其他產物（翻用——兩位 sha 全值相同先標）。 */
   motionDupes?: string[];
 }) {
   const data = inspect?.data ?? null;
@@ -1719,11 +1719,11 @@ function AxisRow({
         </span>
         <QcBadge qc={qc} />
         {motionDupes?.length ? (
-          <span className="rounded border border-destructive/60 px-1.5 py-0.5 font-mono text-[9px] text-destructive" title={`同鍵翻用：${motionDupes.join("、")}`}>
-            ⚠翻用：同 {motionDupes.map((d) => d.split("/").pop()).join("、")} 同 bytes
+          <span className="rounded border border-destructive/60 px-1.5 py-0.5 font-mono text-[9px] text-destructive" title={`同 sha256 ${motionSha}：${motionDupes.join("、")}`}>
+            ⚠同sha翻用：{motionDupes.map((d) => d.split("/").pop()).join("、")}（sha {motionSha?.slice(0, 8)}）
           </span>
         ) : motionSha ? (
-          <span className="font-mono text-[9px] text-muted-foreground" title="產物內容鍵（FNV+size）">{motionSha}</span>
+          <span className="font-mono text-[9px] text-muted-foreground" title={`產物 sha256（唯一——無同 sha 翻用）`}>sha {motionSha.slice(0, 8)}</span>
         ) : null}
         {worldTask ? <WorldTaskCell task={worldTask} stale={worldStale} /> : null}
         {err ? <span className="text-destructive">收據載入失敗（{err}）</span> : null}
