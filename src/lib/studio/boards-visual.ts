@@ -29,7 +29,7 @@ export async function renderBoards(opts: BoardsVisualOptions) {
   const run = `${opts.name}-${crypto.randomUUID().slice(0, 8)}`;
   const attemptDir = path.join(opts.boardsDir, run);
   const receipt = path.join(opts.receiptDir, `${run}.visual.json`);
-  const attempts: { board: string; sha256: string; inputs: string[]; cells: { shotId: string; at: string; file: string; destination: string; sha256: string; qc: string; status: string }[] }[] = [];
+  const attempts: { board: string; sha256: string; inputs: string[]; prompt: string; cells: { shotId: string; at: string; file: string; destination: string; sha256: string; qc: string; status: string }[] }[] = [];
   const digest = (f: string) => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
   const write = (status: string) => fs.writeFileSync(receipt, JSON.stringify({ owner: "boards", status, attempts }, null, 2));
   write("pending");
@@ -67,18 +67,22 @@ export async function renderBoards(opts: BoardsVisualOptions) {
         images = [repairBoard, ...opts.images];
       }
       let made: Awaited<ReturnType<typeof ensureKeyframeSheet>>;
+      // R22（ROOT 0929）：actual submitted prompt 原文變數化——每 attempt 落收據
+      // （stills 外層 QC expectation 消費真提交原文，keyframeSheetPrompt 重建版
+      // 唔再冒充 actual；版式承諾留喺板層收據，outer 淨驗 primary cell 合同）。
+      const submittedPrompt = storyboardBoardPrompt({
+        cells: group.map((m) => m.text),
+        style: opts.style ?? "寫實電影感、画面清晰銳利", cleanCuts: true,
+      }) + "格內只畫指定時刻，鏡號同百分比係切格對照資料，留喺收據，畫面保持乾淨。剩餘空位留白，唔開新鏡。"
+        + (images[0]?.endsWith(".repair-input.png")
+          ? "Image-1係抽出再併嘅壞格，依照同一次序修正指定格；其餘參考圖角色照下列（非位置描述）。"
+          : "")
+        + (opts.refNote
+          ?? "參考圖第一張係角色身份，跨格同一人。其後每張係道具實物照：道具嘅外形、顏色、質感、比例以參考圖為準照抄落畫面，文字描述唔取代道具參考圖。");
       try {
         made = await ensureKeyframeSheet({
           ...opts, images, boardsDir: attemptDir, name, moments: staged, seed: (opts.seed ?? 42) + round,
-        prompt: storyboardBoardPrompt({
-          cells: group.map((m) => m.text),
-          style: opts.style ?? "寫實電影感、画面清晰銳利", cleanCuts: true,
-        }) + "格內只畫指定時刻，鏡號同百分比係切格對照資料，留喺收據，畫面保持乾淨。剩餘空位留白，唔開新鏡。"
-          + (images[0]?.endsWith(".repair-input.png")
-            ? "Image-1係抽出再併嘅壞格，依照同一次序修正指定格；其餘參考圖角色照下列（非位置描述）。"
-            : "")
-          + (opts.refNote
-            ?? "參考圖第一張係角色身份，跨格同一人。其後每張係道具實物照：道具嘅外形、顏色、質感、比例以參考圖為準照抄落畫面，文字描述唔取代道具參考圖。"),
+        prompt: submittedPrompt,
         });
       } catch (error) {
         // Fix3（GPT-6 裁決根因3）：版式拒切係「呢一 round 作廢、下 round 新 seed 重試」，
@@ -89,13 +93,13 @@ export async function renderBoards(opts: BoardsVisualOptions) {
           // 版式拒切＝呢 round 作廢。group 必須留喺 pending（failed.push），
           // 唔可以設定 rejected（crop 從未切出，指去 m.file 只會令下 round
           // repair 讀錯檔——GPT-6 即時覆核捉嘅假 GREEN／毒 mapping）。
-          attempts.push({ board: "", sha256: "", inputs: images, cells: group.map((m) => ({ shotId: m.shotId, at: m.at, file: m.file, destination: m.file, sha256: "", qc: "", status: `RETRY_LAYOUT: ${message}` })) });
+          attempts.push({ board: "", sha256: "", inputs: images, prompt: submittedPrompt, cells: group.map((m) => ({ shotId: m.shotId, at: m.at, file: m.file, destination: m.file, sha256: "", qc: "", status: `RETRY_LAYOUT: ${message}` })) });
           failed.push(...group);
           continue;
         }
         throw error;
       }
-      const attempt: typeof attempts[number] = { board: made.board, sha256: digest(made.board), inputs: images, cells: [] };
+      const attempt: typeof attempts[number] = { board: made.board, sha256: digest(made.board), inputs: images, prompt: submittedPrompt, cells: [] };
       attempts.push(attempt);
       for (const [j, m] of group.entries()) {
         const file = staged[j]!.file;

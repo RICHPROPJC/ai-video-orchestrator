@@ -365,6 +365,17 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
   };
 
   const sheetLane = liveBoardLane(cfg.stills.url);
+  // R22（ROOT 0929）：cell lineage——每 destination 格嘅 actual submitted board
+  // prompt 原文＋源板 sha（boards-visual attempt 收據真源）。outer QC expectation
+  // 以 primary cell moment 合同驗；actual prompt 全文留追溯（named-missing 唔靜靚缺）。
+  const cellLineage = new Map<string, { prompt: string; boardSha: string }>();
+  const recordCellLineage = (made: { attempts?: { board: string; sha256: string; prompt: string; cells: { destination: string; status: string }[] }[] }) => {
+    for (const at of made.attempts ?? []) {
+      for (const c of at.cells) {
+        if (c.status === "GREEN") cellLineage.set(c.destination, { prompt: at.prompt, boardSha: at.sha256 });
+      }
+    }
+  };
   const shotCells = new Map<string, string[]>();
   const qcFail = (shotId: string) => {
     const qcVerdictJson = path.join(ctx.stillDir!, `${shotId}.photo_qc.json`);
@@ -480,7 +491,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       bump = (fs.existsSync(bumpFile) ? Number(fs.readFileSync(bumpFile, "utf8")) || 0 : 0) + 1;
       fs.writeFileSync(bumpFile, String(bump));
     }
-    await runBoards({ render: {
+    const made = await runBoards({ render: {
       moments,
       boardsDir: path.join(ctx.stillDir!, "boards"),
       name: `keyframes-${String(si + 1).padStart(2, "0")}`,
@@ -503,6 +514,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
         }),
       ]),
     } });
+    recordCellLineage(made);
     for (const m of moments) {
       const list = shotCells.get(m.shotId) ?? [];
       list.push(m.file);
@@ -654,7 +666,16 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       .map((id) => ctx.portraits!.sheets?.[id] || ctx.portraits!.files[id])
       .filter((p): p is string => Boolean(p && fs.existsSync(p)));
     const sheetPrompt = keyframeSheetPrompt(momentsForShot(shot, ctx.stillDir!));
-    editInputs.set(shot.id, { prompt: sheetPrompt, nodePaths: [], base, refs: [...identity, ...propRefsFor(shot.id)], first });
+    // R22（ROOT 0929）：editInputs.prompt＝actual submitted board prompt（cell
+    // lineage 真源，boards-visual storyboardBoardPrompt＋refNote 原文）；重建版
+    // keyframeSheetPrompt 只做 named-missing fallback，唔冒充 actual。
+    const lineagePrimary = cellLineage.get(out);
+    if (!lineagePrimary) {
+      emit(jobId, { agent: "stills", level: "warn",
+        message: `${shot.id} cell-lineage named-missing（board 收據冇 submitted prompt）——editInputs 行 keyframeSheetPrompt fallback`,
+        data: { stage: "cell-lineage", shot: shot.id, blocked: null } });
+    }
+    editInputs.set(shot.id, { prompt: lineagePrimary?.prompt ?? sheetPrompt, nodePaths: [], base, refs: [...identity, ...propRefsFor(shot.id)], first });
     prevKeyframe = cells[cells.length - 1]!;
     stills.push(out);
     upsertDoc({
@@ -701,12 +722,26 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     }
     const qcStarted = Date.now();
     const qcJson = path.join(ctx.stillDir!, `${shot.id}.photo_qc.json`);
-    // 內部期望版（0927 fix ③）：判官食埋呢張 still 生成嗰陣嘅完整 prompt 原文
-    // （editInputs 就係每鏡生成 prompt 真源），require 字面配對升級做對生成
-    // 承諾驗收。攞唔到 prompt＝expectation 缺席，行為完全不變。
+    // R22（ROOT 0929，supersede 0927 fix ③ 整板 expectation）：artifact-scoped
+    // QC——outer SH01.png 明確係 primary cell，以該 cell moment 合同驗（身份/
+    // 姿態/道具/位置照 require 欄位）；整板 layout/mapping 要求屬板層，由切格
+    // 收據（boards-visual board_layout 拒切閘＋per-cell QC）驗，唔入 outer 判官
+    // ——keyframeSheetPrompt 整板版式 expectation 對單格必 FAIL 嘅錯配由呢度
+    // 收口。actual submitted board prompt 全文＋源板 sha 留 cellLineage/u15
+    // 收據追溯；lineage 缺席＝named-missing，行 require 欄位驗收（不降 QC）。
     const qcRequireWithExpectation = (req: QcRequire): QcRequire => {
-      const genPrompt = editInputs.get(shot.id)?.prompt;
-      return genPrompt ? { ...req, expectation: genPrompt } : req;
+      const lineage = cellLineage.get(out);
+      const primaryBeat = momentsForShot(shot, ctx.stillDir!)[0]?.beat?.trim();
+      if (lineage && primaryBeat) {
+        return {
+          ...req,
+          expectation: `本格（primary cell）合同：${primaryBeat}。定格驗收：呢格驗呢個瞬間嘅完成姿勢——人物位置/手接觸/持有狀態啱唔啱；行進過程由片驗，唔要求單圖畫出行過程，但位置/接觸錯唔放過。生成呢格嘅 actual board prompt 全文及源板/格 sha 見 seats/boards 收據（板版式另由切格收據驗，唔入本判）。`,
+        };
+      }
+      emit(jobId, { agent: "stills", level: "warn",
+        message: `${shot.id} outer QC expectation named-missing（cell lineage 或 primary beat 缺）——行 require 欄位驗收`,
+        data: { stage: "cell-lineage", shot: shot.id, blocked: null } });
+      return req;
     };
     let result = await runPhotoQc(png, qcJson, qcRequireWithExpectation(require), {}, photoQcEyesFromEnv());
     let promptShot = shot;
@@ -884,8 +919,21 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       }
       const retryImages = retryAll;
       // The outer shot QC rejected its primary still; other anchors stay pinned.
-      const retryMoments = momentsForShot(promptShot, ctx.stillDir!).slice(0, 1);
-      await runBoards({ render: {
+      // R22（ROOT 0929）：retry 出齊 moment 格（唔 slice 單格）——first-pass/
+      // retry/same 共用 source 同 scope：版式同契約一致，「原封重出同一
+      // packet」語義至真；renderBoards 全格 GREEN 先落 destination（原 GREEN
+      // 格唔會被非 GREEN 新版靜靜覆蓋，新板自己過閘）。
+      const retryMoments = momentsForShot(promptShot, ctx.stillDir!);
+      const retryRequire = Object.fromEntries([
+        [shot.id, liveRequire] as const,
+        ...retryMoments.flatMap((m) => {
+          const beat = m.beat?.trim();
+          return beat
+            ? [[m.file, { ...liveRequire, action: `${beat}（定格驗收：呢格驗呢個瞬間嘅完成姿勢——人物位置/手接觸/持有狀態啱唔啱；行進過程由片驗，唔要求單圖畫出行過程，但位置/接觸錯唔放過）` }] as const]
+            : [];
+        }),
+      ]);
+      const madeRetry = await runBoards({ render: {
         moments: retryMoments,
         boardsDir: path.join(ctx.stillDir!, "boards"),
         name: `${shot.id}-retry`,
@@ -893,15 +941,16 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
         lane: sheetLane,
         seed: cfg.motion.seed + 1,
         receiptDir: path.join(jobDir(jobId), "seats", "boards"),
-        require: { [shot.id]: liveRequire },
+        require: retryRequire,
       } });
+      recordCellLineage(madeRetry);
       if (path.resolve(retryMoments[0]!.file) !== path.resolve(png)) fs.copyFileSync(retryMoments[0]!.file, png);
       shot.keyframeFiles = momentsForShot(promptShot, ctx.stillDir!).map((m) => m.file);
-      editInputs.set(shot.id, { ...inputs, refs: [...sheets, ...regate.kept] });
+      editInputs.set(shot.id, { ...inputs, prompt: cellLineage.get(png)?.prompt ?? inputs.prompt, refs: [...sheets, ...regate.kept] });
       result = await runPhotoQc(png, qcJson, qcRequireWithExpectation(liveRequire), {}, photoQcEyesFromEnv());
       if (result.status === "FAIL") {
         await speak("pictureQc", `${shot.id} 再抽仍然唔啱，同一句故事再出一次，唔改動作。`, "warn");
-        await runBoards({ render: {
+        const madeSame = await runBoards({ render: {
           moments: retryMoments,
           boardsDir: path.join(ctx.stillDir!, "boards"),
           name: `${shot.id}-same`,
@@ -909,8 +958,9 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
           lane: sheetLane,
           seed: cfg.motion.seed + 3,
           receiptDir: path.join(jobDir(jobId), "seats", "boards"),
-          require: { [shot.id]: liveRequire },
+          require: retryRequire,
         } });
+        recordCellLineage(madeSame);
         if (path.resolve(retryMoments[0]!.file) !== path.resolve(png)) fs.copyFileSync(retryMoments[0]!.file, png);
         shot.keyframeFiles = momentsForShot(promptShot, ctx.stillDir!).map((m) => m.file);
         result = await runPhotoQc(png, qcJson, qcRequireWithExpectation(liveRequire), {}, photoQcEyesFromEnv());
