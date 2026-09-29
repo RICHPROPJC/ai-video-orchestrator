@@ -312,6 +312,8 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
   const photoQc = usePhotoQc(job?.id ?? "", shotIds);
   /** ROOT 1046Z 刀3：KF 逐格板層 cell QC（seats/boards/*.visual.json reduce）。 */
   const { kf: cellQc, pinned: cellPinned } = useKfCellQc(job?.id ?? "");
+  /** Phase world-stage：job↔World 採納四態（shotMap 命中→AxisRow 顯示任務態）。 */
+  const worldStage = useWorldStage(job?.id ?? "");
   /** H3 出片 rel（SH01.mp4 等）——三方對照同 span 卡都用。 */
   const motionByShot = useMemo(() => {
     const m = new Map<string, string>();
@@ -538,6 +540,8 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
                         qc={photoQc[shot.id]}
                         cellQc={cellQc}
                         cellPinned={cellPinned}
+                        worldTask={worldStage?.binding?.shotMap?.[shot.id]}
+                        worldStale={worldStage?.state === "stale"}
                       />
                     ))}
                 </div>
@@ -1581,6 +1585,8 @@ function AxisRow({
   qc,
   cellQc,
   cellPinned,
+  worldTask,
+  worldStale,
 }: {
   jobId: string;
   shot: Shot;
@@ -1596,6 +1602,10 @@ function AxisRow({
   cellQc?: Record<string, KfCellQc>;
   /** 刀5：碟上現行 bytes 嘅 GREEN 錨定收據（copy-on-GREEN）。 */
   cellPinned?: Record<string, KfCellQc>;
+  /** Phase world-stage：呢鏡嘅 typed World 任務收據（binding.shotMap 命中）。 */
+  worldTask?: { taskId?: string; taskState?: string } & Record<string, unknown>;
+  /** binding 採納版落後 World latest（顯示任務態時要對帳提示）。 */
+  worldStale?: boolean;
 }) {
   const data = inspect?.data ?? null;
   const err = inspect?.err ?? "";
@@ -1613,6 +1623,11 @@ function AxisRow({
           {pins.length} 釘{posUnknown ? "（位置未知）" : positions ? "" : "（平均分推算）"}
         </span>
         <QcBadge qc={qc} />
+        {worldTask ? (
+          <span className={`rounded border px-1.5 py-0.5 font-mono text-[9px] ${worldStale ? "border-amber-500/60 text-amber-300" : "border-border text-muted-foreground"}`} title={`typed World 任務（binding.shotMap）${worldStale ? "——採納版落後 World latest，消費前對帳" : ""}`}>
+            World任務 {worldTask.taskId ?? "?"}·{worldTask.taskState ?? "?"}{worldStale ? "（stale）" : ""}
+          </span>
+        ) : null}
         {err ? <span className="text-destructive">收據載入失敗（{err}）</span> : null}
         {!err && data && !data.h3 ? <span className="rounded bg-amber-900/50 px-1.5 py-0.5 text-amber-300">未做H3</span> : null}
       </div>

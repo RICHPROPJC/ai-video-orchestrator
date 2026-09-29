@@ -5,7 +5,7 @@ import { fetchH3Plan, keyframeRelPaths, type H3PlanFile } from "@/lib/studio/key
 import type { JobRecord, Shot } from "@/lib/studio/types";
 import { kfSrcs, makePropIdx, pinPercents, propSrcs, studioMedia } from "@/lib/studio/canvas-rels";
 import { useFramesAtPcts } from "@/lib/studio/film-thumbs";
-import { useWorldOverview } from "@/lib/studio/world-client";
+import { useWorldOverview, useWorldStage, type WorldStage } from "@/lib/studio/world-client";
 import { WorldPilotPreview } from "@/components/world-panel";
 import { ProbeImg } from "@/components/album";
 import { FeedbackForm } from "@/components/feedback-form";
@@ -59,7 +59,10 @@ export function BlockCanvas({ job }: { job: JobRecord | null }) {
         <span>{shots.length} 鏡 · 期望合計 {totalExpect.toFixed(1)}s</span>
         <span className="ml-auto">格帶＝灰模片每個 KF 釘位抽嗰刻（格序＝片序）；格下掛參考圖；紅＝空咗／KF 檔缺；⚠＝片長唔啱。</span>
       </header>
-      {/* COLLAB-0929：World 現況行（集級；per-鏡綁定等 production job↔project 映射）。 */}
+      {/* Phase world-stage（production 9726ff0 刀3）：job 級採納四態——
+          unbound 要顯示成「未揀定」，唔好空白當已接。 */}
+      <WorldStageBar jobId={job.id} />
+      {/* COLLAB-0929：World 現況行（集級；per-鏡任務態喺上面 WorldStageBar 嘅 shotMap）。 */}
       <WorldLine />
       {/* Pi 0929 授權：per-鏡面板組件預寫試點預覽（binding 落齊換 AxisRow 真接線）。 */}
       <WorldPilotPreview />
@@ -74,6 +77,56 @@ export function BlockCanvas({ job }: { job: JobRecord | null }) {
         />
       ))}
     </div>
+  );
+}
+
+/** Phase world-stage：job↔World 採納四態行（真源 /api/jobs/:id/world-stage）。
+ *  unbound＝未揀定 project（named，唔空白當已接）；current/stale＝凍結版 vs
+ *  World latest editSeq；unreachable＝World serve 離線。shotMap 命中計數。 */
+function WorldStageBar({ jobId }: { jobId: string }) {
+  const st: WorldStage | null = useWorldStage(jobId);
+  if (!st) return <p className="px-1 text-[10px] text-muted-foreground">World 採納態讀緊…</p>;
+  const b = st.binding;
+  const shots = Object.entries(b?.shotMap ?? {});
+  const taskCount = shots.filter(([, v]) => v.taskId).length;
+  const stateLine = shots.length
+    ? ` · shotMap ${shots.length} 鏡${taskCount ? `（${taskCount} 有 taskId）` : "（零 taskId）"}`
+    : "";
+  if (st.state === "unbound") {
+    return (
+      <p className="rounded-lg border border-dashed border-border px-2 py-1 text-[10px] text-muted-foreground">
+        World 採納＝<span className="text-amber-400">未揀定（unbound）</span>——job 未綁 project（cfg.world.projectId 空或未行 worldStage）；唔係已接。
+      </p>
+    );
+  }
+  if (st.state === "unreachable") {
+    return (
+      <p className="rounded-lg border border-destructive/50 px-2 py-1 text-[10px] text-destructive">
+        World serve 離線（unreachable）——binding 在 {b?.projectId}，讀 latest 唔通：{st.error ?? "?"}
+      </p>
+    );
+  }
+  const e = b?.editSeqAtAdoption;
+  const f = b?.contentFingerprintAtAdoption?.slice(0, 8);
+  const latest = st.latest?.editSeq;
+  return (
+    <p
+      className={`rounded-lg border px-2 py-1 text-[10px] ${
+        st.state === "stale" ? "border-amber-500/60 text-amber-300" : "border-border text-muted-foreground"
+      }`}
+    >
+      World 採納＝<span className={st.state === "stale" ? "text-amber-300" : "text-emerald-500"}>
+        {st.state === "stale" ? "過時（stale）" : "現行（current）"}
+      </span>
+      {" · "}project <span className="font-mono">{b?.projectId ?? "?"}</span> · 凍結版 e{e ?? "?"} f{f ?? "?"}
+      {st.state === "stale" ? ` · World latest e${latest ?? "?"}——採納版落後，消費前要對帳` : ""}
+      {stateLine}
+      {shots.length ? (
+        <span className="ml-1 text-[9px] text-muted-foreground">
+          （{shots.map(([shotId, v]) => `${shotId}:${v.taskState ?? "?"}`).join(" ")}）
+        </span>
+      ) : null}
+    </p>
   );
 }
 
@@ -104,7 +157,12 @@ function WorldLine() {
           </span>
         );
       })}
-      <span className="ml-auto">per-鏡 world 綁定＝等 production job↔project 映射欄位（named）</span>
+      <span className="ml-auto">job 級採納態喺上面 WorldStageBar（world-stage 四態）；呢行係 World 側集級現況</span>
+      {/* World CONSUMER-0929-01 語義：proxy 200≠worldStage 採用——crewConsumer
+          hand-flag 照報告顯示，World 更新清單後我同步。 */}
+      <span className="w-full text-[9px] text-amber-400/80">
+        crew consumer＝未（世界 demo 成片獨立、唔證 crew 消費同版本；SH01 冇 render attempt——CONSUMER-0929-01）
+      </span>
     </div>
   );
 }

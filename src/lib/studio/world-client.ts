@@ -68,6 +68,44 @@ export function useWorldProjectTasks(projectId: string | null): {
 
 const WORLD_BASE = "/api/world/api";
 
+/** Phase world-stage（production 9726ff0 刀3）：job↔World 綁定四態真源——
+ *  GET /api/jobs/{id}/world-stage。unbound＝job 未揀定 project（顯示「未揀定」，
+ *  唔好空白當已接）；current/stale＝binding 凍結版 vs World latest editSeq 對比；
+ *  unreachable＝World serve 離線（唔係 stale）。 */
+export type WorldStageBinding = {
+  projectId?: string;
+  editSeqAtAdoption?: number;
+  contentFingerprintAtAdoption?: string;
+  shotMap?: Record<string, { taskId?: string; taskState?: string } & Record<string, unknown>>;
+};
+
+export type WorldStage = {
+  state: "unbound" | "current" | "stale" | "unreachable";
+  binding?: WorldStageBinding;
+  latest?: { editSeq?: number; contentFingerprint?: string };
+  error?: string;
+};
+
+export function useWorldStage(jobId: string | null | undefined): WorldStage | null {
+  const [st, setSt] = useState<WorldStage | null>(null);
+  useEffect(() => {
+    if (!jobId) return;
+    let stop = false;
+    void fetch(`/api/jobs/${jobId}/world-stage`, { cache: "no-store" })
+      .then(async (r) => (r.ok ? ((await r.json()) as WorldStage) : null))
+      .then((d) => {
+        if (!stop && d) setSt(d);
+      })
+      .catch(() => {
+        if (!stop) setSt({ state: "unreachable", error: "crew world-stage route 唔通" });
+      });
+    return () => {
+      stop = true;
+    };
+  }, [jobId]);
+  return st;
+}
+
 /** doc 全形（Pi 0929 授權預寫試點用；parse 寬鬆——World schema 演進欄位照 unknown 食）。 */
 export type WorldProjectDoc = {
   editSeq?: number;
