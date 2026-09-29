@@ -315,6 +315,8 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
   const { kf: cellQc, pinned: cellPinned } = useKfCellQc(job?.id ?? "");
   /** Phase world-stage：job↔World 採納四態（shotMap 命中→AxisRow 顯示任務態）。 */
   const worldStage = useWorldStage(job?.id ?? "");
+  /** 產物 sha 對帳（Chau 0930 實症周邊收尾）：同鍵＝翻用，顯示位標紅。 */
+  const mediaSha = useMediaSha(job?.id ?? "");
   /** H3 出片 rel（SH01.mp4 等）——三方對照同 span 卡都用。 */
   const motionByShot = useMemo(() => {
     const m = new Map<string, string>();
@@ -543,6 +545,8 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
                         cellPinned={cellPinned}
                         worldTask={worldStage?.binding?.shotMap?.[shot.id]}
                         worldStale={worldStage?.state === "stale"}
+                        motionSha={motionByShot.get(shot.id) ? mediaSha.sha[motionByShot.get(shot.id)!] : undefined}
+                        motionDupes={motionByShot.get(shot.id) ? mediaSha.dupes[motionByShot.get(shot.id)!] : undefined}
                       />
                     ))}
                 </div>
@@ -1569,6 +1573,36 @@ function useKfCellQc(jobId: string): { kf: Record<string, KfCellQc>; pinned: Rec
   return maps;
 }
 
+/** Chau 0930 實症（重做出同前條一模一樣／翻用當兩鏡）：產物 sha 對帳——
+ *  outputs.shots/blockout 每檔 FNV+size 鍵；同鍵＝翻用，UI 紅字標示。 */
+function useMediaSha(jobId: string): { sha: Record<string, string>; dupes: Record<string, string[]> } {
+  const [m, setM] = useState<{ sha: Record<string, string>; dupes: Record<string, string[]> }>({ sha: {}, dupes: {} });
+  useEffect(() => {
+    if (!jobId) return;
+    let stop = false;
+    void fetch(`/api/jobs/${jobId}/media-sha`, { cache: "no-store" })
+      .then(async (r) => (r.ok ? ((await r.json()) as { sha?: Record<string, string> }) : null))
+      .then((d) => {
+        if (!stop || !d?.sha) return;
+        const byKey: Record<string, string[]> = {};
+        for (const [rel, key] of Object.entries(d.sha)) {
+          (byKey[key] ??= []).push(rel);
+        }
+        const dupes: Record<string, string[]> = {};
+        for (const rel of Object.keys(d.sha)) {
+          const key = d.sha[rel]!;
+          if ((byKey[key]?.length ?? 0) > 1) dupes[rel] = byKey[key]!.filter((x) => x !== rel);
+        }
+        setM({ sha: d.sha, dupes });
+      })
+      .catch(() => undefined);
+    return () => {
+      stop = true;
+    };
+  }, [jobId]);
+  return m;
+}
+
 /** 釘帶格仔 cell QC 徽記（兩態）：✓＝現行 GREEN 錨定；✓⟳＝現行✓但重做輪
  *  FAIL 緊（碟圖仍然收貨版）；✗＝從未 GREEN；·＝板層收據冇（唔等於 FAIL）。 */
 function CellQcMark({ cell, pinned }: { cell?: KfCellQc; pinned?: KfCellQc }) {
@@ -1642,6 +1676,8 @@ function AxisRow({
   cellPinned,
   worldTask,
   worldStale,
+  motionSha,
+  motionDupes,
 }: {
   jobId: string;
   shot: Shot;
@@ -1661,6 +1697,10 @@ function AxisRow({
   worldTask?: { taskId?: string; taskState?: string } & Record<string, unknown>;
   /** binding 採納版落後 World latest（顯示任務態時要對帳提示）。 */
   worldStale?: boolean;
+  /** motion 產物 FNV+size 鍵（/api/jobs/:id/media-sha）。 */
+  motionSha?: string;
+  /** 同鍵嘅其他產物（翻用——Chau 0930 實症：重做零新內容要一眼現形）。 */
+  motionDupes?: string[];
 }) {
   const data = inspect?.data ?? null;
   const err = inspect?.err ?? "";
@@ -1678,6 +1718,13 @@ function AxisRow({
           {pins.length} 釘{posUnknown ? "（位置未知）" : positions ? "" : "（平均分推算）"}
         </span>
         <QcBadge qc={qc} />
+        {motionDupes?.length ? (
+          <span className="rounded border border-destructive/60 px-1.5 py-0.5 font-mono text-[9px] text-destructive" title={`同鍵翻用：${motionDupes.join("、")}`}>
+            ⚠翻用：同 {motionDupes.map((d) => d.split("/").pop()).join("、")} 同 bytes
+          </span>
+        ) : motionSha ? (
+          <span className="font-mono text-[9px] text-muted-foreground" title="產物內容鍵（FNV+size）">{motionSha}</span>
+        ) : null}
         {worldTask ? <WorldTaskCell task={worldTask} stale={worldStale} /> : null}
         {err ? <span className="text-destructive">收據載入失敗（{err}）</span> : null}
         {!err && data && !data.h3 ? <span className="rounded bg-amber-900/50 px-1.5 py-0.5 text-amber-300">未做H3</span> : null}
