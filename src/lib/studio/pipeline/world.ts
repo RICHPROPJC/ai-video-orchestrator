@@ -1246,6 +1246,19 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       // 一筆 warn 萛 events——呢條片嘅灰模係 plug 唔係真 render。
       emit(jobId, gapEvent(jobId, blockoutPlugGap(shot.id)));
     } else {
+      // DECISION-NO-CAST-BAKE（0930 統籌裁）：冇 mark characterId 嘅鏡（零 cast
+      // insert／商品微距）唔呼叫 bakeSelectionFrames——人形 mocap 灰人偶表達
+      // 唔到呢類 action（WSY6 SH07-10 樽內檸檬/氣泡實證），且 argv 淨傳
+      // lens+size（callsheet 相機 pos/lookAt 唔入 bake）。named blocked 唔造
+      // 靜態假灰片。SH05/06 有 mark 唔受呢條。
+      if (!shot.marks.some((m) => m.characterId)) {
+        emit(jobId, {
+          agent: "layout", level: "warn",
+          message: `no-cast-mocap: ${shot.id} 冇 cast mark——唔 bake 人形 mocap，呢鏡 blocked`,
+          data: { shot: shot.id, stage: "world", blocked: "no-cast-mocap" },
+        });
+        continue;
+      }
       const sel = motionSelections.get(shot.id);
       if (sel?.gap?.remedy === "kf_driven") {
         // 0927 fix ②（motion gap）：手部動作 CMU 六族冇覆蓋——唔 bake 近族
