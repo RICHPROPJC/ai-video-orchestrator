@@ -1216,6 +1216,14 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     } else {
       await speak("pictureQc", `${shot.id} GREEN（人數 ${liveRequire.people_count}）`, "pass");
       writeStillStamp(shot.id, first, editInputs.get(shot.id)?.prompt ?? prompt);
+      // ROOT 1046Z §15／R22f''' 收口實證（outputs.stills=[]）：已採納 stills 增量
+      // 入 job——已 GREEN 產物即時可見（UI consumer 唔使等成批收尾）；resume 對
+      // GREEN pin 鏡行「照舊」唔會重複 push。
+      const rel = `stills/${shot.id}.png`;
+      const cur = (ctx.job.outputs?.stills ?? []);
+      if (!cur.includes(rel)) {
+        ctx.job = patch(ctx.job, { outputs: { ...ctx.job.outputs, stills: [...cur, rel] } });
+      }
       emit(jobId, {
         agent: "pictureQc",
         level: "pass",
@@ -1249,11 +1257,15 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
   writeSceneSheetHtml();
   // picture QC slate record: every hop still above is already GREEN-pinned
   // in-loop (bug4). Whole-slate (or hop) plan-geometry is the receipt.
+  // R22f''' 收口實證（12:19Z throw）：per-item blocked 設計下 blocked 鏡冇
+  // still 係合法態（audio-placement/板層 blocked 收據在場）——plan-geometry
+  // 淨對非 blocked 鏡驗（§10.2 gapBlockedShots 同款豁免＋stills blockedShots）。
+  const blockedAll = new Set((readJob(jobId)?.blockedShots ?? []).map((b) => b.shot));
   const qcSheet = input.only
     ? { ...ctx.timed!, shots: ctx.timed!.shots.filter((s) => s.id === input.only) }
     : input.scene
-      ? { ...ctx.timed!, shots: shotsForScene(ctx.timed!.shots, input.scene) }
-      : ctx.timed!;
+      ? { ...ctx.timed!, shots: shotsForScene(ctx.timed!.shots, input.scene).filter((s) => !blockedAll.has(s.id)) }
+      : { ...ctx.timed!, shots: ctx.timed!.shots.filter((s) => !blockedAll.has(s.id)) };
   const geometry = localPictureQc({ stills, sheet: qcSheet, target: "stills" });
   ctx.geometry = geometry;
   if (!geometry.pass) {
