@@ -26,7 +26,7 @@ import { FleetRack } from "@/components/fleet-rack";
 import { ShotTruth } from "@/components/shot-truth";
 import { H3PlanCard } from "@/components/h3-plan-card";
 import { clinicH3Plans } from "@/lib/studio/h3-slots";
-import { Album } from "@/components/album";
+import { Album, ProbeImg } from "@/components/album";
 import { BlockCanvas } from "@/components/block-canvas";
 import { SessionPanel } from "@/components/session-panel";
 import { ShotFeedback } from "@/components/feedback-form";
@@ -653,13 +653,28 @@ export function StudioFloor({
               ) : null}
               {tab === "board" ? (
                 <div className="mt-3 min-h-48 space-y-3">
-                  {/* Chau 0927（糾正）：KF stills 唔係分鏡格——唔好用 stills 砌格牆。
-                      呢個 tab 淨係顯示真分鏡板交付物（板原圖＋切格 Gallery）；
-                      格牆／KF／灰模／refs 嘅呈現歸畫布 tab。逐鏡條目軸已判死，鏟走。 */}
+                  {/* ROOT 1046Z：text-only 分鏡係已採納模式，唔可以標「未交付」。
+                      有板圖→StoryboardPanel；storyboardMode=text-only→照實顯示
+                      callsheet 文字鏡頭表＋KF boards 指去鍵格區；兩樣都冇→Empty。 */}
                   {job?.callSheet?.storyboard?.length ? (
                     <StoryboardPanel job={job} />
+                  ) : storyboardMode?.startsWith("text-only") ? (
+                    <div className="space-y-2 rounded-lg border p-3 text-xs">
+                      <p className="font-medium">已採納 text-only 分鏡（{storyboardMode}）</p>
+                      <div className="space-y-1">
+                        {(job?.callSheet?.shots ?? []).map((s) => (
+                          <p key={s.id} className="text-muted-foreground">
+                            <span className="font-mono text-foreground">{s.id}</span> {s.heading ?? ""}
+                            {s.dialogue ? `——${s.speaker ? `${s.speaker}：` : ""}${s.dialogue}` : "（無對白）"}
+                          </p>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">
+                        生成嘅 KF boards 喺 stills/boards/——去「剪接·H3對齊」鍵格區睇（唔冒充分鏡板）。
+                      </p>
+                    </div>
                   ) : (
-                    <Empty label="分鏡板未交付——文字鏡頭表唔算分鏡。" />
+                    <Empty label="分鏡板未交付（storyboard 空＋冇 text-only 採納模式）。" />
                   )}
                   {job?.id ? (
                     <details className="rounded-lg border px-3 py-2 text-xs text-muted-foreground">
@@ -682,6 +697,8 @@ export function StudioFloor({
                   ) : (
                     <Empty label="未有 narrative plan。阿圖收 packet 之後會寫。" />
                   )}
+                  {/* ROOT 1046Z：plan 唔可以淨 DAG——接真採納創作計劃。 */}
+                  <DirectorPlanCard jobId={job?.id} />
                   {job?.vault ? (
                     <p className="text-xs text-muted-foreground">
                       Vault {job.vault.docs} docs · isolated ·{" "}
@@ -738,22 +755,51 @@ export function StudioFloor({
                 </div>
               ) : null}
               {tab === "block" ? (
-                <div className="mt-3 min-h-48">
-                {job?.outputs.blockingPreview ? (
-                  <div className="space-y-3">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={media(job.id, job.outputs.blockingPreview)}
-                      alt="blocking"
-                      className="w-full rounded-lg border"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Blender script：{job.outputs.blenderScript} · 角色移動 + 手手腳腳 IK。本機有 Blender 會嘗試 headless 跑。
-                    </p>
-                  </div>
-                ) : (
-                  <Empty label="Layout agent 未出 mark。" />
-                )}
+                <div className="mt-3 min-h-48 space-y-3">
+                  {/* ROOT 1046Z：走位唔可以淨一張 blockingPreview（硬讀 manifest＝永遠
+                      同一圖）——逐鏡 f0（blockout/{id}.f0.png 約定名 probe）照擺；
+                      探唔到＝named 缺，唔當未交付以外嘅任何狀態。 */}
+                  {job?.id && (job.callSheet?.shots?.length ?? 0) > 0 ? (
+                    <div>
+                      <p className="mb-1 text-[11px] tracking-wider text-muted-foreground">
+                        逐鏡走位格 f0 · {job.callSheet?.shots.length}（blockout/&lt;鏡&gt;.f0.png 逐個 probe）
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {(job.callSheet?.shots ?? []).map((s) => (
+                          <div key={s.id} className="w-36 shrink-0 overflow-hidden rounded border border-border">
+                            <ProbeImg
+                              srcs={[media(job.id, `blockout/${s.id}.f0.png`)]}
+                              alt={`${s.id} f0`}
+                              className="aspect-video w-full object-cover"
+                              missingLabel="f0 未落盤"
+                            />
+                            <span className="block truncate px-1 py-0.5 font-mono text-[9px] text-muted-foreground">
+                              {s.id} f0
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {job?.outputs.blockingPreview ? (
+                    <details className="space-y-2 rounded-lg border px-3 py-2 text-xs">
+                      <summary className="cursor-pointer font-medium">
+                        舊版單圖 blockingPreview（{job.outputs.blockingPreview}——僅 SH01，唔代表全部鏡）
+                      </summary>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={media(job.id, job.outputs.blockingPreview)}
+                        alt="blocking"
+                        className="w-full rounded-lg border"
+                      />
+                      <p className="text-muted-foreground">
+                        Blender script：{job.outputs.blenderScript} · 角色移動 + 手手腳腳 IK。本機有 Blender 會嘗試 headless 跑。
+                      </p>
+                    </details>
+                  ) : null}
+                  {!job?.outputs.blockingPreview && (job?.callSheet?.shots?.length ?? 0) === 0 ? (
+                    <Empty label="未有走位產物（f0 冇鏡可probe、blockingPreview 未出）。" />
+                  ) : null}
                 </div>
               ) : null}
               {tab === "qc" ? (
@@ -834,7 +880,31 @@ export function StudioFloor({
                     </div>
                   </div>
                 ) : (
-                  <Empty label="未有 picture lock。" />
+                  <div className="space-y-1">
+                    <Empty label="未有 picture lock。" />
+                    {/* ROOT 1046Z：未交付唔係冇原因——job 狀態／stage gate／error
+                        喺呢個 tab 本身講埋，唔使人自己估。 */}
+                    <p className="text-xs text-muted-foreground">
+                      而家 job 狀態 <span className="font-mono">{job?.status ?? "—"}</span>
+                      {" · "}stage gate <span className="font-mono">{job?.currentAgent ?? job?.status ?? "—"}</span>
+                      {job?.error ? <>{" · "}<span className="text-destructive">{job.error}</span></> : " · 冇 error 欄（未跑去鎖片步）"}
+                      {job?.updatedAt ? ` · 更新 ${job.updatedAt}` : ""}
+                    </p>
+                    {/* audio 收 details：未 lock 前最可核嘅係逐鏡聲帶——照碟 named。 */}
+                    {job?.id ? (
+                      <details className="rounded-lg border px-3 py-2 text-xs">
+                        <summary className="cursor-pointer text-muted-foreground">逐鏡聲帶（audio/&lt;鏡&gt;.wav probe）</summary>
+                        <div className="mt-2 space-y-1.5">
+                          {(job.callSheet?.shots ?? []).map((s) => (
+                            <AudioProbe key={s.id} jobId={job.id} shotId={s.id} />
+                          ))}
+                          {(job.callSheet?.shots?.length ?? 0) === 0 ? (
+                            <p className="text-muted-foreground">callsheet 冇鏡。</p>
+                          ) : null}
+                        </div>
+                      </details>
+                    ) : null}
+                  </div>
                 )}
                 </div>
               ) : null}
@@ -1048,6 +1118,91 @@ function ProjectGroup({
 
 function Empty({ label }: { label: string }) {
   return <p className="rounded-lg border border-dashed p-8 text-sm text-muted-foreground">{label}</p>;
+}
+
+/** lock tab 逐鏡聲帶 probe（ROOT 1046Z）：onerror → HEAD 分類 named，唔淨一句缺檔。 */
+function AudioProbe({ jobId, shotId }: { jobId: string; shotId: string }) {
+  const src = `/api/media/${jobId}/audio/${shotId}.wav`;
+  const [st, setSt] = useState<"ok" | "missing" | "decodeFail">("ok");
+  if (st !== "ok") {
+    return (
+      <p className="font-mono text-[10px] text-muted-foreground">
+        {shotId} · {st === "missing" ? "未有聲帶（404）" : "聲帶在碟但解碼失敗"}
+      </p>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-12 shrink-0 font-mono text-[10px] text-muted-foreground">{shotId}</span>
+      <audio
+        controls
+        preload="none"
+        className="min-w-0 flex-1"
+        src={src}
+        onError={() => {
+          void fetch(src, { method: "HEAD" })
+            .then((r) => setSt(r.ok ? "decodeFail" : "missing"))
+            .catch(() => setSt("missing"));
+        }}
+      />
+    </div>
+  );
+}
+
+/** ROOT 1046Z：真採納創作計劃（creative/director-plan.json）——plan 頁唔可以淨 DAG。
+ *  lineage named：director-plan 可能同 callsheet 不同 lineage，production 對帳前唔當 callsheet 採納版。 */
+function DirectorPlanCard({ jobId }: { jobId?: string }) {
+  const [plan, setPlan] = useState<Record<string, unknown> | null>(null);
+  const [state, setState] = useState<"loading" | "ok" | "missing">("loading");
+  useEffect(() => {
+    if (!jobId) return;
+    let stop = false;
+    void fetch(media(jobId, "creative/director-plan.json"), { cache: "no-store" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`${r.status}`);
+        return (await r.json()) as Record<string, unknown>;
+      })
+      .then((d) => {
+        if (!stop) {
+          setPlan(d);
+          setState("ok");
+        }
+      })
+      .catch(() => {
+        if (!stop) setState("missing");
+      });
+    return () => {
+      stop = true;
+    };
+  }, [jobId]);
+  if (!jobId) return null;
+  if (state === "missing") return <p className="text-xs text-muted-foreground">creative/director-plan.json 未落盤（named）。</p>;
+  if (state === "loading" || !plan) return <p className="text-xs text-muted-foreground">director-plan 讀緊…</p>;
+  const shots = Array.isArray(plan["shots"]) ? (plan["shots"] as unknown[]).length : 0;
+  const gaps = Array.isArray(plan["capabilityGaps"]) ? (plan["capabilityGaps"] as string[]) : [];
+  return (
+    <details className="rounded-lg border px-3 py-2 text-xs" open>
+      <summary className="cursor-pointer font-medium">採納創作計劃（creative/director-plan.json）</summary>
+      <p className="mt-1 text-[10px] text-amber-400/80">lineage named：director-plan 同 callsheet 可能唔同 lineage——production 對帳前唔當 callsheet 採納版。</p>
+      <div className="mt-1 space-y-1 text-muted-foreground">
+        <p>flow：{String(plan["flow"] ?? "—")}</p>
+        <p>treatment：{String(plan["treatment"] ?? "—")}</p>
+        {plan["dialogueClock"] ? (
+          <p className="truncate" title={JSON.stringify(plan["dialogueClock"])}>
+            dialogueClock {JSON.stringify(plan["dialogueClock"]).slice(0, 90)}…
+          </p>
+        ) : null}
+        <p>
+          shots {shots} 項 · rhythmMap {plan["rhythmMap"] ? "有" : "冇"} · compileReceipt {plan["compileReceipt"] ? "有" : "冇"}
+        </p>
+        {gaps.length ? <p className="text-amber-400/80">capabilityGaps：{gaps.slice(0, 4).join("；")}</p> : null}
+        <details>
+          <summary className="cursor-pointer">全文 JSON</summary>
+          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-[9px]">{JSON.stringify(plan, null, 1)}</pre>
+        </details>
+      </div>
+    </details>
+  );
 }
 
 /** B33：續做走 POST /api/jobs/:id/resume（A1 admission）——attached（活躍

@@ -308,6 +308,8 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
   const inspects = useShotInspects(job?.id ?? "", shotIds);
   /** R19-R21：每鏡 motion selection（decisionSource／採納段／平手證據）。 */
   const motionSel = useMotionSelection(job?.id ?? "");
+  /** ROOT 1046Z：逐鏡劇照 QC badge 真源（stills/SHxx.photo_qc.json）。 */
+  const photoQc = usePhotoQc(job?.id ?? "", shotIds);
   /** H3 出片 rel（SH01.mp4 等）——三方對照同 span 卡都用。 */
   const motionByShot = useMemo(() => {
     const m = new Map<string, string>();
@@ -505,6 +507,7 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
                     hasMotion={Boolean(motionByShot.get(shot.id))}
                     active={shot.id === openShot}
                     onPick={() => selectShot(shot.id)}
+                    qc={photoQc[shot.id]}
                   />
                 ))}
               </div>
@@ -530,6 +533,7 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
                         motionRel={motionByShot.get(shot.id)}
                         inspect={inspects[shot.id]}
                         motionSel={motionSel[shot.id]}
+                        qc={photoQc[shot.id]}
                       />
                     ))}
                 </div>
@@ -1440,18 +1444,56 @@ function H3PlanSlots({ jobId, shotId }: { jobId: string; shotId: string }) {
 
 /** B1（Sol UI-PLAN）：全量索引行——每鏈一行緊湊摘要（sheet＋inspects 靜態
  *  數據，零額外請求）；撳行 mount 嗰鏈 AxisRow 詳情。 */
+/** ROOT 1046Z：逐鏡劇照 QC（stills/SHxx.photo_qc.json）——{status GREEN/FAIL, sha256}。
+ *  冇檔＝冇收據（named，唔寫FAIL）；呢個係 outer 逐鏡收據，KF cell QC 另在
+ *  stills/boards/<board>/…cell-N.photo_qc.json——兩外層QC≠全部KF QC，顯示分開。 */
+type PhotoQc = { status: string; sha256?: string };
+
+function usePhotoQc(jobId: string, shotIds: string[]): Record<string, PhotoQc> {
+  const [map, setMap] = useState<Record<string, PhotoQc>>({});
+  const key = shotIds.join(",");
+  useEffect(() => {
+    if (!jobId || !key) return;
+    let stop = false;
+    void Promise.all(
+      key.split(",").map((id) =>
+        fetch(media(jobId, `stills/${id}.photo_qc.json`), { cache: "no-store" })
+          .then(async (r) => (r.ok ? { id, d: (await r.json()) as PhotoQc } : { id, d: null }))
+          .catch(() => ({ id, d: null })),
+      ),
+    ).then((rows) => {
+      if (stop) return;
+      const m: Record<string, PhotoQc> = {};
+      for (const r of rows) if (r.d?.status) m[r.id] = r.d;
+      setMap(m);
+    });
+    return () => {
+      stop = true;
+    };
+  }, [jobId, key]);
+  return map;
+}
+
+function QcBadge({ qc }: { qc?: PhotoQc }) {
+  if (!qc) return <span className="text-muted-foreground">QC收據冇</span>;
+  if (qc.status === "GREEN") return <span className="text-emerald-500">QC GREEN</span>;
+  return <span className="text-destructive">QC {qc.status}</span>;
+}
+
 function ShotIndexRow({
   shot,
   inspect,
   hasMotion,
   active,
   onPick,
+  qc,
 }: {
   shot: Shot;
   inspect?: { data: ShotInspect | null; err: string };
   hasMotion: boolean;
   active: boolean;
   onPick: () => void;
+  qc?: PhotoQc;
 }) {
   const data = inspect?.data ?? null;
   const pins = shotPins(inspect, shot).pins.length;
@@ -1466,6 +1508,7 @@ function ShotIndexRow({
       <span className="w-12 shrink-0 font-mono text-foreground">{shot.id}</span>
       <span className="text-muted-foreground">{shot.durationSec.toFixed(1)}s</span>
       <span className="text-muted-foreground">{pins}釘</span>
+      <QcBadge qc={qc} />
       {hasMotion ? <span className="text-emerald-500">motion✓</span> : <span className="text-muted-foreground">motion✗</span>}
       {data ? (
         data.files.blockout ? <span className="text-emerald-500">灰✓</span> : <span className="text-destructive">灰✗</span>
@@ -1491,6 +1534,7 @@ function AxisRow({
   inspect,
   highlight,
   motionSel,
+  qc,
 }: {
   jobId: string;
   shot: Shot;
@@ -1500,6 +1544,8 @@ function AxisRow({
   highlight?: boolean;
   /** R19-R21 motion selection：decisionSource／採納段／平手證據（optional）。 */
   motionSel?: MotionSel;
+  /** ROOT 1046Z：outer 逐鏡劇照 QC（stills/SHxx.photo_qc.json）。 */
+  qc?: PhotoQc;
 }) {
   const data = inspect?.data ?? null;
   const err = inspect?.err ?? "";
@@ -1514,8 +1560,9 @@ function AxisRow({
       <div className="flex flex-wrap items-center gap-2 text-[11px]">
         <span className="font-mono">{shot.id}</span>
         <span className="text-muted-foreground">
-          {pins.length} 釘{positions ? "" : "（平均分推算）"}
+          {pins.length} 釘{posUnknown ? "（位置未知）" : positions ? "" : "（平均分推算）"}
         </span>
+        <QcBadge qc={qc} />
         {err ? <span className="text-destructive">收據載入失敗（{err}）</span> : null}
         {!err && data && !data.h3 ? <span className="rounded bg-amber-900/50 px-1.5 py-0.5 text-amber-300">未做H3</span> : null}
       </div>
