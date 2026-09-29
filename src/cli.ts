@@ -110,6 +110,7 @@ function makeJob(brief: string) {
     motionPicks: parseMotionPicks(),
     allowNoStoryboard: process.argv.includes("--allow-no-storyboard"),
     dryRun: process.argv.includes("--dry-run"),
+    worldStudio: process.argv.includes("--world-studio"),
     until: arg("--until") as ProduceInput["until"],
     scene: arg("--scene"),
     only: arg("--only"),
@@ -135,6 +136,8 @@ function resumeJob(slate: string) {
     motionPicks: parseMotionPicks(),
     allowNoStoryboard: process.argv.includes("--allow-no-storyboard"),
     dryRun: process.argv.includes("--dry-run"),
+    // --world-studio 唔入 ResumePatch：World 線採用喺開 job 嗰刻寫入
+    // worldBinding，resume 照 binding 行（唔重覆宣告）。
     until: arg("--until") as ProduceInput["until"],
     scene: arg("--scene"),
     only: arg("--only"),

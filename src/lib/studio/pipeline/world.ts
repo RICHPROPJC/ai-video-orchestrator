@@ -17,6 +17,7 @@ import { ensurePortraits } from "../portraits";
 import { lookupShelf } from "../asset-library";
 import { writeStoryWorld, ensureWorldSizes, type WorldPlan } from "../world-assemble";
 import { submitWorldBlockoutTask, readWorldTask, reconcileWorldTask, pullWorldBlockoutFrames } from "../world-tasks";
+import { buildWorldFromPlan } from "../world-producer";
 import { piecesFromCallSheet, resolveScales, type WorldPiece } from "../world-scale";
 import { ensurePropBoard, ensureSceneBoard } from "../asset-board";
 import { diffPropPlates, nextPropBoardSeq, propAssetId, writePropPinManifest } from "../prop-plate-index";
@@ -995,15 +996,54 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     } catch (e) {
       emit(jobId, {
         agent: "layout", level: "warn",
-        message: `World binding 凍結失敗（${pid}）：GET 唔通——job 照行，World 接線呢輪缺席。`,
+        message: `World binding 凍結失敗（${pid}）：GET 唹通——job 照行，World 接線呢輪缺席。`,
         data: { stage: "world-bind-unreachable", projectId: pid, error: String(e) },
       });
       await speak("layout", `World binding 凍結失敗（${pid}）：GET 唔通——World 接線呢輪缺席，隊照行。`, "warn");
     }
+  } else if (!ctx.job.worldBinding && worldPlan && worldPlan.pieces.length > 0 && input.worldStudio) {
+    // CHAU-DIRECT-WORLD-INTEGRATION-CONTINUE（0930）：顯式採用（--world-studio）
+    // ＋採納 worldPlan 有件＝producer 自建/重用（crew:<jobId> 冪等）——typed
+    // commands 鋪 assets/objects/shots→shotMap 自動滿。缺入口 throw＝named emit
+    // 回責任席（world-producer-unreachable），唔靜默落舊 bake 當已接。
+    try {
+      const built = await buildWorldFromPlan(
+        cfg,
+        jobId,
+        worldPlan,
+        shotsForScene(ctx.locked!.shots, input.scene).map((s) => ({
+          id: s.id,
+          durationSec: s.durationSec,
+          lookAtId: worldPlan.shots.find((a) => a.id === s.id)?.lookAtId,
+        })),
+      );
+      ctx.job = patch(ctx.job, {
+        worldBinding: {
+          projectId: built.projectId,
+          editSeqAtAdoption: built.editSeq,
+          contentFingerprintAtAdoption: built.contentFingerprint,
+          adoptedAt: new Date().toISOString(),
+          shotMap: built.shotMap,
+        },
+      });
+      emit(jobId, {
+        agent: "layout", level: "info",
+        message: `World producer：${built.reused ? "重用" : "新建"} project ${built.projectId}——assets ${Object.keys(built.assets).length} 件（skipped ${built.skipped.length}）、commands ${built.commands}、shotMap ${Object.keys(built.shotMap).length} 鏡、editSeq ${built.editSeq ?? "?"}`,
+        data: { stage: "world-producer-built", projectId: built.projectId, reused: built.reused, assets: built.assets, commands: built.commands, shotMap: built.shotMap, skipped: built.skipped, editSeq: built.editSeq },
+      });
+      await speak("layout", `World producer：project ${built.projectId}（${built.reused ? "重用" : "新建"}）——${Object.keys(built.assets).length} 件資產、${Object.keys(built.shotMap).length} 鏡接線。`);
+    } catch (e) {
+      emit(jobId, {
+        agent: "layout", level: "warn",
+        message: `World producer 鋪世界失敗：${String(e)}——named 缺入口，唔靜默落舊 bake；blockout 分流會因無 shotMap 行本地鏈（未採納 World）。`,
+        data: { stage: "world-producer-unreachable", error: String(e) },
+      });
+      await speak("layout", `World producer 失敗：${String(e)}——World 採納呢輪缺席。`, "warn");
+    }
   } else if (!ctx.job.worldBinding) {
     emit(jobId, {
       agent: "layout", level: "info",
-      message: "World project 未揀（worldPlan.worldProjectId 缺）——named missing，全片本地鏈。",
+      message: "World 線未採用（--world-studio 冇開＋worldProjectId 缺）——named missing，全片本地鏈。",
       data: { stage: "world-project-missing" },
     });
   }
@@ -1047,7 +1087,20 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   // §10.2：placement-gap blocked 鏡（額度耗盡仍缺）唔重 render blockout——
   // 修好後 revision 重算全替換 rows 自然解鎖。磁碟真源（本段喺重算之後）。
   const gapBlockedShots = new Set((readJob(jobId)?.blockedShots ?? []).filter((b) => b.stage === "audio-placement").map((b) => b.shot));
+  // CHAU-DIRECT（0930）：顯式採用 World（--world-studio）但 binding 鋪唔成
+  // （producer 失敗/worldShotId 全缺）＝採用線缺入口——全片 blockout blocked，
+  // 唔靜默落本地 bake 當已接 World（named，回責任席修入口後 resume）。
+  const worldAdoptedNoBinding = input.worldStudio === true && !ctx.job.worldBinding;
+  if (worldAdoptedNoBinding) {
+    emit(jobId, {
+      agent: "layout", level: "warn",
+      message: `--world-studio 採用咗但 worldBinding 缺（producer 鋪唔成）——全片 blockout blocked，唔落本地 bake 冒充。收據睇 world-producer-unreachable event。`,
+      data: { stage: "world", blocked: "world-adopt-no-binding", shots: hopBoards.map((s) => s.id) },
+    });
+    await speak("layout", "World 採用線缺 binding——blockout 全片 blocked（唔本地冒充），等入口修復 resume。", "warn");
+  }
   for (const shot of hopBoards) {
+    if (worldAdoptedNoBinding) continue;
     if (gapBlockedShots.has(shot.id)) continue;
     const outMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
     // 刀4 World 分流（GO-PRODUCTION do③④）：揀咗 World 嘅鏡（shotMap 有

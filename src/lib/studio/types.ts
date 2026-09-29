@@ -47,6 +47,12 @@ export type ProduceInput = {
   /** MULTISHOT_WIRE: skip the motion-select step (no decider call, no mocap
    *  bake — the workbench grey blockouts stand). */
   noMotionSelect?: boolean;
+  /** CHAU-DIRECT-WORLD-INTEGRATION（0930）：顯式採用 World Studio 執行線
+   *  （--world-studio）。true＝worldStage producer 自建/重用 `crew:<jobId>`
+   *  project＋typed commands 鋪世界→shotMap→blockout 分流行 World task 鏈。
+   *  預設 false＝本地鏈照舊（plan 有零件都唔會自動轉線——採用係顯式決定，
+   *  唔靜默改變既有 job 行為）。 */
+  worldStudio?: boolean;
   /** R19 裁決③（0929）：人手 override 入口——--motion-pick SH01=026/26_09
    *  （可多次）。人手接嘅鏡直接採用指定 shortlist 候選留 decisionSource；
    *  係補入口，唔係主流程唯一恢復路（主流程＝席位 decision→採納→resume）。 */
