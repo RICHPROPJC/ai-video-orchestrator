@@ -1101,9 +1101,55 @@ export function reconcileUtterances(
     if (u.unresolvedSpeaker) issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} speaker UNRESOLVED——狀態具名，回責任席（唔入 TTS）`);
     for (const ref of u.source ?? []) {
       const c = byIdx.get(ref.candidateIdx);
-      if (!c) { issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} source candidateIdx=${ref.candidateIdx} 唔喺候選集（本版 ${candidates.candidates.length} 個——舊版候選表配新正文＝失效）`); continue; }
+      if (!c) {
+        // R22g 修法(b)（Pi 裁決 0930；OUZK 0930 同款閘再爆先落）：
+        // charter（§30）承諾 packet 帶候選表但 runPlaywright packet 冇帶
+        // （雞蛋問題）→ LLM source.candidateIdx 全 undefined。本地回填：
+        // ref.rawText 對本版候選集 exact→正規化 match。護欄：①只准
+        // exact→正規化兩級（trim＋引號符剝離，唔做 includes 模糊）；
+        // ②0 或 >1 match＝named-missing 大聲炸（回責任席指 idx，唔靜靚揀）；
+        // ③回填收據行帶 candidates.mdSha 入 issues（caller compile 收據檔
+        // 留證；locks 檢查照舊行同一段 typed，零繞過）。
+        const norm = (x: string) => x.trim().replace(/[「」『』"']/g, "");
+        let hits = candidates.candidates.filter((k) => k.rawText === ref.rawText);
+        let via: "exact" | "normalized" = "exact";
+        if (hits.length === 0) {
+          hits = candidates.candidates.filter((k) => norm(k.rawText) === norm(ref.rawText ?? ""));
+          via = "normalized";
+        }
+        if (hits.length === 1) {
+          const hit = hits[0]!;
+          ref.candidateIdx = hit.candidateIdx;
+          adopted.add(hit.candidateIdx);
+          issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} source 回填 candidateIdx=${hit.candidateIdx}（rawText ${via} match——R22g 修法(b)；本版候選表 mdSha=${candidates.mdSha}）`);
+        } else if (hits.length > 1) {
+          issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} source rawText「${(ref.rawText ?? "").slice(0, 24)}」${via} match ${hits.length} 個候選（#${hits.map((h) => h.candidateIdx).join("/#")}）——多義唔回填，返編劇指 idx`);
+        } else {
+          issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} source candidateIdx=${ref.candidateIdx} 唔喺候選集＋rawText「${(ref.rawText ?? "").slice(0, 24)}」0 match（exact/正規化）——named-missing 回編劇`);
+        }
+        continue;
+      }
       adopted.add(ref.candidateIdx);
-      if (c.rawText !== ref.rawText) issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} source rawText 同候選 #${ref.candidateIdx} 唔符（核對精確 range，唔用 includes 假過）`);
+      if (c.rawText !== ref.rawText) {
+        // R22g 修法(b)擴充（0930 OUZK 實證 U04/U05）：idx 存在但 rawText 同
+        // 指住嘅候選唔符＝同一「冇候選表靠估」家族——以 rawText 為錨行同一
+        // exact→正規化回填（同三護欄）；0/>1 match 留原唔符 issue。
+        const norm = (x: string) => x.trim().replace(/[「」『』"']/g, "");
+        let hits = candidates.candidates.filter((k) => k.rawText === ref.rawText);
+        let via: "exact" | "normalized" = "exact";
+        if (hits.length === 0) {
+          hits = candidates.candidates.filter((k) => norm(k.rawText) === norm(ref.rawText ?? ""));
+          via = "normalized";
+        }
+        if (hits.length === 1) {
+          const hit = hits[0]!;
+          ref.candidateIdx = hit.candidateIdx;
+          adopted.add(hit.candidateIdx);
+          issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} source 回填 candidateIdx=${hit.candidateIdx}（原 idx 指錯＋rawText ${via} match——R22g 修法(b)；mdSha=${candidates.mdSha}）`);
+        } else {
+          issues.push(`utterances[${i}] ${u.utteranceId ?? "?"} source rawText 同候選 #${ref.candidateIdx} 唔符（核對精確 range，唔用 includes 假過）`);
+        }
+      }
     }
     if (u.splitOf) {
       const parent = byIdx.get(u.splitOf.parentCandidateIdx);
