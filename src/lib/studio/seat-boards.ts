@@ -159,13 +159,14 @@ export function padBoardDurations(raw: unknown, budgetSec?: number, note?: Repai
       });
     }
     // DIALOGUE_RULE_PROVENANCE_0927：對白時鐘唔再抬單鏡——一句可跨鏡播，
-    // 夠唔夠講係「播佢嗰排鏡」夾埋嘅事（assertSheetGates 窗口閘）。呢度淨
-    // 落 H3 最短合法生成長度一個 floor。
-    const floor = TEXT_SHOT_SEC_MIN;
-    if (durationSec < floor) {
-      repair(`repair: shots[${i}].durationSec saw ${durationSec} became ${floor.toFixed(1)} (floor ${TEXT_SHOT_SEC_MIN})`);
+    // 夠唔夠講係「播佢嗰排鏡」夾埋嘅事（assertSheetGates 窗口閘）。
+    // ROOT 0929 接續令差1（supersede 舊 floor 抬升）：H3 最短生成長度係
+    // 生成契約（h3-submit pad 生成窗，cut_plan 照 callsheet 剪返），唔由
+    // 呢度反向抬故事時鐘——亞秒鏡照模型原值過 schema，低於舊 floor 淨記 note。
+    if (durationSec < TEXT_SHOT_SEC_MIN) {
+      repair(`repair: shots[${i}].durationSec saw ${durationSec} (< H3 生成floor ${TEXT_SHOT_SEC_MIN}——生成窗 pad 喺 submit 契約，故事時鐘照原值)`);
     }
-    return { ...shot, cast, props, durationSec: Math.max(durationSec, floor) };
+    return { ...shot, cast, props, durationSec };
   });
   if (typeof budgetSec === "number" && budgetSec > 0) {
     const hi = budgetSec * (1 + SCENE_BUDGET_TOLERANCE);
@@ -290,10 +291,14 @@ export async function runBoards(
     return { value: pass.value, receipts: pass.receipts };
   };
 
+  // ROOT 0929 接續令差3：每場入場前 carried 快照——repair 重跑要用「該場採納
+  // predecessor」狀態（最終 carried 係後場狀態，做前場先情＝連戲穿越）。
+  const carriedBefore = new Map<string, Handoff>();
   for (const [i, scene] of script.outline.scenes.entries()) {
     // qwen on litellm sometimes returns an empty JSON object if the prior scene
     // call finished milliseconds ago; a short gap avoids that race.
     if (i > 0 && !io.fetchImpl) await new Promise((r) => setTimeout(r, 5000));
+    carriedBefore.set(scene.id, carried);
     const pass = await runScene(scene, carried);
     receipts.push(...pass.receipts);
     boards.push(pass.value);
@@ -337,12 +342,33 @@ export async function runBoards(
       for (const o of overflows) {
         const scene = script.outline.scenes.find((s) => s.id === o.sceneId);
         if (!scene) continue;
-        const pass = await runScene(scene, carried, `【時長修訂】本場鏡合計 ${o.actual.toFixed(1)}s 對場 budget ${o.budget.toFixed(1)}s 超 ${(o.actual - o.budget).toFixed(1)}s（全片 callsheet 同時超 brief 硬時長）——合鏡／多 beat 同鏡／壓縮內容返 band 內；唔准刪台詞／接觸事件／用戶硬要求；若 budget 唔夠實現採納內容，喺 adoptionIssues 具名講明要返導演重分場，唔可以靜靜剪剩。`);
+        // ROOT 0929 接續令差3：repair 用該場採納 predecessor（carriedBefore 快照）
+        // ——最終 carried 係掃完全場後嘅後場狀態，攞佢返修前場＝先情穿越。
+        const before = carriedBefore.get(o.sceneId) ?? carried;
+        const pass = await runScene(scene, before, `【時長修訂】本場鏡合計 ${o.actual.toFixed(1)}s 對場 budget ${o.budget.toFixed(1)}s 超 ${(o.actual - o.budget).toFixed(1)}s（全片 callsheet 同時超 brief 硬時長）——合鏡／多 beat 同鏡／壓縮內容返 band 內；唔准刪台詞／接觸事件／用戶硬要求；若 budget 唔夠實現採納內容，喺 adoptionIssues 具名講明要返導演重分場，唔可以靜靜剪剩。`);
         receipts.push(...pass.receipts);
         const at = boards.findIndex((b) => b.sceneId === o.sceneId);
         if (at >= 0) boards[at] = pass.value;
         await io.speak?.(pass.value.thinking);
         io.index?.({ id: `boards:${o.sceneId}`, text: pass.value.shots.map((s) => s.action).join(" ") });
+        // 連戲重算（差3後半）：修訂場 handoff 變動先重跑下游依賴場——用重算
+        // predecessor 鏈式對齊；依賴冇變（handoff 等價）即止，唔無差別重生成。
+        let chainCarried = handoffFrom(pass.value, before);
+        for (let d = at + 1; d < boards.length; d += 1) {
+          const dSceneId = boards[d]!.sceneId;
+          const dScene = script.outline.scenes.find((s) => s.id === dSceneId);
+          const dBefore = carriedBefore.get(dSceneId);
+          if (!dScene || !dBefore) break;
+          const unchanged = JSON.stringify(dBefore) === JSON.stringify(chainCarried);
+          carriedBefore.set(dSceneId, chainCarried);
+          if (unchanged) break;
+          const dPass = await runScene(dScene, chainCarried, `【連戲重算】前場 ${o.sceneId} 時長修訂令 handoff 狀態變動——本場按新 predecessor 狀態重行（企位/持有接續要對得返）。`);
+          receipts.push(...dPass.receipts);
+          boards[d] = dPass.value;
+          await io.speak?.(dPass.value.thinking);
+          io.index?.({ id: `boards:${dSceneId}`, text: dPass.value.shots.map((s) => s.action).join(" ") });
+          chainCarried = handoffFrom(dPass.value, chainCarried);
+        }
       }
     }
   }

@@ -563,9 +563,36 @@ export async function authorStage(ctx: Ctx): Promise<void> {
     `收 brief。開呢份 slate 嘅信封。舊 project 唔入袋。${input.drama ? `劇目 ${input.drama}${input.episode ? `・${input.episode}` : ""}。` : ""}`,
   );
   // G1 批三：utterance 版本收據入 ctx（world 段 audio-timeline dependsOn 四元）
-  const sheet = await authorCallSheet(jobId, input, cfg, { speak, think }, (p) => {
-    ctx.utteranceProvenance = p;
-  });
+  // ROOT 0929 接續令差2：callsheet_runtime_unclosed（時長修訂額度耗盡）由
+  // comment 補成真 consumer——唔再殺 job 做 unknown error：分類具名 gap 落
+  // events＋job blocked 等 resume 修訂輪。分類：場分鏡（合鏡/壓縮）／全片
+  // 分配（導演重分場秒數）／內容可演性（budget 唔夠實現採納內容）——short
+  // brief 擴寫、固定時長由導演編排可演事件，已鎖要求唔偷删改；唔以同
+  // packet 換模型原封重試（sheetRepair 迴圈已行晒）。
+  let sheet: Awaited<ReturnType<typeof authorCallSheet>>;
+  try {
+    sheet = await authorCallSheet(jobId, input, cfg, { speak, think }, (p) => {
+      ctx.utteranceProvenance = p;
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.startsWith("callsheet_runtime_unclosed")) throw error;
+    emit(jobId, { agent: "producer", level: "warn",
+      message: `callsheet 時長差集具名 gap（返創作層修訂，唔殺 job）——${message}`,
+      data: {
+        stage: "callsheet-runtime", blocked: "callsheet_runtime_unclosed",
+        category: ["scene-boards：合鏡／多 beat 同鏡／壓縮返 band", "film-allocation：導演重分場秒數（outline targetSec）", "playability：budget 唔夠實現採納內容——adoptionIssues 具名返導演"],
+        repairEpisode: readJob(jobId)?.callsheetRepairEpisode ?? null,
+      } });
+    ctx.job = patch(ctx.job, {
+      status: "blocked",
+      currentAgent: "producer",
+      providers: trace,
+      error: `callsheet_runtime_unclosed（時長修訂額度耗盡——返創作層：場分鏡壓縮／導演重分場／可演性重編）：${message}`,
+    });
+    ctx.stopped = true;
+    return;
+  }
   // G1 批四：resolver 一處配對＋凍結映射落盤（author 採納輪；world 讀同一
   // 檔＋驗 digest——兩側同結果，唔建持久 pool／全局 used 旗標）。同字歧義／
   // 未配到＝具名（ambiguous/unmatched）——唔靠遍歷順序。

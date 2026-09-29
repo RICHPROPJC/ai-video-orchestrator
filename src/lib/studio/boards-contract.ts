@@ -83,7 +83,10 @@ const boardShotShape = z.object({
   size: z.enum(["wide", "full", "medium", "closeup", "insert"]),
   angle: z.enum(["eye", "high", "low"]),
   side: z.enum(["frontal", "leftQuarter", "rightQuarter"]),
-  durationSec: z.number().min(TEXT_SHOT_SEC_MIN).max(SHOT_SEC_MAX),
+  // ROOT 0929 接續令差1：故事時鐘接受模型分鏡原值（亞秒鏡合法）——生成
+  // floor（H3 最短）屬生成契約（h3-submit 用 SHOT_SEC_MIN pad 生成窗，剪接
+  // 時鐘照 callsheet 剪返），唔再由 schema/pad 反向抬故事總長。
+  durationSec: z.number().positive().max(SHOT_SEC_MAX),
   // §19：撤 200 字硬拒（非空保留；總輸出資源由 aggregate token 層承接）
   action: z.string().min(1),
   dialogue: z.string().nullish().transform((v) => v ?? ""),

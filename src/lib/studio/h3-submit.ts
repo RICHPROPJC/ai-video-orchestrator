@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { loadConfig } from "./config";
-import { snapDurationToFrames, wavSeconds } from "./frame-grid";
+import { snapDurationToFrames, shotSecMin, wavSeconds } from "./frame-grid";
 import { SCRIPT_HEADER, validateProse, type ValidateProseOpts } from "./h3-prose";
 import { buildH3Graph, h3SizeForAspect, resolveRoute, BINDINGS, BINDINGS_CFORM, type H3GraphModels, type H3GraphVariant, type H3RouteRecipe } from "./h3-r2v-graph";
 import { validateProsePositive } from "./h3-prose";
@@ -299,7 +299,11 @@ export async function submitH3Shot(opts: {
     });
   }
 
-  const seconds = opts.durationSec ?? (await wavSeconds(opts.wavFile));
+  // ROOT 0929 接續令差1：生成契約 floor——H3 生成窗最少 shotSecMin()（grid
+  // 設置真源），亞秒鏡照生成（pad 到最短可生成），剪接時鐘照 callsheet
+  // （cut_plan lockedSec 剪返）——故事時鐘同生成窗分離，後者唔反向改前者。
+  const rawSeconds = opts.durationSec ?? (await wavSeconds(opts.wavFile));
+  const seconds = Math.max(rawSeconds, shotSecMin());
   const frames = snapDurationToFrames(seconds);
   const steps = opts.stepsOverride ?? cfg.motion.steps;
   // §P34 批二：typed route 解析——未接線 route 具名 blocked throw（graph 唔
