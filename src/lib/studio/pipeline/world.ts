@@ -1274,9 +1274,9 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         // bake of the real motion, the §5b C-form's Video 1
         const rigId = shot.marks[0]?.characterId ?? "";
         const glb = rigId ? castRigs[rigId] : undefined;
-        // 零 cast 鏡（物件特寫：樽內檸檬片／冷凝水）冇 rig 係正常——
-        // bakeSelectionFrames 對 glb 係 optional（--glb 有先傳），行
-        // glb-less bake（淨 world＋相機）。呢個閘淨係捉「有角色但要 rig」。
+        // DECISION-NO-CAST-BAKE（0930）：零 cast 鏡（物件特寫：樽內檸檬片／
+        // 冷凝水）已喺 else 入口 blocked no-cast-mocap continue——去唔到呢度。
+        // 呢個閘淨係捉「有角色但要 rig」；有 cast 冇 rig＝blocked skip。
         if (!input.dryRun && rigId && !glb) {
           // 0927 停法手術：呢鏡 rig 缺＝blocked skip（per-item 唔殺成隊），
           // 唔郁 GPU；下游 stills 對呢鏡會自行 blocked。
