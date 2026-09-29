@@ -1419,7 +1419,7 @@ export function writeCreativeArtifacts(
   dir: string,
   brief: string,
   plan: DirectorPlan,
-  opts: { targetSec: number; aspect?: string; language?: string },
+  opts: { targetSec?: number; aspect?: string; language?: string },
 ): { intentFile: string; treatmentFile: string; planFile: string; planSha: string } {
   fs.mkdirSync(dir, { recursive: true });
   const intent = {
