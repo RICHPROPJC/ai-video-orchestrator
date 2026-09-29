@@ -123,7 +123,16 @@ export async function buildWorldFromPlan(
   cfg: SlateConfig,
   jobId: string,
   plan: WorldPlan,
-  shots: { id: string; durationSec: number; lookAtId?: string }[],
+  shots: {
+    id: string;
+    durationSec: number;
+    lookAtId?: string;
+    /** callsheet 相機（Z-up Blender convention）——有就行精確擺位：
+     *  pos→相機 object.setTransform（Y-up 映射）、lookAt 點→aim placeholder
+     *  ＋camera.update lookAtTargetId（自動 rig=lookat）、lensMm→object.add
+     *  focalLengthMm。冇（plan 層缺）＝相機 default 位＋named gap 照舊。 */
+    camera?: { pos: [number, number, number]; lookAt: [number, number, number]; lensMm: number };
+  }[],
 ): Promise<WorldIdMap> {
   const out: WorldIdMap = {
     projectId: "",
@@ -187,17 +196,48 @@ export async function buildWorldFromPlan(
   // 鏡住 obj，id 空間係 cam_*）→re-read doc 建 obj→cam map→shot.add（帶
   // cam_* id，timeIn/out 累計）→shot.aim（lookAtId＝piece id→objects map）。
   const camObjIds: Record<string, string> = {};
+  const camAimTargets: Record<string, string> = {};
   for (const shot of shots) {
+    // callsheet lookAt 點（Z-up→Y-up）→aim placeholder object（camera.update
+    // lookAtTargetId 要 obj id，唔收 point——callsheet_camera.py 同款做法）
+    if (shot.camera) {
+      const aim = await worldCommand(cfg, ens.projectId, jobId, `aimpt:${shot.id}`, {
+        type: "object.add",
+        sceneId,
+        kind: "placeholder",
+        name: `aim-${shot.id}`,
+      });
+      if (aim.target) {
+        await worldCommand(cfg, ens.projectId, jobId, `aimtf:${shot.id}`, {
+          type: "object.setTransform",
+          sceneId,
+          objectId: aim.target,
+          transform: { location: yup(shot.camera.lookAt[0], shot.camera.lookAt[1], shot.camera.lookAt[2]) },
+        });
+        camAimTargets[shot.id] = aim.target;
+        out.commands += 2;
+      }
+    }
     const cam = await worldCommand(cfg, ens.projectId, jobId, `cam:${shot.id}`, {
       type: "object.add",
       sceneId,
       kind: "camera",
       name: `cam-${shot.id}`,
+      ...(shot.camera ? { focalLengthMm: shot.camera.lensMm } : {}),
     });
     const camObjId = cam.target;
     if (!camObjId) throw new Error(`camera add ${shot.id} 冇回 obj id（named unknown）`);
     camObjIds[shot.id] = camObjId;
     out.commands += 1;
+    if (shot.camera) {
+      await worldCommand(cfg, ens.projectId, jobId, `camtf:${shot.id}`, {
+        type: "object.setTransform",
+        sceneId,
+        objectId: camObjId,
+        transform: { location: yup(shot.camera.pos[0], shot.camera.pos[1], shot.camera.pos[2]) },
+      });
+      out.commands += 1;
+    }
   }
   doc = await readWorldDoc(cfg, ens.projectId);
   const objToCam = new Map(
@@ -224,6 +264,17 @@ export async function buildWorldFromPlan(
     if (!shtId) throw new Error(`shot.add ${shot.id} 冇回 target sht id（named unknown）`);
     out.commands += 1;
     out.shotMap[shot.id] = { worldShotId: shtId, sceneId, cameraId: camId };
+    // callsheet lookAt 點接線：camera.update lookAtTargetId（自動 rig=lookat）
+    const aimT = camAimTargets[shot.id];
+    if (aimT) {
+      await worldCommand(cfg, ens.projectId, jobId, `camlk:${shot.id}`, {
+        type: "camera.update",
+        sceneId,
+        cameraId: camId,
+        lookAtTargetId: aimT,
+      });
+      out.commands += 1;
+    }
     const aimAt = shot.lookAtId ? out.objects[shot.lookAtId] : undefined;
     if (aimAt) {
       await worldCommand(cfg, ens.projectId, jobId, `aim:${shot.id}`, {

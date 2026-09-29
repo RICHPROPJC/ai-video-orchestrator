@@ -1015,6 +1015,7 @@ export async function worldStage(ctx: Ctx): Promise<void> {
           id: s.id,
           durationSec: s.durationSec,
           lookAtId: worldPlan.shots.find((a) => a.id === s.id)?.lookAtId,
+          camera: { pos: [s.camera.pos.x, s.camera.pos.y, s.camera.pos.z], lookAt: [s.camera.lookAt.x, s.camera.lookAt.y, s.camera.lookAt.z], lensMm: s.camera.lensMm },
         })),
       );
       ctx.job = patch(ctx.job, {
