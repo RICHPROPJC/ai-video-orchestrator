@@ -237,6 +237,11 @@ export type Shot = {
    *  Optional — absent reads as "front". */
   refAngle?: RefAngle;
   props?: ShotProp[];
+  /** DECISION-CALLSHEET-PROPS-GATE（0929 新統籌批）：作者標分類——鏡主體係
+   *  brief 商品本身（展示商品）填 "product"；呢類鏡 props 必須非空
+   *  （assertSheetGates 拒出 named 缺）。聽者／環境／商品唔入鏡嘅鏡唔填＝
+   *  唔受此閘。分類由作者宣告，唔係 runtime 關鍵字。 */
+  subject?: "product";
   /** T32 rev2: 阿圖 packet 場景 slot — boards author this per shot (sealed+zod);
    * the stills scene sentence reads it, sheet tail is only the fallback.
    * Chau 17:48: negatives are packet data (bans authored per 道具/場景類別). */

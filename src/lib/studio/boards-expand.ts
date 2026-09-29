@@ -348,4 +348,11 @@ export function assertSheetGates(sheet: CallSheet, opts: { script: Script; targe
   for (const [i, shot] of sheet.shots.entries()) {
     if (shot.id !== shotId(i + 1)) throw new Error(`shot ${i + 1} is ${shot.id}, cut order wants ${shotId(i + 1)}`);
   }
+  // DECISION-CALLSHEET-PROPS-GATE（0929 新統籌批）：產品鏡（作者標 subject=
+  // "product"）props null/空＝named 缺拒出——唔補道具唔由別鏡借；聽者／環境
+  // 鏡唔標 subject 唔受此閘（豁免由作者分類表達，非 runtime 關鍵字）。
+  const productNoProps = sheet.shots.filter((s) => s.subject === "product" && (!s.props || s.props.length === 0));
+  if (productNoProps.length) {
+    throw new Error(`product shots ${productNoProps.map((s) => s.id).join("、")} props 空（subject="product" 但冇道具欄）— 商品展示鏡必須自帶非空 props（商品做 name、heldBy 照 cast），named 缺拒出，回分鏡席補`);
+  }
 }

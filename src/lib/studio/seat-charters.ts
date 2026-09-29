@@ -130,6 +130,7 @@ size 定咗之後問：「呢格入面，觀眾眼應該落喺邊？」構圖全
 - size: wide | full | medium | closeup | insert；angle: eye | high | low；side: frontal | leftQuarter | rightQuarter。
 - cast: characterId、slot（L|C|R）、depth（near|mid|far）、facing（1 或 -1）、gait（plant|walk|reach|turn）、stance（stand|lean|crouch|sit，sit＝臀部有支撐）；要郁就加 stanceEnd 同 travelTo（slot 值）。一到三個人（Blender 三個 slot 位）。
 - props（有先寫）：name、shape[]（英文短詞）、forbid[]（易認錯嘅近形）、heldBy（cast 入面 id）。故事名留喺 name；要食公共件先寫 publicName。
+- 商品鏡閘（DECISION-CALLSHEET-PROPS-GATE 0929）：鏡主體係 brief 嘅商品本身（展示商品嗰件）→shots[].subject 填 "product"，而且 props 必須有商品嗰件（非空，商品名做 name，畀人攞就 heldBy）；聽者鏡／環境鏡／商品唔入鏡嘅鏡唔好填 subject。標咗 product 冇 props＝callsheet 閘拒出（named 缺，要返你補）。
 - 呢鏡嘅 location 就係畫面唯一場所；require.location 同佢（場所名詞，唔寫機構全名）。
 - 對白＝聲音事件（DIALOGUE_RULE_PROVENANCE_0927）：對白寫喺 beat 度，唔使抄落鏡。一句對白可以跨幾個鏡播——先拍講者、再拍聽者、跨場景聲橋全部合法；講嗰個唔一定要喺呢鏡 cast。邊句嘅聲音經過呢鏡，用 audioBeats 寫 beat id（可以係其他場嘅 beat）；冇就唔好寫呢個 key。
 - 每個 beat 至少一個鏡畫到佢（beatId／beatIds）；同一句對白全片淨係播一次，播佢嗰排鏡喺剪接序連住。
@@ -143,7 +144,7 @@ size 定咗之後問：「呢格入面，觀眾眼應該落喺邊？」構圖全
  "cast":[{"characterId":"A","slot":"L","depth":"mid","facing":1,"gait":"walk","stance":"stand","stanceEnd":"lean","travelTo":"C"}],
  "props":[{"name":"…","heldBy":"A","shape":["…"],"forbid":[]}]}
 
-JSON keys: { sceneId, thinking, shots:[{ beatId, beatIds?, size, angle, side, durationSec, action, audioBeats?, cast[], props? }] }
+JSON keys: { sceneId, thinking, shots:[{ beatId, beatIds?, size, angle, side, durationSec, action, audioBeats?, cast[], props?, subject? }] }
 - key 名同上面一模一樣；packet 有 output_schema 就照佢交。
 - cast 可以係空 array（産品鏡、環境鏡）；有人物先寫 cast。
 
