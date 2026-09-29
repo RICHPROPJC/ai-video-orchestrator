@@ -80,7 +80,17 @@ function gridCellLabel(i: number, count: number): string {
   return `第${row}行${i % 2 === 0 ? "左" : "右"}格`;
 }
 
-export type SheetMoment = { shotId: string; at: string; text: string; file: string; beat?: string };
+export type SheetMoment = { shotId: string; at: string; text: string; file: string; beat?: string; heldState?: "beat-hold" | "gap" };
+
+/** R22 修3（ROOT 0929 修正令）：moment 持有狀態——持有/接觸動詞語義（機讀，
+ *  唔係新劇情）。beat 有持有動詞＝嗰格可見持有（prompt 落「手上嘅…照道具
+ *  參考圖」句＋QC tool 在場要求）；beat 淨移動/姿態＝持有 gap（callsheet
+ *  heldBy 係全鏡欄冇 moment 級時序——prompt 唔加推測句，不自行決定樽已
+ *  拎/在檯/換手；收據 named gap 留既有修訂輪補清楚）。 */
+const HOLD_VERBS_RE = /握|拎|持|捧|拿|執|提|舉|飲|喝|扭|按|遞|抱|夾|挾|挟|接|掂/;
+export function momentHoldsProp(beat: string): boolean {
+  return HOLD_VERBS_RE.test(beat);
+}
 
 /** Percents written on the shot are that shot's keyframes, any count.
  *  No written string → the shot is one cell of a shared U1.5 sheet. */
@@ -102,16 +112,22 @@ export function momentsForShot(
   // 關鍵字觸發嘅描述句（汽水/扭蓋右手/樽口掂唇/木檯/瞇眼）全部剷走，
   // 道具外形照 props.shape（機讀規格，鏡資料）行。
   const SHAPE_ZH: Record<string, string> = { glass: "玻璃", long: "瘦高", cylindrical: "圓柱", small: "細", round: "圓形", metal: "金屬" };
-  const heldProps = (shot.props ?? [])
-    .map((p) => {
-      const shape = ((p as { shape?: string[] }).shape ?? []).map((t) => SHAPE_ZH[t] ?? t);
-      if (!shape.length) return "";
-      return `手上嘅${p.name}外形照道具參考圖。`;
-    })
-    .join("");
-  const mods = `${heldProps}`;
+  // R22 修3：持有 mods 改 per-beat——beat 語義有持有/接觸先落「手上嘅…」句
+  // （單 moment 鏡＝成鏡一格，callsheet heldBy 全鏡適用照落）。
+  const heldPropsFor = (): string =>
+    (shot.props ?? [])
+      .map((p) => {
+        const shape = ((p as { shape?: string[] }).shape ?? []).map((t) => SHAPE_ZH[t] ?? t);
+        if (!shape.length) return "";
+        return `手上嘅${p.name}外形照道具參考圖。`;
+      })
+      .join("");
+  const propsPresent = (shot.props ?? []).some((p) => ((p as { shape?: string[] }).shape ?? []).length > 0);
   // mods 前補句號——beat 同 mods 黐埋會砌出「玻璃樽樽身身前係」呢類爛句
-  const modsStr = mods ? `。${mods}` : "";
+  const modsFor = (beat: string): string => {
+    if (!propsPresent) return "";
+    return momentHoldsProp(beat) ? `。${heldPropsFor()}` : "";
+  };
   const written = (shot.keyframePositions ?? "").split(/[,，]/).map((s) => s.trim()).filter(Boolean);
   // Action clauses are the beat list: each clause is its own anchor with its
   // own picture. Written positions only time the beats; they never merge them.
@@ -120,23 +136,25 @@ export function momentsForShot(
     const moments = beats.map((beat, i) => ({
       shotId: shot.id,
       at: written[i] ?? "",
-      text: `${place}${sizeLine}${beat}${modsStr}`,
+      text: `${place}${sizeLine}${beat}${modsFor(beat)}`,
       file: path.join(stillDir, `${shot.id}.kf-${String(i).padStart(2, "0")}.png`),
       beat,
+      heldState: propsPresent ? (momentHoldsProp(beat) ? ("beat-hold" as const) : ("gap" as const)) : undefined,
     }));
     for (let i = beats.length; i < written.length; i += 1) {
       moments.push({
         shotId: shot.id,
         at: written[i]!,
-        text: `${place}${sizeLine}${body}${modsStr}`,
+        text: `${place}${sizeLine}${body}${modsFor(body)}`,
         file: path.join(stillDir, `${shot.id}.kf-${String(i).padStart(2, "0")}.png`),
         beat: body,
+        heldState: propsPresent ? (momentHoldsProp(body) ? ("beat-hold" as const) : ("gap" as const)) : undefined,
       });
     }
     return moments;
   }
-  const text = `${place}${sizeLine}${body}${modsStr}`;
-  return [{ shotId: shot.id, at: written[0] ?? "", text, file: path.join(stillDir, `${shot.id}.png`), beat: body }];
+  const text = `${place}${sizeLine}${body}${modsFor(body)}`;
+  return [{ shotId: shot.id, at: written[0] ?? "", text, file: path.join(stillDir, `${shot.id}.png`), beat: body, heldState: propsPresent ? (momentHoldsProp(body) ? ("beat-hold" as const) : ("gap" as const)) : undefined }];
 }
 
 /** One moment per frame of the shot. Batches of 16 are separate spawns. */

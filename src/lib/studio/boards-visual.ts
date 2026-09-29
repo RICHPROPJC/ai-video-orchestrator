@@ -70,15 +70,18 @@ export async function renderBoards(opts: BoardsVisualOptions) {
       // R22（ROOT 0929）：actual submitted prompt 原文變數化——每 attempt 落收據
       // （stills 外層 QC expectation 消費真提交原文，keyframeSheetPrompt 重建版
       // 唔再冒充 actual；版式承諾留喺板層收據，outer 淨驗 primary cell 合同）。
+      // R22 修2（ROOT 0929 修正令）：fallback refNote（「參考圖第一張係角色身份」）
+      // 剷走——caller 必須傳真實圖序 refNote（images 首張可能係灰模 f0 或 repair
+      // 板，假定第一張身份＝角色錯配根源）；缺席即 throw 唔靜靜行模板。
+      if (!opts.refNote) throw new Error("boards: refNote required（真實 ordered Image-N role mapping——caller 照 images 實際序砌；灰模只空間/姿態參考唔冒充身份）");
       const submittedPrompt = storyboardBoardPrompt({
         cells: group.map((m) => m.text),
         style: opts.style ?? "寫實電影感、画面清晰銳利", cleanCuts: true,
       }) + "格內只畫指定時刻，鏡號同百分比係切格對照資料，留喺收據，畫面保持乾淨。剩餘空位留白，唔開新鏡。"
         + (images[0]?.endsWith(".repair-input.png")
-          ? "Image-1係抽出再併嘅壞格，依照同一次序修正指定格；其餘參考圖角色照下列（非位置描述）。"
+          ? "Image-1係抽出再併嘅壞格，依照同一次序修正指定格；其餘參考圖角色照 refNote 真實序（非位置描述）。"
           : "")
-        + (opts.refNote
-          ?? "參考圖第一張係角色身份，跨格同一人。其後每張係道具實物照：道具嘅外形、顏色、質感、比例以參考圖為準照抄落畫面，文字描述唔取代道具參考圖。");
+        + opts.refNote;
       try {
         made = await ensureKeyframeSheet({
           ...opts, images, boardsDir: attemptDir, name, moments: staged, seed: (opts.seed ?? 42) + round,

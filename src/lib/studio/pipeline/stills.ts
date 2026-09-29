@@ -78,6 +78,25 @@ export function sealEditRecord(
 
 /** 拆層段（stills）：由 runPipeline 原序搬入，行為零變——絕唔重排 call 次序、
  *  絕唔刪／合併任何 emit/speak/patch；early-return 以 ctx.stopped 回報。 */
+/** R22 修1/修3（ROOT 0929 修正令）：moment endpoint require 共用合同——板層
+ *  cell QC 同 outer primary-cell QC 用同一份：action＝該 moment beat 定格驗收
+ *  唔再用整鏡動作句（全鏡動作留 video 驗收）；持有 gap 格（beat 無持有動詞、
+ *  callsheet heldBy 冇 moment 級時序）drop tool 在場要求——prompt 唔推測持有
+ *  狀態，QC 唔要求未持有格見道具；位置/人數/grey/景別等限制照守。 */
+function momentEndpointRequire(
+  moment: { beat?: string; heldState?: "beat-hold" | "gap" },
+  base: QcRequire,
+): QcRequire {
+  const beat = moment.beat?.trim();
+  const scoped: QcRequire = beat
+    ? { ...base, action: `${beat}（定格驗收：呢格驗呢個瞬間嘅完成姿勢——人物位置/手接觸/持有狀態啱唔啱；行進過程由片驗，唔要求單圖畫出行過程，但位置/接觸錯唔放過）` }
+    : base;
+  if (moment.heldState === "gap") {
+    const { tool: _tool, tool_shape: _shape, ...rest } = scoped;
+    return rest;
+  }
+  return scoped;
+}
 export async function stillsStage(ctx: Ctx): Promise<void> {
   const { jobId, input, cfg } = ctx;
   const { speak, think } = ctx;
@@ -502,15 +521,13 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       receiptDir: path.join(jobDir(jobId), "seats", "boards"),
       require: Object.fromEntries([
         ...hopStillPlans.map((p) => [p.shot.id, p.require] as const),
-        // R20 裁決①（0929）：per-moment endpoint-state require——KF 格按採納
-        // moment 驗（嗰格瞬間嘅到達/接觸/持有/位置完成態）；行進過程由
-        // blockout/video 驗。唔要求單圖證完整動作歷程，亦唔因 caption 冇提
-        // 過程就放過真位置/接觸錯。
+        // R20①→R22 修1（ROOT 0929 修正令）：per-moment endpoint require 行共用
+        // momentEndpointRequire（action＝該 beat 定格驗收；持有 gap 格 drop tool
+        // 在場要求）——板層 cell QC 同 outer primary-cell 同一份合同。
         ...moments.flatMap((m) => {
           const p = hopStillPlans.find((x) => x.shot.id === m.shotId);
-          const beat = m.beat?.trim();
-          if (!p || !beat) return [];
-          return [[m.file, { ...p.require, action: `${beat}（定格驗收：呢格驗呢個瞬間嘅完成姿勢——人物位置/手接觸/持有狀態啱唔啱；行進過程由片驗，唔要求單圖畫出行過程，但位置/接觸錯唔放過）` }] as const];
+          if (!p || !m.beat?.trim()) return [];
+          return [[m.file, momentEndpointRequire(m, p.require)] as const];
         }),
       ]),
     } });
@@ -725,26 +742,27 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     }
     const qcStarted = Date.now();
     const qcJson = path.join(ctx.stillDir!, `${shot.id}.photo_qc.json`);
-    // R22（ROOT 0929，supersede 0927 fix ③ 整板 expectation）：artifact-scoped
-    // QC——outer SH01.png 明確係 primary cell，以該 cell moment 合同驗（身份/
-    // 姿態/道具/位置照 require 欄位）；整板 layout/mapping 要求屬板層，由切格
-    // 收據（boards-visual board_layout 拒切閘＋per-cell QC）驗，唔入 outer 判官
-    // ——keyframeSheetPrompt 整板版式 expectation 對單格必 FAIL 嘅錯配由呢度
-    // 收口。actual submitted board prompt 全文＋源板 sha 留 cellLineage/u15
-    // 收據追溯；lineage 缺席＝named-missing，行 require 欄位驗收（不降 QC）。
-    const qcRequireWithExpectation = (req: QcRequire): QcRequire => {
+    // R22 修1（ROOT 0929 修正令，supersede 我先前「淨加 expectation」版）：
+    // outer SH01.png＝primary cell，require 整體過 momentEndpointRequire——
+    // action 用該 moment beat 定格驗收（唔再沿用整鏡動作句）、持有 gap 格
+    // drop tool 在場要求；身份/人數/位置/景別/grey 等限制照守。expectation
+    // 係 primary cell 合同句（board 版式屬板層切格收據）。lineage 缺席＝
+    // named-missing emit，per-moment require 照行（不降 QC）。
+    const qcRequireWithExpectation = (req: QcRequire, shotSrc?: typeof shot): QcRequire => {
+      const primaryMoment = momentsForShot(shotSrc ?? shot, ctx.stillDir!)[0];
+      const scoped = primaryMoment?.beat?.trim() ? momentEndpointRequire(primaryMoment, req) : req;
       const lineage = cellLineage.get(shotCells.get(shot.id)?.[0] ?? out);
-      const primaryBeat = momentsForShot(shot, ctx.stillDir!)[0]?.beat?.trim();
+      const primaryBeat = primaryMoment?.beat?.trim();
       if (lineage && primaryBeat) {
         return {
-          ...req,
+          ...scoped,
           expectation: `本格（primary cell）合同：${primaryBeat}。定格驗收：呢格驗呢個瞬間嘅完成姿勢——人物位置/手接觸/持有狀態啱唔啱；行進過程由片驗，唔要求單圖畫出行過程，但位置/接觸錯唔放過。生成呢格嘅 actual board prompt 全文及源板/格 sha 見 seats/boards 收據（板版式另由切格收據驗，唔入本判）。`,
         };
       }
       emit(jobId, { agent: "stills", level: "warn",
-        message: `${shot.id} outer QC expectation named-missing（cell lineage 或 primary beat 缺）——行 require 欄位驗收`,
+        message: `${shot.id} outer QC expectation named-missing（cell lineage 或 primary beat 缺）——行 per-moment require 欄位驗收`,
         data: { stage: "cell-lineage", shot: shot.id, blocked: null } });
-      return req;
+      return scoped;
     };
     let result = await runPhotoQc(png, qcJson, qcRequireWithExpectation(require), {}, photoQcEyesFromEnv());
     let promptShot = shot;
@@ -922,20 +940,25 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       }
       const retryImages = retryAll;
       // The outer shot QC rejected its primary still; other anchors stay pinned.
-      // R22（ROOT 0929）：retry 出齊 moment 格（唔 slice 單格）——first-pass/
-      // retry/same 共用 source 同 scope：版式同契約一致，「原封重出同一
-      // packet」語義至真；renderBoards 全格 GREEN 先落 destination（原 GREEN
-      // 格唔會被非 GREEN 新版靜靜覆蓋，新板自己過閘）。
-      const retryMoments = momentsForShot(promptShot, ctx.stillDir!);
+      // R22 修4（ROOT 0929 修正令，supersede 我先前 full-moments retry）：outer
+      // 淨判 primary cell——retry 只重做失敗嘅 primary moment 格，**唔自動重生
+      // 成其餘已 GREEN 格**（renderBoards copy-on-GREEN 本就唔會覆寫採納版）。
+      // 身份/連戲保障＝R21① role-aware refs 照齊（f0 灰模＋身份＋道具 plate/cut
+      // ＋prev GREEN）。修C：refNote 按 retryImages 真實序逐角色描述——灰模只
+      // 空間/姿態參考，唔冒充身份。
+      const retryMoments = momentsForShot(promptShot, ctx.stillDir!).slice(0, 1);
       const retryRequire = Object.fromEntries([
         [shot.id, liveRequire] as const,
-        ...retryMoments.flatMap((m) => {
-          const beat = m.beat?.trim();
-          return beat
-            ? [[m.file, { ...liveRequire, action: `${beat}（定格驗收：呢格驗呢個瞬間嘅完成姿勢——人物位置/手接觸/持有狀態啱唔啱；行進過程由片驗，唔要求單圖畫出行過程，但位置/接觸錯唔放過）` }] as const]
-            : [];
-        }),
+        ...retryMoments.flatMap((m) => (m.beat?.trim() ? [[m.file, momentEndpointRequire(m, liveRequire)] as const] : [])),
       ]);
+      const retryRefNote = [
+        ...(retryBase.length ? ["Image-1 灰模企位圖＝人物位置、姿態、構圖、鏡位照佢；外觀（人樣/衫/道具look）永遠唔參考佢"] : []),
+        ...(sheets.length ? ["其後角色肖像/角度板＝同一人，跨格一致"] : []),
+        ...(propRefsFor(shot.id).length
+          ? ["道具實物照（plate＋去背 cut）＝該道具嘅外形、顏色、質感、比例照抄，文字描述唔取代道具參考圖"]
+          : []),
+        ...(regate.kept.length ? ["最後嘅上一鏡/本鏡 GREEN 劇照＝畫面續接基礎"] : []),
+      ].join("；") + "。";
       const madeRetry = await runBoards({ render: {
         moments: retryMoments,
         boardsDir: path.join(ctx.stillDir!, "boards"),
@@ -945,12 +968,13 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
         seed: cfg.motion.seed + 1,
         receiptDir: path.join(jobDir(jobId), "seats", "boards"),
         require: retryRequire,
+        refNote: retryRefNote,
       } });
       recordCellLineage(madeRetry);
       if (path.resolve(retryMoments[0]!.file) !== path.resolve(png)) fs.copyFileSync(retryMoments[0]!.file, png);
       shot.keyframeFiles = momentsForShot(promptShot, ctx.stillDir!).map((m) => m.file);
       editInputs.set(shot.id, { ...inputs, prompt: cellLineage.get(retryMoments[0]!.file)?.prompt ?? inputs.prompt, refs: [...sheets, ...regate.kept] });
-      result = await runPhotoQc(png, qcJson, qcRequireWithExpectation(liveRequire), {}, photoQcEyesFromEnv());
+      result = await runPhotoQc(png, qcJson, qcRequireWithExpectation(liveRequire, promptShot), {}, photoQcEyesFromEnv());
       if (result.status === "FAIL") {
         await speak("pictureQc", `${shot.id} 再抽仍然唔啱，同一句故事再出一次，唔改動作。`, "warn");
         const madeSame = await runBoards({ render: {
@@ -962,11 +986,12 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
           seed: cfg.motion.seed + 3,
           receiptDir: path.join(jobDir(jobId), "seats", "boards"),
           require: retryRequire,
+          refNote: retryRefNote,
         } });
         recordCellLineage(madeSame);
         if (path.resolve(retryMoments[0]!.file) !== path.resolve(png)) fs.copyFileSync(retryMoments[0]!.file, png);
         shot.keyframeFiles = momentsForShot(promptShot, ctx.stillDir!).map((m) => m.file);
-        result = await runPhotoQc(png, qcJson, qcRequireWithExpectation(liveRequire), {}, photoQcEyesFromEnv());
+        result = await runPhotoQc(png, qcJson, qcRequireWithExpectation(liveRequire, promptShot), {}, photoQcEyesFromEnv());
       }
     }
     if (result.status === "FAIL") {
