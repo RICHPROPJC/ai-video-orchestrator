@@ -15,6 +15,10 @@ import {
 export type WorldPlan = {
   pieces: PlacedPiece[];
   shots: ShotAim[];
+  /** 刀4（0929 world-direct compiler）：採納創作層揀嘅 World Studio project
+   *  （prj_*）——per-job worldBinding 嘅唯一來源（唔經全局 config 人手填）。
+   *  冇＝named missing，全片行本地鏈。 */
+  worldProjectId?: string;
 };
 
 export function planStoryWorld(

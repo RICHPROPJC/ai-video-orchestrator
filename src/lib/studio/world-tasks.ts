@@ -76,3 +76,40 @@ export async function reconcileWorldTask(
   if (!r.ok) throw new Error(`world reconcile POST HTTP ${r.status}`);
   return (await r.json()) as WorldTaskView;
 }
+
+/** 刀4：succeeded task 嘅 blockout_frames 接駁——拉 World 側逐 frame 檔落
+ *  本地目錄（contract §4/§6：frames 係目錄，files 路由只回檔——逐檔拉）。
+ *  bundle 逐檔清單欄名 named unknown（未見真 task 數據）→probe 版：
+ *  ①bundle.artifacts 內 kind=blockout_frames 嘅 logicalPath 當目錄根，
+ *  frame_%04d.png 序列逐個 GET files 路由，404 即停（frameCount 上限自
+ *  bundle.frameRange.frameCount，冇就 9999 防走火）；②連第一幀都 404＝
+ *  回 0（caller named blocked）。真 task 到場後按實際清單欄收緊。 */
+export async function pullWorldBlockoutFrames(
+  cfg: SlateConfig,
+  projectId: string,
+  taskId: string,
+  outDir: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ frames: number; framesDir?: string; error?: string }> {
+  const bundle = await readWorldTaskBundle(cfg, taskId);
+  const artifacts = Array.isArray(bundle["artifacts"]) ? (bundle["artifacts"] as { kind?: string; logicalPath?: string }[]) : [];
+  const framesArt = artifacts.find((a) => a.kind === "blockout_frames" && a.logicalPath);
+  if (!framesArt?.logicalPath) return { frames: 0, error: "bundle 無 blockout_frames artifact（named unknown——真 task 數據到場收緊）" };
+  const range = (bundle["frameRange"] ?? {}) as { frameCount?: number };
+  const cap = typeof range.frameCount === "number" && range.frameCount > 0 ? range.frameCount : 9999;
+  const fs = await import("node:fs");
+  fs.mkdirSync(outDir, { recursive: true });
+  let n = 0;
+  for (let i = 1; i <= cap; i++) {
+    const name = `frame_${String(i).padStart(4, "0")}.png`;
+    const r = await fetchImpl(
+      `${cfg.world.base}/api/projects/${projectId}/files/${framesArt.logicalPath}/${name}`,
+      { cache: "no-store" },
+    );
+    if (!r.ok) break;
+    const buf = Buffer.from(await r.arrayBuffer());
+    fs.writeFileSync(`${outDir}/${name}`, buf);
+    n++;
+  }
+  return n > 0 ? { frames: n, framesDir: outDir } : { frames: 0, error: `files 路由喺 ${framesArt.logicalPath} 下零 frame（404？）` };
+}

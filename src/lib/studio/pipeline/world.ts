@@ -16,7 +16,7 @@ import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, 
 import { ensurePortraits } from "../portraits";
 import { lookupShelf } from "../asset-library";
 import { writeStoryWorld, ensureWorldSizes, type WorldPlan } from "../world-assemble";
-import { submitWorldBlockoutTask } from "../world-tasks";
+import { submitWorldBlockoutTask, readWorldTask, reconcileWorldTask, pullWorldBlockoutFrames } from "../world-tasks";
 import { piecesFromCallSheet, resolveScales, type WorldPiece } from "../world-scale";
 import { ensurePropBoard, ensureSceneBoard } from "../asset-board";
 import { diffPropPlates, nextPropBoardSeq, propAssetId, writePropPinManifest } from "../prop-plate-index";
@@ -42,7 +42,7 @@ import {
   readAdoptedSelections,
   type MotionShotLine, type MotionSpec } from "../motion-select";
 import { sheetDigest } from "../seat-boards";
-import type { CallSheet, Shot } from "../types";
+import type { CallSheet, Shot, JobRecord } from "../types";
 import { relInJob } from "../isolate";
 import { depStampOf, ffmpeg, mediaSeconds, patch, shotsForScene, type Ctx, stableJson } from "./shared";
 
@@ -101,41 +101,6 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   const { speak, think } = ctx;
   const trace = ctx.trace;
   const motionSelections = ctx.motionSelections;
-  // 刀3（0929 ROOT world-direct）：World 採納凍結——cfg.world.projectId 在場
-  // ＋job 未有 binding 先凍結。GET 外層 editSeq/contentFingerprint 寫
-  // ctx.job.worldBinding＋emit binding-frozen 收據；fetch 唔通＝named
-  // world-bind-unreachable emit 唔殺 job（舊隊照行，接線呢輪缺席）。
-  if (cfg.world?.projectId !== "" && cfg.world?.projectId !== undefined && !ctx.job.worldBinding) {
-    const pid = cfg.world.projectId;
-    try {
-      const r = await fetch(`${cfg.world.base}/api/projects/${pid}`, { cache: "no-store" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const d = (await r.json()) as { editSeq?: number; contentFingerprint?: string };
-      ctx.job = patch(ctx.job, {
-        worldBinding: {
-          projectId: pid,
-          editSeqAtAdoption: typeof d.editSeq === "number" ? d.editSeq : undefined,
-          contentFingerprintAtAdoption: typeof d.contentFingerprint === "string" ? d.contentFingerprint : undefined,
-          adoptedAt: new Date().toISOString(),
-        },
-      });
-      emit(jobId, {
-        agent: "layout",
-        level: "info",
-        message: `World binding 凍結：${pid} @editSeq ${d.editSeq ?? "?"} fingerprint ${(d.contentFingerprint ?? "?").slice(0, 16)}`,
-        data: { stage: "binding-frozen", projectId: pid, editSeq: d.editSeq, contentFingerprint: d.contentFingerprint },
-      });
-      await speak("layout", `World binding 凍結：${pid} @editSeq ${d.editSeq ?? "?"}。`);
-    } catch (e) {
-      emit(jobId, {
-        agent: "layout",
-        level: "warn",
-        message: `World binding 凍結失敗（${pid}）：GET 唔通——job 照行，World 接線呢輪缺席。`,
-        data: { stage: "world-bind-unreachable", projectId: pid, error: String(e) },
-      });
-      await speak("layout", `World binding 凍結失敗（${pid}）：GET 唔通——World 接線呢輪缺席，隊照行。`, "warn");
-    }
-  }
   {
     const idxFile = path.join(MOTION_LIB_ROOT, "cmu-mocap/cmu-mocap-index-text.txt");
     if (!fs.existsSync(idxFile)) {
@@ -995,6 +960,82 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     });
     await speak("layout", `一個世界 ${worldPlan.pieces.length} 件，寫入 world/story.blend。`);
   }
+  // 刀4（0929 world-direct·GO-PRODUCTION do②③）：compiler＋凍結＋task 查回。
+  // ①compiler：採納 worldPlan 揀咗 World（worldProjectId 在場）→寫 per-job
+  //   worldBinding（唯一來源＝plan，唔經全局 config 人手填）；已有 binding
+  //   （resume）唔重凍。冇 project＝named missing emit 唔阻——本地鏈完全合法。
+  // ②凍結：GET 外層 editSeq/contentFingerprint 落 binding＋binding-frozen
+  //   emit；fetch 唔通＝named world-bind-unreachable 唔殺 job。
+  // ③task 查回（resume）：shotMap 有 taskId→readWorldTask 更新 taskState；
+  //   needs_reconcile→reconcile retry 一次（GO do③同 task 失敗一次即停——
+  //   retry 後仍 needs/failed＝emit 診斷收手，唔連燒）。
+  if (!ctx.job.worldBinding && worldPlan?.worldProjectId) {
+    const pid = worldPlan.worldProjectId;
+    try {
+      const r = await fetch(`${cfg.world.base}/api/projects/${pid}`, { cache: "no-store" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = (await r.json()) as { editSeq?: number; contentFingerprint?: string };
+      const shotMap: NonNullable<JobRecord["worldBinding"]>["shotMap"] = {};
+      for (const s of worldPlan.shots) if (s.worldShotId) shotMap[s.id] = { worldShotId: s.worldShotId };
+      ctx.job = patch(ctx.job, {
+        worldBinding: {
+          projectId: pid,
+          editSeqAtAdoption: typeof d.editSeq === "number" ? d.editSeq : undefined,
+          contentFingerprintAtAdoption: typeof d.contentFingerprint === "string" ? d.contentFingerprint : undefined,
+          adoptedAt: new Date().toISOString(),
+          ...(Object.keys(shotMap).length ? { shotMap } : {}),
+        },
+      });
+      emit(jobId, {
+        agent: "layout", level: "info",
+        message: `World binding 凍結：${pid} @editSeq ${d.editSeq ?? "?"}（shotMap ${Object.keys(shotMap).length} 鏡）`,
+        data: { stage: "binding-frozen", projectId: pid, editSeq: d.editSeq, contentFingerprint: d.contentFingerprint, mappedShots: Object.keys(shotMap).length },
+      });
+      await speak("layout", `World binding 凍結：${pid} @editSeq ${d.editSeq ?? "?"}（${Object.keys(shotMap).length} 鏡接線）。`);
+    } catch (e) {
+      emit(jobId, {
+        agent: "layout", level: "warn",
+        message: `World binding 凍結失敗（${pid}）：GET 唔通——job 照行，World 接線呢輪缺席。`,
+        data: { stage: "world-bind-unreachable", projectId: pid, error: String(e) },
+      });
+      await speak("layout", `World binding 凍結失敗（${pid}）：GET 唔通——World 接線呢輪缺席，隊照行。`, "warn");
+    }
+  } else if (!ctx.job.worldBinding) {
+    emit(jobId, {
+      agent: "layout", level: "info",
+      message: "World project 未揀（worldPlan.worldProjectId 缺）——named missing，全片本地鏈。",
+      data: { stage: "world-project-missing" },
+    });
+  }
+  if (ctx.job.worldBinding?.shotMap) {
+    for (const [sid, m] of Object.entries(ctx.job.worldBinding.shotMap)) {
+      if (!m.taskId) continue;
+      try {
+        let t = await readWorldTask(cfg, m.taskId);
+        if (t.state === "needs_reconcile") {
+          t = await reconcileWorldTask(cfg, m.taskId, "retry");
+          t = await readWorldTask(cfg, m.taskId);
+        }
+        ctx.job = patch(ctx.job, {
+          worldBinding: {
+            ...ctx.job.worldBinding!,
+            shotMap: { ...ctx.job.worldBinding!.shotMap, [sid]: { ...m, taskState: t.state } },
+          },
+        });
+        emit(jobId, {
+          agent: "layout", level: "info",
+          message: `World task 查回：${sid} ${m.taskId} → ${t.state ?? "?"}${t.error ? `（${t.error}）` : ""}`,
+          data: { stage: "world-task-readback", shot: sid, taskId: m.taskId, state: t.state, error: t.error },
+        });
+      } catch (e) {
+        emit(jobId, {
+          agent: "layout", level: "warn",
+          message: `World task 查回失敗（${sid} ${m.taskId}）：${String(e)}——blockout 分流會將呢鏡 blocked。`,
+          data: { stage: "world-task-unreachable", shot: sid, taskId: m.taskId, error: String(e) },
+        });
+      }
+    }
+  }
   const blockoutDir = path.join(jobDir(jobId), "blockout");
   ctx.blockoutDir = blockoutDir;
   ensureDir(blockoutDir);
@@ -1009,6 +1050,70 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   for (const shot of hopBoards) {
     if (gapBlockedShots.has(shot.id)) continue;
     const outMp4 = path.join(blockoutDir, `${shot.id}.mp4`);
+    // 刀4 World 分流（GO-PRODUCTION do③④）：揀咗 World 嘅鏡（shotMap 有
+    // worldShotId）行 World task 鏈——taskId 冇先 submit（同鑰原則：原鑰
+    // 重 POST 回同筆）；有就查回。succeeded→拉 blockout_frames 接駁本地
+    // mp4 行共用收尾（f0/anchors）；未 succeeded／失敗／唔通→呢鏡 blocked
+    // skip——本地 bake 唔冒充 World 採納（本地鏈留俾未揀 World 嘅鏡）。
+    {
+      const wmap = ctx.job.worldBinding?.shotMap?.[shot.id];
+      if (wmap?.worldShotId) {
+        try {
+          let t = wmap.taskId ? await readWorldTask(cfg, wmap.taskId) : null;
+          if (!t) {
+            t = await submitWorldBlockoutTask(cfg, ctx.job.worldBinding!, jobId, shot.id, wmap.worldShotId, wmap.sceneId);
+          }
+          if (t.id !== wmap.taskId || t.state !== wmap.taskState) {
+            ctx.job = patch(ctx.job, {
+              worldBinding: {
+                ...ctx.job.worldBinding!,
+                shotMap: { ...ctx.job.worldBinding!.shotMap, [shot.id]: { ...wmap, taskId: t.id, taskState: t.state } },
+              },
+            });
+          }
+          if (t.state === "succeeded") {
+            const framesDir = path.join(blockoutDir, `${shot.id}.world-frames`);
+            const pulled = await pullWorldBlockoutFrames(cfg, ctx.job.worldBinding!.projectId, t.id, framesDir);
+            if (pulled.frames > 0) {
+              await ffmpeg([
+                "-framerate", "24",
+                "-i", path.join(framesDir, "frame_%04d.png"),
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                outMp4,
+              ]);
+              fs.rmSync(framesDir, { recursive: true, force: true });
+              trace.blender = `world-studio ${t.id} ${pulled.frames}f`;
+              const f0w = path.join(blockoutDir, `${shot.id}.f0.png`);
+              await extractFrame0(outMp4, f0w, stillFrameFor(shot, snapDurationToFrames(shot.durationSec)));
+              await assertFiguresVisible(f0w, shot);
+              await writeAnchors(outMp4, path.join(blockoutDir, `${shot.id}.anchors.json`));
+              blockouts.push(outMp4);
+              await speak("layout", `${shot.id} blockout＝World task ${t.id} 產物 ${pulled.frames}f 接駁。`);
+              continue;
+            }
+            emit(jobId, {
+              agent: "layout", level: "warn",
+              message: `World task ${t.id} succeeded 但 frames 接駁零幀（${pulled.error ?? "?"}）——${shot.id} blocked，繼續其他鏡`,
+              data: { shot: shot.id, stage: "world", blocked: "world-frames-empty", taskId: t.id, error: pulled.error },
+            });
+            continue;
+          }
+          emit(jobId, {
+            agent: "layout", level: "warn",
+            message: `World task ${t.id} ${t.state ?? "?"}${t.error ? `（${t.error}）` : ""} 未 succeeded——${shot.id} blocked（本地唔冒充 World 採納），繼續其他鏡`,
+            data: { shot: shot.id, stage: "world", blocked: "world-task-not-ready", taskId: t.id, state: t.state, error: t.error },
+          });
+          continue;
+        } catch (e) {
+          emit(jobId, {
+            agent: "layout", level: "warn",
+            message: `World task 鏈唔通（${shot.id}）：${String(e)}——呢鏡 blocked，繼續其他鏡`,
+            data: { shot: shot.id, stage: "world", blocked: "world-task-unreachable", error: String(e) },
+          });
+          continue;
+        }
+      }
+    }
     const frames = snapDurationToFrames(shot.durationSec);
     const sceneStamp = path.join(blockoutDir, `${shot.id}.scene.json`);
     // V2c（PLAN-v2 0928）§8＋R19 裁決④（0929）：fingerprint 入 setKey——shot
@@ -1157,34 +1262,6 @@ export async function worldStage(ctx: Ctx): Promise<void> {
     await extractFrame0(outMp4, f0png, stillFrameFor(shot, frames));
     await assertFiguresVisible(f0png, shot);
     await writeAnchors(outMp4, path.join(blockoutDir, `${shot.id}.anchors.json`));
-    // 刀3（0929 world-direct）：crew blockout 收尾＝同鏡 World typed task 提交
-    // （並行收據——本地鏈唔刪，多角色/走位/POV 能力照舊）。shotMap 有
-    // worldShotId 先 submit（零 mapping＝零 submit，新 brief 揀定 project 後
-    // 先有內容）；原鑰 idempotencyKey 重 POST 回同筆。blocked/
-    // render_not_authorized＝World 開關閉 named 狀態，唔重試到通。
-    const wmap = ctx.job.worldBinding?.shotMap?.[shot.id];
-    if (wmap?.worldShotId && !input.dryRun) {
-      try {
-        const task = await submitWorldBlockoutTask(cfg, ctx.job.worldBinding!, jobId, shot.id, wmap.worldShotId, wmap.sceneId);
-        emit(jobId, {
-          agent: "layout", level: "info",
-          message: `World task 提交：${shot.id}→${wmap.worldShotId} ${task.id} ${task.state ?? "?"}${task.error ? `（${task.error}）` : ""}`,
-          data: { stage: "world-task-submitted", shot: shot.id, taskId: task.id, state: task.state, error: task.error },
-        });
-        ctx.job = patch(ctx.job, {
-          worldBinding: {
-            ...ctx.job.worldBinding!,
-            shotMap: { ...ctx.job.worldBinding!.shotMap, [shot.id]: { ...wmap, taskId: task.id, taskState: task.state } },
-          },
-        });
-      } catch (e) {
-        emit(jobId, {
-          agent: "layout", level: "warn",
-          message: `World task 提交失敗（${shot.id}）：${String(e)}——本地鏈照行。`,
-          data: { stage: "world-task-unreachable", shot: shot.id, error: String(e) },
-        });
-      }
-    }
     blockouts.push(outMp4);
     if (!kept) await speak("layout", `${shot.id} blockout ${frames}f（鎖死鏡長）`);
   }

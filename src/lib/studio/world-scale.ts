@@ -169,6 +169,9 @@ export type ShotAim = {
    *  嘅數據通道——bake_combat.py 讀取要 COS patch（HAND_CONTACT_BAKE_PATCH_SPEC
    *  擴充段）；我樹內 blockout render（renderBlockout）已經照讀。 */
   envAnim?: import("./types").EnvAnimTrack[];
+  /** 刀4（0929 world-direct compiler）：採納創作層揀咗 World Studio 執行時嘅
+   *  per-job 接線——worldShotId＝World 側 sht_* id。冇＝呢鏡行本地鏈。 */
+  worldShotId?: string;
 };
 
 /** A shot looks at a piece already in the world. No callsheet xyz. */
