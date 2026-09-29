@@ -310,6 +310,8 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
   const motionSel = useMotionSelection(job?.id ?? "");
   /** ROOT 1046Z：逐鏡劇照 QC badge 真源（stills/SHxx.photo_qc.json）。 */
   const photoQc = usePhotoQc(job?.id ?? "", shotIds);
+  /** ROOT 1046Z 刀3：KF 逐格板層 cell QC（seats/boards/*.visual.json reduce）。 */
+  const cellQc = useKfCellQc(job?.id ?? "");
   /** H3 出片 rel（SH01.mp4 等）——三方對照同 span 卡都用。 */
   const motionByShot = useMemo(() => {
     const m = new Map<string, string>();
@@ -534,6 +536,7 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
                         inspect={inspects[shot.id]}
                         motionSel={motionSel[shot.id]}
                         qc={photoQc[shot.id]}
+                        cellQc={cellQc}
                       />
                     ))}
                 </div>
@@ -1480,6 +1483,36 @@ function QcBadge({ qc }: { qc?: PhotoQc }) {
   return <span className="text-destructive">QC {qc.status}</span>;
 }
 
+/** ROOT 1046Z 刀3：KF cell QC（板層逐格收據）——/api/jobs/:id/kf-qc（server
+ *  讀 seats/boards/*.visual.json reduce 好）key＝SHxx.kf-NN.png 檔名。
+ *  有收據 GREEN/FAIL；map 冇呢格＝板層收據冇（named，唔判 FAIL）。 */
+type KfCellQc = { status: string; board: string; boardSha?: string; attemptBoard?: string };
+
+function useKfCellQc(jobId: string): Record<string, KfCellQc> {
+  const [map, setMap] = useState<Record<string, KfCellQc>>({});
+  useEffect(() => {
+    if (!jobId) return;
+    let stop = false;
+    void fetch(`/api/jobs/${jobId}/kf-qc`, { cache: "no-store" })
+      .then(async (r) => (r.ok ? ((await r.json()) as { kf?: Record<string, KfCellQc> }) : null))
+      .then((d) => {
+        if (!stop && d?.kf) setMap(d.kf);
+      })
+      .catch(() => undefined);
+    return () => {
+      stop = true;
+    };
+  }, [jobId]);
+  return map;
+}
+
+/** 釘帶格仔 cell QC 徽記：✓＝GREEN／✗＝FAIL／·＝板層收據冇（唔等於 FAIL）。 */
+function CellQcMark({ cell }: { cell?: KfCellQc }) {
+  if (!cell) return <span className="text-muted-foreground">·</span>;
+  if (cell.status === "GREEN") return <span className="text-emerald-500">✓</span>;
+  return <span className="text-destructive">✗</span>;
+}
+
 function ShotIndexRow({
   shot,
   inspect,
@@ -1535,6 +1568,7 @@ function AxisRow({
   highlight,
   motionSel,
   qc,
+  cellQc,
 }: {
   jobId: string;
   shot: Shot;
@@ -1546,6 +1580,8 @@ function AxisRow({
   motionSel?: MotionSel;
   /** ROOT 1046Z：outer 逐鏡劇照 QC（stills/SHxx.photo_qc.json）。 */
   qc?: PhotoQc;
+  /** ROOT 1046Z 刀3：KF 逐格板層 cell QC（key＝SHxx.kf-NN.png 檔名）。 */
+  cellQc?: Record<string, KfCellQc>;
 }) {
   const data = inspect?.data ?? null;
   const err = inspect?.err ?? "";
@@ -1570,13 +1606,15 @@ function AxisRow({
           揀中嗰張 ring 高亮。px-6＝w-12 半闊，0%/100% 唔出界。 */}
       <div className="px-6">
         <div className="relative h-[104px]">
-          {pins.map((p, i) => (
+          {pins.map((p, i) => {
+            const cell = rels[i] ? cellQc?.[rels[i]!.split("/").pop() ?? ""] : undefined;
+            return (
             <button
               key={`${shot.id}:${i}`}
               type="button"
-              title={`KF #${i} · ${p}%`}
+              title={`KF #${i}${posUnknown ? "（位置未知）" : ` · ${p}%`}${cell ? ` · 板層cell QC ${cell.status}（${cell.board}${cell.boardSha ? ` sha${cell.boardSha.slice(0, 8)}…` : ""}）` : " · 板層cell收據冇"}`}
               aria-label={`${shot.id} KF #${i} 喺 ${p}%`}
-              className={`absolute top-0 w-12 -translate-x-1/2 overflow-hidden rounded border bg-black text-center ${i === selIdx ? "z-20 border-primary ring-1 ring-primary" : "border-border hover:border-primary/60"}`}
+              className={`absolute top-0 w-12 -translate-x-1/2 overflow-hidden rounded border bg-black text-center ${i === selIdx ? "z-20 border-primary ring-1 ring-primary" : cell?.status === "FAIL" ? "border-destructive/70" : "border-border hover:border-primary/60"}`}
               style={{ left: `${p}%` }}
               onClick={() => setSel(i)}
             >
@@ -1587,10 +1625,11 @@ function AxisRow({
                 missingLabel="未交"
               />
               <span className="block truncate bg-black/70 px-0.5 font-mono text-[8px] leading-4 text-muted-foreground">
-                #{i} {posUnknown ? "?" : `${p}%`}
+                #{i} {posUnknown ? "?" : `${p}%`} <CellQcMark cell={cell} />
               </span>
             </button>
-          ))}
+            );
+          })}
         </div>
         <div className="h-px bg-border" />
         <div className="mt-0.5 flex justify-between text-[9px] text-muted-foreground">
@@ -1602,7 +1641,13 @@ function AxisRow({
       {/* 對照格：KF 圖 ↔ 灰模片 ↔ H3 出片，三邊 seek 同一刻（釘位＝片時間軸）。 */}
       <div className={`grid gap-2 ${motionRel ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
         <div className="space-y-1">
-          <p className="font-mono text-[10px] text-muted-foreground">KF #{selIdx}{posUnknown ? "（位置未知）" : ` · ${selPct}%`}</p>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            KF #{selIdx}{posUnknown ? "（位置未知）" : ` · ${selPct}%`}
+            {(() => {
+              const cell = rels[selIdx] ? cellQc?.[rels[selIdx]!.split("/").pop() ?? ""] : undefined;
+              return cell ? ` · 板層 ${cell.status}（${cell.board}${cell.boardSha ? ` sha${cell.boardSha.slice(0, 8)}…` : ""}）` : " · 板層收據冇";
+            })()}
+          </p>
           <ProbeImg
             srcs={kfSrcs(jobId, shot.id, rels[selIdx], selIdx)}
             alt={`${shot.id} kf ${selIdx}`}
