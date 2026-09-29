@@ -80,9 +80,13 @@ export const SECONDS_PER_BEAT_FLOOR = shotSecMin();
 
 /** scene targetSec clamp bounds by band. */
 export function sceneClampBounds(targetSec: number): { min: number; max: number } {
-  const floor = shotSecMin();
+  // 統籌裁決 0930：≤30s 廣告片場下限唔再用 shotSecMin()（H3 生成窗）——
+  // Y8KH 實證：模型交 10 場加總 12.0s，floor 2.333×10 場抬到 23.3s 過提案
+  // （clamp repairs 十行改寫模型場秒＝生成窗倒流入故事層）。模型寫嘅場秒
+  // （加總夾住提案）保持原值；生成窗留喺 snapDurationToFrames（幀格層），
+  // 唔返寫 outline。上限照舊夾成片秒。
   return targetSec <= AD_MAX_SEC
-    ? { min: Math.min(floor, targetSec), max: Math.max(targetSec, floor) }
+    ? { min: 0, max: targetSec }
     : { min: SCENE_TARGET_MIN, max: SCENE_TARGET_MAX };
 }
 export const SCENE_TARGET_MIN = 1;
