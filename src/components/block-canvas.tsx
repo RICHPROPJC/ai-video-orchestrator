@@ -5,6 +5,7 @@ import { fetchH3Plan, keyframeRelPaths, type H3PlanFile } from "@/lib/studio/key
 import type { JobRecord, Shot } from "@/lib/studio/types";
 import { kfSrcs, makePropIdx, pinPercents, propSrcs, studioMedia } from "@/lib/studio/canvas-rels";
 import { useFramesAtPcts } from "@/lib/studio/film-thumbs";
+import { useWorldOverview } from "@/lib/studio/world-client";
 import { ProbeImg } from "@/components/album";
 import { FeedbackForm } from "@/components/feedback-form";
 
@@ -57,6 +58,8 @@ export function BlockCanvas({ job }: { job: JobRecord | null }) {
         <span>{shots.length} 鏡 · 期望合計 {totalExpect.toFixed(1)}s</span>
         <span className="ml-auto">格帶＝灰模片每個 KF 釘位抽嗰刻（格序＝片序）；格下掛參考圖；紅＝空咗／KF 檔缺；⚠＝片長唔啱。</span>
       </header>
+      {/* COLLAB-0929：World 現況行（集級；per-鏡綁定等 production job↔project 映射）。 */}
+      <WorldLine />
       {shots.map((shot) => (
         <BlockShotCard
           key={`${job.id}:${shot.id}`}
@@ -67,6 +70,33 @@ export function BlockCanvas({ job }: { job: JobRecord | null }) {
           characters={job.callSheet?.characters ?? []}
         />
       ))}
+    </div>
+  );
+}
+
+/** World Studio 現況一行（集級 overview：editSeq＋contentFingerprint）；
+ *  API 未接＝named-missing（CORS 缺——等 crew proxy 或 World 加 CORS）。 */
+function WorldLine() {
+  const { projects, unreachable } = useWorldOverview();
+  if (unreachable) {
+    return (
+      <p className="rounded-lg border border-dashed border-border px-2 py-1 text-[10px] text-muted-foreground">
+        World API 未接（:8791 CORS 缺——等 crew /api/world proxy 或 World 側加 CORS）；per-鏡 world 綁定＝等 production job↔project 映射
+      </p>
+    );
+  }
+  if (!projects) return <p className="px-1 text-[10px] text-muted-foreground">World：讀緊…</p>;
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border px-2 py-1 text-[10px] text-muted-foreground">
+      <span className="font-medium text-foreground">World</span>
+      {projects.map((p) => (
+        <span key={p.id} className="font-mono">
+          {p.name ?? p.id}
+          {typeof p.editSeq === "number" ? ` e${p.editSeq}` : ""}
+          {p.contentFingerprint ? ` f${p.contentFingerprint.slice(0, 8)}` : "（未 save 過——冇 fingerprint）"}
+        </span>
+      ))}
+      <span className="ml-auto">per-鏡 world 綁定＝等 production job↔project 映射欄位（named）</span>
     </div>
   );
 }
