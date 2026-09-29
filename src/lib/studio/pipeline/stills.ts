@@ -945,6 +945,26 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
           : `${shot.id} 唔過（${reasons}）— 原封重出同一 packet 一次。`,
         "warn",
       );
+      // retryDiscipline（Pi WSY6-R22F-POSTMORTEM-KNIVES-0930）：本鏡已有
+      // blocked 態 retry/same receipt（seats/boards 磁碟真源）＝同 packet
+      // 額度已燒完——resume 直接 blocked skip，唔行第三輪。
+      try {
+        const boardsReceiptDir = path.join(jobDir(jobId), "seats", "boards");
+        const priorBlocked = fs.readdirSync(boardsReceiptDir).some((f) => {
+          if (!new RegExp(`^${shot.id}-(retry|same)-.*\\.visual\\.json$`).test(f)) return false;
+          try {
+            return (JSON.parse(fs.readFileSync(path.join(boardsReceiptDir, f), "utf8")) as { status?: string }).status === "blocked";
+          } catch {
+            return false;
+          }
+        });
+        if (priorBlocked) {
+          emit(jobId, { agent: "stills", level: "warn",
+            message: `${shot.id} 已有 blocked 態 retry/same 收據——同 packet 額度已燒完，呢鏡 blocked，繼續其他鏡`,
+            data: { shot: shot.id, stage: "retry", blocked: "retry-budget-burned" } });
+          continue;
+        }
+      } catch { /* seats/boards 目錄缺席＝零舊收據，照行 retry */ }
       let inputs = editInputs.get(shot.id);
       const plan = hopStillPlans.find((p) => p.shot.id === shot.id);
       if (!inputs || !inputs.nodePaths.length) {
@@ -1034,7 +1054,12 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
           : []),
         ...(regate.kept.length ? ["最後嘅上一鏡/本鏡 GREEN 劇照＝畫面續接基礎"] : []),
       ].join("；") + "。";
-      const madeRetry = await runBoards({ render: {
+      // 刀A'（Pi WSY6-R22F-POSTMORTEM-KNIVES-0930 刀A 漏網補完，0930 09:3x
+      // SH02-retry 實證）：retry/same packet 同款 per-item catch——cell not
+      // GREEN 唔殺 job，本鏡 blocked skip 續行（同 packet 唔第三次燒）。
+      let madeRetry: Parameters<typeof recordCellLineage>[0];
+      try {
+        madeRetry = await runBoards({ render: {
         moments: retryMoments,
         boardsDir: path.join(ctx.stillDir!, "boards"),
         name: `${shot.id}-retry`,
@@ -1045,6 +1070,18 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
         require: retryRequire,
         refNote: retryRefNote,
       } });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/^boards: \d+ cells not GREEN/.test(msg)) throw err;
+        const receiptPath = msg.match(/receipt (\S+)/)?.[1];
+        if (receiptPath) {
+          try { recordCellLineage(JSON.parse(fs.readFileSync(receiptPath, "utf8")) as Parameters<typeof recordCellLineage>[0]); } catch { /* named-missing fallback */ }
+        }
+        emit(jobId, { agent: "stills", level: "warn",
+          message: `${shot.id} retry 板層 cell QC 未 GREEN——呢鏡 blocked，繼續其他鏡（同 packet 唔再燒）`,
+          data: { shot: shot.id, stage: "retry", blocked: "board-cell-not-green", receipt: receiptPath ?? null } });
+        continue;
+      }
       recordCellLineage(madeRetry);
       if (path.resolve(retryMoments[0]!.file) !== path.resolve(png)) fs.copyFileSync(retryMoments[0]!.file, png);
       shot.keyframeFiles = momentsForShot(promptShot, ctx.stillDir!).map((m) => m.file);
@@ -1052,7 +1089,9 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       result = await runPhotoQc(png, qcJson, qcRequireWithExpectation(liveRequire, promptShot), {}, photoQcEyesFromEnv());
       if (result.status === "FAIL") {
         await speak("pictureQc", `${shot.id} 再抽仍然唔啱，同一句故事再出一次，唔改動作。`, "warn");
-        const madeSame = await runBoards({ render: {
+        let madeSame: Parameters<typeof recordCellLineage>[0];
+        try {
+          madeSame = await runBoards({ render: {
           moments: retryMoments,
           boardsDir: path.join(ctx.stillDir!, "boards"),
           name: `${shot.id}-same`,
@@ -1063,6 +1102,18 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
           require: retryRequire,
           refNote: retryRefNote,
         } });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!/^boards: \d+ cells not GREEN/.test(msg)) throw err;
+          const receiptPath = msg.match(/receipt (\S+)/)?.[1];
+          if (receiptPath) {
+            try { recordCellLineage(JSON.parse(fs.readFileSync(receiptPath, "utf8")) as Parameters<typeof recordCellLineage>[0]); } catch { /* named-missing fallback */ }
+          }
+          emit(jobId, { agent: "stills", level: "warn",
+            message: `${shot.id} same 板層 cell QC 未 GREEN——呢鏡 blocked，繼續其他鏡（同 packet 唔再燒）`,
+            data: { shot: shot.id, stage: "retry", blocked: "board-cell-not-green", receipt: receiptPath ?? null } });
+          continue;
+        }
         recordCellLineage(madeSame);
         if (path.resolve(retryMoments[0]!.file) !== path.resolve(png)) fs.copyFileSync(retryMoments[0]!.file, png);
         shot.keyframeFiles = momentsForShot(promptShot, ctx.stillDir!).map((m) => m.file);
