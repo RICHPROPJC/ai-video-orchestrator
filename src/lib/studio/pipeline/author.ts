@@ -241,7 +241,10 @@ async function authorCallSheet(
     }
     return undefined;
   };
-  const targetSec = input.durationSec ?? readProposedTargetSec(jobId) ?? 600;
+  // 統籌釘正 0930：時長真源函數化——每次即讀（user --duration ?? 導演提案
+  // ?? 600 sentinel）。舊 :244 一次 const 喺導演前早計（fresh 路讀唔到提案
+  // 令 writer/boards 食 600）；block 內 refresh 又乞兒 scope。consumer 即讀。
+  const currentTargetSec = (): number => input.durationSec ?? readProposedTargetSec(jobId) ?? 600;
   const receiptDir = path.join(jobDir(jobId), "seats");
   // SC-CREATIVE-OS-0927 §3 創作主路徑第一段：短 brief → 導演席（treatment＋
   // 節奏骨架）。新 slate 先行；已有 creative/ 就照舊（resume 冪等）。fail-loud：
@@ -323,10 +326,6 @@ async function authorCallSheet(
     );
     const written = writeCreativeArtifacts(jobId, creativeDir, input.brief, plan, { targetSec: input.durationSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) });
     const planSha = written.planSha;
-    // 落盤後 refresh：導演提案（spec.targetSec）已寫入 creative-intent——
-    // 下游 writer/playwright/boards 閘跟提案（user 指定優先，冇先提案，
-    // 再冇先 600 sentinel 防走火）。
-    const targetSec = input.durationSec ?? readProposedTargetSec(jobId) ?? 600;
     await io.speak(
       "producer",
       `導演席：${plan.shots.length} 鏡節奏骨架落 creative/（assumptions ${plan.assumptions?.length ?? 0}、capability_gaps ${plan.capabilityGaps.length} 條明報）。writer 跟 treatment 寫，唔再由裸 brief 發明。`,
@@ -351,7 +350,7 @@ async function authorCallSheet(
         { brief: input.brief, treatment: plan.treatment, assets: [
             ...(plan.spec?.product ? [`產品：${plan.spec.product}`] : []),
             "人物／場景事實以 brief 逐字為準；資產身份以後續 cast/portraits 收據為準",
-          ], targetSec,
+          ], targetSec: currentTargetSec(),
           // 裁決 0928 B：講者綁定——roster 隨 packet 入編劇席（speaker 欄對應）
           castRoster: readCastRoster(input.castRosterPath),
         // §30-1/§31-2 G1：鎖義務＝user/task 採用契約（caller 明示）——舊 plan
@@ -387,7 +386,7 @@ async function authorCallSheet(
             `修訂迴路：編劇版有 ${ev.unplaced.length} 句台詞冇導演落點${ev.actionNews.length ? `＋新動作 ${ev.actionNews.length} 項` : ""}${ev.contactNews.length ? `＋新接觸 ${ev.contactNews.length} 項` : ""}${ev.timeGaps.length ? `＋時間冇對應鏡 ${ev.timeGaps.length} 段` : ""}${ev.newElements.length ? `＋新增元素 ${ev.newElements.length} 項` : ""}——回導演修訂鏡表一輪。`,
           );
           const revised = await runDirector(
-            { brief: input.brief, targetSec, ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) },
+            { brief: input.brief, targetSec: currentTargetSec(), ...(input.aspect ? { aspect: input.aspect } : {}), ...(input.language ? { language: input.language } : {}) },
             {
               crew: cfg.crew,
               model: cfg.crew.directorModel ?? (() => { throw new Error("director_model_missing: 導演席要明示 directorModel"); })(),
@@ -491,7 +490,7 @@ ${plan.treatment}`;
   };
 
   await io.think("writer");
-  await io.speak("writer", `寫故事同對白。${cfg.crew.writerModel} · 目標 ${targetSec}s。`);
+  await io.speak("writer", `寫故事同對白。${cfg.crew.writerModel} · 目標 ${currentTargetSec()}s。`);
   const writer = await runWriter(
     {
       brief: input.brief,
@@ -505,7 +504,7 @@ ${plan.treatment}`;
       ...(typedUtteranceList?.length ? { utterances: typedUtteranceList } : {}),
       ...(directorPlacements?.length ? { directorPlacements } : {}),
       ...(typedUtteranceList?.length ? { utterances: typedUtteranceList } : {}),
-      targetSec,
+      targetSec: currentTargetSec(),
       language: input.language,
       castRoster: readCastRoster(input.castRosterPath),
     },
@@ -519,7 +518,7 @@ ${plan.treatment}`;
       playbookDir: seatsDir(),
       drama: input.drama,
     },
-    rangesFor(targetSec),
+    rangesFor(currentTargetSec()),
   );
 
   // G1 批二驗收：漏引用／懸空引用＝miss 回 writer 落位（§28-6 責任分流）
@@ -538,7 +537,7 @@ ${plan.treatment}`;
     {
       script: writer.script,
       draftOnly: input.dryRun,
-      targetSec,
+      targetSec: currentTargetSec(),
       aspect: input.aspect,
       writer: { model: writer.model, receipts: writer.receipts },
       ...(directorSkeleton ? { directorSkeleton } : {}),
