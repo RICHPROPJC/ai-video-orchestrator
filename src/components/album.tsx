@@ -1583,7 +1583,7 @@ function useMediaSha(jobId: string): { sha: Record<string, string>; dupes: Recor
     void fetch(`/api/jobs/${jobId}/media-sha`, { cache: "no-store" })
       .then(async (r) => (r.ok ? ((await r.json()) as { sha?: Record<string, string> }) : null))
       .then((d) => {
-        if (!stop || !d?.sha) return;
+        if (stop || !d?.sha) return;
         const byKey: Record<string, string[]> = {};
         for (const [rel, key] of Object.entries(d.sha)) {
           (byKey[key] ??= []).push(rel);
