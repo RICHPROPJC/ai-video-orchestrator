@@ -453,6 +453,19 @@ export type JobRecord = {
   callsheetRepairEpisode?: { attempts: number } | null;
   /** root R2 修③（0928）：現行採用 callsheet digest（callsheet.json 落盤時寫）——session turn dependsOn 對比真源；未有 callsheet＝undefined。 */
   callsheetDigest?: string;
+  /** ROOT 0b7a60a 收口裁定（0929）：callsheet 時長差集結構化 gap——actual/
+   *  target、各場差額、quota、責任分類（scene-overflow＝分鏡展開超額；
+   *  film-allocation＝導演全片分配/可演性）。authorStage catch 寫入→
+   *  authorCallSheet reviseForGaps 認呢欄行導演修訂輪（同
+   *  callsheetRepairEpisode 額度，耗盡唔重置）；sheet 組成（total gate
+   *  過）即清。 */
+  durationGaps?: {
+    kind: "scene-overflow" | "film-allocation";
+    targetSec: number; declared: number; actual: number;
+    scenes: { sceneId: string; actual: number; budget: number; delta: number }[];
+    quota: { used: number; max: number };
+    ts: string;
+  }[];
   /** R22 差4（ROOT 0929 接續令）：run 級 source version 收據——runPipeline
    *  開工時 git HEAD 快照。Album 五態進度（①舊 failed attempt vs ②source
    *  fixed vs ④同版本實跑）由呢欄對照；git 唔在（部署包）＝缺席照舊。 */

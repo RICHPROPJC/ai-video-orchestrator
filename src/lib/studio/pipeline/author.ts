@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { emit, readJob } from "../store";
 import { loadCallSheet } from "../writer";
 import { utteranceBeatCoverage } from "../boards-expand";
-import { sheetDigest } from "../seat-boards";
+import { CallsheetRuntimeGap, sheetDigest } from "../seat-boards";
 import { runWriter } from "../seat-writer";
 import { runDirector, writeCreativeArtifacts, runPlaywright, briefSha, readCreativeManifest, updateCreativeManifest, dialogueSignalsOf, evaluateScriptAgainstPlan, contractGapsOf, generateUtteranceCandidates, resolveUtterancePlacements, type UtterancePlacementMap } from "../creative";
 
@@ -109,6 +109,12 @@ async function authorCallSheet(
   // 耗盡唔攔截唔進修訂（inline loop guard 保護唔到先行嘅 authorStage/resume），
   // gaps/blocked 留底收尾 verdict。
   const canRevise = placementGaps.length > 0 && epAttempts < GAP_BUDGET;
+  // ROOT 0b7a60a 收口裁定：durationGaps（時長差集結構化 gap）同款回修——
+  // 額度＝callsheetRepairEpisode（SHEET_REPAIR_BUDGET，同 boards 迴圈一池，
+  // 耗盡唔重置）；hint 帶分類＋各場差額＋quota 入導演修訂輪。
+  const durationGaps = readJob(jobId)?.durationGaps ?? [];
+  const durEp = readJob(jobId)?.callsheetRepairEpisode?.attempts ?? 0;
+  const canReviseDuration = durationGaps.length > 0 && durEp < SHEET_REPAIR_BUDGET;
   // root R3 修②：stale-only（adopt 空）唔叫導演——立即回寫 blocked；budget
   // exhausted（gaps＋額度耗盡）＝採納輪唔會行，pending 明確 blocked 具名
   // （唔繞 budget、唔靜默失聯）。
@@ -253,7 +259,7 @@ async function authorCallSheet(
     // §7②：gaps 情況＝revise 輪（帶磁碟上嘅 plan＋script＋差距 hint 返導演席）
     // root R2 修①：pending 係獨立修訂觸發（唔使 gaps 在場）；hint 帶 frozen
     // 快照 turn 原文（模型前快照，唔讀 live queue）。
-    const reviseForGaps = (canRevise || pendingAdopt.length > 0) && fs.existsSync(planOnDiskFile)
+    const reviseForGaps = (canRevise || canReviseDuration || pendingAdopt.length > 0) && fs.existsSync(planOnDiskFile)
       ? {
           previousPlan: JSON.parse(fs.readFileSync(planOnDiskFile, "utf8")) as unknown,
           scriptMd: fs.existsSync(path.join(creativeDir, "script.md"))
@@ -271,6 +277,8 @@ async function authorCallSheet(
             const notes = (sheetNow.onImageAdoptions ?? []).map((a) => `${a.placement}→${a.shotIds.join("/")}：${a.plan}（理由：${a.reason}）`);
             return [
               ...(pendingAdopt.length ? pendingAdopt.map((t) => `【用戶對話修訂請求 ${t.turnId}】${t.text}`) : []),
+              ...(durationGaps.length ? durationGaps.map((g) =>
+                `【callsheet 時長差集（機器閘結構化回報）】kind=${g.kind}；brief 硬時長 targetSec=${g.targetSec}s／outline 分配合計=${g.declared.toFixed(1)}s／實際鏡合計=${g.actual.toFixed(1)}s${g.scenes.length ? `；爆場明細：${g.scenes.map((s) => `${s.sceneId} ${s.actual.toFixed(1)}/${s.budget.toFixed(1)}s（+${s.delta.toFixed(1)}）`).join("、")}` : "；冇單場爆 band＝全片分配/可演性問題"}；quota 已用 ${g.quota.used}/${g.quota.max}——分鏡展開超額就合鏡／壓縮返 band；全片分配就重分各場 targetSec（總長對返 brief 硬時長）；budget 唔夠實現採納內容就 capability_gaps 具名，唔偷删台詞／接觸事件／用戶硬要求`) : []),
               missing.length ? `聲畫對位缺口（world audioTimeline 對照）：${missing.map((g) => g.text).join("；")}——只補返呢啲句子嘅 dialogueClock 落點：鏡表骨架（鏡數/次序/每鏡時長/動作）保持當前採納版原封，唔重寫骨架、唔因劇本句子增減重排鏡表（R20 裁決⑤：placement 修復係補落點輪，唔係重創作輪；劇本新句冇位就報 gap 唔硬塞）` : "",
               adoptions.length ? `boards 席聲畫採用矛盾（placement/onImage 落地打交）：${adoptions.map((g) => g.text).join("；")}——重新協調 placement 同鏡面安排，唔可以靠加一句 placement 字串消掉語義矛盾` : "",
               adoptions.length && notes.length ? `boards 現行採用明細：${notes.join("；")}` : "",
@@ -538,6 +546,9 @@ ${plan.treatment}`;
     onUtteranceProvenance?.({ ...typedUtteranceProvenance, list: typedUtteranceList });
   }
   // 裁決 0928 D：導演聲畫落點隨 callsheet 落 world 段（audioTimeline 對照）
+  // ROOT 0b7a60a：total gate 過＝durationGaps 清（修訂結果已同源驗收採用）。
+  const jobAfter = readJob(jobId);
+  if (jobAfter?.durationGaps?.length) patch(jobAfter, { durationGaps: [] });
   return { ...boards.sheet, ...(directorPlacements?.length ? { directorPlacements } : {}) };
 }
 
@@ -563,35 +574,43 @@ export async function authorStage(ctx: Ctx): Promise<void> {
     `收 brief。開呢份 slate 嘅信封。舊 project 唔入袋。${input.drama ? `劇目 ${input.drama}${input.episode ? `・${input.episode}` : ""}。` : ""}`,
   );
   // G1 批三：utterance 版本收據入 ctx（world 段 audio-timeline dependsOn 四元）
-  // ROOT 0929 接續令差2：callsheet_runtime_unclosed（時長修訂額度耗盡）由
-  // comment 補成真 consumer——唔再殺 job 做 unknown error：分類具名 gap 落
-  // events＋job blocked 等 resume 修訂輪。分類：場分鏡（合鏡/壓縮）／全片
-  // 分配（導演重分場秒數）／內容可演性（budget 唔夠實現採納內容）——short
-  // brief 擴寫、固定時長由導演編排可演事件，已鎖要求唔偷删改；唔以同
-  // packet 換模型原封重試（sheetRepair 迴圈已行晒）。
+  // ROOT 0b7a60a 收口裁定（supersede 差2 blocked-only 版）：真返創作 consumer
+  // ——CallsheetRuntimeGap 額度准入時寫 durationGaps→authorCallSheet
+  // reviseForGaps 認欄行導演修訂輪（分類/差額/quota 入 hint）→同源重驗
+  // total gate；額度耗盡或修訂後再爆＝blocked（quota 唔重置，resume 唔刷新）。
   let sheet: Awaited<ReturnType<typeof authorCallSheet>>;
-  try {
-    sheet = await authorCallSheet(jobId, input, cfg, { speak, think }, (p) => {
-      ctx.utteranceProvenance = p;
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!message.startsWith("callsheet_runtime_unclosed")) throw error;
-    emit(jobId, { agent: "producer", level: "warn",
-      message: `callsheet 時長差集具名 gap（返創作層修訂，唔殺 job）——${message}`,
-      data: {
-        stage: "callsheet-runtime", blocked: "callsheet_runtime_unclosed",
-        category: ["scene-boards：合鏡／多 beat 同鏡／壓縮返 band", "film-allocation：導演重分場秒數（outline targetSec）", "playability：budget 唔夠實現採納內容——adoptionIssues 具名返導演"],
-        repairEpisode: readJob(jobId)?.callsheetRepairEpisode ?? null,
-      } });
-    ctx.job = patch(ctx.job, {
-      status: "blocked",
-      currentAgent: "producer",
-      providers: trace,
-      error: `callsheet_runtime_unclosed（時長修訂額度耗盡——返創作層：場分鏡壓縮／導演重分場／可演性重編）：${message}`,
-    });
-    ctx.stopped = true;
-    return;
+  for (let round = 0; ; round += 1) {
+    try {
+      sheet = await authorCallSheet(jobId, input, cfg, { speak, think }, (p) => {
+        ctx.utteranceProvenance = p;
+      });
+      break;
+    } catch (error) {
+      if (!(error instanceof CallsheetRuntimeGap)) throw error;
+      const g = error.gap;
+      const job = readJob(jobId);
+      const used = job?.callsheetRepairEpisode?.attempts ?? 0;
+      if (round === 0 && used < SHEET_REPAIR_BUDGET) {
+        if (job) patch(job, { durationGaps: [{ ...g, ts: new Date().toISOString() }], callsheetRepairEpisode: { attempts: used + 1 } });
+        emit(jobId, { agent: "producer", level: "warn",
+          message: `callsheet 時長差集（${g.kind}）→導演修訂輪（quota ${used + 1}/${SHEET_REPAIR_BUDGET}）：target ${g.targetSec}s／actual ${g.actual.toFixed(1)}s${g.scenes.length ? `；爆場 ${g.scenes.map((s) => `${s.sceneId}+${s.delta.toFixed(1)}s`).join("、")}` : "（冇單場爆＝全片分配）"}`,
+          data: { stage: "callsheet-runtime", gap: g } });
+        await speak("producer", `callsheet 時長差集回導演席修訂（${g.kind}，quota ${used + 1}/${SHEET_REPAIR_BUDGET}）。`, "warn");
+        continue;
+      }
+      emit(jobId, { agent: "producer", level: "warn",
+        message: `callsheet 時長差集額度耗盡（quota ${used}/${SHEET_REPAIR_BUDGET}）——blocked：${error.message}`,
+        data: { stage: "callsheet-runtime", blocked: "callsheet_runtime_unclosed", gap: g } });
+      ctx.job = patch(ctx.job, {
+        status: "blocked",
+        currentAgent: "producer",
+        providers: trace,
+        error: `callsheet_runtime_unclosed（額度耗盡，返創作層：${g.kind}）：${error.message}`,
+        durationGaps: [{ ...g, ts: new Date().toISOString() }],
+      });
+      ctx.stopped = true;
+      return;
+    }
   }
   // G1 批四：resolver 一處配對＋凍結映射落盤（author 採納輪；world 讀同一
   // 檔＋驗 digest——兩側同結果，唔建持久 pool／全局 used 旗標）。同字歧義／

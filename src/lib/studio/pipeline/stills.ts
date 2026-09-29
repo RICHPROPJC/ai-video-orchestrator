@@ -78,19 +78,29 @@ export function sealEditRecord(
 
 /** 拆層段（stills）：由 runPipeline 原序搬入，行為零變——絕唔重排 call 次序、
  *  絕唔刪／合併任何 emit/speak/patch；early-return 以 ctx.stopped 回報。 */
-/** R22 修1/修3（ROOT 0929 修正令）：moment endpoint require 共用合同——板層
- *  cell QC 同 outer primary-cell QC 用同一份：action＝該 moment beat 定格驗收
- *  唔再用整鏡動作句（全鏡動作留 video 驗收）；持有 gap 格（beat 無持有動詞、
- *  callsheet heldBy 冇 moment 級時序）drop tool 在場要求——prompt 唔推測持有
- *  狀態，QC 唔要求未持有格見道具；位置/人數/grey/景別等限制照守。 */
+/** R22 修1/修3（ROOT 0929 修正令）＋收口裁定 0b7a60a 更正：moment anchor
+ *  合同按時刻語義分兩態——beat 含持有/接觸動詞＝**endpoint 完成態**（呢格
+ *  驗接觸已達成：接觸目標照 beat 文字，如「握實樽頸」＝樽頸唔係檯）；純
+ *  移動/姿態 beat＝**process 進行態**（行近途中一瞬——人物喺場景內行緊/
+ *  企喺任何合法起始位都算，唔要求已到終點或接觸任何嘢）。撤 ROOT 自認
+ *  過闊嘅「完成姿勢/手接觸」通用句——判官唔可以「手無接觸木檯」否決
+ *  「行埋木檯前」（接觸目標係樽頸，且 0% 係行進格）。持有 gap 格（beat
+ *  無持有動詞）drop tool 在場要求照舊；unknown 唔放 GREEN。 */
 function momentEndpointRequire(
   moment: { beat?: string; heldState?: "beat-hold" | "gap" },
   base: QcRequire,
 ): QcRequire {
   const beat = moment.beat?.trim();
-  const scoped: QcRequire = beat
-    ? { ...base, action: `${beat}（定格驗收：呢格驗呢個瞬間嘅完成姿勢——人物位置/手接觸/持有狀態啱唔啱；行進過程由片驗，唔要求單圖畫出行過程，但位置/接觸錯唔放過）` }
-    : base;
+  let scoped: QcRequire = base;
+  if (beat) {
+    const endpoint = momentHoldsProp(beat);
+    scoped = {
+      ...base,
+      action: endpoint
+        ? `${beat}（endpoint 完成態定格驗收：呢格驗呢個動作嘅到達/接觸已達成——手接觸目標照句文（握實樽頸＝樽頸，唔係檯）；位置要對得上採納時刻）`
+        : `${beat}（process 進行態定格驗收：呢格係行近/移動途中一瞬——人物喺場景內行緊或企喺合法位置都算，唔要求已到終點、唔要求接觸任何物件；淨驗人物在場＋場景正確）`,
+    };
+  }
   if (moment.heldState === "gap") {
     const { tool: _tool, tool_shape: _shape, ...rest } = scoped;
     return rest;
@@ -754,9 +764,15 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       const lineage = cellLineage.get(shotCells.get(shot.id)?.[0] ?? out);
       const primaryBeat = primaryMoment?.beat?.trim();
       if (lineage && primaryBeat) {
+        // 收口裁定 0b7a60a：expectation 同 require 同一刻語義——process beat
+        // 唔要求完成動作/接觸（「行埋木檯前」唔等於摸檯）；endpoint beat
+        // 先驗接觸目標達成（照句文，唔泛化）。
+        const endpoint = momentHoldsProp(primaryBeat);
         return {
           ...scoped,
-          expectation: `本格（primary cell）合同：${primaryBeat}。定格驗收：呢格驗呢個瞬間嘅完成姿勢——人物位置/手接觸/持有狀態啱唔啱；行進過程由片驗，唔要求單圖畫出行過程，但位置/接觸錯唔放過。生成呢格嘅 actual board prompt 全文及源板/格 sha 見 seats/boards 收據（板版式另由切格收據驗，唔入本判）。`,
+          expectation: endpoint
+            ? `本格（primary cell）合同：${primaryBeat}。endpoint 完成態定格驗收——手接觸目標照句文（接觸樽頸唔係接觸檯）；位置對採納時刻。actual board prompt 及源板/格 sha 見 seats/boards 收據。`
+            : `本格（primary cell）合同：${primaryBeat}。process 進行態定格驗收——行近途中一瞬，人物喺場景內行緊/企喺合法位置都算，唔要求已到終點或接觸任何物件；淨驗人物在場＋場景正確。actual board prompt 及源板/格 sha 見 seats/boards 收據。`,
         };
       }
       emit(jobId, { agent: "stills", level: "warn",

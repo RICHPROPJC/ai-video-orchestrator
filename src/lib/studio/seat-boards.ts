@@ -65,6 +65,24 @@ function tenth(n: number): number {
  *  ("null"/"undefined" included), face illegal facing right, plant illegal
  *  gait, then nudge the sum into the scene budget band before zod sees it.
  *  Every coercion leaves a `repair:` line on the attempt receipt. */
+/** ROOT 0b7a60a 收口裁定：callsheet 時長差集 typed gap——兩 throw 位（耗盡
+ *  scene-overflow／無單場爆 film-allocation）同源結構化，authorStage 消費
+ *  寫 durationGaps 行真正創作修訂輪（唔以類別字串冒充分類決策）。 */
+export class CallsheetRuntimeGap extends Error {
+  constructor(
+    message: string,
+    public readonly gap: {
+      kind: "scene-overflow" | "film-allocation";
+      targetSec: number; declared: number; actual: number;
+      scenes: { sceneId: string; actual: number; budget: number; delta: number }[];
+      quota: { used: number; max: number };
+    },
+  ) {
+    super(message);
+    this.name = "CallsheetRuntimeGap";
+  }
+}
+
 export function padBoardDurations(raw: unknown, budgetSec?: number, note?: RepairNote): unknown {
   const repair = note ?? (() => {});
   const recovered = recoverBoardsKeys(raw, repair);
@@ -308,6 +326,7 @@ export async function runBoards(
   }
 
   // §25 A＋B（0928）：callsheet 閘基準＝brief 硬時長（opts.targetSec 用戶目標）；
+  // ROOT 0b7a60a 收口裁定：時長差集 typed gap（class 喺檔尾 export）。
   // outline 分配合計（declared）具名分開傳入——唔靜靜用聲明合計替換用戶目標
   //（BOUP 實證：brief 26s vs outline 26.33s 兩個數冇人分開報）。
   // 時長爆／不足唔係淨 throw：同一 evaluator 計爆場差額→帶具名 gap 返 boards
@@ -329,14 +348,38 @@ export async function runBoards(
       const repair = opts.sheetRepair;
       const already = repair ? repair.attempts + sheetRepairUsed : 0;
       if (!repair || already >= repair.max) {
-        // 耗盡：保存候選（receipts／boards 落盤照舊）＋具名 gap 阻下游——
-        // 唔冒充 accepted；爆場若 budget 唔夠實現採納內容，呢度係返導演重分
-        // 場嘅入口（caller 見 callsheet_runtime_unclosed 決定上返 creative 層）。
+        // 耗盡：保存候選（receipts／boards 落盤照舊）＋typed gap 阻下游——
+        // ROOT 0b7a60a：結構化（actual/target、各場差額、quota）交 authorStage
+        // 真 consumer（durationGaps→導演修訂輪），唔以字串冒充。
         const overflows = sceneOverflows();
-        throw new Error(`callsheet_runtime_unclosed: ${message}；爆場＝${overflows.map((o) => `${o.sceneId} ${o.actual.toFixed(1)}s/budget ${o.budget.toFixed(1)}s`).join("、")}——修訂額度已用 ${already} 輪（候選已存 receipts）`);
+        throw new CallsheetRuntimeGap(
+          `callsheet_runtime_unclosed: ${message}；爆場＝${overflows.map((o) => `${o.sceneId} ${o.actual.toFixed(1)}s/budget ${o.budget.toFixed(1)}s`).join("、")}——修訂額度已用 ${already} 輪（候選已存 receipts）`,
+          {
+            kind: "scene-overflow",
+            targetSec: opts.targetSec ?? 0,
+            declared,
+            actual: boards.reduce((a, b) => a + b.shots.reduce((x, s) => x + s.durationSec, 0), 0),
+            scenes: overflows.map((o) => ({ sceneId: o.sceneId, actual: o.actual, budget: o.budget, delta: o.actual - o.budget })),
+            quota: { used: already, max: repair?.max ?? 0 },
+          },
+        );
       }
       const overflows = sceneOverflows();
-      if (!overflows.length) throw error; // 冇單場超 band 都爆 sheet＝結構性，交上層
+      // ROOT 0b7a60a：冇單場超 band 都爆 sheet＝全片分配問題（不足/分配不一
+      // 致）——同源 typed gap（film-allocation），唔裸 throw。
+      if (!overflows.length) {
+        throw new CallsheetRuntimeGap(
+          `callsheet_runtime_unclosed: ${message}（冇單場爆 band——全片分配/可演性問題，返導演重分場秒數）`,
+          {
+            kind: "film-allocation",
+            targetSec: opts.targetSec ?? 0,
+            declared,
+            actual: boards.reduce((a, b) => a + b.shots.reduce((x, s) => x + s.durationSec, 0), 0),
+            scenes: [],
+            quota: { used: repair ? repair.attempts + sheetRepairUsed : 0, max: repair?.max ?? 0 },
+          },
+        );
+      }
       sheetRepairUsed += 1;
       repair.onAttempt?.(repair.attempts + sheetRepairUsed);
       for (const o of overflows) {
