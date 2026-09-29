@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import sharp from "sharp";
 import { chunkFrameMoments, ensureKeyframeSheet, storyboardBoardPrompt, type BoardLane, type SheetMoment } from "./asset-board";
+import { MAX_IMAGES } from "./u15-edit";
 import type { QcRequire } from "./photo-qc";
 
 export type BoardsVisualOptions = {
@@ -29,7 +30,7 @@ export async function renderBoards(opts: BoardsVisualOptions) {
   const run = `${opts.name}-${crypto.randomUUID().slice(0, 8)}`;
   const attemptDir = path.join(opts.boardsDir, run);
   const receipt = path.join(opts.receiptDir, `${run}.visual.json`);
-  const attempts: { board: string; sha256: string; inputs: string[]; prompt: string; cells: { shotId: string; at: string; file: string; destination: string; sha256: string; qc: string; status: string }[] }[] = [];
+  const attempts: { board: string; sha256: string; inputs: string[]; prompt: string; droppedRefs?: string[]; cells: { shotId: string; at: string; file: string; destination: string; sha256: string; qc: string; status: string }[] }[] = [];
   const digest = (f: string) => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
   const write = (status: string) => fs.writeFileSync(receipt, JSON.stringify({ owner: "boards", status, attempts }, null, 2));
   write("pending");
@@ -42,6 +43,7 @@ export async function renderBoards(opts: BoardsVisualOptions) {
       const name = `${opts.name}-r${round}-${i + 1}`;
       const staged = group.map((m, j) => ({ ...m, file: path.join(attemptDir, `${name}.cell-${j + 1}.png`) }));
       let images = opts.images;
+      let repairDroppedRefs: string[] = [];
       // 單格 repair 唔砌 tile 板：嗰塊 tile 做 Image-1 令 U1.5 抄錯版式
       // （board_layout asked 1 columns picture has 4 → throw，冇 r2 好試）。
       // 單格冇好鄰居要保，round>0 直接新 seed 重滾乾淨板。
@@ -64,7 +66,14 @@ export async function renderBoards(opts: BoardsVisualOptions) {
         })));
         await sharp({ create: { width: cols * 512, height: Math.ceil(repairable.length / cols) * 512, channels: 3, background: "white" } })
           .composite(tiles).png().toFile(repairBoard);
-        images = [repairBoard, ...opts.images];
+        // Pi WSY6-R22F-POSTMORTEM-KNIVES-0930 refcap_preruling ③（R22f'' 爆6
+        // 實證：repairBoard 前置＋5 張 refs＝6）：repairBoard 係 Image-1 必要
+        // 位，其餘照 caller 優先序（灰模＞prev＞身份＞plate＞cut——opts.images
+        // 本身已照呢個序組）截 MAX_IMAGES-1；被 drop 記入 attempt 收據
+        // （named-gap，唔靜靜唔見）。
+        const repairRoom = MAX_IMAGES - 1;
+        repairDroppedRefs = opts.images.length > repairRoom ? opts.images.slice(repairRoom).map((f) => path.basename(f)) : [];
+        images = [repairBoard, ...opts.images.slice(0, repairRoom)];
       }
       let made: Awaited<ReturnType<typeof ensureKeyframeSheet>>;
       // R22（ROOT 0929）：actual submitted prompt 原文變數化——每 attempt 落收據
@@ -102,7 +111,7 @@ export async function renderBoards(opts: BoardsVisualOptions) {
         }
         throw error;
       }
-      const attempt: typeof attempts[number] = { board: made.board, sha256: digest(made.board), inputs: images, prompt: submittedPrompt, cells: [] };
+      const attempt: typeof attempts[number] = { board: made.board, sha256: digest(made.board), inputs: images, prompt: submittedPrompt, ...(repairDroppedRefs.length ? { droppedRefs: repairDroppedRefs } : {}), cells: [] };
       attempts.push(attempt);
       for (const [j, m] of group.entries()) {
         const file = staged[j]!.file;

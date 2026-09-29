@@ -453,7 +453,14 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       const shot = hopStillPlans.find((p) => p.shot.id === id)!.shot;
       return uncutIdentityFiles(shot, ctx.portraits!.sheets, [path.join(jobDir(jobId), "portraits"), input.portraitsDir ?? ""]);
     }))];
-    if (identity.length > MAX_IMAGES) throw new Error("boards: identity sheets exceed U1.5 image capacity; split the board");
+    // Pi refcap_preruling ②：identity 本身爆 5＝無得 cap（身份係同源鎖，drop
+    // 邊個都錯配）——per-item blocked skip 呢塊板嘅鏡，唔殺 job。
+    if (identity.length > MAX_IMAGES) {
+      emit(jobId, { agent: "stills", level: "warn",
+        message: `鍵格板 identity sheets ${identity.length}＞U1.5 容量 ${MAX_IMAGES}——呢板鏡 blocked（${[...new Set(moments.map((m) => m.shotId))].join("、")}），繼續其他板`,
+        data: { stage: "sheet-refs", blocked: "identity-capacity", shots: [...new Set(moments.map((m) => m.shotId))] } });
+      continue;
+    }
     // 素材管事實（SAMPLES40 ①）：道具外形由 GREEN plate 以圖入 ref 照抄，文字
     // 唔再重新發明（杯/雙手/構圖漂移嘅結構病根——只餵 identity 一張圖，個樽
     // 靠文字次次作新）。文字留返姿勢同狀態（單右手/開咗蓋）。
@@ -510,8 +517,35 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     // 冇 blockout 嘅鏡（motion gap 行 KF 驅動／零 cast 現象鏡）冇 f0，照舊。
     const leadF0 = path.join(ctx.blockoutDir!, `${leadId}.f0.png`);
     const greyLayout = fs.existsSync(leadF0) ? [leadF0] : [];
-    const images = [...greyLayout, ...baseStill, ...identity, ...propRefs, ...propCutRefs];
-    if (images.length > MAX_IMAGES) throw new Error("boards: still+identity+prop refs exceed U1.5 image capacity; split the board");
+    // Pi WSY6-R22F-POSTMORTEM-KNIVES-0930 refcap_preruling ③：refs≤5 係
+    // U1.5 pinned（§C4-42 永唔改）——組裝照優先級截 5：灰模（位置）＞上一鏡
+    // GREEN（續接）＞身份（同源鎖）＞道具 plate（外形）＞道具 cut（附加實驗）。
+    // 被 drop 嘅 ref named-gap 收據落 events（唔靜靜唔見）；refNote flags 對返
+    // kept 實況（cap 後嗰類可能成類 drop 咗）。
+    const sheetRefCap = (() => {
+      const parts: [string, string[]][] = [["灰模", greyLayout], ["上一鏡", baseStill], ["身份", identity], ["道具", propRefs], ["cut", propCutRefs]];
+      const kept: string[] = [];
+      const keptByTag: Record<string, string[]> = {};
+      const dropped: string[] = [];
+      for (const [tag, files] of parts) {
+        keptByTag[tag] = [];
+        for (const f of files) {
+          if (kept.length < MAX_IMAGES) { kept.push(f); keptByTag[tag]!.push(f); }
+          else dropped.push(path.basename(f));
+        }
+      }
+      return { kept, keptByTag, dropped };
+    })();
+    if (sheetRefCap.dropped.length) {
+      emit(jobId, { agent: "stills", level: "warn",
+        message: `鍵格板 refs 超 U1.5 容量 ${MAX_IMAGES}——照優先級 drop ${sheetRefCap.dropped.length} 張（${sheetRefCap.dropped.join("、")}）`,
+        data: { stage: "sheet-refs", blocked: null, dropped: sheetRefCap.dropped } });
+    }
+    const keptGrey = sheetRefCap.keptByTag["灰模"]!;
+    const keptPrev = sheetRefCap.keptByTag["上一鏡"]!;
+    const keptIdentity = sheetRefCap.keptByTag["身份"]!;
+    const keptProp = sheetRefCap.keptByTag["道具"]!;
+    const images = sheetRefCap.kept;
     // 非位置描述（GPT-6 覆核）：repairBoard prepend 會改變圖序——角色按「係咩」
     // 講，唔按「第幾張」講，prepend 後唔會錯號。
     // R18：本 sheet 首鏡 tool/tool_shape（正面句材料）——真源＝
@@ -522,10 +556,10 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       if (rq.tool) leadRequireTool = { name: rq.tool, shapes: rq.tool_shape ?? [] };
     } catch { /* 冇 require 檔＝冇 tool 句 */ }
     const refNote = [
-      ...(greyLayout.length ? ["灰模企位圖＝人物位置、構圖、鏡位照佢；外觀（人樣/衫/道具look）永遠唔參考佢"] : []),
-      ...(baseStill.length ? ["上一鏡劇照（同場同一人同一道具嗰張）＝畫面續接基礎"] : []),
-      ...(identity.length ? ["角色肖像／角度板＝同一人，跨格一致"] : []),
-      ...(propRefs.length ? [
+      ...(keptGrey.length ? ["灰模企位圖＝人物位置、構圖、鏡位照佢；外觀（人樣/衫/道具look）永遠唔參考佢"] : []),
+      ...(keptPrev.length ? ["上一鏡劇照（同場同一人同一道具嗰張）＝畫面續接基礎"] : []),
+      ...(keptIdentity.length ? ["角色肖像／角度板＝同一人，跨格一致"] : []),
+      ...(keptProp.length ? [
         `道具實物照＝該道具嘅外形、顏色、質感、比例照抄，文字唔取代`,
         // R18：require 驅動材質/形狀正面句（當集 tool_shape 詞直列——正面
         // 寫法，唔 negative token；KF-01 分項死因「杯/材質未提及」對症）
