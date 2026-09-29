@@ -19,6 +19,11 @@ export async function GET(
   const boardsDir = path.join(jobDir(id), "seats", "boards");
   type Attempt = { board?: string; sha256?: string; cells?: { destination?: string; status?: string }[] };
   const kf: Record<string, { status: string; board: string; boardSha?: string; attemptBoard?: string }> = {};
+  /** 現行錨定 verdict：copy-on-GREEN 下 destination bytes 永遠由最新 GREEN
+   *  attempt 釘住（重做輪 FAIL 唔 pin、碟上留 GREEN 版——production 23:0x 機制
+   *  答覆＋mtime 時序核實）。淨報最新 attempt FAIL 會令用戶誤解碟圖 FAIL——
+   *  兩態並列：pinned（碟上版收據）＋kf（最新重做輪態）。 */
+  const pinned: Record<string, { status: string; board: string; boardSha?: string; attemptBoard?: string }> = {};
   let boards = 0;
   if (fs.existsSync(boardsDir)) {
     // 方法漂移審計實證（0930）：字母序會令 d92809b5（13:44 真採納）被
@@ -41,15 +46,17 @@ export async function GET(
         for (const c of at.cells ?? []) {
           const dest = c.destination?.split("/").pop();
           if (!dest) continue;
-          kf[dest] = {
+          const row = {
             status: c.status ?? "?",
             board: f.replace(/\.visual\.json$/, ""),
             boardSha: at.sha256,
             attemptBoard: at.board?.split("/").pop(),
           };
+          kf[dest] = row;
+          if (row.status === "GREEN") pinned[dest] = row;
         }
       }
     }
   }
-  return NextResponse.json({ boards, kf }, { headers: { "cache-control": "no-store" } });
+  return NextResponse.json({ boards, kf, pinned }, { headers: { "cache-control": "no-store" } });
 }

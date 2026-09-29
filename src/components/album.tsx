@@ -311,7 +311,7 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
   /** ROOT 1046Z：逐鏡劇照 QC badge 真源（stills/SHxx.photo_qc.json）。 */
   const photoQc = usePhotoQc(job?.id ?? "", shotIds);
   /** ROOT 1046Z 刀3：KF 逐格板層 cell QC（seats/boards/*.visual.json reduce）。 */
-  const cellQc = useKfCellQc(job?.id ?? "");
+  const { kf: cellQc, pinned: cellPinned } = useKfCellQc(job?.id ?? "");
   /** H3 出片 rel（SH01.mp4 等）——三方對照同 span 卡都用。 */
   const motionByShot = useMemo(() => {
     const m = new Map<string, string>();
@@ -537,6 +537,7 @@ export function Album({ job, initialView = "skeleton" }: { job: JobRecord | null
                         motionSel={motionSel[shot.id]}
                         qc={photoQc[shot.id]}
                         cellQc={cellQc}
+                        cellPinned={cellPinned}
                       />
                     ))}
                 </div>
@@ -1485,31 +1486,41 @@ function QcBadge({ qc }: { qc?: PhotoQc }) {
 
 /** ROOT 1046Z 刀3：KF cell QC（板層逐格收據）——/api/jobs/:id/kf-qc（server
  *  讀 seats/boards/*.visual.json reduce 好）key＝SHxx.kf-NN.png 檔名。
- *  有收據 GREEN/FAIL；map 冇呢格＝板層收據冇（named，唔判 FAIL）。 */
+ *  有收據 GREEN/FAIL；map 冇呢格＝板層收據冇（named，唔判 FAIL）。
+ *  刀5：兩態——kf＝最新 attempt 態；pinned＝碟上現行 bytes 嘅 GREEN 錨定收據
+ *  （copy-on-GREEN：重做輪 FAIL 唔 pin，碟上留 GREEN 版——淨報最新 FAIL 會
+ *  誤導用戶以為碟圖 FAIL）。 */
 type KfCellQc = { status: string; board: string; boardSha?: string; attemptBoard?: string };
 
-function useKfCellQc(jobId: string): Record<string, KfCellQc> {
-  const [map, setMap] = useState<Record<string, KfCellQc>>({});
+function useKfCellQc(jobId: string): { kf: Record<string, KfCellQc>; pinned: Record<string, KfCellQc> } {
+  const [maps, setMaps] = useState<{ kf: Record<string, KfCellQc>; pinned: Record<string, KfCellQc> }>({ kf: {}, pinned: {} });
   useEffect(() => {
     if (!jobId) return;
     let stop = false;
     void fetch(`/api/jobs/${jobId}/kf-qc`, { cache: "no-store" })
-      .then(async (r) => (r.ok ? ((await r.json()) as { kf?: Record<string, KfCellQc> }) : null))
+      .then(async (r) => (r.ok ? ((await r.json()) as { kf?: Record<string, KfCellQc>; pinned?: Record<string, KfCellQc> }) : null))
       .then((d) => {
-        if (!stop && d?.kf) setMap(d.kf);
+        if (!stop && d?.kf) setMaps({ kf: d.kf, pinned: d.pinned ?? {} });
       })
       .catch(() => undefined);
     return () => {
       stop = true;
     };
   }, [jobId]);
-  return map;
+  return maps;
 }
 
-/** 釘帶格仔 cell QC 徽記：✓＝GREEN／✗＝FAIL／·＝板層收據冇（唔等於 FAIL）。 */
-function CellQcMark({ cell }: { cell?: KfCellQc }) {
-  if (!cell) return <span className="text-muted-foreground">·</span>;
-  if (cell.status === "GREEN") return <span className="text-emerald-500">✓</span>;
+/** 釘帶格仔 cell QC 徽記（兩態）：✓＝現行 GREEN 錨定；✓⟳＝現行✓但重做輪
+ *  FAIL 緊（碟圖仍然收貨版）；✗＝從未 GREEN；·＝板層收據冇（唔等於 FAIL）。 */
+function CellQcMark({ cell, pinned }: { cell?: KfCellQc; pinned?: KfCellQc }) {
+  if (!cell && !pinned) return <span className="text-muted-foreground">·</span>;
+  if (pinned) {
+    return cell && cell.status !== "GREEN" ? (
+      <span className="text-amber-400" title={`現行✓（${pinned.board}）· 重做輪 ${cell.status} 緊`}>✓⟳</span>
+    ) : (
+      <span className="text-emerald-500">✓</span>
+    );
+  }
   return <span className="text-destructive">✗</span>;
 }
 
@@ -1569,6 +1580,7 @@ function AxisRow({
   motionSel,
   qc,
   cellQc,
+  cellPinned,
 }: {
   jobId: string;
   shot: Shot;
@@ -1580,8 +1592,10 @@ function AxisRow({
   motionSel?: MotionSel;
   /** ROOT 1046Z：outer 逐鏡劇照 QC（stills/SHxx.photo_qc.json）。 */
   qc?: PhotoQc;
-  /** ROOT 1046Z 刀3：KF 逐格板層 cell QC（key＝SHxx.kf-NN.png 檔名）。 */
+  /** ROOT 1046Z 刀3：KF 逐格板層 cell QC——最新 attempt 態（key＝SHxx.kf-NN.png 檔名）。 */
   cellQc?: Record<string, KfCellQc>;
+  /** 刀5：碟上現行 bytes 嘅 GREEN 錨定收據（copy-on-GREEN）。 */
+  cellPinned?: Record<string, KfCellQc>;
 }) {
   const data = inspect?.data ?? null;
   const err = inspect?.err ?? "";
@@ -1607,14 +1621,16 @@ function AxisRow({
       <div className="px-6">
         <div className="relative h-[104px]">
           {pins.map((p, i) => {
-            const cell = rels[i] ? cellQc?.[rels[i]!.split("/").pop() ?? ""] : undefined;
+            const dest = rels[i] ? rels[i]!.split("/").pop() ?? "" : "";
+            const cell = cellQc?.[dest];
+            const pin = cellPinned?.[dest];
             return (
             <button
               key={`${shot.id}:${i}`}
               type="button"
-              title={`KF #${i}${posUnknown ? "（位置未知）" : ` · ${p}%`}${cell ? ` · 板層cell QC ${cell.status}（${cell.board}${cell.boardSha ? ` sha${cell.boardSha.slice(0, 8)}…` : ""}）` : " · 板層cell收據冇"}`}
+              title={`KF #${i}${posUnknown ? "（位置未知）" : ` · ${p}%`}${pin ? ` · 現行✓（${pin.board}${pin.boardSha ? ` sha${pin.boardSha.slice(0, 8)}…` : ""}）` : ""}${cell && cell.status !== "GREEN" ? ` · 重做輪 ${cell.status}（${cell.board}）` : cell ? ` · 板層 ${cell.status}（${cell.board}）` : " · 板層cell收據冇"}`}
               aria-label={`${shot.id} KF #${i} 喺 ${p}%`}
-              className={`absolute top-0 w-12 -translate-x-1/2 overflow-hidden rounded border bg-black text-center ${i === selIdx ? "z-20 border-primary ring-1 ring-primary" : cell?.status === "FAIL" ? "border-destructive/70" : "border-border hover:border-primary/60"}`}
+              className={`absolute top-0 w-12 -translate-x-1/2 overflow-hidden rounded border bg-black text-center ${i === selIdx ? "z-20 border-primary ring-1 ring-primary" : !pin && cell?.status !== "GREEN" && cell ? "border-destructive/70" : pin && cell && cell.status !== "GREEN" ? "border-amber-500/70" : "border-border hover:border-primary/60"}`}
               style={{ left: `${p}%` }}
               onClick={() => setSel(i)}
             >
@@ -1625,7 +1641,7 @@ function AxisRow({
                 missingLabel="未交"
               />
               <span className="block truncate bg-black/70 px-0.5 font-mono text-[8px] leading-4 text-muted-foreground">
-                #{i} {posUnknown ? "?" : `${p}%`} <CellQcMark cell={cell} />
+                #{i} {posUnknown ? "?" : `${p}%`} <CellQcMark cell={cell} pinned={pin} />
               </span>
             </button>
             );
@@ -1644,8 +1660,10 @@ function AxisRow({
           <p className="font-mono text-[10px] text-muted-foreground">
             KF #{selIdx}{posUnknown ? "（位置未知）" : ` · ${selPct}%`}
             {(() => {
-              const cell = rels[selIdx] ? cellQc?.[rels[selIdx]!.split("/").pop() ?? ""] : undefined;
-              return cell ? ` · 板層 ${cell.status}（${cell.board}${cell.boardSha ? ` sha${cell.boardSha.slice(0, 8)}…` : ""}）` : " · 板層收據冇";
+              const dest = rels[selIdx] ? rels[selIdx]!.split("/").pop() ?? "" : "";
+              const pin = cellPinned?.[dest];
+              const cell = cellQc?.[dest];
+              return `${pin ? ` · 現行✓（${pin.board}${pin.boardSha ? ` sha${pin.boardSha.slice(0, 8)}…` : ""}）` : ""}${cell && cell.status !== "GREEN" ? ` · 重做輪 ${cell.status}（${cell.board}）` : cell ? ` · 板層 ${cell.status}（${cell.board}）` : pin ? "" : " · 板層收據冇"}`;
             })()}
           </p>
           <ProbeImg
