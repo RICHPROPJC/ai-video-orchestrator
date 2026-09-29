@@ -642,7 +642,7 @@ export function StudioFloor({
               <p className="px-1 text-[10px] text-muted-foreground">{TAB_NOTES[tab]}</p>
               {tab === "album" ? <Album key={job?.id} job={job} /> : null}
               {/* Chau 0928（畫布真義）：node graph 換走——畫布＝灰模逐格對帳牆。 */}
-              {tab === "canvas" ? <BlockCanvas key={job?.id} job={job} /> : null}
+              {tab === "canvas" ? <BlockCanvas key={job?.id} job={job} events={events} /> : null}
               {job ? (
                 <div className="mt-2">
                   <details className="rounded-lg border border-amber-700/50 bg-amber-950/20 p-2 text-xs">

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchH3Plan, keyframeRelPaths, type H3PlanFile } from "@/lib/studio/keyframe-rels";
-import type { JobRecord, Shot } from "@/lib/studio/types";
+import type { JobEvent, JobRecord, Shot } from "@/lib/studio/types";
 import { kfSrcs, makePropIdx, pinPercents, propSrcs, studioMedia } from "@/lib/studio/canvas-rels";
 import { useFramesAtPcts } from "@/lib/studio/film-thumbs";
 import { useWorldOverview, useWorldStage, type WorldStage } from "@/lib/studio/world-client";
@@ -14,7 +14,7 @@ import { FeedbackForm } from "@/components/feedback-form";
  *  （每個 KF 釘位抽嗰一刻，格序＝片序），每格下面掛住佢參考嘅圖（KF 檔）、
  *  逐鏡掛人物／道具參考同聲帶。中間一個位突然空咗、片長短咗長咗、
  *  接錯咗——行呢塊牆即刻對到數：邊鏡邊格出事一目了然。 */
-export function BlockCanvas({ job }: { job: JobRecord | null }) {
+export function BlockCanvas({ job, events }: { job: JobRecord | null; events?: JobEvent[] }) {
   const shots = useMemo(() => {
     const all = job?.callSheet?.shots ?? [];
     const cut = job?.continuity?.cut;
@@ -60,8 +60,10 @@ export function BlockCanvas({ job }: { job: JobRecord | null }) {
         <span className="ml-auto">格帶＝灰模片每個 KF 釘位抽嗰刻（格序＝片序）；格下掛參考圖；紅＝空咗／KF 檔缺；⚠＝片長唔啱。</span>
       </header>
       {/* Phase world-stage（production 9726ff0 刀3）：job 級採納四態——
-          unbound 要顯示成「未揀定」，唔好空白當已接。 */}
-      <WorldStageBar jobId={job.id} />
+          unbound 要顯示成「未揀定」，唔好空白當已接。DIRECT-INTEGRATION：
+          加 pipeline world 段 events（binding-frozen／world-bind-unreachable／
+          world-project-missing／per-shot task 查回）——中間態與錯誤照字。 */}
+      <WorldStageBar jobId={job.id} events={events} />
       {/* COLLAB-0929：World 現況行（集級；per-鏡任務態喺上面 WorldStageBar 嘅 shotMap）。 */}
       <WorldLine />
       {/* Pi 0929 授權：per-鏡面板組件預寫試點預覽（binding 落齊換 AxisRow 真接線）。 */}
@@ -81,10 +83,22 @@ export function BlockCanvas({ job }: { job: JobRecord | null }) {
 }
 
 /** Phase world-stage：job↔World 採納四態行（真源 /api/jobs/:id/world-stage）。
- *  unbound＝未揀定 project（named，唔空白當已接）；current/stale＝凍結版 vs
- *  World latest editSeq；unreachable＝World serve 離線。shotMap 命中計數。 */
-function WorldStageBar({ jobId }: { jobId: string }) {
+ *  DIRECT-INTEGRATION：pipeline world 段 events（world.ts emit）同場顯示——
+ *  binding-frozen／world-bind-unreachable／world-project-missing／per-shot
+ *  world-task-readback/unreachable——中間態與錯誤照字，未採納/blocked 唔顯示已接。 */
+const WORLD_STAGE_EVENTS = new Set([
+  "binding-frozen", "world-bind-unreachable", "world-project-missing",
+  "world-task-readback", "world-task-unreachable",
+]);
+
+function worldStageEvents(events?: JobEvent[]) {
+  if (!events) return [];
+  return events.filter((e) => typeof e.data?.stage === "string" && WORLD_STAGE_EVENTS.has(e.data.stage as string));
+}
+
+function WorldStageBar({ jobId, events }: { jobId: string; events?: JobEvent[] }) {
   const st: WorldStage | null = useWorldStage(jobId);
+  const lastPipe = worldStageEvents(events)[0] && worldStageEvents(events).slice(-1)[0];
   if (!st) return <p className="px-1 text-[10px] text-muted-foreground">World 採納態讀緊…</p>;
   const b = st.binding;
   const shots = Object.entries(b?.shotMap ?? {});
@@ -96,6 +110,7 @@ function WorldStageBar({ jobId }: { jobId: string }) {
     return (
       <p className="rounded-lg border border-dashed border-border px-2 py-1 text-[10px] text-muted-foreground">
         World 採納＝<span className="text-amber-400">未揀定（unbound）</span>——job 未綁 project（cfg.world.projectId 空或未行 worldStage）；唔係已接。
+        {lastPipe ? <span className={`block ${lastPipe.level === "warn" ? "text-amber-300" : ""}`}>pipeline：{lastPipe.message}</span> : null}
       </p>
     );
   }
@@ -103,6 +118,7 @@ function WorldStageBar({ jobId }: { jobId: string }) {
     return (
       <p className="rounded-lg border border-destructive/50 px-2 py-1 text-[10px] text-destructive">
         World serve 離線（unreachable）——binding 在 {b?.projectId}，讀 latest 唔通：{st.error ?? "?"}
+        {lastPipe ? <span className="block">pipeline：{lastPipe.message}</span> : null}
       </p>
     );
   }
@@ -126,6 +142,7 @@ function WorldStageBar({ jobId }: { jobId: string }) {
           （{shots.map(([shotId, v]) => `${shotId}:${v.taskState ?? "?"}`).join(" ")}）
         </span>
       ) : null}
+      {lastPipe ? <span className="block">pipeline：{lastPipe.message}</span> : null}
     </p>
   );
 }
