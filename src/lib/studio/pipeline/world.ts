@@ -1131,6 +1131,9 @@ export async function worldStage(ctx: Ctx): Promise<void> {
             if (pulled.frames > 0) {
               await ffmpeg([
                 "-framerate", "24",
+                // 本地重編由 frame_0001 起（pull 按 bundle files 清單序）——顯式
+                // start_number，唔靠 image2 auto-detect（新統籌 review 0930）。
+                "-start_number", "1",
                 "-i", path.join(framesDir, "frame_%04d.png"),
                 "-c:v", "libx264", "-pix_fmt", "yuv420p",
                 outMp4,

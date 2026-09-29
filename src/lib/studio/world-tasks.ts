@@ -122,6 +122,10 @@ export async function pullWorldBlockoutFrames(
     }
     n++;
   }
-  if (shaMismatch.length) return { frames: n, error: `${shaMismatch.length} 檔 sha256 對唔到（named，唔照收）`, shaMismatch };
+  if (shaMismatch.length) {
+    // 新統籌 review（0930）：sha 對唔到回 frames>0 會令 world.ts 分流照 ffmpeg
+    // 接駁污染幀——「唔照收」貫徹＝frames:0（caller 睇 frames>0 先接駁）。
+    return { frames: 0, error: `${shaMismatch.length} 檔 sha256 對唔到（named，唔照收——零幀回）`, shaMismatch };
+  }
   return { frames: n, framesDir: outDir };
 }
