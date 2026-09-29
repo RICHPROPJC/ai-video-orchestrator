@@ -29,7 +29,55 @@ export type WorldProjectOverview = {
 
 /** crew proxy 原樣透傳（/api/world/<X> → :8791/<X>）；World 淨掛 /api/*——
  *  所以 base 含埋 /api：實際請求 /api/world/api/projects（0929 probe 200 實證）。 */
+/** crew proxy 原樣透傳（/api/world/<X> → :8791/<X>）；World 淨掛 /api/*——
+ *  所以 base 含埋 /api：實際請求 /api/world/api/projects（0929 probe 200 實證）。 */
 const WORLD_BASE = "/api/world/api";
+
+/** doc 全形（Pi 0929 授權預寫試點用；parse 寬鬆——World schema 演進欄位照 unknown 食）。 */
+export type WorldProjectDoc = {
+  editSeq?: number;
+  contentFingerprint?: string;
+  shots: WorldShotBrief[];
+  scenes: { id: string; name?: string; cameras?: unknown[]; objects?: unknown[] }[];
+  assets: { id: string; name?: string; sha256?: string; logicalPath?: string }[];
+  render?: Record<string, unknown>;
+};
+
+/** 讀單一 project doc 全形（project.shots/scenes/assets/render）。 */
+export function useWorldProjectDoc(projectId: string | null): { doc: WorldProjectDoc | null; unreachable: boolean } {
+  const [doc, setDoc] = useState<WorldProjectDoc | null>(null);
+  const [unreachable, setUnreachable] = useState(false);
+  useEffect(() => {
+    if (!projectId) return;
+    let stop = false;
+    setDoc(null);
+    setUnreachable(false);
+    void fetch(worldApi(`/projects/${projectId}`), { cache: "no-store" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`${r.status}`);
+        return (await r.json()) as Record<string, unknown>;
+      })
+      .then((raw) => {
+        if (stop) return;
+        const inner = (raw["project"] ?? {}) as Record<string, unknown>;
+        setDoc({
+          editSeq: typeof raw["editSeq"] === "number" ? (raw["editSeq"] as number) : undefined,
+          contentFingerprint: typeof raw["contentFingerprint"] === "string" ? (raw["contentFingerprint"] as string) : undefined,
+          shots: Array.isArray(inner["shots"]) ? (inner["shots"] as WorldShotBrief[]) : [],
+          scenes: Array.isArray(inner["scenes"]) ? (inner["scenes"] as WorldProjectDoc["scenes"]) : [],
+          assets: Array.isArray(inner["assets"]) ? (inner["assets"] as WorldProjectDoc["assets"]) : [],
+          render: (inner["render"] ?? undefined) as WorldProjectDoc["render"],
+        });
+      })
+      .catch(() => {
+        if (!stop) setUnreachable(true);
+      });
+    return () => {
+      stop = true;
+    };
+  }, [projectId]);
+  return { doc, unreachable };
+}
 
 export function worldApi(rel: string) {
   return `${WORLD_BASE}${rel}`;

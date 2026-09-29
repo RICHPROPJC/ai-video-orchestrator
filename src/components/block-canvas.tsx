@@ -6,6 +6,7 @@ import type { JobRecord, Shot } from "@/lib/studio/types";
 import { kfSrcs, makePropIdx, pinPercents, propSrcs, studioMedia } from "@/lib/studio/canvas-rels";
 import { useFramesAtPcts } from "@/lib/studio/film-thumbs";
 import { useWorldOverview } from "@/lib/studio/world-client";
+import { WorldPilotPreview } from "@/components/world-panel";
 import { ProbeImg } from "@/components/album";
 import { FeedbackForm } from "@/components/feedback-form";
 
@@ -60,6 +61,8 @@ export function BlockCanvas({ job }: { job: JobRecord | null }) {
       </header>
       {/* COLLAB-0929：World 現況行（集級；per-鏡綁定等 production job↔project 映射）。 */}
       <WorldLine />
+      {/* Pi 0929 授權：per-鏡面板組件預寫試點預覽（binding 落齊換 AxisRow 真接線）。 */}
+      <WorldPilotPreview />
       {shots.map((shot) => (
         <BlockShotCard
           key={`${job.id}:${shot.id}`}
