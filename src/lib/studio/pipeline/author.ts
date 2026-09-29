@@ -224,7 +224,16 @@ async function authorCallSheet(
     await io.speak("producer", `callsheet plug 載入：${sheet.shots.length} 鏡。`);
     return sheet;
   }
-  const targetSec = input.durationSec ?? 600;
+  // 統籌裁決 0930「閘跟提案」：brief 冇秒數（--duration 缺）→時長閘跟導演
+  // 提案（duration_proposal_due 寫入 creative-intent spec.targetSec），唔用
+  // 600（internal 無限時 sentinel）做規格。
+  let proposedTargetSec: number | undefined;
+  try {
+    const intent = JSON.parse(fs.readFileSync(path.join(jobDir(jobId), "creative", "creative-intent.json"), "utf8")) as { spec?: { targetSec?: number }; targetSec?: number };
+    const t = intent.spec?.targetSec ?? intent.targetSec;
+    if (typeof t === "number" && t > 0) proposedTargetSec = t;
+  } catch { /* 冇 creative-intent（首輪）＝undefined，照舊 */ }
+  const targetSec = input.durationSec ?? proposedTargetSec ?? 600;
   const receiptDir = path.join(jobDir(jobId), "seats");
   // SC-CREATIVE-OS-0927 §3 創作主路徑第一段：短 brief → 導演席（treatment＋
   // 節奏骨架）。新 slate 先行；已有 creative/ 就照舊（resume 冪等）。fail-loud：

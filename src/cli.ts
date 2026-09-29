@@ -96,9 +96,13 @@ function parseOneMotionPick(v: string): Record<string, string> {
 }
 
 function makeJob(brief: string) {
+  const durFlag = arg("--duration");
   const opened = createSlate({
     brief,
-    durationSec: Number(arg("--duration", "12")),
+    // 統籌裁決 0930：冇 --duration 唔寫死 12（假鎖——author 當 user_locked
+    // 送導演，令 duration_proposal_due 提案路永遠行唔到）。缺＝undefined→
+    // 導演按故事提案 targetSec；亦唔填 600（internal sentinel 唔做規格）。
+    durationSec: durFlag !== undefined ? Number(durFlag) : undefined,
     aspect: (arg("--aspect", "16:9") as ProduceInput["aspect"]) || "16:9",
     language: (arg("--language", arg("--lang", "auto")) as ProduceInput["language"]) || "auto",
     voiceClonePath: arg("--clone"),
