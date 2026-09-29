@@ -109,7 +109,9 @@ export async function pullWorldBlockoutFrames(
   for (const f of framesArt.files) {
     if (!f.logicalPath) continue;
     const r = await fetchImpl(`${cfg.world.base}/api/projects/${projectId}/files/${f.logicalPath}`, { cache: "no-store" });
-    if (!r.ok) return { frames: n, error: `GET ${f.logicalPath} HTTP ${r.status}（清單話有但拉唔到——named，唔照收）`, shaMismatch };
+    // 新統籌 review②（0930）：中途 GET 失敗回 frames:n＝caller 當有幀接駁
+    // 半拉序列——同 sha 唔對一樣回 0（唔照收貫徹）。
+    if (!r.ok) return { frames: 0, error: `GET ${f.logicalPath} HTTP ${r.status}（清單話有但拉唔到——named，唔照收，零幀回）`, shaMismatch };
     const buf = Buffer.from(await r.arrayBuffer());
     // 本地重編 frame_%04d（1..N 按清單序）——World 幀名由 frameOrigin 起
     // （實測 frame_0505 起），唔保證連續由 1；ffmpeg image2 序列讀本地重編版。
