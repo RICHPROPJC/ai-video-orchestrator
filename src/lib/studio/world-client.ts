@@ -31,6 +31,43 @@ export type WorldProjectOverview = {
  *  所以 base 含埋 /api：實際請求 /api/world/api/projects（0929 probe 200 實證）。 */
 /** crew proxy 原樣透傳（/api/world/<X> → :8791/<X>）；World 淨掛 /api/*——
  *  所以 base 含埋 /api：實際請求 /api/world/api/projects（0929 probe 200 實證）。 */
+/** per-project tasks 概覽（GET /api/projects/{id}/tasks；state 計數＋error 照字）。 */
+export function useWorldProjectTasks(projectId: string | null): {
+  states: Record<string, number>;
+  errors: string[];
+  unreachable: boolean;
+} {
+  const [st, setSt] = useState<{ states: Record<string, number>; errors: string[] }>({ states: {}, errors: [] });
+  const [unreachable, setUnreachable] = useState(false);
+  useEffect(() => {
+    if (!projectId) return;
+    let stop = false;
+    void fetch(worldApi(`/projects/${projectId}/tasks`), { cache: "no-store" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`${r.status}`);
+        return (await r.json()) as { tasks?: { state?: string; error?: string }[] };
+      })
+      .then((d) => {
+        if (stop) return;
+        const states: Record<string, number> = {};
+        const errors: string[] = [];
+        for (const t of d.tasks ?? []) {
+          const s = t.state ?? "?";
+          states[s] = (states[s] ?? 0) + 1;
+          if (t.error) errors.push(t.error);
+        }
+        setSt({ states, errors });
+      })
+      .catch(() => {
+        if (!stop) setUnreachable(true);
+      });
+    return () => {
+      stop = true;
+    };
+  }, [projectId]);
+  return { ...st, unreachable };
+}
+
 const WORLD_BASE = "/api/world/api";
 
 /** doc 全形（Pi 0929 授權預寫試點用；parse 寬鬆——World schema 演進欄位照 unknown 食）。 */

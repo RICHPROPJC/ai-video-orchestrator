@@ -920,16 +920,68 @@ function slateHref(id: string, tab: FloorTab) {
   return `/?${q.toString()}`;
 }
 
+/** production 0929 接續令差4：attempt/進度五態——①舊failed attempt②source fixed
+ *  （commit在未跑）③loaded runtime④同版本實跑（events判決）⑤交付（MP4+hash+probe+QC）。
+ *  ②③收據已 expose（production 0929 ACK）：Job.sourceVersion{commit,commitTs}
+ *  ＋GET /api/version{commit,…}——②＝fix commitTs 晚過最後 attempt（updatedAt）；
+ *  ③＝job sourceVersion.commit === runtime commit（probe 0929 兩邊 71f925d7 一致）。 */
+function useRuntimeVersion(): { commit?: string; commitTs?: string } | null {
+  const [v, setV] = useState<{ commit?: string; commitTs?: string } | null>(null);
+  useEffect(() => {
+    let stop = false;
+    void fetch("/api/version", { cache: "no-store" })
+      .then(async (r) => (r.ok ? ((await r.json()) as { commit?: string; commitTs?: string }) : null))
+      .then((d) => {
+        if (!stop) setV(d);
+      })
+      .catch(() => undefined);
+    return () => {
+      stop = true;
+    };
+  }, []);
+  return v;
+}
+
+function attemptStateOf(
+  item: JobRecord,
+  runtime?: { commit?: string; commitTs?: string } | null,
+): { label: string; cls: string } {
+  if (item.status === "locked" && item.outputs.pictureLock) return { label: "⑤交付", cls: "text-emerald-500" };
+  if (item.status === "running" || item.status === "queued") return { label: "④實跑中", cls: "text-primary" };
+  if (item.status === "failed") {
+    const day = (item.updatedAt ?? "").slice(5, 10);
+    const sv = (item as { sourceVersion?: { commit?: string; commitTs?: string } }).sourceVersion;
+    if (sv?.commitTs) {
+      const fixedAfter = new Date(sv.commitTs).getTime() > new Date(item.updatedAt ?? 0).getTime();
+      const sameLoaded = Boolean(runtime?.commit && sv.commit === runtime.commit);
+      if (fixedAfter) {
+        return {
+          label: `②source fixed未跑（fix ${sv.commitTs.slice(11, 16)}）${sameLoaded ? "·③runtime同版" : ""}`,
+          cls: "text-amber-400",
+        };
+      }
+      return { label: `①舊failed attempt（${day}）${sameLoaded ? "·③runtime同版" : ""}`, cls: "text-destructive" };
+    }
+    return { label: `①舊failed attempt${day ? `（${day}）` : ""}（②③收據缺——本job冇sourceVersion）`, cls: "text-destructive" };
+  }
+  return { label: item.status, cls: "text-muted-foreground" };
+}
+
 /** P33（§1/§3）：左側項目列表＝主要入口——真實狀態／進度／阻塞原因；
  *  跑緊＝附着既有 run 唔重入；舊項目有明確「續做」（原 ID resume，
  *  唔重填 brief 唔複製新 ID）；locked＝已交付，要改走對話修訂。 */
 function ProjectList({ rows, current, tab }: { rows: JobRecord[]; current?: string; tab: FloorTab }) {
   const live = rows.filter((item) => item.status === "running" || item.status === "queued");
   const rest = rows.filter((item) => item.status !== "running" && item.status !== "queued");
+  const runtime = useRuntimeVersion();
   return (
     <div className="space-y-3">
-      <ProjectGroup label="做緊" items={live} empty="而家冇一份喺跑" current={current} tab={tab} />
-      <ProjectGroup label="其餘" items={rest} empty="冇" current={current} tab={tab} />
+      {/* 五態語義行：②③已照 Job.sourceVersion＋/api/version 收據（0929 production expose）。 */}
+      <p className="rounded border border-dashed border-border px-2 py-1 text-[10px] text-muted-foreground">
+        態①舊failed attempt（日期）／②source fixed未跑／③runtime同版／④實跑中／⑤交付＝照收據（sourceVersion＋/api/version）——唔默稱重複實跑。
+      </p>
+      <ProjectGroup label="做緊" items={live} empty="而家冇一份喺跑" current={current} tab={tab} runtime={runtime} />
+      <ProjectGroup label="其餘" items={rest} empty="冇" current={current} tab={tab} runtime={runtime} />
     </div>
   );
 }
@@ -940,12 +992,14 @@ function ProjectGroup({
   empty,
   current,
   tab,
+  runtime,
 }: {
   label: string;
   items: JobRecord[];
   empty: string;
   current?: string;
   tab: FloorTab;
+  runtime?: { commit?: string; commitTs?: string } | null;
 }) {
   return (
     <div className="space-y-1">
@@ -955,6 +1009,7 @@ function ProjectGroup({
           {items.map((item) => {
             const running = item.status === "running" || item.status === "queued";
             const locked = item.status === "locked";
+            const at = attemptStateOf(item, runtime);
             return (
               <div key={item.id} className={`rounded-lg border p-2 text-xs ${item.id === current ? "border-primary bg-primary/10" : "border-border"}`}>
                 <a href={slateHref(item.id, tab)} className="block">

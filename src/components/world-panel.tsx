@@ -1,6 +1,6 @@
 "use client";
 
-import { useWorldProjectDoc, type WorldProjectDoc, type WorldShotBrief } from "@/lib/studio/world-client";
+import { useWorldProjectDoc, useWorldProjectTasks, type WorldProjectDoc, type WorldShotBrief } from "@/lib/studio/world-client";
 
 /** Pi 0929 授權·預寫 per-鏡世界/機位/軌/artifact 面板（試點真數據渲染）。
  *  零採納宣稱：crewConsumer＝未 named 橫幅常駐；binding 未落——呢個面板
@@ -72,12 +72,24 @@ export function WorldShotPanel({ doc, shot }: { doc: WorldProjectDoc; shot: Worl
  *  binding 落齊後呢塊換成 AxisRow 真接線，呢個 preview 就退場。 */
 export function WorldPilotPreview() {
   const { doc, unreachable } = useWorldProjectDoc("prj_0c521a31862e");
+  const tasks = useWorldProjectTasks("prj_0c521a31862e");
+  const taskNote = tasks.unreachable
+    ? "tasks API 未接"
+    : Object.entries(tasks.states).length
+      ? Object.entries(tasks.states)
+          .map(([s, n]) => `${s}×${n}`)
+          .join(" ")
+      : "0 task";
   return (
     <details className="rounded-lg border border-dashed border-border px-2 py-1.5 text-[10px] text-muted-foreground">
       <summary className="cursor-pointer">
         🧪 世界試點預覽（prj_0c521a31862e·WSY6-SH01試點）——組件預寫，binding 未落非 crew 映射
       </summary>
       <div className="mt-1 space-y-1">
+        <p>
+          tasks：{taskNote}
+          {tasks.errors.length ? ` · ⚠ ${tasks.errors[0]?.slice(0, 60)}` : ""}
+        </p>
         {unreachable ? (
           <p>World API 未接（/api/world/api/projects/prj_0c521a31862e）</p>
         ) : !doc ? (
