@@ -89,13 +89,18 @@ function WorldLine() {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border px-2 py-1 text-[10px] text-muted-foreground">
       <span className="font-medium text-foreground">World</span>
-      {projects.map((p) => (
-        <span key={p.id} className="font-mono">
-          {p.name ?? p.id}
-          {typeof p.editSeq === "number" ? ` e${p.editSeq}` : ""}
-          {p.contentFingerprint ? ` f${p.contentFingerprint.slice(0, 8)}` : "（未 save 過——冇 fingerprint）"}
-        </span>
-      ))}
+      {projects.map((p) => {
+        const n = p.shots?.length;
+        const total = p.shots?.reduce((m, s) => Math.max(m, s.timeOut ?? 0), 0);
+        return (
+          <span key={p.id} className="font-mono">
+            {p.name ?? p.id}
+            {typeof p.editSeq === "number" ? ` e${p.editSeq}` : ""}
+            {p.contentFingerprint ? ` f${p.contentFingerprint.slice(0, 8)}` : "（未 save 過——冇 fingerprint）"}
+            {n ? ` · ${n}鏡 ${total ? `${total.toFixed(1)}s` : ""}` : ""}
+          </span>
+        );
+      })}
       <span className="ml-auto">per-鏡 world 綁定＝等 production job↔project 映射欄位（named）</span>
     </div>
   );

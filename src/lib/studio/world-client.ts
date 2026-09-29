@@ -7,12 +7,24 @@ import { useEffect, useState } from "react";
  *  （OPTIONS preflight 400 實證 0929），等 production 裁 crew proxy 或 World 加 CORS；
  *  兩邊任一到位，呢個 client 零改生效（proxy 透傳 /api/projects 同構即可）。 */
 
+/** 每鏡摘要（doc.project.shots[]——CONSUMER-0929-01 note 指路，probe 實證）。 */
+export type WorldShotBrief = {
+  id: string; // sht_*
+  name?: string;
+  sceneId?: string;
+  cameraId?: string;
+  timeIn?: number;
+  timeOut?: number;
+  order?: number;
+};
+
 export type WorldProjectOverview = {
   id: string; // prj_*
   name?: string;
   editSeq?: number;
   contentFingerprint?: string;
   updatedAt?: string;
+  shots?: WorldShotBrief[];
 };
 
 /** crew proxy 原樣透傳（/api/world/<X> → :8791/<X>）；World 淨掛 /api/*——
@@ -46,13 +58,19 @@ export function useWorldOverview() {
         );
         if (stop) return;
         setProjects(
-          list.map((p, i) => ({
-            id: p.id,
-            name: p.name,
-            updatedAt: p.updated_at,
-            editSeq: typeof docs[i]?.["editSeq"] === "number" ? (docs[i]?.["editSeq"] as number) : undefined,
-            contentFingerprint: typeof docs[i]?.["contentFingerprint"] === "string" ? (docs[i]?.["contentFingerprint"] as string) : undefined,
-          })),
+          list.map((p, i) => {
+            const doc = docs[i];
+            const inner = (doc?.["project"] ?? {}) as Record<string, unknown>;
+            const shots = Array.isArray(inner["shots"]) ? (inner["shots"] as WorldShotBrief[]) : undefined;
+            return {
+              id: p.id,
+              name: p.name,
+              updatedAt: p.updated_at,
+              editSeq: typeof doc?.["editSeq"] === "number" ? (doc?.["editSeq"] as number) : undefined,
+              contentFingerprint: typeof doc?.["contentFingerprint"] === "string" ? (doc?.["contentFingerprint"] as string) : undefined,
+              shots,
+            };
+          }),
         );
       })
       .catch(() => {
