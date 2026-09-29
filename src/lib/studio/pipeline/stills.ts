@@ -13,7 +13,7 @@ import { photoQcEyesFromEnv, pinQcAccepted, runPhotoQc, type QcRequire } from ".
 import { buildQcSheet, buildQcSheetHtml, readQcReceipt } from "../qc-sheet";
 import { ingestStill, queryRefs } from "../memory";
 import { appendViolation, checkBoardsToKeyframe, checkKeyframeToStills, hardPhotoQcRow } from "../trace";
-import { chunkMomentSheets, keyframeSheetPrompt, liveBoardLane, momentsForShot } from "../asset-board";
+import { chunkMomentSheets, keyframeSheetPrompt, liveBoardLane, momentHoldsProp, momentsForShot } from "../asset-board";
 import { diffPropPlates, propAssetId } from "../prop-plate-index";
 import { runBoards } from "../seat-boards";
 import { chatJson, SchemaMismatchError } from "../crew-llm";
