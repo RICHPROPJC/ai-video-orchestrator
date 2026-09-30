@@ -1189,6 +1189,10 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         camera: shot.camera,
         size: shot.size,
         motion: selDep ? { bvh: selDep.bvh, bake: selDep.bake } : null,
+        // 統籌裁決 0930（y8kh-sh03-figure-ruling）：lookAtId 係 bake 實質依賴
+        // （--look-target argv 決定相機框邊件）——唔入指紋＝改咗 aim 都唔會過
+        // 期重 render（SH03 實證：望罐令 figure 漂離 mark 窗）。
+        lookAtId: worldPlan?.shots.find((s) => s.id === shot.id)?.lookAtId ?? null,
       }))
       .digest("hex")
       .slice(0, 12);
