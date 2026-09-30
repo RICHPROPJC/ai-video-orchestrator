@@ -46,9 +46,14 @@ export async function renderBoards(opts: BoardsVisualOptions) {
       // refs＝灰模板第 i 格裁切（對位）＋原有外觀 refs；輸出同出板格一樣大嘅
       // 單格圖；新圖寫返同一塊板第 i 格矩形（其他格像素留低）；重 QC 嗰格。
       // 唔砌 repair tile 板、唔成板 reroll、唔 seed bump。
-      const base = attempts[0]!.board;
+      // ③（ruling y8kh-cell-redo-accept）：round 0 版式拒切時 attempts[0].board
+      // 係空字串——攞第一塊真板；冇真板＝具名 throw 唔貼。
+      const base = attempts.find((a) => a.board)?.board ?? "";
+      if (!base) throw new Error("boards: round 1 單格重做冇真板可貼（round 0 全部版式拒切，board 空）——唔入 composite");
       const greyBoardSrc = opts.images[0]!;
-      const outerRefs = opts.images.slice(1, MAX_IMAGES - 1);
+      // ①（ruling）：外觀 refs 留滿 MAX_IMAGES-1（greyCrop 佔 1 位）；多餘先
+      // 寫 droppedRefs——舊 slice(1, MAX_IMAGES-1) 淨留 3 張，第五張靜靜掉。
+      const outerRefs = opts.images.slice(1, 1 + (MAX_IMAGES - 1));
       const outerDropped = opts.images.length > MAX_IMAGES ? opts.images.slice(MAX_IMAGES).map((f) => path.basename(f)) : [];
       const cols = 4; // KEYFRAME_SPAWN=16 4×4（與 ensureKeyframeSheet 版式同源）
       const rows = Math.ceil(opts.moments.length / cols);
@@ -58,7 +63,8 @@ export async function renderBoards(opts: BoardsVisualOptions) {
       const greyMeta = await sharp(greyBoardSrc).metadata();
       const gcw = Math.floor((greyMeta.width ?? 2048) / cols);
       const gch = Math.floor((greyMeta.height ?? 2048) / rows);
-      const redoAttempt: typeof attempts[number] = { board: base, sha256: digest(base), inputs: [greyBoardSrc, ...outerRefs], prompt: "single-cell redo (per-cell prompt in cell receipts)", ...(outerDropped.length ? { droppedRefs: outerDropped } : {}), cells: [] };
+      // ②（ruling）：sha256 貼完十六格先 digest（建 attempt 時留空，迴圈後寫返）
+      const redoAttempt: typeof attempts[number] = { board: base, sha256: "", inputs: [greyBoardSrc, ...outerRefs], prompt: "single-cell redo (per-cell prompt in cell receipts)", ...(outerDropped.length ? { droppedRefs: outerDropped } : {}), cells: [] };
       attempts.push(redoAttempt);
       for (const [j, m] of opts.moments.entries()) {
         if (!pending.some((p) => p.file === m.file)) continue; // 淨本輪 FAIL 格
@@ -86,6 +92,7 @@ export async function renderBoards(opts: BoardsVisualOptions) {
         }
         write("pending");
       }
+      redoAttempt.sha256 = digest(base); // ②：貼完全部格先 digest 寫返收據
       pending = failed;
       continue;
     }
