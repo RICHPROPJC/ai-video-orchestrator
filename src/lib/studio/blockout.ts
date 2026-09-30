@@ -110,6 +110,52 @@ export async function extractFrame0(mp4: string, png: string, frame = 1): Promis
   if (!fs.existsSync(png)) throw new Error(`extractFrame0: ${path.basename(mp4)} 抽幀 ${want}/${want - 1}n 零輸出——f0 冇寫`);
 }
 
+/** 統籌 ruling 0930（y8kh-r12-stop-grey-base 實裝令）：灰模唔再以單張 f0 做
+ *  鍵格板 base——每鏡用自己條 blockout mp4 抽 16 幀（序號 round(i*(nb-1)/15)，
+ *  i=0..15，含首尾幀）砌同格式 4×4 灰模 ref 板做 /edit images[0]，出板第 i
+ *  格對第 i 格灰模。唔夠 16 個互異幀（SH05 11 幀實證）＝named gap：唔複製幀
+ *  填滿、唔交板——caller blocked 呢鏡。 */
+export async function greyKfRefBoard(
+  mp4: string,
+  outPng: string,
+  spawn = 16,
+): Promise<{ ok: true; file: string; frames: number; idx: number[] } | { ok: false; reason: string }> {
+  fs.mkdirSync(path.dirname(outPng), { recursive: true });
+  if (fs.existsSync(outPng)) {
+    // 幂等重用：板在場＋來源 mp4 冇新過佢就照用（唔重抽）
+    if (fs.statSync(mp4).mtimeMs <= fs.statSync(outPng).mtimeMs) {
+      return { ok: true, file: outPng, frames: -1, idx: [] };
+    }
+  }
+  const pr = await runCommand("ffprobe", ["-v", "error", "-select_streams", "v:0", "-count_frames", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", mp4]);
+  if (pr.code !== 0) return { ok: false, reason: `ffprobe fail: ${(pr.stderr || "").slice(0, 120)}` };
+  const nb = Number((pr.stdout ?? "").trim());
+  if (!Number.isFinite(nb) || nb <= 0) return { ok: false, reason: `nb_read_frames=${nb}` };
+  const idx = Array.from({ length: spawn }, (_, i) => Math.round((i * (nb - 1)) / (spawn - 1)));
+  if (new Set(idx).size !== spawn) return { ok: false, reason: `mp4 淨 ${nb} 幀，${spawn} 抽樣序號互撞（${idx.join(",")}）——唔複製幀填滿` };
+  const tmp = fs.mkdtempSync(path.join("/tmp", "greykf-"));
+  try {
+    const frames: string[] = [];
+    for (const [k, n] of idx.entries()) {
+      const f = path.join(tmp, `f${String(k).padStart(2, "0")}.png`);
+      const r = await runCommand("ffmpeg", ["-y", "-v", "error", "-i", mp4, "-vf", `select='eq(n,${n})'`, "-frames:v", "1", f]);
+      if (r.code !== 0 || !fs.existsSync(f)) return { ok: false, reason: `抽幀 ${n}n 零輸出（exit ${r.code}）` };
+      frames.push(f);
+    }
+    const cell = 512;
+    const cols = 4;
+    const rows = Math.ceil(spawn / cols);
+    const bufs = await Promise.all(frames.map((f) => sharp(f).resize(cell, cell, { fit: "cover" }).png().toBuffer()));
+    await sharp({ create: { width: cell * cols, height: cell * rows, channels: 3, background: { r: 255, g: 255, b: 255 } } })
+      .composite(bufs.map((input, i) => ({ input, left: (i % cols) * cell, top: Math.floor(i / cols) * cell })))
+      .png()
+      .toFile(outPng);
+    return { ok: true, file: outPng, frames: nb, idx };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 /** every mark's crop box must show a figure: real renders span ≥106 luma
  *  (figure 170 vs bg 64 / floor 207); the empty-floor regression fixture's
  *  worst crop spans 57 (STUDIO gradient + mark disc), so 70 separates both. */

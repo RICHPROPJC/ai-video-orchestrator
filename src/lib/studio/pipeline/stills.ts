@@ -13,7 +13,8 @@ import { photoQcEyesFromEnv, pinQcAccepted, runPhotoQc, type QcRequire } from ".
 import { buildQcSheet, buildQcSheetHtml, readQcReceipt } from "../qc-sheet";
 import { ingestStill, queryRefs } from "../memory";
 import { appendViolation, checkBoardsToKeyframe, checkKeyframeToStills, hardPhotoQcRow } from "../trace";
-import { chunkMomentSheets, keyframeSheetPrompt, liveBoardLane, momentHoldsProp, momentsForShot } from "../asset-board";
+import { KEYFRAME_SPAWN, fullFrameMoments, keyframeSheetPrompt, liveBoardLane, momentHoldsProp, momentsForShot } from "../asset-board";
+import { greyKfRefBoard } from "../blockout";
 import { diffPropPlates, propAssetId } from "../prop-plate-index";
 import { runBoards } from "../seat-boards";
 import { chatJson, SchemaMismatchError } from "../crew-llm";
@@ -445,9 +446,14 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
   // (The old "2+ pre-written marks" gate left fresh callsheets with no cells,
   // which the per-shot loop below rejects as 鍵格板未切出.)
   const keyframePlans = hopStillPlans.filter((p) => needsFreshSheet(p.shot.id));
-  const sheets = chunkMomentSheets(
-    keyframePlans.map((p) => momentsForShot(p.shot, ctx.stillDir!)),
-  );
+  // 統籌 ruling 0930（y8kh-r12-stop-grey-base）：KF 板鎖 16 格 4×4 一鏡一板
+  // ——第 i 格文字＝該鏡 action 第 i 個 beat（beats 唔夠 16 尾格退全句），
+  // 對位灰模板第 i 幀（greyKfRefBoard 同序抽樣）。舊 beats 數格（SH01 出
+  // 2×7 十四格）＋單張 f0 做 base 呢條路已證出 placeholder 垃圾（0/14）。
+  const sheets = keyframePlans.map((p) => {
+    const beats = momentsForShot(p.shot, ctx.stillDir!).map((m) => m.beat ?? "");
+    return fullFrameMoments(p.shot, KEYFRAME_SPAWN, ctx.stillDir!, beats);
+  });
   for (const [si, moments] of sheets.entries()) {
     const identity = [...new Set([...new Set(moments.map((m) => m.shotId))].flatMap((id) => {
       const shot = hopStillPlans.find((p) => p.shot.id === id)!.shot;
@@ -492,18 +498,6 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       } catch { /* 壞 manifest＝淨 plate 照舊 */ }
     }
     const leadId = moments[0]!.shotId;
-    // 單格板改餵單張正面肖像：4 格角度板做 ref 會令 U1.5 抄埋版式（board_layout
-    // asked 1 columns picture has 4 實證）；多格板先需要角度板。
-    if (moments.length === 1) {
-      const oneShot = hopStillPlans.find((p) => p.shot.id === leadId)!.shot;
-      for (const cid of new Set(oneShot.marks.map((m) => m.characterId))) {
-        const single = ctx.portraits!.files[cid];
-        if (single && fs.existsSync(single)) {
-          const at = identity.findIndex((f) => f.includes(`${cid}.angles`));
-          if (at >= 0) identity[at] = single;
-        }
-      }
-    }
     // 官方樣本⑥身份鎖遞進：非首鏡有上一鏡 GREEN 劇照就以佢做 Image-1 畫面基礎
     // （同一人同一場同一道具由佢續接），道具外形漂移嘅最後一道鎖。
     const leadIdx = hopStillPlans.findIndex((p) => p.shot.id === leadId);
@@ -515,8 +509,24 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     // 0917 法（C4 #41）：U1.5 still 三參考位，Image-1＝Blender 企位圖——灰模
     // f0 管人物位置/構圖/鏡位，外觀永遠唔參考（灰模永遠唔做出品外觀位）。
     // 冇 blockout 嘅鏡（motion gap 行 KF 驅動／零 cast 現象鏡）冇 f0，照舊。
-    const leadF0 = path.join(ctx.blockoutDir!, `${leadId}.f0.png`);
-    const greyLayout = fs.existsSync(leadF0) ? [leadF0] : [];
+    // 統籌 ruling 0930（y8kh-r12-stop-grey-base 實裝）：Image-1 唔再係單張
+    // f0——每鏡自己條 blockout mp4 抽 16 幀（含首尾）砌 4×4 灰模 ref 板，
+    // 出板第 i 格對第 i 格灰模幀。唔夠 16 個互異幀＝named gap：呢鏡 blocked
+    // skip，唔複製幀填滿、唔交板（SH05 11 幀實證會撞序號）。
+    const leadMp4 = path.join(ctx.blockoutDir!, `${leadId}.mp4`);
+    const greyBoardFile = path.join(ctx.stillDir!, "boards", `greyref-${leadId}.png`);
+    let greyLayout: string[] = [];
+    if (fs.existsSync(leadMp4)) {
+      const gb = await greyKfRefBoard(leadMp4, greyBoardFile);
+      if (gb.ok) {
+        greyLayout = [greyBoardFile];
+      } else {
+        emit(jobId, { agent: "stills", level: "warn",
+          message: `${leadId} 灰模 KF ref 板 named gap：${gb.reason}——呢鏡 blocked，繼續其他板`,
+          data: { stage: "sheet-refs", blocked: "grey-kf-ref-gap", shot: leadId } });
+        continue;
+      }
+    }
     // Pi WSY6-R22F-POSTMORTEM-KNIVES-0930 refcap_preruling ③：refs≤5 係
     // U1.5 pinned（§C4-42 永唔改）——組裝照優先級截 5：灰模（位置）＞上一鏡
     // GREEN（續接）＞身份（同源鎖）＞道具 plate（外形）＞道具 cut（附加實驗）。
@@ -556,7 +566,7 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
       if (rq.tool) leadRequireTool = { name: rq.tool, shapes: rq.tool_shape ?? [] };
     } catch { /* 冇 require 檔＝冇 tool 句 */ }
     const refNote = [
-      ...(keptGrey.length ? ["灰模企位圖＝人物位置、構圖、鏡位照佢；外觀（人樣/衫/道具look）永遠唔參考佢"] : []),
+      ...(keptGrey.length ? ["Image-1 灰模 16 格對位板＝第 i 格嘅企位/走位/構圖/鏡位照佢第 i 格灰模幀（格對格）；外觀（人樣/衫/道具look）永遠唔參考佢"] : []),
       ...(keptPrev.length ? ["上一鏡劇照（同場同一人同一道具嗰張）＝畫面續接基礎"] : []),
       ...(keptIdentity.length ? ["角色肖像／角度板＝同一人，跨格一致"] : []),
       ...(keptProp.length ? [
