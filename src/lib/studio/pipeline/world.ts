@@ -1344,7 +1344,10 @@ export async function worldStage(ctx: Ctx): Promise<void> {
       }
     }
     const f0png = path.join(blockoutDir, `${shot.id}.f0.png`);
-    await extractFrame0(outMp4, f0png, stillFrameFor(shot, frames));
+    // 幀鐘同源（Y8KH SH05 實證）：frames＝H3 生成窗 grid（≤1s 全 56f），mp4
+    // 係 -r 24 牆時長——animated 鏡 stillFrameFor(grid) 抽 40% 位 n=22 越界
+    // （mp4 0.4s 淨 11f）。動作位語意要跟 mp4 真幀鐘（牆時長×24）。
+    await extractFrame0(outMp4, f0png, stillFrameFor(shot, Math.max(1, Math.round(shot.durationSec * 24))));
     await assertFiguresVisible(f0png, shot);
     await writeAnchors(outMp4, path.join(blockoutDir, `${shot.id}.anchors.json`));
     blockouts.push(outMp4);

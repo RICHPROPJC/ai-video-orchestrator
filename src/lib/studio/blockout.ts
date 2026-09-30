@@ -95,7 +95,19 @@ export function stillFrameFor(shot: Shot, frames: number): number {
 
 export async function extractFrame0(mp4: string, png: string, frame = 1): Promise<void> {
   fs.mkdirSync(path.dirname(png), { recursive: true });
-  await ffmpeg(["-i", mp4, "-vf", `select='eq(n,${frame - 1})'`, "-frames:v", "1", png]);
+  // 幀鐘夾唔埋防禦（Y8KH SH05 實證）：caller 傳 H3 生成窗 grid（≤1s 全
+  // snap 56f）但 mp4 係 -r 24 牆時長（0.4s→11f）——select 抽 n=22 越界＝
+  // 零輸出 exit 0，f0 靜靜缺，下游 sharp「Input file is missing」。probe
+  // 實際幀數 clamp 到最尾幀：抽取永遠落在檔內（動作位語意由 caller 鐘
+  // 決定，呢度只保證唔越界）。
+  let want = frame;
+  const pr = await runCommand("ffprobe", ["-v", "error", "-select_streams", "v:0", "-count_frames", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", mp4]);
+  if (pr.code === 0) {
+    const nb = Number((pr.stdout ?? "").trim());
+    if (Number.isFinite(nb) && nb > 0) want = Math.min(frame, nb);
+  }
+  await ffmpeg(["-i", mp4, "-vf", `select='eq(n,${want - 1})'`, "-frames:v", "1", png]);
+  if (!fs.existsSync(png)) throw new Error(`extractFrame0: ${path.basename(mp4)} 抽幀 ${want}/${want - 1}n 零輸出——f0 冇寫`);
 }
 
 /** every mark's crop box must show a figure: real renders span ≥106 luma
