@@ -954,7 +954,17 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         size: s.size,
         location: s.location,
         heldPropId: s.props?.find((p) => p.heldBy)?.name,
-        castId: s.marks.find((m) => m.characterId)?.characterId,
+        // 統籌裁決 0930（y8kh-r10-aim-narrow）：castId 只喺 mark 窗包住畫面
+        // 中心（|x-50|<=8 且 |y-50|<=20）先傳——bake 框 lookAt bbox 中心＝
+        // figure 落畫面中央，mark 窗喺中央（SH03 50,58）先同源框 cast。
+        // 偏側 mark（SH01/02 x=30）靠現行 lookAt 構圖 figure 落窗，改框 A
+        // 會令佢出窗撞閘——唔傳，lookAtId 維持 held ?? scene，r9 stamp 繼續
+        // 夾唔重 render。零 cast 鏡照舊。
+        castId: (() => {
+          const m = s.marks.find((mk) => mk.characterId);
+          if (!m) return undefined;
+          return Math.abs(m.start.x - 50) <= 8 && Math.abs(m.start.y - 50) <= 20 ? m.characterId : undefined;
+        })(),
         // 世界暫停前後動作入 worldJson（bake 輸入檔；bake 讀取待 COS patch）
         ...(s.envAnim?.length ? { envAnim: s.envAnim } : {}),
       })),
