@@ -257,13 +257,22 @@ export function wardrobeSwapBoardPrompt(character: Character, wardrobe: string):
 }
 
 /** ③ 道具板 — one board, N props, each cell one prop centred (batch asset entry). */
+/** 統籌裁決 0930（Y8KH 電單車板實證）：callsheet shape 嘅光效詞（neon 等）
+ *  唔入白底道具板——佢哋係成片鏡/霓虹燈箱格嘅光，寫入板句 U1.5 會畫成
+ *  發光管＋上屏字，公版寫實閘判插畫。形狀詞（sport 等）照舊保留。 */
+const PROP_SHAPE_LIGHT_WORDS = /neon|glow|led|發光|熒光|荧光|luminous|霓虹/i;
+
 export function propBoardPrompt(props: ShotProp[]): string {
   const cells = props
-    .map((p, i) => `${gridCellLabel(i, props.length)}${p.name}（${p.shape.join("、")}），一件完整居中擺放`)
+    .map((p, i) => {
+      const shape = p.shape.filter((w) => !PROP_SHAPE_LIGHT_WORDS.test(w));
+      return `${gridCellLabel(i, props.length)}${p.name}${shape.length ? `（${shape.join("、")}）` : ""}，一件寫實靜物完整居中擺放`;
+    })
     .join("；\n");
   return [
     `生成一張專業道具設定板，${layoutClause(props.length)}`,
     `${props.length}格內容（每格一件道具，居中擺放，純道具靜物）：\n${cells}。`,
+    `道具本身唔發光：冇發光管、冇霓虹燈效、冇上屏文字（燈效屬成片鏡頭同霓虹招牌格，唔屬白底道具板）。`,
     `${FLAT_WHITE_BG}風格：寫實電影級道具設定參考圖。`,
     QUALITY_CLAUSE,
   ].join("");
