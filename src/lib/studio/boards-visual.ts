@@ -4,7 +4,8 @@ import crypto from "node:crypto";
 import sharp from "sharp";
 import { chunkFrameMoments, ensureKeyframeSheet, storyboardBoardPrompt, type BoardLane, type SheetMoment } from "./asset-board";
 import { MAX_IMAGES } from "./u15-edit";
-import type { QcRequire } from "./photo-qc";
+import { EYE_SAMPLING, eyeDescribe, type QcRequire } from "./photo-qc";
+import { loadConfig } from "./config";
 
 export type BoardsVisualOptions = {
   moments: SheetMoment[];
@@ -174,6 +175,33 @@ export async function renderBoards(opts: BoardsVisualOptions) {
       }
       const attempt: typeof attempts[number] = { board: made.board, sha256: digest(made.board), inputs: images, prompt: submittedPrompt, ...(repairDroppedRefs.length ? { droppedRefs: repairDroppedRefs } : {}), cells: [] };
       attempts.push(attempt);
+      // RULING-001 D1b（Pi 統籌 1001）批准：nex 快照層——round0 切格後全格
+      // 並行 :8017 一格一讀（reasoning_effort=none），收據逐格一句＋每格耗時
+      // ＋wall clock＋model id。硬邊界：淨寫快照層，唔寫 photo_qc status、
+      // 唔 copy destination、唔當 GREEN、唔擋下面 Qwen QC loop、唔入任何
+      // U1.5 input（讀輸出唔係餵輸入）。Y8KH 凍結照舊——呢層跟下一次正路
+      // run 先實際行。全 try/catch：快照爛淨寫 error 收據，唔阻主流程。
+      try {
+        const snapCfg = loadConfig();
+        const snapT0 = Date.now();
+        const snapCells = await Promise.all(staged.map(async (s) => {
+          const c0 = Date.now();
+          const sentence = await eyeDescribe(snapCfg.nex.endpoint, snapCfg.nex.model, fs.readFileSync(s.file), EYE_SAMPLING, 400);
+          return { file: path.basename(s.file), sentence: sentence.trim().slice(0, 500), ms: Date.now() - c0 };
+        }));
+        fs.writeFileSync(path.join(attemptDir, `${name}.nex-snapshot.json`), JSON.stringify({
+          tool: "slatecrew.nex_snapshot", ts: new Date().toISOString(),
+          model: snapCfg.nex.model, parallel: staged.length,
+          wallClockMs: Date.now() - snapT0, cells: snapCells,
+        }, null, 2));
+      } catch (error) {
+        try {
+          fs.writeFileSync(path.join(attemptDir, `${name}.nex-snapshot.error.json`), JSON.stringify({
+            tool: "slatecrew.nex_snapshot", ts: new Date().toISOString(),
+            error: error instanceof Error ? error.message : String(error),
+          }, null, 2));
+        } catch { /* 收據都寫唔到就淨係唔出快照——主流程照行 */ }
+      }
       for (const [j, m] of group.entries()) {
         const file = staged[j]!.file;
         const qc = file.replace(/\.png$/, ".photo_qc.json");
