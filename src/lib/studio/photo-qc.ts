@@ -955,8 +955,26 @@ async function runPhotoQcLive(
   }
 
   let second: SecondEyeRecord | undefined;
+  // 統籌 ruling 0930（y8kh-burn3-second-400）：第二眼 blindDescribe 食上游
+  // HTTP 400（glm-5.3-flash 內容安全過濾）唔再殺隊——throw 收喺呢一格：
+  // second 收據寫 summary.parse_error＝錯誤原文（endpoint／model 照
+  // secondCfg），公版判官 verdict 照常落盤（FAIL 維持、fail_reasons 唔刪）；
+  // 破第二眼＋判官 GREEN 降 PASS_UNCONFIRMED（同一眼唔准最終 GREEN）。唔改
+  // runSecondEye 本體（video-qc 同一 catch 語義保形）；眼／判官自己 throw
+  // 仍走外層 ERROR 收據＋rethrow。
+  let secondBroken = false;
   if (secondCfg) {
-    second = await runSecondEye(secondCfg.endpoint, secondCfg.model, pngFile);
+    try {
+      second = await runSecondEye(secondCfg.endpoint, secondCfg.model, pngFile);
+    } catch (error) {
+      secondBroken = true;
+      second = {
+        endpoint: secondCfg.endpoint,
+        model: secondCfg.model,
+        blind: "",
+        summary: { parse_error: error instanceof Error ? error.message : String(error), raw: "" },
+      };
+    }
     const se = judgeSecondEye(require, second);
     if (!se.ok && se.reason) {
       verdict = {
@@ -1010,8 +1028,9 @@ async function runPhotoQcLive(
   }
   // T35 item 5: one eye alone never issues a final pass. Un-armed second eye
   // downgrades GREEN to PASS_UNCONFIRMED; pin/delivery keeps demanding GREEN.
+  // ruling 0930 同款：破第二眼（parse_error）一樣唔准最終 GREEN。
   let status: PhotoQcStatus = verdict.status;
-  if (status === "GREEN" && !secondCfg) status = "PASS_UNCONFIRMED";
+  if (status === "GREEN" && (!secondCfg || secondBroken)) status = "PASS_UNCONFIRMED";
   // T35b §2: a surviving warn is never silent — it becomes the status itself.
   if (status !== "FAIL" && warns.length > 0) status = "PASS_WITH_WARN";
   const record: PhotoQcRecord = {
