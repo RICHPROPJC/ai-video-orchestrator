@@ -47,6 +47,10 @@ export type ProduceInput = {
   /** MULTISHOT_WIRE: skip the motion-select step (no decider call, no mocap
    *  bake — the workbench grey blockouts stand). */
   noMotionSelect?: boolean;
+  /** 統籌 ruling 0930（y8kh 代表鏡閘）：有值＝鍵格板迴圈只交呢一鏡嘅 16 格
+   *  灰模 /edit，交完（或 named gap）由 stills 段返回——唔入後面單張 still、
+   *  唔入下一鏡。job 欄（唔寫死鏡號入 src）。 */
+  sheetProbeShot?: string;
   /** CHAU-DIRECT-WORLD-INTEGRATION（0930）：顯式採用 World Studio 執行線
    *  （--world-studio）。true＝worldStage producer 自建/重用 `crew:<jobId>`
    *  project＋typed commands 鋪世界→shotMap→blockout 分流行 World task 鏈。

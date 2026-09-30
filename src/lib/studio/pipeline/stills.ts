@@ -445,7 +445,13 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
   // clauses into per-beat cells, so a mark-less shot still gets its board.
   // (The old "2+ pre-written marks" gate left fresh callsheets with no cells,
   // which the per-shot loop below rejects as 鍵格板未切出.)
-  const keyframePlans = hopStillPlans.filter((p) => needsFreshSheet(p.shot.id));
+  // 統籌 ruling 0930（y8kh 代表鏡閘）：sheetProbeShot 有值＝代表鏡探板模式
+  // ——只交呢一鏡嘅 16 格灰模 /edit（強制，唔行 needsFreshSheet），交完由
+  // stills 段返回。job 欄，唔寫死鏡號。
+  const probeShot = input.sheetProbeShot?.trim() ?? "";
+  const keyframePlans = probeShot
+    ? hopStillPlans.filter((p) => p.shot.id === probeShot)
+    : hopStillPlans.filter((p) => needsFreshSheet(p.shot.id));
   // 統籌 ruling 0930（y8kh-r12-stop-grey-base）：KF 板鎖 16 格 4×4 一鏡一板
   // ——第 i 格文字＝該鏡 action 第 i 個 beat（beats 唔夠 16 尾格退全句），
   // 對位灰模板第 i 幀（greyKfRefBoard 同序抽樣）。舊 beats 數格（SH01 出
@@ -515,8 +521,16 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     // skip，唔複製幀填滿、唔交板（SH05 11 幀實證會撞序號）。
     const leadMp4 = path.join(ctx.blockoutDir!, `${leadId}.mp4`);
     const greyBoardFile = path.join(ctx.stillDir!, "boards", `greyref-${leadId}.png`);
+    // 統籌 ruling 0930（第二令漏網①）：冇 blockout mp4＝named gap 唔交板
+    // 唔入 /edit（灰模清單空照行 /edit 嘅舊路退役）。
+    if (!fs.existsSync(leadMp4)) {
+      emit(jobId, { agent: "stills", level: "warn",
+        message: `${leadId} 灰模 KF ref 板 named gap：冇 blockout mp4——呢鏡唔交板，繼續其他板`,
+        data: { stage: "sheet-refs", blocked: "grey-kf-ref-gap", shot: leadId, missing: leadMp4 } });
+      continue;
+    }
     let greyLayout: string[] = [];
-    if (fs.existsSync(leadMp4)) {
+    {
       const gb = await greyKfRefBoard(leadMp4, greyBoardFile);
       if (gb.ok) {
         greyLayout = [greyBoardFile];
@@ -660,6 +674,14 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
         .join(", ");
     }
     await speak("stills", `鍵格板 ${si + 1}：一次出 ${moments.length} 格再切。`);
+  }
+
+  // 統籌 ruling 0930（y8kh 代表鏡閘）：sheetProbeShot 生效＝探板模式——淨交
+  // 嗰鏡 16 格灰模 /edit（上面 loop 已交或 named gap），呢度由 stills 段即
+  // 返回：唔入後面單張 still（f0 base 段）、唔入下一鏡。驗收由人睇板。
+  if (probeShot) {
+    await speak("stills", `sheetProbeShot=${probeShot}：代表鏡板已交（或 named gap）——stills 段即停，唔入單張 still / 下一鏡。`);
+    return;
   }
 
   // R21 裁決①（0929）：role-aware 道具 refs（per-shot plate＋GREEN cut）——
