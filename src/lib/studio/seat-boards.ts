@@ -13,8 +13,8 @@ import type { CallSheet } from "./types";
 import type { SeatIo } from "./seat-writer";
 
 /** §23 watch-場窗：本場相關 placements 計一次，packet 與 validator 同用（純
- *  helper；idx 仍為全片來源 idx 保跨場聲橋；±1s 政策不變——最終 cut-clock
- *  對齊留既定驗收）。 */
+ *  helper；idx 仍為全片來源 idx 保跨場聲橋；相關＝區間真重疊——統籌裁決
+ *  0930 撤 ±1 秒墊，碰邊唔算下一場；最終 cut-clock 對齊留既定驗收）。 */
 function sceneRelevantPlacements(
   all: { word: string; startSec?: number; endSec?: number }[] | undefined,
   outline: { id: string; targetSec: number }[],

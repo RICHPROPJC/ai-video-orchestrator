@@ -158,6 +158,26 @@ async function authorCallSheet(
         throw new Error(`sound_repair_budget_exhausted_and_drifted: 修訂額度耗盡＋creative 檔同 manifest sha 唔夾（${driftedEx.map((d) => d.file).join("、")}）——採用內容被改過，callsheet 唔可以當已驗有效照食；要人手對齊或明示採用版本更新`);
       }
       const sheet = loadCallSheet(existing);
+      // 統籌裁決 0930（y8kh-r7-do-not-resume-yet）：照食路唔行 expandBoards——
+      // 碟上 adoptionIssues 可以係舊 ±1 秒墊年代鄰居場嘅「呢句唔喺我場」句。
+      // 同 boards-expand 同款鄰居過濾：issue 句包含已有場採用嘅 placement word
+      // ＝拒絕重複採用，唔係缺口——剔走寫回 callsheet 先 return，唔重開創作。
+      {
+        const adoptedWords = (sheet.onImageAdoptions ?? []).map((a) => a.placement).filter(Boolean);
+        const before = sheet.adoptionIssues?.length ?? 0;
+        if (adoptedWords.length && before) {
+          const kept = sheet.adoptionIssues!.filter((issue) => !adoptedWords.some((w) => issue.includes(w)));
+          if (kept.length !== before) {
+            if (kept.length) sheet.adoptionIssues = kept;
+            else delete sheet.adoptionIssues;
+            sheet.provenance = { ...sheet.provenance!, sha256: sheetDigest(sheet) };
+            fs.writeFileSync(existing, JSON.stringify(sheet, null, 2));
+            emit(jobId, { agent: "producer", level: "warn",
+              message: `照食前鄰居 issue 過濾：callsheet adoptionIssues ${before}→${kept.length} 條（已採用 word 嘅同句 issue 剔走，寫回碟）`,
+              data: { stage: "adoption-issues-settle", before, after: kept.length } });
+          }
+        }
+      }
       await io.speak("producer", `修訂額度耗盡＋${placementGaps.length} 條 gap——照食既有 callsheet（${sheet.shots.length} 鏡，採用版本已驗有效），gaps 留底收尾 blocked 判斷，唔重開創作。`, "warn");
       return sheet;
     }
