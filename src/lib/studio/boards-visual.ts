@@ -84,11 +84,17 @@ export async function renderBoards(opts: BoardsVisualOptions) {
         // （場所＋景別＋呢個時刻動作，同 QC require 同源）；img_cfg/steps/
         // QC require／第二眼 catch 唔郁。
         const cellRq = opts.require?.[m.file] ?? opts.require?.[m.shotId] ?? {};
+        // 統籌覆核 0930：m.text 係 action 分號切出嘅一片（cell-1「高角固定俯
+        // 瞰斑馬線：人潮由畫左向畫右湧過馬路」、cell-3「人縫之間」）——只加場
+        // 所景別前綴，格 3 依然係「呢一刻：人縫之間」一片，唔係呢格要見到嘅
+        // 畫面。正形：畫面正文用 require.action 成句（QC 判官逐項判嘅就係佢
+        // ——prompt 畫面同 QC 驗收同源），m.text 淨做呢格時刻定位；action
+        // 缺席先 fallback 一片。
         const cellScene = [
           cellRq.location ? `場所：${cellRq.location}` : "",
           cellRq.size ? `景別：${cellRq.size}` : "",
-          `呢一刻：${m.text}`,
-        ].filter(Boolean).join("；");
+          `呢一格畫面（時刻：${m.text}）：${cellRq.action ?? m.text}`,
+        ].filter(Boolean).join("。").replace(/。+$/, "");
         const cellPrompt = storyboardBoardPrompt({ cells: [cellScene], style: opts.style ?? "寫實電影感、画面清晰銳利", cleanCuts: true })
           + `單格重做：呢張圖只畫呢一格（第 ${j + 1} 格嘅時刻），成張圖就係呢一個畫面，冇格線、冇編號、冇拼接。Image-1 係灰模板第 ${j + 1} 格嘅裁切＝呢格嘅企位/走位/構圖/鏡位照佢，外觀（人樣/衫/道具look）永遠唔參考佢；其後嘅參考圖先係角色同道具外形。`;
         // 燒二實證（a5b69434 cell-5）：單格 edit 偶發出 2 直行版式→ensureKeyframeSheet
