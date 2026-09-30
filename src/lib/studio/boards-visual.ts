@@ -73,8 +73,24 @@ export async function renderBoards(opts: BoardsVisualOptions) {
         const greyCrop = path.join(attemptDir, `${opts.name}-r1-cell-${j + 1}.greyref.png`);
         await sharp(greyBoardSrc).extract({ left: col * gcw, top: row * gch, width: gcw, height: gch }).toFile(greyCrop);
         const cellFile = path.join(attemptDir, `${opts.name}-r1-cell-${j + 1}.png`);
-        const cellPrompt = storyboardBoardPrompt({ cells: [m.text], style: opts.style ?? "寫實電影感、画面清晰銳利" })
-          + `單格重做：只畫呢一格（第 ${j + 1} 格嘅時刻）。Image-1 係灰模板第 ${j + 1} 格嘅裁切＝呢格嘅企位/走位/構圖/鏡位照佢，外觀（人樣/衫/道具look）永遠唔參考佢；其後外觀參考圖照 caller refNote 角色序。${opts.refNote ?? ""}`;
+        // 統籌 ruling 0930（y8kh-stop-r1-prompt）：舊 cellPrompt 三死位——
+        // ①一格走 numberedLayoutClause(1) 出「2列×1行＋左上角01」（燒四 cell-5
+        // 出兩直欄同呢句對上）②正文淨係分號切出一片（「人縫之間」）但 QC
+        // require.action 係成句——模型冇被叫去畫成句③尾再貼成板 refNote
+        // （「16 格對位板」——r1 Image-1 其實係一格裁切，句錯配）。新形態：
+        // cleanCuts（layoutClause(1)＝1列×1行、冇 01 冇「文字數字」句）；
+        // Image-1 淨講呢張裁切＝企位/走位/構圖、外觀唔跟佢，後面參考圖先係
+        // 角色道具外形（唔再貼 opts.refNote）；格正文寫呢格要見到嘅畫面
+        // （場所＋景別＋呢個時刻動作，同 QC require 同源）；img_cfg/steps/
+        // QC require／第二眼 catch 唔郁。
+        const cellRq = opts.require?.[m.file] ?? opts.require?.[m.shotId] ?? {};
+        const cellScene = [
+          cellRq.location ? `場所：${cellRq.location}` : "",
+          cellRq.size ? `景別：${cellRq.size}` : "",
+          `呢一刻：${m.text}`,
+        ].filter(Boolean).join("；");
+        const cellPrompt = storyboardBoardPrompt({ cells: [cellScene], style: opts.style ?? "寫實電影感、画面清晰銳利", cleanCuts: true })
+          + `單格重做：呢張圖只畫呢一格（第 ${j + 1} 格嘅時刻），成張圖就係呢一個畫面，冇格線、冇編號、冇拼接。Image-1 係灰模板第 ${j + 1} 格嘅裁切＝呢格嘅企位/走位/構圖/鏡位照佢，外觀（人樣/衫/道具look）永遠唔參考佢；其後嘅參考圖先係角色同道具外形。`;
         // 燒二實證（a5b69434 cell-5）：單格 edit 偶發出 2 直行版式→ensureKeyframeSheet
         // 版式拒切 throw 殺 job（round1 段漏 catch——round0 有）。修：拒切＝呢格
         // keep FAIL 收據（RETRY_LAYOUT）續行其他格，唔重試唔殺隊（round 上限 2
