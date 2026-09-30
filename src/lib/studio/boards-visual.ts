@@ -36,45 +36,66 @@ export async function renderBoards(opts: BoardsVisualOptions) {
   write("pending");
   let pending = opts.moments;
   const rejected = new Map<string, string>();
-  for (let round = 0; round < 3 && pending.length; round++) {
+  // 統籌 ruling 0930（y8kh-stop-r1-repair）：round 上限 2——round 0 成板（mix
+  // FL 幀列表×REF 成板 Image-1）、round 1 單格重做；舊 round1/2 repair tile
+  // 成板 reroll 退役（「成板重出同成板 blocked 都唔係呢條路」）。
+  for (let round = 0; round < 2 && pending.length; round++) {
     const failed: SheetMoment[] = [];
-    const batchSize = round === 0 ? 16 : pending.length <= 4 ? 4 : pending.length <= 8 ? 8 : 16;
-    for (const [i, group] of chunkFrameMoments(pending, batchSize).entries()) {
+    if (round > 0) {
+      // ===== round 1＝單格重做（ruling 規格）：QC FAIL 格逐個重出 =====
+      // refs＝灰模板第 i 格裁切（對位）＋原有外觀 refs；輸出同出板格一樣大嘅
+      // 單格圖；新圖寫返同一塊板第 i 格矩形（其他格像素留低）；重 QC 嗰格。
+      // 唔砌 repair tile 板、唔成板 reroll、唔 seed bump。
+      const base = attempts[0]!.board;
+      const greyBoardSrc = opts.images[0]!;
+      const outerRefs = opts.images.slice(1, MAX_IMAGES - 1);
+      const outerDropped = opts.images.length > MAX_IMAGES ? opts.images.slice(MAX_IMAGES).map((f) => path.basename(f)) : [];
+      const cols = 4; // KEYFRAME_SPAWN=16 4×4（與 ensureKeyframeSheet 版式同源）
+      const rows = Math.ceil(opts.moments.length / cols);
+      const baseMeta = await sharp(base).metadata();
+      const cw = Math.floor((baseMeta.width ?? 4096) / cols);
+      const ch = Math.floor((baseMeta.height ?? 4096) / rows);
+      const greyMeta = await sharp(greyBoardSrc).metadata();
+      const gcw = Math.floor((greyMeta.width ?? 2048) / cols);
+      const gch = Math.floor((greyMeta.height ?? 2048) / rows);
+      const redoAttempt: typeof attempts[number] = { board: base, sha256: digest(base), inputs: [greyBoardSrc, ...outerRefs], prompt: "single-cell redo (per-cell prompt in cell receipts)", ...(outerDropped.length ? { droppedRefs: outerDropped } : {}), cells: [] };
+      attempts.push(redoAttempt);
+      for (const [j, m] of opts.moments.entries()) {
+        if (!pending.some((p) => p.file === m.file)) continue; // 淨本輪 FAIL 格
+        const col = j % cols;
+        const row = Math.floor(j / cols);
+        const greyCrop = path.join(attemptDir, `${opts.name}-r1-cell-${j + 1}.greyref.png`);
+        await sharp(greyBoardSrc).extract({ left: col * gcw, top: row * gch, width: gcw, height: gch }).toFile(greyCrop);
+        const cellFile = path.join(attemptDir, `${opts.name}-r1-cell-${j + 1}.png`);
+        const cellPrompt = storyboardBoardPrompt({ cells: [m.text], style: opts.style ?? "寫實電影感、画面清晰銳利" })
+          + `單格重做：只畫呢一格（第 ${j + 1} 格嘅時刻）。Image-1 係灰模板第 ${j + 1} 格嘅裁切＝呢格嘅企位/走位/構圖/鏡位照佢，外觀（人樣/衫/道具look）永遠唔參考佢；其後外觀參考圖照 caller refNote 角色序。${opts.refNote ?? ""}`;
+        await ensureKeyframeSheet({ ...opts, images: [greyCrop, ...outerRefs], boardsDir: attemptDir, name: `${opts.name}-r1-cell-${j + 1}-sheet`, moments: [{ ...m, file: cellFile }], cellPx: cw, seed: (opts.seed ?? 42) + 100 + j, prompt: cellPrompt });
+        // 新圖寫返主板第 i 格矩形（temp→rename 原子替換；其他格像素留低）
+        const cellPng = await sharp(cellFile).resize(cw, ch).png().toBuffer();
+        await sharp(base).composite([{ input: cellPng, left: col * cw, top: row * ch }]).png().toFile(`${base}.r1tmp.png`);
+        fs.renameSync(`${base}.r1tmp.png`, base);
+        const qc = cellFile.replace(/\.png$/, ".photo_qc.json");
+        const result = await opts.lane.qc(cellFile, qc, opts.require?.[m.file] ?? opts.require?.[m.shotId] ?? {});
+        redoAttempt.cells.push({ shotId: m.shotId, at: m.at, file: cellFile, destination: m.file, sha256: digest(cellFile), qc, status: `R1-CELL ${result.status}` });
+        if (result.status === "GREEN") {
+          fs.mkdirSync(path.dirname(m.file), { recursive: true });
+          fs.copyFileSync(cellFile, m.file);
+        } else {
+          rejected.set(m.file, cellFile);
+          failed.push(m);
+        }
+        write("pending");
+      }
+      pending = failed;
+      continue;
+    }
+    for (const [i, group] of chunkFrameMoments(pending, 16).entries()) {
       const name = `${opts.name}-r${round}-${i + 1}`;
       const staged = group.map((m, j) => ({ ...m, file: path.join(attemptDir, `${name}.cell-${j + 1}.png`) }));
-      let images = opts.images;
-      let repairDroppedRefs: string[] = [];
-      // 單格 repair 唔砌 tile 板：嗰塊 tile 做 Image-1 令 U1.5 抄錯版式
-      // （board_layout asked 1 columns picture has 4 → throw，冇 r2 好試）。
-      // 單格冇好鄰居要保，round>0 直接新 seed 重滾乾淨板。
-      // repair tiles 只用「真係存在於碟且屬本 attempt QC FAIL」嘅 rejected crop；
-      // 冇有效 crop（例如版式拒切 round）＝行乾淨 refs 生成，唔拼 repair 板。
-      const repairable = round > 0 && group.length > 1
-        ? group.filter((m) => {
-            const f = rejected.get(m.file);
-            return Boolean(f && f !== m.file && fs.existsSync(f));
-          })
-        : [];
-      if (repairable.length > 1) {
-        // repair tiles 版式必須同 ensureKeyframeSheet 嘅期望欄數一致（GPT-6 裁決
-        // 根因1）：n<=3 一欄直疊，否則 tile 拼二欄、切格期望一欄＝拒切。
-        const cols = repairable.length === 16 ? 4 : repairable.length <= 3 ? 1 : 2;
-        const repairBoard = path.join(attemptDir, `${name}.repair-input.png`);
-        const tiles = await Promise.all(repairable.map(async (m, j) => ({
-          input: await sharp(rejected.get(m.file)!).resize(512, 512, { fit: "contain", background: "white" }).png().toBuffer(),
-          left: (j % cols) * 512, top: Math.floor(j / cols) * 512,
-        })));
-        await sharp({ create: { width: cols * 512, height: Math.ceil(repairable.length / cols) * 512, channels: 3, background: "white" } })
-          .composite(tiles).png().toFile(repairBoard);
-        // Pi WSY6-R22F-POSTMORTEM-KNIVES-0930 refcap_preruling ③（R22f'' 爆6
-        // 實證：repairBoard 前置＋5 張 refs＝6）：repairBoard 係 Image-1 必要
-        // 位，其餘照 caller 優先序（灰模＞prev＞身份＞plate＞cut——opts.images
-        // 本身已照呢個序組）截 MAX_IMAGES-1；被 drop 記入 attempt 收據
-        // （named-gap，唔靜靜唔見）。
-        const repairRoom = MAX_IMAGES - 1;
-        repairDroppedRefs = opts.images.length > repairRoom ? opts.images.slice(repairRoom).map((f) => path.basename(f)) : [];
-        images = [repairBoard, ...opts.images.slice(0, repairRoom)];
-      }
+      // round 0＝成板（mix：caller images[0] 灰模板做 Image-1）——舊 repair tile
+      // 成板 reroll 段已退役（統籌 ruling 0930：FAIL 格行 round 1 單格重做）。
+      const images = opts.images;
+      const repairDroppedRefs: string[] = [];
       let made: Awaited<ReturnType<typeof ensureKeyframeSheet>>;
       // R22（ROOT 0929）：actual submitted prompt 原文變數化——每 attempt 落收據
       // （stills 外層 QC expectation 消費真提交原文，keyframeSheetPrompt 重建版
@@ -87,9 +108,6 @@ export async function renderBoards(opts: BoardsVisualOptions) {
         cells: group.map((m) => m.text),
         style: opts.style ?? "寫實電影感、画面清晰銳利", cleanCuts: true,
       }) + "格內只畫指定時刻，鏡號同百分比係切格對照資料，留喺收據，畫面保持乾淨。剩餘空位留白，唔開新鏡。"
-        + (images[0]?.endsWith(".repair-input.png")
-          ? "Image-1係抽出再併嘅壞格，依照同一次序修正指定格；其餘參考圖角色照 refNote 真實序（非位置描述）。"
-          : "")
         + opts.refNote;
       try {
         made = await ensureKeyframeSheet({
