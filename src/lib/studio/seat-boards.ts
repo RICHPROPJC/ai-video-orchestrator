@@ -24,9 +24,13 @@ function sceneRelevantPlacements(
   if (i < 0) return [];
   const start = outline.slice(0, i).reduce((a, sc) => a + sc.targetSec, 0);
   const end = start + (outline[i]?.targetSec ?? 0);
+  // 統籌裁決 0930（y8kh-r7-empty-motion-ruling）：相關＝placement 區間同
+  // 該場 outline 區間**真重疊**——去掉 ±1 秒墊（墊把鄰居場拉入「相關」，
+  // 鄰居寫「唔喺我場」→adoptionIssues→world.ts block 全鏡→stills 剔空→
+  // motion 零鏡）。碰邊唔算下一場。
   return (all ?? [])
     .map((p, idx) => ({ word: p.word, idx, startSec: p.startSec, endSec: p.endSec }))
-    .filter((p) => (p.endSec ?? 0) >= start - 1 && (p.startSec ?? 0) <= end + 1);
+    .filter((p) => (p.endSec ?? 0) > start && (p.startSec ?? 0) < end);
 }
 
 

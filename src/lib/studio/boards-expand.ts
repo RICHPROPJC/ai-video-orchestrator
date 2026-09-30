@@ -270,6 +270,13 @@ export function expandBoards(opts: {
         .map((sh) => sh.id);
       const boardIssues = opts.boards.flatMap((b) => b.adoptionIssues ?? []);
       const rows = opts.boards.flatMap((b) => (b.onImageAdoptions ?? []).map((a) => ({ ...a, sceneId: b.sceneId })));
+      // 統籌裁決 0930④：鄰居場「呢句唔喺我場」唔可以 block 全片——句已經有
+      // 場採用咗（rows 有該 word）嘅同句 issue＝拒絕重複採用，唔係缺口，
+      // 唔寫入會觸發 world.ts block 全鏡嘅 adoptionIssues。
+      const adoptedWords = rows.map((r) => r.word).filter(Boolean);
+      const blockIssues = adoptedWords.length
+        ? boardIssues.filter((issue) => !adoptedWords.some((w) => issue.includes(w)))
+        : boardIssues;
       const mapped = rows.map((a) => {
         const per = a.shotIds.map((id) => {
           if (id.startsWith("#")) {
@@ -284,7 +291,7 @@ export function expandBoards(opts: {
       const extraIssues = mapped
         .filter((m) => m.unmapped.length)
         .map((m) => `onImageAdoption 指認（${m.unmapped.join("、")}）喺 callsheet 搵唔到對應鏡——回 boards 席重新指認`);
-      const allIssues = [...boardIssues, ...extraIssues];
+      const allIssues = [...blockIssues, ...extraIssues];
       return {
         ...(rows.length ? { onImageAdoptions: mapped.map((m) => m.row) } : {}),
         ...(allIssues.length ? { adoptionIssues: allIssues } : {}),
