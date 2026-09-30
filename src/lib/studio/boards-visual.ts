@@ -75,7 +75,21 @@ export async function renderBoards(opts: BoardsVisualOptions) {
         const cellFile = path.join(attemptDir, `${opts.name}-r1-cell-${j + 1}.png`);
         const cellPrompt = storyboardBoardPrompt({ cells: [m.text], style: opts.style ?? "寫實電影感、画面清晰銳利" })
           + `單格重做：只畫呢一格（第 ${j + 1} 格嘅時刻）。Image-1 係灰模板第 ${j + 1} 格嘅裁切＝呢格嘅企位/走位/構圖/鏡位照佢，外觀（人樣/衫/道具look）永遠唔參考佢；其後外觀參考圖照 caller refNote 角色序。${opts.refNote ?? ""}`;
-        await ensureKeyframeSheet({ ...opts, images: [greyCrop, ...outerRefs], boardsDir: attemptDir, name: `${opts.name}-r1-cell-${j + 1}-sheet`, moments: [{ ...m, file: cellFile }], cellPx: cw, seed: (opts.seed ?? 42) + 100 + j, prompt: cellPrompt });
+        // 燒二實證（a5b69434 cell-5）：單格 edit 偶發出 2 直行版式→ensureKeyframeSheet
+        // 版式拒切 throw 殺 job（round1 段漏 catch——round0 有）。修：拒切＝呢格
+        // keep FAIL 收據（RETRY_LAYOUT）續行其他格，唔重試唔殺隊（round 上限 2
+        // 冇 round 2，單格拒切等下輪 resume）。
+        try {
+          await ensureKeyframeSheet({ ...opts, images: [greyCrop, ...outerRefs], boardsDir: attemptDir, name: `${opts.name}-r1-cell-${j + 1}-sheet`, moments: [{ ...m, file: cellFile }], cellPx: cw, seed: (opts.seed ?? 42) + 100 + j, prompt: cellPrompt });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!/board_layout/.test(message)) throw error;
+          redoAttempt.cells.push({ shotId: m.shotId, at: m.at, file: cellFile, destination: m.file, sha256: "", qc: "", status: `R1-RETRY_LAYOUT: ${message}` });
+          rejected.set(m.file, cellFile);
+          failed.push(m);
+          write("pending");
+          continue;
+        }
         // 新圖寫返主板第 i 格矩形（temp→rename 原子替換；其他格像素留低）
         const cellPng = await sharp(cellFile).resize(cw, ch).png().toBuffer();
         await sharp(base).composite([{ input: cellPng, left: col * cw, top: row * ch }]).png().toFile(`${base}.r1tmp.png`);
