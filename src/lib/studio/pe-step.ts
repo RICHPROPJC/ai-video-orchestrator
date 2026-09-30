@@ -236,15 +236,35 @@ async function runRewrite(opts: {
     const have = readRewriteReceipt(opts.receiptFile, opts.shotId);
     if (have) return have;
   }
-  const raw = await callBrain(
-    { endpoint, model, effortNone: false },
-    REWRITE_SYSTEM,
-    JSON.stringify({ shot: opts.shotId, 畫面需求: opts.action, 場景: opts.context }),
-    opts.config,
-    opts.deps ?? {},
-    REWRITE_MAX_TOKENS,
-  );
-  const parsed = sliceJsonObject(raw) as { render?: unknown };
+  // Y8KH SH16 實證：6.8 偶發截斷（輸出爛 JSON「Expected ',' or '}'」）直接殺
+  // job——同款 call SH01-15 全過＝偶發非必然。加一輪 retry：slice 炸即重 call，
+  // 二試仲爛先 throw（帶 raw 頭段俾診斷）。
+  let parsed: { render?: unknown };
+  try {
+    const raw = await callBrain(
+      { endpoint, model, effortNone: false },
+      REWRITE_SYSTEM,
+      JSON.stringify({ shot: opts.shotId, 畫面需求: opts.action, 場景: opts.context }),
+      opts.config,
+      opts.deps ?? {},
+      REWRITE_MAX_TOKENS,
+    );
+    parsed = sliceJsonObject(raw) as { render?: unknown };
+  } catch (e) {
+    const retry = await callBrain(
+      { endpoint, model, effortNone: false },
+      REWRITE_SYSTEM,
+      JSON.stringify({ shot: opts.shotId, 畫面需求: opts.action, 場景: opts.context }),
+      opts.config,
+      opts.deps ?? {},
+      REWRITE_MAX_TOKENS,
+    );
+    try {
+      parsed = sliceJsonObject(retry) as { render?: unknown };
+    } catch (e2) {
+      throw new Error(`PE rewrite ${model} 兩試都爛 JSON（${String(e).slice(0, 80)}／${String(e2).slice(0, 80)}）——retry raw 頭段：${retry.slice(0, 300)}`);
+    }
+  }
   const renderObj =
     parsed.render && typeof parsed.render === "object" && !Array.isArray(parsed.render)
       ? (parsed.render as Record<string, unknown>)
