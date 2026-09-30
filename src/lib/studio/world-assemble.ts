@@ -23,7 +23,7 @@ export type WorldPlan = {
 
 export function planStoryWorld(
   pieces: WorldPiece[],
-  shots: { id: string; lensMm: number; size: string; location?: string; heldPropId?: string; envAnim?: import("./types").EnvAnimTrack[] }[],
+  shots: { id: string; lensMm: number; size: string; location?: string; heldPropId?: string; castId?: string; envAnim?: import("./types").EnvAnimTrack[] }[],
 ): WorldPlan {
   const scaled = resolveScales(pieces);
   // A world that lost every piece to a missing size is not a success. Fail
@@ -99,7 +99,7 @@ print('WORLD_SAVED')
 export async function writeStoryWorld(opts: {
   dir: string;
   pieces: WorldPiece[];
-  shots: { id: string; lensMm: number; size: string; location?: string; heldPropId?: string; envAnim?: import("./types").EnvAnimTrack[] }[];
+  shots: { id: string; lensMm: number; size: string; location?: string; heldPropId?: string; castId?: string; envAnim?: import("./types").EnvAnimTrack[] }[];
   blenderBin?: string;
   runCmd?: typeof runCommand;
 }): Promise<WorldPlan> {

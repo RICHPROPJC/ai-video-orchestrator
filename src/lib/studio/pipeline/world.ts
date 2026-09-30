@@ -954,6 +954,7 @@ export async function worldStage(ctx: Ctx): Promise<void> {
         size: s.size,
         location: s.location,
         heldPropId: s.props?.find((p) => p.heldBy)?.name,
+        castId: s.marks.find((m) => m.characterId)?.characterId,
         // 世界暫停前後動作入 worldJson（bake 輸入檔；bake 讀取待 COS patch）
         ...(s.envAnim?.length ? { envAnim: s.envAnim } : {}),
       })),

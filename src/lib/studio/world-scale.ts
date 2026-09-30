@@ -176,12 +176,17 @@ export type ShotAim = {
 
 /** A shot looks at a piece already in the world. No callsheet xyz. */
 export function aimShot(
-  shot: { id: string; lensMm: number; size: string; location?: string; heldPropId?: string; envAnim?: import("./types").EnvAnimTrack[] },
+  shot: { id: string; lensMm: number; size: string; location?: string; heldPropId?: string; castId?: string; envAnim?: import("./types").EnvAnimTrack[] },
   placed: PlacedPiece[],
 ): ShotAim {
+  // 統籌裁決 0930（y8kh-r9-lookat-still-can）：figure 閘驗 cast mark——bake
+  // 相機同閘同源：有 cast 嘅鏡框 cast（aim 望揸住嘅道具會令 figure 漂離
+  // mark 窗——SH03 望罐 medium 實證 A 漂右上、閘窗全 230）；零 cast 鏡
+  // （産品微距／環境鏡）照舊 held ?? scene。
+  const cast = shot.castId ? placed.find((p) => p.id === shot.castId) : undefined;
   const held = shot.heldPropId ? placed.find((p) => p.id === shot.heldPropId) : undefined;
   const scene = shot.location ? placed.find((p) => p.id === shot.location && p.role === "scene") : undefined;
-  const look = held ?? scene;
+  const look = cast ?? held ?? scene;
   const env = shot.envAnim?.length ? { envAnim: shot.envAnim } : {};
   if (!look) return { id: shot.id, lensMm: shot.lensMm, size: shot.size, hold: true, ...env };
   return { id: shot.id, lensMm: shot.lensMm, size: shot.size, lookAtId: look.id, hold: false, ...env };
