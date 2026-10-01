@@ -140,9 +140,14 @@ export function peakAndSilence(samples: Float32Array) {
 
 export function runCommand(cmd: string, args: string[], cwd?: string, extraEnv?: Record<string, string | undefined>) {
   return new Promise<{ code: number; stderr: string; stdout: string }>((resolve, reject) => {
-    const env = extraEnv ? { ...process.env, ...extraEnv } : undefined;
+    // LAW-0011 P0-4：中央環境白名單——繼承 env 先剝動態庫污染（office-raccoon 嘅
+    // LD_LIBRARY_PATH 等搞冧 ffprobe，SC-1001-8SPN 實證），extraEnv 仍可顯式重加。
+    const STRIP_INHERIT = ["LD_LIBRARY_PATH", "LD_PRELOAD", "PKG_CONFIG_PATH"] as const;
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    for (const k of STRIP_INHERIT) delete env[k];
+    if (extraEnv) Object.assign(env, extraEnv);
     // extraEnv value undefined = delete the inherited var (e.g. strip DISPLAY for blender)
-    if (env) for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
+    for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
     const child = spawn(cmd, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
