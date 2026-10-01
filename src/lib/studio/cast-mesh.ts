@@ -304,6 +304,22 @@ export async function ensureCastOnce(opts: {
       }
       mesh = receipt.mesh_front;
     }
+    // LAW-0016（studio教科書接入）：rig 用企直檔——glTF 權威 Y-up，raw mesh.glb
+    // 先係 spec 合規企直貨；mesh_front.glb（canonicalize 後 Z-up 直寫）雙重旋轉會瞓低。
+    // up 軸閘照 rig_map.py:247 招式：POSITION accessor min/max 最大 spread 必須係 Y。
+    const rawMesh = path.join(path.dirname(mesh), "mesh.glb");
+    if (fs.existsSync(rawMesh)) {
+      const up = glbUpAxis(rawMesh);
+      if (up !== "y") {
+        throw new Error(`orientation_gate_failed: ${item.id} raw mesh detected_up=${up} expected=y（spread判定）——寧可拒絕唔准打橫入rig`);
+      }
+      mesh = rawMesh;
+    } else {
+      const up = glbUpAxis(mesh);
+      if (up !== "y") {
+        throw new Error(`orientation_gate_failed: ${item.id} mesh=${path.basename(mesh)} detected_up=${up} expected=y——拒絕打橫貨入rig（LAW-0016）`);
+      }
+    }
     if (deform === "rigid") {
       rigs[item.id] = mesh;
       continue;
@@ -418,4 +434,43 @@ export async function ensureCastOnce(opts: {
     throw new Error(parts.join("；"));
   }
   return rigs;
+}
+
+/** LAW-0016 up 軸閘（照 studio rig_map.py:247 教科書招式）：
+ *  讀 glb JSON chunk 嘅 POSITION accessor min/max，最大 spread 嗰軸＝detected up。
+ *  glTF 權威 Y-up（worldstudio_exec.py 宣言）→ 人形資產 spread 最大必須係 y（身高）。
+ *  Z-up 直寫檔（canonicalize 舊病）會偵測出 z＝即時拒。 */
+export function glbUpAxis(glbPath: string): "x" | "y" | "z" | "unknown" {
+  try {
+    const fd = fs.openSync(glbPath, "r");
+    const lenBuf = Buffer.alloc(8);
+    fs.readSync(fd, lenBuf, 0, 8, 12);
+    const jLen = lenBuf.readUInt32LE(0);
+    const jBuf = Buffer.alloc(jLen);
+    fs.readSync(fd, jBuf, 0, jLen, 20);
+    fs.closeSync(fd);
+    const doc = JSON.parse(jBuf.toString("utf8")) as {
+      meshes?: { primitives?: { attributes?: { POSITION?: number } }[] }[];
+      accessors?: { min?: number[]; max?: number[] }[];
+    };
+    let best = -1;
+    let up: "x" | "y" | "z" = "x";
+    for (const m of doc.meshes ?? []) {
+      for (const prim of m.primitives ?? []) {
+        const ai = prim.attributes?.POSITION;
+        if (ai === undefined) continue;
+        const acc = doc.accessors?.[ai];
+        if (!acc?.min || !acc?.max) continue;
+        const spreads = [0, 1, 2].map((k) => (acc.max![k] ?? 0) - (acc.min![k] ?? 0));
+        const i = spreads.indexOf(Math.max(...spreads));
+        if (spreads[i]! > best) {
+          best = spreads[i]!;
+          up = (["x", "y", "z"] as const)[i]!;
+        }
+      }
+    }
+    return best < 0 ? "unknown" : up;
+  } catch {
+    return "unknown";
+  }
 }
