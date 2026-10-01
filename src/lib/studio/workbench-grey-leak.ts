@@ -17,6 +17,11 @@ export type GreyLeakBlob = {
   aspect: number;
   chroma: number;
   luma: number;
+  /** True when the flat region reaches the downscaled frame border. A pure
+   *  backdrop or a subject's clothing edge touching the frame reads as a flat
+   *  grey slab and trips the old silhouette heuristic — a real workbench
+   *  mannequin stands in the middle of the frame, isolated from every edge. */
+  touchesBorder: boolean;
 };
 
 export type GreyLeakMeasure = {
@@ -117,14 +122,17 @@ export async function measureWorkbenchGreyLeak(file: string): Promise<GreyLeakMe
     if (frac < MIN_FRAC || frac > MAX_FRAC) continue;
     const bw = maxX - minX + 1;
     const bh = maxY - minY + 1;
+    // 灰模人偶唔會觸畫框邊；純色背景／服裝邊緣先會。觸邊當 backdrop 唔入 silhouette。
+    const touchesBorder = minX <= 0 || maxX >= w - 1 || minY <= 0 || maxY >= h - 1;
     blobs.push({
       frac,
       aspect: bh / Math.max(bw, 1),
       chroma: chromaSum / count,
       luma: lumaSum / count,
+      touchesBorder,
     });
   }
-  const hit = blobs.some((b) => b.aspect >= MIN_ASPECT && b.chroma < MAX_CHROMA);
+  const hit = blobs.some((b) => b.aspect >= MIN_ASPECT && b.chroma < MAX_CHROMA && !b.touchesBorder);
   return { hit, blobs, coverage: flatSum / n };
 }
 
@@ -189,7 +197,7 @@ export async function measureEmptyFrame(file: string): Promise<EmptyFrameMeasure
 }
 
 export function machineGreyFailReason(m: GreyLeakMeasure): string {
-  const b = m.blobs.find((x) => x.aspect >= MIN_ASPECT && x.chroma < MAX_CHROMA);
+  const b = m.blobs.find((x) => x.aspect >= MIN_ASPECT && x.chroma < MAX_CHROMA && !x.touchesBorder);
   if (!b) return "machine_grey: workbench silhouette";
   return `machine_grey: workbench silhouette frac=${b.frac.toFixed(3)} aspect=${b.aspect.toFixed(2)}`;
 }
