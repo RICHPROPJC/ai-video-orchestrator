@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { readViolations } from "./trace";
+import { checksPath, readViolations } from "./trace";
 
 /** bench — 事後聚合，零 GPU 零 LLM 零重燒：掃 data/jobs/* 已落碟嘅機器收據
  *（job.json／stills/*.photo_qc.json／motion/*.h3_submit.json／
@@ -119,7 +119,15 @@ function readSlate(jobsDir: string, slate: string): SlateAgg | null {
     }
   }
 
-  const violations = readViolations(dir);
+  // LAW-0010 P0-5 雙讀：bench 拓撲統計食齊 pass+fail（violations＋checks）；舊 job 冇 checks 檔照常讀 violations
+  const violations = readViolations(dir).concat(
+    fs.existsSync(checksPath(dir))
+      ? (fs.readFileSync(checksPath(dir), "utf8")
+          .split("\n")
+          .filter(Boolean)
+          .map((l) => JSON.parse(l) as ReturnType<typeof readViolations>[number]) as ReturnType<typeof readViolations>)
+      : [],
+  );
   return {
     slate,
     status: typeof job.status === "string" ? job.status : "?",

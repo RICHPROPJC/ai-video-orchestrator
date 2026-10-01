@@ -12,7 +12,7 @@ import { MAX_IMAGES, type EditPayload, type U15EditRecord } from "../u15-edit";
 import { photoQcEyesFromEnv, pinQcAccepted, runPhotoQc, type QcRequire } from "../photo-qc";
 import { buildQcSheet, buildQcSheetHtml, readQcReceipt } from "../qc-sheet";
 import { ingestStill, queryRefs } from "../memory";
-import { appendViolation, checkBoardsToKeyframe, checkKeyframeToStills, hardPhotoQcRow } from "../trace";
+import { appendViolation, checkBoardsToKeyframe, checkKeyframeToStills, hardPhotoQcRow, recordCheck } from "../trace";
 import { KEYFRAME_SPAWN, fullFrameMoments, keyframeSheetPrompt, liveBoardLane, momentHoldsProp, momentsForShot } from "../asset-board";
 import { greyKfRefBoard } from "../blockout";
 import { diffPropPlates, propAssetId } from "../prop-plate-index";
@@ -174,7 +174,8 @@ export async function stillsStage(ctx: Ctx): Promise<void> {
     // D1a trace: soft edge invariants (boards→keyframe, keyframe→stills),
     // written for pass and fail alike, always before any QC gate can fail
     const softRows = [...checkBoardsToKeyframe(ctx.timed!.characters, shot, editPrompt), ...checkKeyframeToStills(shot, require)];
-    for (const row of softRows) appendViolation(jobDir(jobId), row);
+    // LAW-0010 P0-5：合格行去 checks.jsonl，真錯先入 violations.jsonl
+    for (const row of softRows) recordCheck(jobDir(jobId), row);
     fs.writeFileSync(path.join(ctx.stillDir!, `${shot.id}.require.json`), JSON.stringify(require, null, 2));
     return { shot, first, prompt: editPrompt, require };
   });

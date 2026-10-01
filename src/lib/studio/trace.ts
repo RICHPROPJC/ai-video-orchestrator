@@ -51,6 +51,30 @@ export function violationsPath(dir: string) {
   return path.join(dir, "violations.jsonl");
 }
 
+/** LAW-0010 P0-5：passing 行分流去 checks.jsonl（D1a 拓撲全紀錄保留），
+ *  violations.jsonl 淨返 saw≠expected 嘅真錯——唔再俾 95% 合格行淹死真 drift。 */
+export function checksPath(dir: string) {
+  return path.join(dir, "checks.jsonl");
+}
+
+export function appendCheck(dir: string, row: ViolationRow): ViolationRow {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.appendFileSync(checksPath(dir), `${JSON.stringify(row)}\n`);
+  return row;
+}
+
+/** 真錯判定：hard 一律真錯；soft 用既有 rowPasses（saw≡expected 深比較）——
+ *  D1 實證：4273 合格行全部 saw≡expected，194 真錯全部唔等。 */
+export function isRealViolation(row: ViolationRow): boolean {
+  if (row.severity === "hard") return true;
+  return !rowPasses(row);
+}
+
+/** 統一入口：真錯→violations.jsonl；合格→checks.jsonl。 */
+export function recordCheck(dir: string, row: ViolationRow): ViolationRow {
+  return isRealViolation(row) ? appendViolation(dir, row) : appendCheck(dir, row);
+}
+
 export function appendViolation(dir: string, row: ViolationRow): ViolationRow {
   fs.mkdirSync(dir, { recursive: true });
   fs.appendFileSync(violationsPath(dir), `${JSON.stringify(row)}\n`);

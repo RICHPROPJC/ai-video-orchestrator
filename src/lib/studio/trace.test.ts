@@ -11,7 +11,9 @@ import {
   VIOLATION_KEYS,
   appendViolation,
   loadTraceFixture,
+  checksPath,
   readViolations,
+  recordCheck,
   replayTrace,
   rowPasses,
   type FrozenQc,
@@ -228,3 +230,42 @@ if (bareBun) {
     if (failed > 0) process.exit(1);
   })();
 }
+
+// LAW-0010 P0-5：recordCheck 分流——pass→checks.jsonl、真錯→violations.jsonl
+nodeTest.test("recordCheck routes pass rows to checks.jsonl and real drift to violations.jsonl", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trace-p05-"));
+  const passRow: ViolationRow = {
+    step_id: STEPS.require,
+    constraint_id: "require-keys",
+    severity: "soft",
+    saw: { keys: ["a", "b"], people_count_ok: true },
+    expected: { keys: ["a", "b"], people_count_ok: true },
+  };
+  const failRow: ViolationRow = {
+    step_id: STEPS.require,
+    constraint_id: "require-keys",
+    severity: "soft",
+    saw: { keys: ["grey_blocks", "people_count"], people_count_ok: true },
+    expected: { keys: ["a", "b", "grey_blocks", "people_count"], people_count_ok: true },
+  };
+  const hardRow: ViolationRow = {
+    step_id: "pipeline",
+    constraint_id: "pipeline",
+    severity: "hard",
+    saw: "throw",
+    expected: "no throw",
+  };
+  recordCheck(dir, passRow);
+  recordCheck(dir, failRow);
+  recordCheck(dir, hardRow);
+  const v = readViolations(dir);
+  assert.equal(v.length, 2, "violations 只剩真錯（failRow+hardRow）");
+  assert.ok(v.every((r) => !rowPasses(r)));
+  const checks = fs
+    .readFileSync(checksPath(dir), "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as ViolationRow);
+  assert.equal(checks.length, 1, "合格行入 checks.jsonl");
+  assert.ok(checks[0] && rowPasses(checks[0]));
+});
