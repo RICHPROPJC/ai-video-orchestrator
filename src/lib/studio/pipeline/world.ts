@@ -11,6 +11,7 @@ import { snapDurationToFrames, wavSeconds } from "../frame-grid";
 import { GRID_BED_VERSION, layDialogueBed } from "../dialogue-bed";
 import { plugShotWavs, plugVoiceEvents } from "../shot-wav-plug";
 import { buildCutPlan } from "../cut-plan";
+import { writeTimingLedger } from "../timing-ledger";
 import { writeAnchors } from "../dhash-anchors";
 import { assertFiguresVisible, blockoutFromPlug, extractFrame0, renderBlockout, stillFrameFor } from "../blockout";
 import { ensurePortraits } from "../portraits";
@@ -681,6 +682,13 @@ export async function worldStage(ctx: Ctx): Promise<void> {
   const spineWav = spineGiven && fs.existsSync(spineGiven) ? path.join(audioDir, "spine.wav") : undefined;
   ctx.spineWav = spineWav;
   if (spineGiven && spineWav) fs.copyFileSync(spineGiven, spineWav);
+  const timingLedger = writeTimingLedger(jobId,
+    ctx.continuity!.boards.map((s) => ({ id: s.id, durationSec: s.durationSec })));
+  emit(jobId, {
+    agent: "layout", level: "info",
+    message: `Timing ledger 写定：${timingLedger.shots.length} 镜 · 故事 ${timingLedger.totalStorySec}s · 生成窗 ${timingLedger.totalFrames}f (${timingLedger.totalGenSec}s) @${timingLedger.fps}fps`,
+    data: { stage: "timing-ledger-written", shots: timingLedger.shots.length, totalStorySec: timingLedger.totalStorySec, totalFrames: timingLedger.totalFrames },
+  });
   const cutPlan = await buildCutPlan({
     cut: ctx.continuity!.cut,
     wavDir: audioDir,
