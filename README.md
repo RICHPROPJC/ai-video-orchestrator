@@ -15,11 +15,11 @@
 | 輸入 | 用途與接法 |
 |---|---|
 | 鍵格百分比 | `H3Keyframes.positions` 對應呢鏡 `17k+5` 總長度。首六釘依序入 `image_1`–`image_6`，第七張起順序入 `images_batch`，六張唔係上限。H3 補兩個釘之間嘅幀。 |
-| 身份參考 | 樣貌／身份，冇百分比。C 形有灰色 Video 1、零鍵格；角度肖像入 `ref_images.ref_image_0`，Video 1 只供動作。故事鏡唔塞場景相入身份槽。 |
+| 身份參考 | 樣貌／身份，冇百分比。C 形有灰色 Video 1、零鍵格；KF 共存鏡 `ref_image_0`＝本鏡 GREEN start still（Sol 0926 E），角度肖像留做上游身份資產、唔直接入 ref 位；純 C 形（冇百分比）照舊角度肖像行 `ref_image_N`（per refAngle）。Video 1 只供動作。故事鏡唔塞場景相入身份槽。 |
 | 多鏡生成 | 只收未切身份板；拒收走位片、鍵格名及 start image。舊 chained Video 1 路徑已拒收；C 形鏡同後續多鏡段分開生成。 |
 | 聲軌 | 該鏡 wav；無對白鏡嘅靜音跟鏡長，再按 H3 時鐘補齊。 |
 
-冇百分比而同時交鍵格同 Video 1 會被拒。**有百分比＋Video 1** 嘅型別允許同 §5b 疊影警告仍未裁決；唔當其中一句已勝出。
+冇百分比而同時交鍵格同 Video 1 會被拒。**有百分比＋Video 1** 已經 §5b 裁決（Sol 0926 裁 E，2026-09-26）：鍵格同 Video 1 可以共存——refs 同 KF 行已部署嘅 `H3KeyframeInject` 入同一 conditioning entry，唔好用 `ConditioningCombine` 並列；外觀 reference 淨用本鏡 GREEN start still 一張；舊「模型級雙重曝光禁令」撤回，唔再當全局規則。真源：`/home/c/orca/workspaces/sov-cli-merge-wip/hookaudit/verify/slatecrew-glm53-takeover-20260926/H3_DECISION_SOL_0926.md`。
 
 提交、分段預算、concat gate 都向上對齊 `17k+5`。八鏡各請求 68 幀會預算成每鏡 73、共 584；實檔 577 唔會用嚟改 gate，manifest 亦唔可以覆蓋計算預算。剪接跟同一 cut 次序、純 copy concat；frame gate 同 QC 未過唔宣稱 picture lock。
 
