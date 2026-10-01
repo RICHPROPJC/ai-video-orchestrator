@@ -343,6 +343,34 @@ export async function ensureCastOnce(opts: {
         throw new Error(`rig ${item.id} failed on CUDA_VISIBLE_DEVICES=${SF3D_GPU}:\n${lines.join("\n") || raw.slice(-800)}`);
       }
       fs.renameSync(riggedTmp, item.rigged);
+      // LAW-0015（1001破案）：raw rig嘅cluster rest係工具正常輸出；解剖學骨位由
+      // retarget-with-SOMA30-motion產生（Chau 0920成功流程＝rig→retarget兩步；
+      // crew此前只有第一步）。呢步行唔到唔殺job——返raw＋收據標記（G6安全默認）。
+      const soma30Motion = process.env.SKINTOKENS_RETARGET_MOTION
+        ?? "/mnt/ssd/tripo_assets/motion_library/soma30/02_01_walk.glb";
+      let retargetOk: boolean | undefined;
+      let retargetNote = "";
+      if (process.env.SKINTOKENS_SKIP_RETARGET) {
+        retargetNote = "skipped by env";
+      } else if (!fs.existsSync(soma30Motion)) {
+        retargetNote = `soma30 motion missing: ${soma30Motion}`;
+      } else {
+        const retTmp = `${item.rigged}.ret.glb`;
+        const r2 = await run(SKINTOKENS_BIN, [
+          "retarget-generated", item.rigged, soma30Motion, retTmp,
+          "--map-fingers", "--minimum-confidence", "0.35",
+        ]);
+        const conf = /confidence ([0-9.]+).*?joints/.exec(`${r2.stdout}\n${r2.stderr}`)?.[1];
+        if (r2.code === 0 && fs.existsSync(retTmp)) {
+          fs.renameSync(item.rigged, `${item.rigged}.raw.glb`);
+          fs.renameSync(retTmp, item.rigged);
+          retargetOk = true;
+          retargetNote = `confidence=${conf ?? "?"} motion=${path.basename(soma30Motion)}`;
+        } else {
+          retargetOk = false;
+          retargetNote = `failed(code=${r2.code}): ${(`${r2.stderr}\n${r2.stdout}`).slice(-200)}`;
+        }
+      }
       // Chau 0929 令：SkinTokens rig receipt 要對到本次實際源 mesh＋輸出 rig
       // （bake consumer 對照）——SF3D 成功/灰模通過唔等於 rig 已驗。落機讀
       // receipt：源/輸出 sha 齊，consumer（blockout bake）讀 glb 有得對。
@@ -358,6 +386,11 @@ export async function ensureCastOnce(opts: {
             srcMeshSha: sha(item.mesh),
             riggedGlb: item.rigged,
             riggedSha: sha(item.rigged),
+            retarget: {
+              ok: retargetOk,
+              note: retargetNote,
+              motion: retargetOk === undefined ? undefined : soma30Motion,
+            },
             bin: SKINTOKENS_BIN,
             models: SKINTOKENS_MODELS,
           }, null, 2) + "\n",
