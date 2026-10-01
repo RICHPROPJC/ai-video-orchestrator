@@ -34,7 +34,7 @@
     "class_type": "H3EpisodeSplit",
     "inputs": {
       "script": "__PROMPT__",
-      "bindings": "<Picture 1> is the sole appearance and identity reference. <Video 1> is motion only: follow its positions, choreography and timing, ignore its appearance, clothing, background and lighting entirely — it is never a look reference. Do not add people."
+      "bindings": "<Picture 1> is this shot's own reference photograph: the same single person, wardrobe, place and props exactly as pictured — every visual look follows it. The keyframe images are this same shot's start and end moments. <Video 1> is that same person rehearsing the move: follow its positions, choreography and timing only — its grey stand-in look, background and lighting are never a look reference. One person on screen from the first frame to the last."
     }
   },
   "lora_a": {
@@ -116,9 +116,9 @@
       "custom_width": 864,
       "custom_height": 480,
       "force_rate": 24,
-      "frame_load_cap": 32,
+      "frame_load_cap": 56,
       "skip_first_frames": 0,
-      "select_every_nth": 10
+      "select_every_nth": 1
     }
   },
   "ref_img_0": {
