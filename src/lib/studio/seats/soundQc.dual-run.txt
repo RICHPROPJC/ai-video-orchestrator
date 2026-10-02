@@ -1,0 +1,6 @@
+soundQc席 dual-run result (2026-10-02)
+Input: WIST callsheet.json (SC-0913-WIST)
+Path A (pipeline.ts inline): expectedSpeech = dialogue join
+Path B (seats/soundQc.ts):  expectedSpeech = dialogue join
+Result: MATCH ✅
+expectedSpeech: "I died. I remember dying. This time, I will not lose. Sign, and keep your tanks."
