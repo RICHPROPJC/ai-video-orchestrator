@@ -1,0 +1,5 @@
+editor席 dual-run result (2026-10-02)
+Input: WIST cut_plan (44 shots) + motion dir (7 mp4s)
+Path A (pipeline.ts checkGate): concat gate = FAIL (37 missing)
+Path B (seats/editor.ts): concat gate = FAIL (37 missing)
+Result: MATCH ✅ — 兩邊都正確偵測37個missing shot
