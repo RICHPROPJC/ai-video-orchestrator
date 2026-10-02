@@ -35,14 +35,19 @@ export type SoundQcDeps = {
 };
 
 const bags = new Map<string, SoundQcBag>();
-let deps: SoundQcDeps = {
-  loadConfig: defaultLoadConfig,
-  senseVoiceHttp: defaultSenseVoiceHttp,
-  wavPrecheck: defaultWavPrecheck,
-  soundQcFromRemote: defaultSoundQcFromRemote,
-  soundQcUnconfigured: defaultSoundQcUnconfigured,
-  patch: defaultPatch,
-};
+
+function defaultSoundQcDeps(): SoundQcDeps {
+  return {
+    loadConfig: defaultLoadConfig,
+    senseVoiceHttp: defaultSenseVoiceHttp,
+    wavPrecheck: defaultWavPrecheck,
+    soundQcFromRemote: defaultSoundQcFromRemote,
+    soundQcUnconfigured: defaultSoundQcUnconfigured,
+    patch: defaultPatch,
+  };
+}
+
+let deps: SoundQcDeps = defaultSoundQcDeps();
 
 /** Dual-run：legacy pipeline 喺 run 前綁上游 Ctx 字段。 */
 export function bindSoundQcBag(jobId: string, bag: SoundQcBag): void {
@@ -59,14 +64,7 @@ export function _setSoundQcDepsForTest(partial: Partial<SoundQcDeps>): void {
 }
 
 export function _resetSoundQcDepsForTest(): void {
-  deps = {
-    loadConfig: defaultLoadConfig,
-    senseVoiceHttp: defaultSenseVoiceHttp,
-    wavPrecheck: defaultWavPrecheck,
-    soundQcFromRemote: defaultSoundQcFromRemote,
-    soundQcUnconfigured: defaultSoundQcUnconfigured,
-    patch: defaultPatch,
-  };
+  deps = defaultSoundQcDeps();
 }
 
 function loadSoundQcBagFromDisk(ctx: SeatContext): SoundQcBag {
@@ -87,16 +85,115 @@ function emptyResult(partial: Partial<SeatResult> & Pick<SeatResult, "status">):
   };
 }
 
-function baseTrace(job: JobRecord): ProviderTrace {
-  return job.providers ?? {
-    stills: "",
-    motion: "",
-    tts: "",
-    senseVoice: "",
-    mars: "",
-    blender: "",
-    lipSync: "",
+/** PROVENANCE_0927：聲音事件序一句跨鏡只計一次；舊 callsheet 冇事件先 join 鏡序。 */
+function expectedSpeechFromTimed(timed: CallSheet): string {
+  if (timed.audioEvents?.length) {
+    return timed.audioEvents.map((e) => e.text).join(" ");
+  }
+  return timed.shots.map((s) => s.dialogue.trim()).filter(Boolean).join(" ");
+}
+
+function resolveSoundQc(args: {
+  earConfigured: boolean;
+  remoteSv: Partial<SoundQc> | null;
+  wavCheck: ReturnType<typeof defaultWavPrecheck> | null;
+  expectedSpeech: string;
+  endpoint: string;
+}): SoundQc {
+  const { earConfigured, remoteSv, wavCheck, expectedSpeech, endpoint } = args;
+  if (!earConfigured) return deps.soundQcUnconfigured();
+  if (remoteSv && wavCheck) {
+    return deps.soundQcFromRemote({
+      remote: remoteSv,
+      expectedText: expectedSpeech,
+      // 裁決 0928 §4：方案冇 emotion 指定→唔傳；cloneSimilarity 冇量度→null＋note
+      wav: wavCheck,
+    });
+  }
+  return deps.soundQcUnconfigured(`sensevoice ${endpoint} unreachable or unparseable`);
+}
+
+function soundQcViolations(sound: SoundQc): SeatResult["violations"] {
+  if (sound.pass) return [];
+  return sound.issues.map((i) => ({
+    step: "soundQc",
+    constraint: i.code,
+    severity: i.severity === "block" ? ("hard" as const) : ("soft" as const),
+    saw: i.detail,
+    expected: "pass",
+  }));
+}
+
+function writeSoundQcReport(
+  jobId: string,
+  expectedSpeech: string,
+  sound: SoundQc,
+): { qcRel: string; qcPath: string } {
+  const qcRel = "delivery/sound-qc.json";
+  const qcPath = jobFile(jobId, "delivery", "sound-qc.json");
+  fs.writeFileSync(
+    qcPath,
+    JSON.stringify(
+      {
+        scope: "delivered-dialogue",
+        expectedText: expectedSpeech,
+        audio: "delivery/lock-audio.wav",
+        result: sound,
+      },
+      null,
+      2,
+    ),
+  );
+  return { qcRel, qcPath };
+}
+
+function buildQcArtifactAndReceipt(
+  jobId: string,
+  qcRel: string,
+  qcPath: string,
+  sound: SoundQc,
+): { artifact: ArtifactRef; receipt: ReceiptRef } {
+  const sha256 = createHash("sha256").update(fs.readFileSync(qcPath)).digest("hex");
+  const now = new Date().toISOString();
+  const artifact: ArtifactRef = {
+    artifactId: `soundQc:${jobId}:qc`,
+    kind: "qc_report",
+    uri: qcRel,
+    mediaType: "application/json",
+    sizeBytes: fs.statSync(qcPath).size,
+    sha256,
+    schemaVersion: 1,
+    createdAt: now,
+    availability: "committed",
+    producer: {
+      seat: "soundQc",
+      capability: "sensevoice-asr",
+      provider: sound.provider,
+    },
+    lineage: {
+      jobId,
+      attemptId: "seat-extract",
+      buildBase: "",
+      inputArtifactIds: ["delivery/lock-audio.wav"],
+    },
   };
+  const receipt: ReceiptRef = {
+    receiptId: `soundQc:${jobId}:gate`,
+    kind: "gate_evaluation",
+    schemaVersion: 1,
+    artifactId: artifact.artifactId,
+    producerAttemptId: "seat-extract",
+    sha256,
+    createdAt: now,
+    payload: {
+      pass: sound.pass,
+      peak: sound.peak,
+      silenceRatio: sound.silenceRatio,
+      wer: sound.wer,
+      issues: sound.issues,
+    },
+  };
+  return { artifact, receipt };
 }
 
 /** 核心邏輯（可測）；SeatModule.run 同 dual-run 共用。 */
@@ -114,33 +211,30 @@ export async function runSoundQc(ctx: SeatContext, bag: SoundQcBag): Promise<Sea
     const earConfigured = cfg.soundQc.endpoint.trim().length > 0;
     const wavCheck = earConfigured ? deps.wavPrecheck({ audioFile: lockAudio }) : null;
     const remoteSv = earConfigured ? await deps.senseVoiceHttp(lockAudio).catch(() => null) : null;
-    // PROVENANCE_0927：期望稿對「聲音事件序」——一句跨鏡只計一次（衍生欄
-    // 喺兩鏡都見到成句，直接 join 會重複）；舊 callsheet 冇事件先 join 鏡序。
-    const expectedSpeech = bag.timed.audioEvents?.length
-      ? bag.timed.audioEvents.map((e) => e.text).join(" ")
-      : bag.timed.shots.map((s) => s.dialogue.trim()).filter(Boolean).join(" ");
-    const sound = !earConfigured
-      ? deps.soundQcUnconfigured()
-      : remoteSv && wavCheck
-        ? deps.soundQcFromRemote({
-            remote: remoteSv,
-            expectedText: expectedSpeech,
-            // 裁決 0928 §4：方案冇 emotion 指定→唔傳（標未指定）；
-            // cloneSimilarity 冇量度→null＋note（soundQcFromRemote 內處理）
-            wav: wavCheck,
-          })
-        : deps.soundQcUnconfigured(`sensevoice ${cfg.soundQc.endpoint} unreachable or unparseable`);
+    const expectedSpeech = expectedSpeechFromTimed(bag.timed);
+    const sound = resolveSoundQc({
+      earConfigured,
+      remoteSv,
+      wavCheck,
+      expectedSpeech,
+      endpoint: cfg.soundQc.endpoint,
+    });
 
-    const trace: ProviderTrace = { ...baseTrace(ctx.job) };
-    trace.senseVoice = earConfigured && remoteSv ? "SenseVoice HTTP" : "SenseVoice FAIL (unconfigured)";
+    const baseTrace: ProviderTrace = ctx.job.providers ?? {
+      stills: "",
+      motion: "",
+      tts: "",
+      senseVoice: "",
+      mars: "",
+      blender: "",
+      lipSync: "",
+    };
+    const trace: ProviderTrace = {
+      ...baseTrace,
+      senseVoice: earConfigured && remoteSv ? "SenseVoice HTTP" : "SenseVoice FAIL (unconfigured)",
+    };
 
-    const qcRel = "delivery/sound-qc.json";
-    const qcPath = jobFile(jobId, "delivery", "sound-qc.json");
-    fs.writeFileSync(qcPath, JSON.stringify({
-      scope: "delivered-dialogue", expectedText: expectedSpeech,
-      audio: "delivery/lock-audio.wav", result: sound,
-    }, null, 2));
-
+    const { qcRel, qcPath } = writeSoundQcReport(jobId, expectedSpeech, sound);
     ctx.job = deps.patch(ctx.job, { soundQc: sound, providers: trace, progress: 82 });
     ctx.speak(
       "soundQc",
@@ -148,61 +242,14 @@ export async function runSoundQc(ctx: SeatContext, bag: SoundQcBag): Promise<Sea
       sound.pass ? "pass" : "fail",
     );
 
-    const sha256 = createHash("sha256").update(fs.readFileSync(qcPath)).digest("hex");
-    const now = new Date().toISOString();
-    const artifact: ArtifactRef = {
-      artifactId: `soundQc:${jobId}:qc`,
-      kind: "qc_report",
-      uri: qcRel,
-      mediaType: "application/json",
-      sizeBytes: fs.statSync(qcPath).size,
-      sha256,
-      schemaVersion: 1,
-      createdAt: now,
-      availability: "committed",
-      producer: {
-        seat: "soundQc",
-        capability: "sensevoice-asr",
-        provider: sound.provider,
-      },
-      lineage: {
-        jobId,
-        attemptId: "seat-extract",
-        buildBase: "",
-        inputArtifactIds: ["delivery/lock-audio.wav"],
-      },
-    };
-    const receipt: ReceiptRef = {
-      receiptId: `soundQc:${jobId}:gate`,
-      kind: "gate_evaluation",
-      schemaVersion: 1,
-      artifactId: artifact.artifactId,
-      producerAttemptId: "seat-extract",
-      sha256,
-      createdAt: now,
-      payload: {
-        pass: sound.pass,
-        peak: sound.peak,
-        silenceRatio: sound.silenceRatio,
-        wer: sound.wer,
-        issues: sound.issues,
-      },
-    };
+    const { artifact, receipt } = buildQcArtifactAndReceipt(jobId, qcRel, qcPath, sound);
 
     // QC FAIL 唔截 pipeline（legacy 照行 editor）——記 violations／PARTIAL。
     return emptyResult({
       status: sound.pass ? "PASSED" : "PARTIAL",
       artifacts: [artifact],
       receipts: [receipt],
-      violations: sound.pass
-        ? []
-        : sound.issues.map((i) => ({
-            step: "soundQc",
-            constraint: i.code,
-            severity: i.severity === "block" ? "hard" as const : "soft" as const,
-            saw: i.detail,
-            expected: "pass",
-          })),
+      violations: soundQcViolations(sound),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

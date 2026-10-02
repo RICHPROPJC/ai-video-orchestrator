@@ -114,35 +114,6 @@ function installVoiceTestDeps(ffmpeg: (args: string[]) => Promise<void>): void {
   });
 }
 
-async function withVoiceSeat(
-  prefix: string,
-  bagMutate: (bag: VoiceBag) => void,
-  ffmpeg: (args: string[]) => Promise<void>,
-  assertFn: (ctx: SeatContext, calls: string[], ffmpegCalls: string[][]) => void | Promise<void>,
-): Promise<void> {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  const jobId = `SC-TEST-${prefix.replace(/-$/, "").toUpperCase()}`;
-  const calls: string[] = [];
-  const ctx = mockCtx(jobId, calls);
-  const bag = makeBag(tmp);
-  bagMutate(bag);
-  const ffmpegCalls: string[][] = [];
-
-  installVoiceTestDeps(async (args) => {
-    ffmpegCalls.push(args);
-    await ffmpeg(args);
-  });
-  bindVoiceBag(jobId, bag);
-
-  try {
-    await assertFn(ctx, calls, ffmpegCalls);
-  } finally {
-    unbindVoiceBag(jobId);
-    _resetVoiceDepsForTest();
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-}
-
 test("voiceSeat：think → speak 順序，PASSED 時無 fail speak", async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "voice-seat-"));
   const jobId = "SC-TEST-VOICE";

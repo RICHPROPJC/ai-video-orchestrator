@@ -14,6 +14,7 @@ import {
   _resetSoundQcDepsForTest,
   _setSoundQcDepsForTest,
   type SoundQcBag,
+  type SoundQcDeps,
 } from "./soundQc";
 
 const bareBun = !!process.versions.bun && process.env.BUN_TEST !== "1";
@@ -110,132 +111,141 @@ function makeBag(lockAudio: string): SoundQcBag {
   return { timed: timedSheet(), lockAudio };
 }
 
-test("soundQcSeat：think → speak intro → speak 結果；未配置 ear＝PARTIAL", async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "soundqc-seat-"));
+async function withSoundQcCase(
+  opts: {
+    prefix: string;
+    jobId: string;
+    deps: Partial<SoundQcDeps>;
+    /** Relative to tmp; default lock-audio.wav */
+    lockAudioName?: string;
+    /** When false, do not create the lock-audio file (throw paths). Default true. */
+    writeLockAudio?: boolean;
+  },
+  body: (args: { ctx: SeatContext; calls: string[]; tmp: string }) => Promise<void>,
+): Promise<void> {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), opts.prefix));
   const cwd = process.cwd();
-  const jobId = "SC-TEST-SOUNDQC";
   const calls: string[] = [];
-  const ctx = mockCtx(jobId, calls);
-  const lockAudio = path.join(tmp, "lock-audio.wav");
-  fs.writeFileSync(lockAudio, "fake-wav");
+  const ctx = mockCtx(opts.jobId, calls);
+  const lockAudio = path.join(tmp, opts.lockAudioName ?? "lock-audio.wav");
+  if (opts.writeLockAudio !== false) {
+    fs.writeFileSync(lockAudio, "fake-wav");
+  }
 
   process.chdir(tmp);
   _setSoundQcDepsForTest({
-    loadConfig: () => ({ soundQc: { endpoint: "", model: "x" } }),
     patch: (job, partial) => Object.assign(job, partial),
-    soundQcUnconfigured,
+    ...opts.deps,
   });
-  bindSoundQcBag(jobId, makeBag(lockAudio));
+  bindSoundQcBag(opts.jobId, makeBag(lockAudio));
 
   try {
-    const result = await soundQcSeat.run(ctx);
-    assert.equal(result.status, "PARTIAL");
-    assert.equal(result.stopped, false);
-    assert.equal(calls[0], "think:soundQc");
-    assert.ok(
-      calls[1]?.startsWith("speak:soundQc:info:SenseVoice"),
-      `expected SenseVoice intro after think, got ${calls[1]}`,
-    );
-    assert.ok(
-      calls[2]?.startsWith("speak:soundQc:fail:Sound QC FAIL"),
-      `expected FAIL speak third, got ${calls[2]}`,
-    );
-    assert.equal(calls.length, 3);
-    assert.equal(ctx.job.progress, 82);
-    assert.equal(ctx.job.soundQc?.pass, false);
-    assert.equal(ctx.job.providers?.senseVoice, "SenseVoice FAIL (unconfigured)");
-    assert.equal(result.artifacts.length, 1);
-    assert.equal(result.artifacts[0]!.kind, "qc_report");
-    assert.equal(result.receipts.length, 1);
-    assert.ok(result.violations.length >= 1);
-    assert.ok(fs.existsSync(path.join(tmp, "data", "jobs", jobId, "delivery", "sound-qc.json")));
+    await body({ ctx, calls, tmp });
   } finally {
-    unbindSoundQcBag(jobId);
+    unbindSoundQcBag(opts.jobId);
     _resetSoundQcDepsForTest();
     process.chdir(cwd);
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+test("soundQcSeat：think → speak intro → speak 結果；未配置 ear＝PARTIAL", async () => {
+  await withSoundQcCase(
+    {
+      prefix: "soundqc-seat-",
+      jobId: "SC-TEST-SOUNDQC",
+      deps: {
+        loadConfig: () => ({ soundQc: { endpoint: "", model: "x" } }),
+        soundQcUnconfigured,
+      },
+    },
+    async ({ ctx, calls, tmp }) => {
+      const result = await soundQcSeat.run(ctx);
+      assert.equal(result.status, "PARTIAL");
+      assert.equal(result.stopped, false);
+      assert.equal(calls[0], "think:soundQc");
+      assert.ok(
+        calls[1]?.startsWith("speak:soundQc:info:SenseVoice"),
+        `expected SenseVoice intro after think, got ${calls[1]}`,
+      );
+      assert.ok(
+        calls[2]?.startsWith("speak:soundQc:fail:Sound QC FAIL"),
+        `expected FAIL speak third, got ${calls[2]}`,
+      );
+      assert.equal(calls.length, 3);
+      assert.equal(ctx.job.progress, 82);
+      assert.equal(ctx.job.soundQc?.pass, false);
+      assert.equal(ctx.job.providers?.senseVoice, "SenseVoice FAIL (unconfigured)");
+      assert.equal(result.artifacts.length, 1);
+      assert.equal(result.artifacts[0]!.kind, "qc_report");
+      assert.equal(result.receipts.length, 1);
+      assert.ok(result.violations.length >= 1);
+      assert.ok(fs.existsSync(path.join(tmp, "data", "jobs", ctx.jobId, "delivery", "sound-qc.json")));
+    },
+  );
 });
 
 test("soundQcSeat：ear 通＋對稿 OK → PASSED＋speak pass", async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "soundqc-pass-"));
-  const cwd = process.cwd();
-  const jobId = "SC-TEST-SOUNDQC-PASS";
-  const calls: string[] = [];
-  const ctx = mockCtx(jobId, calls);
-  const lockAudio = path.join(tmp, "lock-audio.wav");
-  fs.writeFileSync(lockAudio, "fake-wav");
-
-  process.chdir(tmp);
-  _setSoundQcDepsForTest({
-    loadConfig: () => ({ soundQc: { endpoint: "http://127.0.0.1:9881", model: "x" } }),
-    wavPrecheck: () => ({ durationSec: 2, peak: 0.5, silenceRatio: 0.1, issues: [] }),
-    senseVoiceHttp: async () => ({
-      provider: "sensevoice-http",
-      transcript: "今日天氣好",
-      emotion: "NEUTRAL",
-      events: ["Speech"],
-      language: "zh",
-    }),
-    patch: (job, partial) => Object.assign(job, partial),
-  });
-  bindSoundQcBag(jobId, makeBag(lockAudio));
-
-  try {
-    const result = await soundQcSeat.run(ctx);
-    assert.equal(result.status, "PASSED");
-    assert.equal(result.stopped, false);
-    assert.equal(calls[0], "think:soundQc");
-    assert.ok(calls[1]?.startsWith("speak:soundQc:info:SenseVoice"));
-    assert.ok(
-      calls[2]?.startsWith("speak:soundQc:pass:Sound QC PASS"),
-      `expected PASS speak, got ${calls[2]}`,
-    );
-    assert.equal(calls.length, 3);
-    assert.equal(ctx.job.soundQc?.pass, true);
-    assert.equal(ctx.job.providers?.senseVoice, "SenseVoice HTTP");
-    assert.equal(result.violations.length, 0);
-  } finally {
-    unbindSoundQcBag(jobId);
-    _resetSoundQcDepsForTest();
-    process.chdir(cwd);
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
+  await withSoundQcCase(
+    {
+      prefix: "soundqc-pass-",
+      jobId: "SC-TEST-SOUNDQC-PASS",
+      deps: {
+        loadConfig: () => ({ soundQc: { endpoint: "http://127.0.0.1:9881", model: "x" } }),
+        wavPrecheck: () => ({ durationSec: 2, peak: 0.5, silenceRatio: 0.1, issues: [] }),
+        senseVoiceHttp: async () => ({
+          provider: "sensevoice-http",
+          transcript: "今日天氣好",
+          emotion: "NEUTRAL",
+          events: ["Speech"],
+          language: "zh",
+        }),
+      },
+    },
+    async ({ ctx, calls }) => {
+      const result = await soundQcSeat.run(ctx);
+      assert.equal(result.status, "PASSED");
+      assert.equal(result.stopped, false);
+      assert.equal(calls[0], "think:soundQc");
+      assert.ok(calls[1]?.startsWith("speak:soundQc:info:SenseVoice"));
+      assert.ok(
+        calls[2]?.startsWith("speak:soundQc:pass:Sound QC PASS"),
+        `expected PASS speak, got ${calls[2]}`,
+      );
+      assert.equal(calls.length, 3);
+      assert.equal(ctx.job.soundQc?.pass, true);
+      assert.equal(ctx.job.providers?.senseVoice, "SenseVoice HTTP");
+      assert.equal(result.violations.length, 0);
+    },
+  );
 });
 
 test("soundQcSeat：wavPrecheck throw → speak fail + FAILED_TERMINAL", async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "soundqc-fail-"));
-  const cwd = process.cwd();
-  const jobId = "SC-TEST-SOUNDQC-FAIL";
-  const calls: string[] = [];
-  const ctx = mockCtx(jobId, calls);
-
-  process.chdir(tmp);
-  _setSoundQcDepsForTest({
-    loadConfig: () => ({ soundQc: { endpoint: "http://127.0.0.1:9881", model: "x" } }),
-    wavPrecheck: () => {
-      throw new Error("wav boom");
+  await withSoundQcCase(
+    {
+      prefix: "soundqc-fail-",
+      jobId: "SC-TEST-SOUNDQC-FAIL",
+      lockAudioName: "missing.wav",
+      writeLockAudio: false,
+      deps: {
+        loadConfig: () => ({ soundQc: { endpoint: "http://127.0.0.1:9881", model: "x" } }),
+        wavPrecheck: () => {
+          throw new Error("wav boom");
+        },
+      },
     },
-    patch: (job, partial) => Object.assign(job, partial),
-  });
-  bindSoundQcBag(jobId, makeBag(path.join(tmp, "missing.wav")));
-
-  try {
-    const result = await soundQcSeat.run(ctx);
-    assert.equal(result.status, "FAILED_TERMINAL");
-    assert.equal(result.stopped, true);
-    assert.equal(calls[0], "think:soundQc");
-    assert.ok(calls[1]?.startsWith("speak:soundQc:info:SenseVoice"));
-    const fail = calls.find((c) => c.startsWith("speak:soundQc:fail:"));
-    assert.ok(fail, `expected fail speak, got ${calls.join(" | ")}`);
-    assert.ok(fail!.includes("wav boom"));
-    assert.equal(result.violations[0]!.step, "soundQc");
-  } finally {
-    unbindSoundQcBag(jobId);
-    _resetSoundQcDepsForTest();
-    process.chdir(cwd);
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
+    async ({ ctx, calls }) => {
+      const result = await soundQcSeat.run(ctx);
+      assert.equal(result.status, "FAILED_TERMINAL");
+      assert.equal(result.stopped, true);
+      assert.equal(calls[0], "think:soundQc");
+      assert.ok(calls[1]?.startsWith("speak:soundQc:info:SenseVoice"));
+      const fail = calls.find((c) => c.startsWith("speak:soundQc:fail:"));
+      assert.ok(fail, `expected fail speak, got ${calls.join(" | ")}`);
+      assert.ok(fail!.includes("wav boom"));
+      assert.equal(result.violations[0]!.step, "soundQc");
+    },
+  );
 });
 
 if (bareBun) {
