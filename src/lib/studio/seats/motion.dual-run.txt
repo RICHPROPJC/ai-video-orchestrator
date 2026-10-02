@@ -1,0 +1,5 @@
+motion席 dual-run result (2026-10-02)
+Input: WIST context (有blockout+motion-select) vs 邏輯矩陣
+Path A (pipeline.ts :409,525): hasVideo1→C-form/rigged; ms→multishot; kf→A-form
+Path B (seats/motion.ts):       determineMotionSource()同款邏輯
+Result: MATCH ✅ — 三路路由+resume keep三重條件全部一致
