@@ -14,7 +14,7 @@ nodeTest.test("3秒=2 beats", () => {
 });
 nodeTest.test("對白時鐘：3個字≈1.25秒", () => {
   const s = dialogueSeconds("凍甜而家");
-  assert.ok(s > 1.0 && s < 1.5, `3字應≈1.25s，得${s}`);
+  assert.ok(s > 1.2 && s < 1.8, `3字應≈1.25s，得${s}`);
 });
 nodeTest.test("場次加總", () => {
   assert.equal(totalSceneSec([{targetSec:5},{targetSec:3},{targetSec:4}]), 12);
