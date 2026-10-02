@@ -1,0 +1,5 @@
+delivery席 dual-run result (2026-10-02)
+Input: WIST cut_plan + 7 available mp4 shots
+Path A (pipeline.ts stableJson+sha256): cutDigest = 83f75a63481c03b9
+Path B (seats/delivery-inputs.ts):       cutDigest = 83f75a63481c03b9
+Result: MATCH ✅
