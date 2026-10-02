@@ -1,0 +1,4 @@
+stills席 dual-run result (2026-10-02)
+Path A (pipeline/stills.ts :33-59): stillFirstFlags + refsGreenOnly
+Path B (seats/stills.ts): 同款邏輯
+Result: MATCH ✅ — firstFlags[true,false,true] + refsGreenOnly(kept=1,rejected=1)
