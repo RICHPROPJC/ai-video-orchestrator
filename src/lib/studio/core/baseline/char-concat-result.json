@@ -1,0 +1,40 @@
+{
+  "test": "concat-subset-wist",
+  "input": [
+    "SH01.h3_submit.json",
+    "SH01.mp4",
+    "SH01.video_qc.json",
+    "SH02.h3_submit.json",
+    "SH02.h3_submit_dryrun.json",
+    "SH02.mp4",
+    "SH03.h3_submit.json",
+    "SH03.h3_submit_dryrun.json",
+    "SH03.mp4",
+    "SH04.h3_submit.json",
+    "SH04.h3_submit_dryrun.json",
+    "SH04.mp4",
+    "SH05.h3_submit.json",
+    "SH05.h3_submit_dryrun.json",
+    "SH05.mp4",
+    "SH06.h3_submit.json",
+    "SH06.h3_submit_dryrun.json",
+    "SH06.mp4",
+    "SH07.h3_submit.json",
+    "SH07.h3_submit_dryrun.json",
+    "SH07.mp4"
+  ],
+  "mp4_files": [
+    "SH01.mp4",
+    "SH02.mp4",
+    "SH03.mp4",
+    "SH04.mp4",
+    "SH05.mp4",
+    "SH06.mp4",
+    "SH07.mp4"
+  ],
+  "output_sha256": "d747b2f4d437ec92",
+  "output_size_bytes": 5668811,
+  "ffmpeg_command": "ffmpeg -y -f concat -safe 0 -i <list> -c copy <out>",
+  "frames": 1123,
+  "duration": "46.80s"
+}
