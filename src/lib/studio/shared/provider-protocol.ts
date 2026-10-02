@@ -12,7 +12,7 @@ export interface ProviderDescriptor {
 
 export interface CapabilityRequest {
   subject: "character" | "object" | "world" | "shot" | "reference_packet";
-  intent?: DirectorIntent;
+  intent?: unknown; // DirectionLanguage from director-intent.ts
   requiredOutputs: string[];
   constraints: {
     exactFrame?: boolean;
