@@ -1,0 +1,4 @@
+pictureQc席 dual-run result (2026-10-02)
+Path A (pipeline.ts :634-640): slice bounds公式
+Path B (seats/pictureQc.ts computeSliceBounds): 同款
+Result: MATCH ✅ solo/chain/multishot三種 + motionClipRequire全部一致
