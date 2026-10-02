@@ -1,0 +1,5 @@
+layout席 dual-run result (2026-10-02)
+Input: WIST callsheet.json
+Path A (world-scale.ts piecesFromCallSheet): 6角色+1場景
+Path B (seats/layout.ts): 同款
+Result: MATCH ✅ — pieces=7(6char+1scene), stillFrameFor(2s,56f)=24
