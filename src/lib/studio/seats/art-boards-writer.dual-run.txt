@@ -1,0 +1,5 @@
+art/boards/writer席 dual-run result (2026-10-02)
+art: needsRig + isIsolatedRef ✅
+boards: isSizeJump + boardCellCheck ✅
+writer: maxBeatsForSec + dialogueSeconds ✅
+ALL MATCH
