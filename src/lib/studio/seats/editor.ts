@@ -14,11 +14,11 @@ export const editorSeat: SeatModule = {
 
     try {
       const cutPlan = JSON.parse(fs.readFileSync(path.join(dir, "cut_plan.json"), "utf-8"));
-      const cut = cutPlan.shots.map((s: { id: string }) => s.id);
+      const cut: string[] = cutPlan.shots.map((s: { id: string }) => s.id);
       ctx.speak("editor", `照分鏡接：${cut.join(" → ")}。唔重排。`);
 
       // concat gate
-      const gate = await checkGate(dir, cut);
+      const gate = await checkGate({ plan: cutPlan, motionDir: path.join(dir, "motion") });
       if (!gate.ok) {
         return {
           status: "FAILED_TERMINAL", stopped: true, artifacts: [], receipts: [],

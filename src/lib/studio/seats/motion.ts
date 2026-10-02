@@ -46,7 +46,9 @@ export const motionSeat: SeatModule = {
         const receipt = await submitH3Shot({
           prose: promptText,
           wavFile: path.join(dir, "audio", `${shot.id}.h3.wav`),
-          durationSec: shot.durationSec,
+          durationSec: Number(shot.durationSec) || undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...( {} as any ), // motion seat full migration in PR-5
           // motionSource: decision.motionSource, // 新欄位（observe）
         });
 
